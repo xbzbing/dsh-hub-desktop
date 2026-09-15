@@ -105,7 +105,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (pendingOpen.includes(event.id)) {
         if (event.status === 'running') {
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
-          void window.dshHub?.runtime.openView(event.id)
+          // 打开失败要可见(评审 N9):此前 void 吞掉结果,用户只看到「已连接但没窗口」
+          void window.dshHub?.runtime.openView(event.id).then((result) => {
+            if (result && !result.ok) {
+              useAppStore.getState().toast('err', '打开实例视图失败', result.message)
+            }
+          })
         } else if (event.status === 'error' || event.status === 'stopped') {
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
         }

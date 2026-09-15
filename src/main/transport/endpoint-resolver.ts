@@ -8,7 +8,7 @@
  * 目标地址拼装原则：一律本机回环 —— 远端不可达的网段/主机名感知只存在于
  * ssh/http 端点自身，hub 的探测面永远是 `127.0.0.1:<localPort>`（设计 §4.2）。
  */
-import type { HttpInstance, SshInstance } from '@shared/contracts'
+import type { HttpInstance } from '@shared/contracts'
 import { parseEndpointUrl } from '@shared/endpoint'
 
 /** ssh 隧道就绪后的本地端点（探测 / 开窗都打这里） */
@@ -23,11 +23,3 @@ export function httpDirectEndpoint(instance: HttpInstance): string {
 }
 
 export type ResolvedEndpoint = ReturnType<typeof sshTunnelEndpoint>
-
-/** 仅编译期守卫：ssh 实例必须已分配 localPort 才能解析（契约权限在调用方校验） */
-export function assertSshLocalPort(instance: SshInstance): number {
-  if (instance.localPort === null) {
-    throw new Error(`SSH 实例尚未分配隧道本地端口：${instance.id}`)
-  }
-  return instance.localPort
-}

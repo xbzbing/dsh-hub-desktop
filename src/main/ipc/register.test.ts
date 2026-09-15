@@ -145,6 +145,27 @@ describe('registerIpc', () => {
     }
   })
 
+  it('R3 回归:host 以 - 开头被拒(argv 选项注入面)', async () => {
+    for (const host of ['-p2222', '-lroot', '-Fevil', '-oProxyCommand=evil']) {
+      const result = (await invoke('instances:create', {
+        transport: 'ssh',
+        name: '注入尝试',
+        host,
+        username: 'dev'
+      })) as { ok: boolean; code?: string; message?: string }
+      expect(result.ok, `host=${host} 应被拒绝`).toBe(false)
+      if (!result.ok) expect(result.code).toBe('invalid-input')
+    }
+    // 合法别名/主机仍可用
+    const okHost = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '别名',
+      host: 'build-01',
+      username: 'dev'
+    })) as { ok: boolean }
+    expect(okHost.ok).toBe(true)
+  })
+
   it('create 非法输入 → 错误信封 invalid-input,不抛异常', async () => {
     const result = (await invoke('instances:create', {
       transport: 'local',

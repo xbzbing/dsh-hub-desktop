@@ -62,6 +62,9 @@ const SSH_HOST_SCHEMA = z
   .min(1, 'SSH 主机不能为空')
   .max(255, 'SSH 主机最长 255 字符')
   .regex(/^[A-Za-z0-9._\-:[\]]+$/, 'SSH 主机含非法字符（不允许空白 / 斜杠 / @）')
+  // host 是 ssh 的位置参数:以 '-' 开头会被当作选项解析(argv 选项注入面),
+  // 边界直接拒绝(评审 R3);`-oProxyCommand=` 之类因字符集不含 '=' 本就被拒
+  .refine((value) => !value.startsWith('-'), 'SSH 主机不能以 - 开头')
   .refine(isValidSshHost, 'host[:port] 形态的端口必须在 1–65535，或主机名不含冒号')
 
 const instanceBaseFields = {

@@ -186,7 +186,11 @@ export default function DetailView(): ReactNode {
                 )}
                 <button
                   className="btn btn-secondary btn-sm"
-                  onClick={() => void window.dshHub?.runtime.openView(record.id)}
+                  onClick={() => {
+                    void window.dshHub?.runtime.openView(record.id).then((result) => {
+                      if (result && !result.ok) toast('err', '打开视图失败', result.message)
+                    })
+                  }}
                   disabled={display !== 'connected'}
                   data-testid="open-view-btn"
                 >

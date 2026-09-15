@@ -388,8 +388,9 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (entry.stopping) return
     entry.reconnectCount += 1
     emit(entry.id, 'starting', { detail: `第 ${entry.reconnectCount} 次自动重连（${entry.url}）` })
-    // 陈旧的 ControlPath 遗留一并清理（死进程残留的 socket 会让 ssh 拒绝复用）
-    void rm(entry.controlPath, { force: true })
+    // 陈旧的 ControlPath 遗留一并清理（死进程残留的 socket 会让 ssh 拒绝复用）。
+    // 必须 await:否则可能删掉紧接着 spawn 的新 ssh 刚建立的 socket(评审 N3)
+    await rm(entry.controlPath, { force: true }).catch(() => undefined)
     const instance = latestInstances.get(entry.id)
     if (!instance) {
       // 实例已被删除：停止隧道，不再重连
@@ -412,6 +413,11 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
           probe: portAvailabilityProbe
         })
         reservedPorts.add(port)
+        if (entry.stopping) {
+          // stop() 与换端口竞态:释放保留集,避免端口永久泄漏(评审 N2)
+          reservedPorts.delete(port)
+          return
+        }
         entry.localPort = port
         entry.url = sshTunnelEndpoint(port)
         emit(entry.id, 'starting', { detail: `本地端口已重新分配为 ${port}` })
@@ -565,7 +571,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
           detail: `建立 SSH 隧道（${localPort} → ${entry.remoteLabel}）`
         })
         // spawn 前清除可能残留的 ControlPath（重启场景）
-        void rm(entry.controlPath, { force: true })
+        await rm(entry.controlPath, { force: true }).catch(() => undefined)
         const child = spawnSsh(entry, instance)
         entry.child = child
         await waitForReady(entry)

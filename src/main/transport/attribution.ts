@@ -48,7 +48,17 @@ const FEATURES: Array<{ kind: SshExitKind; patterns: RegExp[]; label: string }> 
   },
   {
     kind: 'forward',
-    patterns: [/port forwarding failed/i, /forwarding failed/i, /remote port forwarding failed/i, /exit-on-forward-failure/i, /cannot listen to port/i],
+    patterns: [
+      /port forwarding failed/i,
+      /forwarding failed/i,
+      /remote port forwarding failed/i,
+      /exit-on-forward-failure/i,
+      /cannot listen to port/i,
+      // 本地 -L 绑定失败的典型串(本机端口被占)
+      /could not request local forwarding/i,
+      /address already in use/i,
+      /bind.*address already in use/i
+    ],
     label: '端口转发失败（本地端口被占或远端拒绝监听）'
   },
   {

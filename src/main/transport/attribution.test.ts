@@ -32,6 +32,13 @@ describe('classifySshExit（§4.2 退出归因）', () => {
     expect(result.message).toContain('端口转发失败')
   })
 
+  it('本地 -L 绑定失败 → forward（评审 N5）', () => {
+    expect(classifySshExit(255, 'Could not request local forwarding.').kind).toBe('forward')
+    expect(
+      classifySshExit(255, 'bind [127.0.0.1]:30000: Address already in use').kind
+    ).toBe('forward')
+  })
+
   it('远端关闭 → closed', () => {
     const result = classifySshExit(0, 'Connection to dsh.internal closed by remote host.')
     expect(result.kind).toBe('closed')

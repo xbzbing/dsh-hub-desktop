@@ -422,3 +422,64 @@ describe('ControlPath 路径规则（验收实测:unix socket 104 字节上限�
     expect(join(dir, 'ctl-000000000000').length + 17).toBeLessThan(104)
   })
 })
+
+describe('T4 评审回归防线', () => {
+  it('R2:僵尸兜底安排重连后,迟到的 exit 不得吞掉重连(清 timer 必须复位标志)', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = makeFakeChild()
+      // SIGKILL 免疫:exit 事件迟到 60ms(落在 reconnect timer 之前)
+      child.kill = vi.fn((signal?: NodeJS.Signals) => {
+        child.killCall.push(signal ?? 'SIGTERM')
+        if (signal === 'SIGKILL') setTimeout(() => child.emit('exit', null, 'SIGKILL'), 60)
+        return true
+      }) as never
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    const manager = createSshTunnels({
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => false, // 就绪探测恒失败 → 走僵尸兜底分支
+      readyTimeoutMs: 60,
+      healthProbeRetryMs: 5,
+      backoffBaseMs: 200,
+      stopGraceMs: 20,
+      portProbe: (async () => true) as never
+    })
+    const instance = sshInstance()
+    await manager.start(instance)
+    // 迟到 exit(~140ms) 与 reconnect timer(200ms) 都过去后,看门狗必须已经重连
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(spawnImpl.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('R2b:看门狗链路断掉(无子进程、无待重连)时,再次 start 能自愈', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = makeFakeChild()
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    const manager = createSshTunnels({
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 500,
+      backoffBaseMs: 5_000, // 重连排得很远,便于观察自愈路径
+      stopGraceMs: 20
+    })
+    const instance = sshInstance()
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'running')
+    // 模拟「entry 在、子进程没了、也没有待重连」的断链状态
+    children[0]?.emit('exit', 255, null)
+    await waitForStatus(manager, instance.id, 'error')
+    await manager.stop(instance.id)
+    // 断开后重新启动:应当真的重新 spawn(而非被幂等短路)
+    await manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl.mock.calls.length).toBeGreaterThanOrEqual(2), {
+      timeout: 2000
+    })
+  })
+})
