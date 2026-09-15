@@ -10,7 +10,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     // 验收脚本(Node + Playwright 驱动,CommonJS):显式声明 node 全局,允许 require
-    files: ['scripts/**/*.cjs', 'hub-data/**/*.cjs'],
+    files: ['scripts/**/*.cjs', 'scripts/**/*.mjs', 'hub-data/**/*.cjs'],
     languageOptions: {
       globals: {
         require: 'readonly',
