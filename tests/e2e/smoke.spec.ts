@@ -1,31 +1,31 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from '@playwright/test'
+import { mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 /**
- * T1 冒烟（R4 端到端测试基线）：以真实 Electron 二进制 + 已构建产物启动应用，
- * 验证 窗口渲染 / IPC 全链路 / 主进程存活 三条冒烟路径。
- * 前置：`pnpm build`（_electron 入口为 package.json 的 main → out/main/index.js）。
+ * 应用冒烟：窗口渲染真实外壳、preload 白名单 API 形状、空数据目录展示空态、
+ * 主进程版本信息可达。前置：`pnpm build`。
  */
+
+const DATA_DIR = resolve(__dirname, '..', '..', 'hub-data', 'e2e-smoke')
 
 let app: ElectronApplication
 let win: Page
 
-// CI（无显示器的 Linux）需要 xvfb + 无沙箱；本机受限环境可通过 DSH_HUB_E2E_ARGS 注入
 const launchArgs = ['.']
 if (process.env.CI) launchArgs.push('--no-sandbox')
 for (const arg of (process.env.DSH_HUB_E2E_ARGS ?? '').split(' ').filter(Boolean)) {
   launchArgs.push(arg)
 }
 
-const launchEnv = {
-  ...process.env,
-  // 应用数据隔离到工作区 hub-data/e2e（.gitignore 已忽略），不触碰真实 userData
-  DSH_HUB_DATA_DIR: resolve(__dirname, '..', '..', 'hub-data', 'e2e')
-}
-
 test.beforeAll(async () => {
-  app = await electron.launch({ args: launchArgs, env: launchEnv })
+  await rm(DATA_DIR, { recursive: true, force: true })
+  await mkdir(DATA_DIR, { recursive: true })
+  app = await electron.launch({
+    args: launchArgs,
+    env: { ...process.env, DSH_HUB_DATA_DIR: DATA_DIR }
+  })
   win = await app.firstWindow()
 })
 
@@ -33,26 +33,27 @@ test.afterAll(async () => {
   await app.close()
 })
 
-test('窗口打开并渲染出 T1 骨架', async () => {
+test('窗口打开并渲染出应用外壳', async () => {
   await expect(win.getByTestId('app-shell')).toBeVisible()
-  await expect(win.getByRole('heading', { name: /骨架就绪/ })).toBeVisible()
+  await expect(win.getByTestId('brand')).toBeVisible()
+  await expect(win.getByTestId('sidebar')).toBeVisible()
 })
 
-test('主进程信息经 preload 桥接到达渲染进程', async () => {
-  const versions = win.getByTestId('versions')
-  await expect(versions).toBeVisible()
-  await expect(versions).toContainText('electron ')
-  await expect(versions).toContainText('chrome ')
-  await expect(versions).toContainText('node ')
+test('preload 白名单桥接形状正确(无多余暴露)', async () => {
+  const api = await win.evaluate(() => (window.dshHub ? Object.keys(window.dshHub).sort() : null))
+  expect(api).toEqual(['getInfo', 'instances', 'onInstanceStatus', 'ping', 'runtime'].sort())
 })
 
-test('ping 通道双向可达', async () => {
-  await win.getByTestId('ping-button').click()
-  await expect(win.getByTestId('pong-status')).toContainText('echo=hello from renderer')
+test('空数据目录展示空态(真实注册表后端)', async () => {
+  await expect(win.getByTestId('view-empty')).toBeVisible()
+  await expect(win.getByTestId('empty-new-btn')).toBeVisible()
 })
 
-test('主进程版本号与渲染进程展示一致', async () => {
-  const mainVersion = await app.evaluate(({ app: electronApp }) => electronApp.getVersion())
-  const rendered = await win.getByTestId('versions').textContent()
-  expect(rendered).toContain(`app ${mainVersion}`)
+test('主进程版本信息可经桥接读取', async () => {
+  const info = await win.evaluate(async () => window.dshHub.getInfo())
+  expect(info.ok).toBe(true)
+  if (info.ok) {
+    expect(info.value.electron).toMatch(/^\d+\.\d+\.\d+/)
+    expect(info.value.platform).not.toBe('')
+  }
 })

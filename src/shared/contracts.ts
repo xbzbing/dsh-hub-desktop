@@ -229,6 +229,8 @@ export interface InstanceSummary {
   name: string
   transport: Transport
   authMode: AuthMode
+  /** 展示用地址一次算好(避免渲染层为每行再发 get) */
+  address: string
   updatedAt: string
 }
 

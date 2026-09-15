@@ -49,11 +49,18 @@ function parseId(id: unknown): string {
 }
 
 function toSummary(record: InstanceRecord): InstanceSummary {
+  const address =
+    record.transport === 'local'
+      ? `127.0.0.1:${record.port ?? '—'}`
+      : record.transport === 'ssh'
+        ? `${record.host}:${record.remotePort}`
+        : record.endpointUrl
   return {
     id: record.id,
     name: record.name,
     transport: record.transport,
     authMode: record.authMode,
+    address,
     updatedAt: record.updatedAt
   }
 }
