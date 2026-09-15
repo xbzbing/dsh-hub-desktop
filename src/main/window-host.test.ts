@@ -11,7 +11,7 @@ vi.mock('electron', () => {
       this.handlers.set(event, listener)
       return this
     })
-    loadURL = vi.fn((_url: string) => Promise.resolve())
+    loadURL = vi.fn((url: string) => Promise.resolve(url))
   }
   class FakeBrowserWindow {
     static instances: FakeBrowserWindow[] = []
