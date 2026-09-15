@@ -106,4 +106,47 @@ describe('auth-registry（T8 每实例客户端）', () => {
     await registry.client('i1')
     expect(registry.sessionCookie('i1')).toBeNull()
   })
+
+  it('restore 钩子在返回客户端之前被 await(重启静默复用的顺序前提)', async () => {
+    const order: string[] = []
+    const registry = createAuthRegistry({
+      resolveEndpoint: async () => 'https://gw/dsh',
+      factory: () => fakeClient(),
+      restore: async (instanceId) => {
+        order.push(`restore:${instanceId}`)
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        order.push('restore-done')
+      }
+    })
+    await registry.client('i1')
+    order.push('client-returned')
+    expect(order).toEqual(['restore:i1', 'restore-done', 'client-returned'])
+  })
+
+  it('restore 抛错既不影响客户端创建,也不阻断后续调用', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const registry = createAuthRegistry({
+      resolveEndpoint: async () => 'https://gw/dsh',
+      factory: () => fakeClient(),
+      restore: () => {
+        throw new Error('vault 不可用')
+      }
+    })
+    await expect(registry.client('i1')).resolves.not.toBeNull()
+    expect(await registry.client('i1')).not.toBeNull()
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
+  })
+
+  it('restore 只在创建时调用一次(后续 client() 复用不重复恢复)', async () => {
+    const restore = vi.fn(async () => undefined)
+    const registry = createAuthRegistry({
+      resolveEndpoint: async () => 'https://gw/dsh',
+      factory: () => fakeClient(),
+      restore
+    })
+    await registry.client('i1')
+    await registry.client('i1')
+    expect(restore).toHaveBeenCalledTimes(1)
+  })
 })

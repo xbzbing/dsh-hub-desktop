@@ -19,6 +19,7 @@ import { createHttpEndpoints } from './transport/http-endpoint'
 import type { HttpEndpointManager } from './transport/http-endpoint'
 import { createPromptBroker } from './ssh/prompt-broker'
 import { createAuthRegistry } from './auth/auth-registry'
+import { restoreSessionFromVault } from './auth/session-restore'
 import { classifyAuthSignal } from './webview/intercept'
 import {
   createOncePerSession,
@@ -359,6 +360,11 @@ void app.whenReady().then(() => {
 
   // T8 认证:端点取自注册表;状态变化广播给渲染层(auth-panel / 工作区浮层)
   auth = createAuthRegistry({
+    // T9/T10:重启后按「记住登录态」策略静默复用会话(§7.2)
+    restore: async (instanceId, client) => {
+      if (!vault) return
+      await restoreSessionFromVault({ vault }, instanceId, client)
+    },
     resolveEndpoint: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
       if (!record) return null

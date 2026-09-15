@@ -19,6 +19,12 @@ export interface AuthRegistryOptions {
   /** 全局并发认证上限(设计默认 2) */
   maxConcurrentAuth?: number
   onState?: (instanceId: string, state: AuthState) => void
+  /**
+   * 客户端创建后的恢复钩子(T9/T10):用于把 vault 里已记住的登录态灌进 Cookie 罐,
+   * 使随后的 `probeAndRestore` 走静默恢复分支。**在返回客户端之前 await** ——
+   * 否则首次探测可能先于恢复执行,重启复用就失效了。
+   */
+  restore?: (instanceId: string, client: AuthClient) => Promise<void> | void
   /** 注入 fetch(测试) */
   fetchImpl?: typeof fetch
   now?: () => number
@@ -60,6 +66,15 @@ export function createAuthRegistry(options: AuthRegistryOptions): AuthRegistry {
       onState: (state) => options.onState?.(instanceId, state)
     })
     clients.set(instanceId, created)
+    // 先恢复已记住的登录态,再交给调用方探测(顺序是「重启静默复用」成立的前提)
+    if (options.restore) {
+      try {
+        await options.restore(instanceId, created)
+      } catch (error) {
+        // 恢复是尽力而为:失败就回到「需要登录」,绝不能让客户端创建失败
+        console.error('[auth-registry] 恢复客户端状态失败：', error)
+      }
+    }
     return created
   }
 
