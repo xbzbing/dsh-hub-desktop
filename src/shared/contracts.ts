@@ -299,6 +299,30 @@ export interface AskpassReplyPayload {
   secret: string | null
 }
 
+// ===== HTTP 直连端点探测（T6） =====
+
+/**
+ * T6 通道：向导 Step3 / 详情页对「直连端点」做一次只读探测（§2.3），
+ * 返回认证模式判定结果供 UI 展示；不建立实例、不写注册表、不携带凭据。
+ */
+export const HTTP_IPC = {
+  detect: 'http:detect'
+} as const
+
+export type DetectedAuthMode = 'gateway' | 'none' | 'browser-auth' | 'unreachable' | 'unknown'
+
+export type GatewayEvidence = 'login-page' | 'api-401' | 'onboarding'
+
+export interface HttpAuthDetection {
+  mode: DetectedAuthMode
+  gatewayEvidence: GatewayEvidence | null
+  /** 面向用户/日志的一句话证据（不含凭据） */
+  evidence: string
+  /** 观测状态码（网络错误为 null） */
+  status: number | null
+  at: string
+}
+
 // ===== 注册表文件与版本迁移 =====
 
 export const REGISTRY_SCHEMA_VERSION = 1

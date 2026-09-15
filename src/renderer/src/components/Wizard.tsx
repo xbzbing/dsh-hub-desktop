@@ -4,6 +4,7 @@ import type { CreateInstanceInput } from '@shared/contracts'
 import { tryParseEndpoint } from '@shared/endpoint'
 import { Icon } from '../lib/icons'
 import KeyPreview from './KeyPreview'
+import UrlDetect from './UrlDetect'
 import { TYPE_INFO } from '../lib/format'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
@@ -320,9 +321,8 @@ export default function Wizard(): ReactNode {
                 />
                 <span className="hint">粘贴完整 URL 会自动解析，不支持内嵌凭据。</span>
               </div>
-              <div className="hintbar mt12">
-                <Icon name="link" />
-                <span>创建后会自动探测是否需要登录（认证接入在后续里程碑提供）。</span>
+              <div className="mt12">
+                <UrlDetect endpointUrl={form.endpointUrl} />
               </div>
             </>
           )}

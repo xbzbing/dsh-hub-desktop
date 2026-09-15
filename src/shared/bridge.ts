@@ -12,6 +12,7 @@ import type {
   CreateInstanceInput,
   HostKeyDecision,
   HostKeyPromptPayload,
+  HttpAuthDetection,
   InstanceRecord,
   InstanceStatusEvent,
   InstanceSummary,
@@ -81,5 +82,10 @@ export interface DshHubBridge {
     onAskpassRequest: (listener: (payload: AskpassPromptPayload) => void) => () => void
     /** 回复口令；secret=null 表示取消 */
     replyAskpass: (requestId: string, secret: string | null) => Promise<IpcResult<null>>
+  }
+  /** HTTP 直连辅助（T6）：端点认证模式只读探测（向导 urlDetect） */
+  http: {
+    /** 对草稿 URL 做 §2.3 探测；非法 URL 返回 invalid-input 信封 */
+    detect: (endpointUrl: string) => Promise<IpcResult<HttpAuthDetection>>
   }
 }

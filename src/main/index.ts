@@ -9,6 +9,8 @@ import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import { createSshTunnels } from './transport/ssh-tunnel'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
+import { createHttpEndpoints } from './transport/http-endpoint'
+import type { HttpEndpointManager } from './transport/http-endpoint'
 import { createPromptBroker } from './ssh/prompt-broker'
 import type { PromptBroker } from './ssh/prompt-broker'
 import { createInstanceStore } from './registry/instance-store'
@@ -170,6 +172,8 @@ function registerCsp(): void {
 /** 运行中的本地实例 / SSH 隧道管理器（退出前需回收进程树，故提到模块级） */
 let runtime: LocalRuntimeManager | null = null
 let tunnels: SshTunnelManager | null = null
+/** T6 HTTP 直连管理器(无本地进程,start=校验+探测) */
+let httpEndpoints: HttpEndpointManager | null = null
 /** T5 提示代理:窗口关闭/退出时收敛所有待答请求(否则指纹/口令请求会挂满超时) */
 let prompts: PromptBroker | null = null
 let quitting = false
@@ -204,6 +208,8 @@ void app.whenReady().then(() => {
     confirmHostKey: (request) => prompts?.requestHostKey(request) ?? Promise.resolve('reject'),
     askpass: (request) => prompts?.requestAskpass(request) ?? Promise.resolve(null)
   })
+  // T6 HTTP 直连:无本地进程,start = 端点校验 + §4.3 健康探测 + §2.3 认证模式探测
+  httpEndpoints = createHttpEndpoints()
 
   // 状态推进（local + ssh 共用同一通道）→ 广播到所有窗口；把实际端口/版本回写注册表
   // （transport 感知：ssh 的「端口」是隧道本地口 localPort，local 的才是监听 port）；
@@ -230,10 +236,12 @@ void app.whenReady().then(() => {
   }
   runtime.onStatus(handleStatusEvent)
   tunnels.onStatus(handleStatusEvent)
+  httpEndpoints.onStatus(handleStatusEvent)
 
   registerIpc(instanceStore, {
     runtime,
     tunnels,
+    http: httpEndpoints,
     prompts: prompts as PromptBroker,
     openInstanceView: (instance, url) =>
       openInstanceWindow({ instanceId: instance.id, title: instance.name, url })
@@ -268,6 +276,13 @@ app.on('before-quit', (event) => {
   if (tunnels) {
     recycling.push(
       tunnels.stopAll().catch((error: unknown) => console.error('[main] 停止隧道失败：', error))
+    )
+  }
+  if (httpEndpoints) {
+    recycling.push(
+      httpEndpoints
+        .stopAll()
+        .catch((error: unknown) => console.error('[main] 停止 HTTP 实例失败：', error))
     )
   }
   void Promise.all(recycling).finally(() => app.quit())

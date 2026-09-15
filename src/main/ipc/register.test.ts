@@ -13,6 +13,7 @@ import { ipcMain } from 'electron'
 import type { InstanceStatusEvent } from '@shared/contracts'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
+import type { HttpEndpointManager } from '../transport/http-endpoint'
 import { createInstanceStore } from '../registry/instance-store'
 import { registerIpc } from './register'
 
@@ -39,6 +40,14 @@ let tunnelsFake: {
   stopAll: ReturnType<typeof vi.fn>
 }
 let openInstanceView: ReturnType<typeof vi.fn>
+let httpFake: {
+  onStatus: ReturnType<typeof vi.fn>
+  statusOf: ReturnType<typeof vi.fn>
+  runningIds: ReturnType<typeof vi.fn>
+  start: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
+  stopAll: ReturnType<typeof vi.fn>
+}
 let promptsFake: {
   requestHostKey: ReturnType<typeof vi.fn>
   requestAskpass: ReturnType<typeof vi.fn>
@@ -73,6 +82,14 @@ beforeEach(async () => {
     stop: vi.fn(async () => undefined),
     stopAll: vi.fn(async () => undefined)
   }
+  httpFake = {
+    onStatus: vi.fn(() => () => undefined),
+    statusOf: vi.fn(() => null),
+    runningIds: vi.fn(() => []),
+    start: vi.fn(async () => undefined),
+    stop: vi.fn(async () => undefined),
+    stopAll: vi.fn(async () => undefined)
+  }
   openInstanceView = vi.fn()
   promptsFake = {
     requestHostKey: vi.fn(async () => 'trust'),
@@ -84,6 +101,7 @@ beforeEach(async () => {
   registerIpc(createInstanceStore({ dir }), {
     runtime: runtimeFake as unknown as LocalRuntimeManager,
     tunnels: tunnelsFake as unknown as SshTunnelManager,
+    http: httpFake as unknown as HttpEndpointManager,
     prompts: promptsFake as never,
     openInstanceView: openInstanceView as never
   })
@@ -102,7 +120,7 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 const VALID_LOCAL = { transport: 'local', name: 'IPC 实例' }
 
 describe('registerIpc', () => {
-  it('注册 app 双探针 + 实例 CRUD + 运行时控制 + T5 SSH 辅助共十三个通道', () => {
+  it('注册 app 双探针 + 实例 CRUD + 运行时控制 + T5/T6 辅助通道', () => {
     const expected = [
       'app:info',
       'app:ping',
@@ -116,7 +134,8 @@ describe('registerIpc', () => {
       'instances:openView',
       'ssh:keyPreview',
       'ssh:hostKeyReply',
-      'ssh:askpassReply'
+      'ssh:askpassReply',
+      'http:detect'
     ]
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
   })
@@ -279,7 +298,7 @@ describe('registerIpc', () => {
     expect(record).toMatchObject({ id: created.value.id, transport: 'local' })
   })
 
-  it('start:非 local 实例 → invalid-input', async () => {
+  it('start:http 实例 → 交给 http 管理器(T6 起 HTTP 可启动),不误触 local/ssh', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: '远程',
@@ -287,10 +306,11 @@ describe('registerIpc', () => {
     })) as { ok: boolean; value: { id: string } }
     if (!created.ok) throw new Error('创建失败')
 
-    const result = (await invoke('instances:start', created.value.id)) as { ok: boolean; code: string }
-    expect(result.ok).toBe(false)
-    expect(result.code).toBe('invalid-input')
+    const result = (await invoke('instances:start', created.value.id)) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(httpFake.start).toHaveBeenCalledTimes(1)
     expect(runtimeFake.start).not.toHaveBeenCalled()
+    expect(tunnelsFake.start).not.toHaveBeenCalled()
   })
 
   it('start:不存在的 id → not-found', async () => {
@@ -314,6 +334,35 @@ describe('registerIpc', () => {
     const record = tunnelsFake.start.mock.calls[0]?.[0]
     expect(record).toMatchObject({ id: created.value.id, transport: 'ssh' })
     expect(runtimeFake.start).not.toHaveBeenCalled()
+  })
+
+  it('T6:http 实例 start/stop/openView 走 http 管理器', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程直连',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const startResult = (await invoke('instances:start', created.value.id)) as { ok: boolean }
+    expect(startResult.ok).toBe(true)
+    expect(httpFake.start).toHaveBeenCalledTimes(1)
+    expect(runtimeFake.start).not.toHaveBeenCalled()
+    expect(tunnelsFake.start).not.toHaveBeenCalled()
+
+    httpFake.statusOf.mockReturnValue({
+      id: created.value.id,
+      status: 'running',
+      url: 'https://gw.example.com/dsh/',
+      at: '2026-09-15T00:00:00.000Z'
+    })
+    const openResult = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    expect(openResult.ok).toBe(true)
+    expect(openInstanceView).toHaveBeenCalledTimes(1)
+
+    const stopResult = (await invoke('instances:stop', created.value.id)) as { ok: boolean }
+    expect(stopResult.ok).toBe(true)
+    expect(httpFake.stop).toHaveBeenCalledWith(created.value.id)
   })
 
   it('stop:ssh 实例 → tunnels.stop;local 实例 → runtime.stop', async () => {

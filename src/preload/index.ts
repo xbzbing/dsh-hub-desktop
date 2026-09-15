@@ -3,11 +3,13 @@ import { IPC, type AppInfo, type DshHubBridge, type PingResult } from '@shared/b
 import {
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
+  HTTP_IPC,
   INSTANCE_STATUS_EVENT,
   SSH_IPC,
   type AskpassPromptPayload,
   type HostKeyDecision,
   type HostKeyPromptPayload,
+  type HttpAuthDetection,
   type InstanceStatusEvent,
   type IpcResult,
   type SshKeyPreviewInput,
@@ -63,6 +65,10 @@ const bridge: DshHubBridge = {
     },
     replyAskpass: (requestId: string, secret: string | null) =>
       ipcRenderer.invoke(SSH_IPC.askpassReply, requestId, secret)
+  },
+  http: {
+    detect: (endpointUrl: string) =>
+      ipcRenderer.invoke(HTTP_IPC.detect, endpointUrl) as Promise<IpcResult<HttpAuthDetection>>
   }
 }
 

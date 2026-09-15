@@ -11,16 +11,20 @@ import { IPC, type AppInfo, type PingResult } from '@shared/bridge'
 import {
   CreateInstanceInputSchema,
   formatZodIssues,
+  HTTP_IPC,
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
   PatchInstanceSchema,
   SSH_IPC,
   SshKeyPreviewInputSchema,
   type HostKeyDecision,
+  type HttpAuthDetection,
   type InstanceRecord,
   type InstanceSummary,
   type IpcResult
 } from '@shared/contracts'
+import { detectDraftEndpoint } from '../transport/http-endpoint'
+import type { HttpEndpointManager } from '../transport/http-endpoint'
 import { resolveSshKeyPreview } from '../ssh/key-preview'
 import type { PromptBroker } from '../ssh/prompt-broker'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
@@ -36,6 +40,8 @@ export interface IpcDeps {
   openInstanceView: (instance: InstanceRecord, url: string) => void
   /** T5 用户提示代理（指纹确认 / 口令输入） */
   prompts: PromptBroker
+  /** T6 HTTP 直连传输 */
+  http: HttpEndpointManager
 }
 
 async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
@@ -127,6 +133,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         // 否则 dsh/ssh 进程继续存活(独占端口与 DSH_HOME),窗口也无 stopped 事件可回收
         const record = await store.get(instanceId)
         if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
+        else if (record?.transport === 'http') await deps.http.stop(instanceId)
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
         return { removed: await store.remove(instanceId) }
       })
@@ -147,7 +154,12 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         void deps.tunnels.start(instance)
         return null
       }
-      throw new InstanceStoreError('invalid-input', 'HTTP 直连传输在后续里程碑提供（T6）')
+      if (instance.transport === 'http') {
+        void deps.http.start(instance)
+        return null
+      }
+      // 契约层已限定三种 transport;此处为穷尽性兜底(TS 已收窄为 never)
+      throw new InstanceStoreError('invalid-input', '未知的传输类型')
     })
   )
 
@@ -156,6 +168,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       const instanceId = parseId(id)
       const record = await store.get(instanceId)
       if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
+      else if (record?.transport === 'http') await deps.http.stop(instanceId)
       else await deps.runtime.stop(instanceId) // local 或不存在:runtime.stop 幂等
       return null
     })
@@ -171,7 +184,9 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       const status =
         instance.transport === 'ssh'
           ? deps.tunnels.statusOf(instanceId)
-          : deps.runtime.statusOf(instanceId)
+          : instance.transport === 'http'
+            ? deps.http.statusOf(instanceId)
+            : deps.runtime.statusOf(instanceId)
       if (status?.status !== 'running' || !status.url) {
         throw new InstanceStoreError('invalid-state', '实例尚未运行，无法打开视图')
       }
@@ -202,6 +217,15 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         const value = z.enum(['trust', 'reject']).parse(decision) as HostKeyDecision
         deps.prompts.replyHostKey(id, value)
         return null
+      })
+  )
+
+  ipcMain.handle(
+    HTTP_IPC.detect,
+    (_event, endpointUrl: unknown): Promise<IpcResult<HttpAuthDetection>> =>
+      wrap(() => {
+        const raw = z.string().trim().min(1).max(2048).parse(endpointUrl)
+        return detectDraftEndpoint(raw)
       })
   )
 
