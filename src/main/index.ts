@@ -29,7 +29,7 @@ import type { HttpEndpointManager } from './transport/http-endpoint'
 import { createPromptBroker } from './ssh/prompt-broker'
 import { createAuthRegistry } from './auth/auth-registry'
 import { restoreSessionFromVault } from './auth/session-restore'
-import { classifyAuthSignal } from './webview/intercept'
+import { buildOpenViewPlan, classifyViewResponse } from './webview/open-view-plan'
 import {
   createOncePerSession,
   openInstanceView as openInstanceViewFlow
@@ -504,15 +504,8 @@ void app.whenReady().then(() => {
     openInstanceView: async (instance, url) => {
       // T8 修正:先注入 Cookie 再 loadURL(§6.2),顺序由此编排保证 ——
       // 旧版先 openInstanceWindow(内部立刻加载)、之后才注入,顺序被反转。
-      const origin = originOf(url)
-      const parsed = (() => {
-        try {
-          return new URL(url)
-        } catch {
-          return null
-        }
-      })()
-      const basePath = parsed ? parsed.pathname.replace(/\/+$/, '') || '/' : '/'
+      // 接线计划(origin/basePath/cookie)由可测的纯函数单点推导(评审反复指出的装配层盲区)。
+      const plan = buildOpenViewPlan(url, auth?.sessionCookie(instance.id) ?? null)
       await openInstanceViewFlow(
         {
           // 开窗但**不自动加载**:加载由编排在注入之后执行
@@ -527,16 +520,13 @@ void app.whenReady().then(() => {
             const targetSession = win.webContents.session
             if (!shouldInstallIntercept(targetSession)) return
             targetSession.webRequest.onHeadersReceived((details, callback) => {
-              const signal = classifyAuthSignal(
-                {
-                  statusCode: details.statusCode,
-                  headers: details.responseHeaders ?? {},
-                  resourceType: details.resourceType
-                },
-                // T9-1:必须带上 basePath —— 网关 302 到的是 `<basePath>/login`,
-                // 默认 '/' 只能匹配根路径实例,带路径的实例(如 /dsh)永不产生信号
-                basePath
-              )
+              // T9-1:basePath 必须来自 plan —— 网关 302 到的是 `<basePath>/login`,
+              // 默认 '/' 只能匹配根路径实例,带路径的实例(如 /dsh)永不产生信号
+              const signal = classifyViewResponse(plan, {
+                statusCode: details.statusCode,
+                headers: details.responseHeaders ?? {},
+                resourceType: details.resourceType
+              })
               if (signal) {
                 // T9:会话失效 → 先静默重探(带已存 Cookie 自动恢复);仍失败才由 auth-panel 接手
                 if (signal === 'session-expired' && auth && !reprobeInFlight.has(instance.id)) {
@@ -560,11 +550,11 @@ void app.whenReady().then(() => {
           }
         },
         {
-          url,
-          origin: origin ?? '',
-          basePath,
-          // origin 不可解析时不做注入(避免写坏分区 Cookie)
-          cookie: origin ? (auth?.sessionCookie(instance.id) ?? null) : null
+          url: plan.url,
+          origin: plan.origin,
+          basePath: plan.basePath,
+          // origin 不可解析时 plan.cookie 已为 null(避免写坏分区 Cookie)
+          cookie: plan.cookie
         }
       )
     }
