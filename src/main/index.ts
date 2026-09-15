@@ -13,6 +13,7 @@ import { createLocalRuntime } from './local-runtime/local-runtime'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import { createSshTunnels } from './transport/ssh-tunnel'
+import { authEndpointOf } from './transport/endpoint-resolver'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
 import { createHttpEndpoints } from './transport/http-endpoint'
 import type { HttpEndpointManager } from './transport/http-endpoint'
@@ -360,8 +361,10 @@ void app.whenReady().then(() => {
   auth = createAuthRegistry({
     resolveEndpoint: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
-      if (!record || record.transport === 'local') return null
-      return record.transport === 'ssh' ? null : record.endpointUrl
+      if (!record) return null
+      // 认证探测端点与「开窗/探测」同源(§2.4):ssh 走隧道本地口,隧道未就绪则为 null
+      const tunnelPort = record.transport === 'ssh' ? tunnels?.statusOf(instanceId)?.port : undefined
+      return authEndpointOf(record, tunnelPort)
     },
     onState: (instanceId, state) => {
       for (const win of BrowserWindow.getAllWindows()) {
@@ -401,11 +404,24 @@ void app.whenReady().then(() => {
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
       if (!record || record.transport === 'local') return
-      const endpoint = record.transport === 'http' ? record.endpointUrl : null
-      const origin = endpoint ? originOf(endpoint) : null
+      // 与注入侧用**同一套** origin/basePath 规则(评审 R8):注入写 cookieUrlFor(origin, basePath),
+      // 清理必须命中同一个 URL,否则两侧参数不再对称(网关 Cookie 的 Path 恰为 '/',故当前无害)
+      const endpoint = authEndpointOf(
+        record,
+        record.transport === 'ssh' ? tunnels?.statusOf(instanceId)?.port : undefined
+      )
+      if (!endpoint) return
+      const origin = originOf(endpoint)
       if (!origin) return
+      const basePath = (() => {
+        try {
+          return new URL(endpoint).pathname.replace(/\/+$/, '') || '/'
+        } catch {
+          return '/'
+        }
+      })()
       const target = session.fromPartition(`persist:inst-${record.id}`)
-      await clearSessionCookie(target.cookies, { origin })
+      await clearSessionCookie(target.cookies, { origin, basePath })
     },
     prompts: prompts as PromptBroker,
     openInstanceView: async (instance, url) => {
