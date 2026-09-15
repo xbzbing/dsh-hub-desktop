@@ -4,9 +4,16 @@
  * 框架无关：不 import electron，主进程 / 预加载 / 渲染进程共享同一份类型与通道名，
  * 符合全局规则 5（registry / transport / auth / shared 不依赖 electron）。
  *
- * T1 只承载两条探针通道（getInfo / ping）；T2 会在此基础上扩展出带 zod 边界校验的
- * 完整实例注册表通道（`registry/*`）。
+ * 实例注册表相关类型与通道常量见 `./contracts.ts`（T2 起）；本文件只承载桥接面本身。
  */
+
+import type {
+  CreateInstanceInput,
+  InstanceRecord,
+  InstanceSummary,
+  IpcResult,
+  PatchInstanceInput
+} from './contracts'
 
 export const IPC = {
   /** 返回应用信息（版本 / 平台 / 数据目录），同时充当主进程存活探针 */
@@ -31,7 +38,6 @@ export interface AppInfo {
 }
 
 export interface PingResult {
-  ok: true
   /** 主进程原样回显；未传参时为 null */
   echo: string | null
   /** 主进程响应时间戳（epoch ms） */
@@ -40,7 +46,15 @@ export interface PingResult {
 
 export interface DshHubBridge {
   /** 主进程返回的应用信息快照 */
-  getInfo: () => Promise<AppInfo>
+  getInfo: () => Promise<IpcResult<AppInfo>>
   /** 双向 IPC 探针 */
-  ping: (message?: string) => Promise<PingResult>
+  ping: (message?: string) => Promise<IpcResult<PingResult>>
+  /** 实例注册表 CRUD（T2；通道常量与字段模型见 contracts.ts） */
+  instances: {
+    list: () => Promise<IpcResult<InstanceSummary[]>>
+    get: (id: string) => Promise<IpcResult<InstanceRecord | null>>
+    create: (input: CreateInstanceInput) => Promise<IpcResult<InstanceRecord>>
+    update: (id: string, patch: PatchInstanceInput) => Promise<IpcResult<InstanceRecord>>
+    remove: (id: string) => Promise<IpcResult<{ removed: boolean }>>
+  }
 }

@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, net, protocol, session, shell } from 'electron'
+import { app, BrowserWindow, net, protocol, session, shell } from 'electron'
 import { join, normalize, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { IPC, type AppInfo, type PingResult } from '@shared/bridge'
+import { registerIpc } from './ipc/register'
+import { createInstanceStore } from './registry/instance-store'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'] ?? null
@@ -156,29 +157,12 @@ function registerCsp(): void {
   })
 }
 
-function registerIpc(): void {
-  const processVersions = process.versions as NodeJS.ProcessVersions & { electron?: string }
-
-  ipcMain.handle(IPC.info, (): AppInfo => ({
-    appVersion: app.getVersion(),
-    platform: process.platform,
-    arch: process.arch,
-    chrome: process.versions.chrome,
-    electron: processVersions.electron ?? '',
-    node: process.versions.node,
-    userDataPath: app.getPath('userData')
-  }))
-
-  ipcMain.handle(IPC.ping, (_event, message: unknown): PingResult => {
-    const echo = typeof message === 'string' && message !== '' ? message : null
-    return { ok: true, echo, at: Date.now() }
-  })
-}
-
 void app.whenReady().then(() => {
   registerRendererProtocol()
   registerCsp()
-  registerIpc()
+  // 注册表落盘位置：<userData>/registry/instances.json（+ 滚动备份 + 损坏隔离）
+  const instanceStore = createInstanceStore({ dir: join(app.getPath('userData'), 'registry') })
+  registerIpc(instanceStore)
   createWindow()
 
   app.on('activate', () => {

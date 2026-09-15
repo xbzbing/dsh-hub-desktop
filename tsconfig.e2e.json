@@ -4,7 +4,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -19,10 +19,9 @@
     }
   },
   "include": [
-    "electron.vite.config.ts",
-    "vitest.config.ts",
-    "src/main/**/*",
-    "src/preload/**/*",
+    "tests/**/*",
+    "playwright.config.ts",
+    "src/preload/index.d.ts",
     "src/shared/**/*"
   ]
 }

@@ -1,0 +1,318 @@
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { CreateInstanceInput, InstanceRecord, PatchInstanceInput } from '@shared/contracts'
+import { createInstanceStore, InstanceStoreError } from './instance-store'
+
+/**
+ * 注册表存储全场景测试。
+ * 临时目录放在工作区 hub-data/test-tmp（已 gitignore）：沙箱与 CI 均可写。
+ */
+
+const TEST_BASE = join(process.cwd(), 'hub-data', 'test-tmp')
+
+/** 按 transport 收窄判别联合（测试专用谓词） */
+function asLocal(record: InstanceRecord): Extract<InstanceRecord, { transport: 'local' }> {
+  if (record.transport !== 'local') throw new Error('期望 local 实例')
+  return record
+}
+function asSsh(record: InstanceRecord): Extract<InstanceRecord, { transport: 'ssh' }> {
+  if (record.transport !== 'ssh') throw new Error('期望 ssh 实例')
+  return record
+}
+function asHttp(record: InstanceRecord): Extract<InstanceRecord, { transport: 'http' }> {
+  if (record.transport !== 'http') throw new Error('期望 http 实例')
+  return record
+}
+
+let dir: string
+let store: ReturnType<typeof createInstanceStore>
+
+function tmpRun(overrides?: object): ReturnType<typeof createInstanceStore> {
+  return createInstanceStore({ dir, ...overrides })
+}
+
+function localInput(overrides: object = {}): CreateInstanceInput {
+  return { transport: 'local', name: '本机主力', ...overrides } as CreateInstanceInput
+}
+
+function sshInput(overrides: object = {}): CreateInstanceInput {
+  return {
+    transport: 'ssh',
+    name: '远程主力',
+    host: 'dsh-server.example.com',
+    username: 'xubz',
+    ...overrides
+  } as CreateInstanceInput
+}
+
+function httpInput(overrides: object = {}): CreateInstanceInput {
+  return {
+    transport: 'http',
+    name: '网关远程',
+    endpointUrl: 'https://gw.example.com/dsh/',
+    ...overrides
+  } as CreateInstanceInput
+}
+
+async function readRegistryFile(): Promise<unknown> {
+  return JSON.parse(await readFile(join(dir, 'instances.json'), 'utf8'))
+}
+
+beforeEach(async () => {
+  await mkdir(TEST_BASE, { recursive: true })
+  dir = await mkdtemp(join(TEST_BASE, 'store-'))
+  store = tmpRun()
+})
+
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true })
+})
+
+describe('createInstanceStore / 基础 CRUD', () => {
+  it('空目录首次查询返回空列表', async () => {
+    expect(await store.list()).toEqual([])
+    expect(await store.get(randomUUID())).toBeNull()
+  })
+
+  it('create local:默认值填充 + id/时间戳生成 + 落盘', async () => {
+    const record = asLocal(await store.create(localInput()))
+    expect(record.id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(record.transport).toBe('local')
+    expect(record.authMode).toBe('auto')
+    expect(record.autoStart).toBe(false)
+    expect(record.port).toBeNull()
+    expect(record.dshVersion).toBeNull()
+    expect(record.createdAt).toBe(record.updatedAt)
+    expect(new Date(record.createdAt).getTime()).not.toBeNaN()
+
+    const file = (await readRegistryFile()) as { schemaVersion: number; instances: unknown[] }
+    expect(file.schemaVersion).toBe(1)
+    expect(file.instances).toHaveLength(1)
+  })
+
+  it('create ssh:默认端口与 host[:port] 拆分', async () => {
+    const plain = asSsh(await store.create(sshInput()))
+    expect(plain.port).toBe(22)
+    expect(plain.remotePort).toBe(3080)
+    expect(plain.localPort).toBeNull()
+    expect(plain.identityFile).toBeNull()
+
+    const split = asSsh(await store.create(sshInput({ name: '带端口', host: 'server:2222' })))
+    expect(split.host).toBe('server')
+    expect(split.port).toBe(2222)
+
+    const v6 = asSsh(await store.create(sshInput({ name: 'IPv6', host: '[::1]:2222' })))
+    expect(v6.host).toBe('::1')
+    expect(v6.port).toBe(2222)
+
+    // 裸 IPv6 保持原样(含冒号但非 host:port 形态),端口回落默认
+    const bareV6 = asSsh(await store.create(sshInput({ name: '裸IPv6', host: '::1' })))
+    expect(bareV6.host).toBe('::1')
+    expect(bareV6.port).toBe(22)
+
+    // host[:port] 与显式 port 并存时,host[:port] 优先(文档化的约定)
+    const conflict = asSsh(await store.create(sshInput({ name: '冲突', host: 'server:2222', port: 24 })))
+    expect(conflict.host).toBe('server')
+    expect(conflict.port).toBe(2222)
+  })
+
+  it('create http:端点归一化(去尾斜杠)', async () => {
+    const record = asHttp(await store.create(httpInput()))
+    expect(record.endpointUrl).toBe('https://gw.example.com/dsh')
+  })
+
+  it('create 非法输入一律 invalid-input,且文件不被写入', async () => {
+    const cases: CreateInstanceInput[] = [
+      localInput({ unknownField: 1 }),
+      sshInput({ host: 'bad host' }),
+      sshInput({ username: '  ' }),
+      httpInput({ endpointUrl: 'ftp://x' }),
+      httpInput({ endpointUrl: 'http://u:p@127.0.0.1:3080' }),
+      localInput({ port: 0 }),
+      localInput({ port: 70000 })
+    ]
+    for (const input of cases) {
+      await expect(store.create(input)).rejects.toMatchObject({ code: 'invalid-input' })
+    }
+    expect(await store.list()).toEqual([])
+  })
+
+  it('get / update / remove 组合流程', async () => {
+    const created = await store.create(localInput())
+    expect((await store.get(created.id))?.name).toBe('本机主力')
+
+    const updated = await store.update(created.id, { name: '主力机', notes: '工位 3 楼' })
+    expect(updated.name).toBe('主力机')
+    expect(updated.notes).toBe('工位 3 楼')
+    expect(new Date(updated.updatedAt).getTime()).toBeGreaterThanOrEqual(
+      new Date(created.updatedAt).getTime()
+    )
+
+    expect(await store.remove(created.id)).toBe(true)
+    expect(await store.get(created.id)).toBeNull()
+    expect(await store.remove(created.id)).toBe(false)
+  })
+
+  it('update ssh host[:port]、http 端点同样归一化', async () => {
+    const ssh = asSsh(await store.create(sshInput()))
+    const updatedSsh = asSsh(await store.update(ssh.id, { host: 'new-server:2202' }))
+    expect(updatedSsh.host).toBe('new-server')
+    expect(updatedSsh.port).toBe(2202)
+
+    const http = asHttp(await store.create(httpInput()))
+    const updatedHttp = asHttp(
+      await store.update(http.id, { endpointUrl: 'https://other.example.com/dsh/' })
+    )
+    expect(updatedHttp.endpointUrl).toBe('https://other.example.com/dsh')
+  })
+
+  it('update 非法补丁被拒且实例保持原值', async () => {
+    const created = await store.create(localInput({ name: '原样' }))
+    await expect(store.update(created.id, { endpointUrl: 'mailto:x' })).rejects.toMatchObject({
+      code: 'invalid-input'
+    })
+    await expect(
+      store.update(created.id, { unknownField: 1 } as unknown as PatchInstanceInput)
+    ).rejects.toMatchObject({ code: 'invalid-input' })
+    await expect(store.update(created.id, { name: '' })).rejects.toMatchObject({
+      code: 'invalid-input'
+    })
+    expect((await store.get(created.id))?.name).toBe('原样')
+  })
+
+  it('update 不存在的 id → not-found', async () => {
+    await expect(store.update(randomUUID(), { name: 'x' })).rejects.toBeInstanceOf(
+      InstanceStoreError
+    )
+    await expect(store.update(randomUUID(), { name: 'x' })).rejects.toMatchObject({
+      code: 'not-found'
+    })
+  })
+})
+
+describe('createInstanceStore / 原子性与备份', () => {
+  it('多次变更后无 .tmp-* 残留,备份随改动滚动', async () => {
+    const record = await store.create(localInput())
+    for (let i = 0; i < 3; i++) {
+      await store.update(record.id, { name: `改名-${i}` })
+    }
+    const names = await readdir(dir)
+    expect(names.some((name) => name.includes('.tmp-'))).toBe(false)
+    const baks = names.filter((name) => name.startsWith('instances.json.bak-'))
+    expect(baks.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('备份保留份数上限(默认 20)', async () => {
+    const record = await store.create(localInput())
+    for (let i = 0; i < 25; i++) {
+      await store.update(record.id, { name: `改-${i}` })
+    }
+    const names = await readdir(dir)
+    const baks = names.filter((name) => name.startsWith('instances.json.bak-'))
+    expect(baks.length).toBeLessThanOrEqual(20)
+  })
+
+  it('并发写串行化:10 个并发 create 全部落盘且文件合法', async () => {
+    await Promise.all(
+      Array.from({ length: 10 }, (_, i) => store.create(localInput({ name: `并发-${i}` })))
+    )
+    expect(await store.list()).toHaveLength(10)
+    const file = (await readRegistryFile()) as { instances: unknown[] }
+    expect(file.instances).toHaveLength(10)
+    const names = await readdir(dir)
+    expect(names.some((name) => name.includes('.tmp-'))).toBe(false)
+  })
+})
+
+describe('createInstanceStore / 损坏恢复与迁移', () => {
+  it('JSON 垃圾文件:隔离到 .corrupt-* 并从空注册表继续', async () => {
+    await store.create(localInput())
+    await writeFile(join(dir, 'instances.json'), '{{{ 不是 JSON', 'utf8')
+    const fresh = tmpRun()
+    expect(await fresh.list()).toEqual([])
+    const stats = await fresh.stats()
+    expect(stats.lastRecoveryAt).not.toBeNull()
+    expect(stats.corruptCount).toBeGreaterThanOrEqual(1)
+    // 主文件被移走,可再正常写入
+    const record = await fresh.create(localInput({ name: '恢复后' }))
+    expect((await fresh.get(record.id))?.name).toBe('恢复后')
+  })
+
+  it('schema 不合法的文件(实例端口越界)同样隔离', async () => {
+    await writeFile(
+      join(dir, 'instances.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        instances: [{ id: randomUUID(), name: '坏', transport: 'local', authMode: 'auto', port: 0 }]
+      }),
+      'utf8'
+    )
+    expect(await store.list()).toEqual([])
+    expect((await store.stats()).corruptCount).toBe(1)
+  })
+
+  it('隔离副本保留上限(默认 5)', async () => {
+    for (let i = 0; i < 6; i++) {
+      await writeFile(join(dir, 'instances.json'), 'garbage', 'utf8')
+      await tmpRun().list() // 每次触发一次恢复
+    }
+    const names = await readdir(dir)
+    const corrupts = names.filter((name) => name.startsWith('instances.json.corrupt-'))
+    expect(corrupts.length).toBeLessThanOrEqual(5)
+  })
+
+  it('v0 无版本号文件经注入迁移器升级到 v1', async () => {
+    const oldId = randomUUID()
+    const migrated = tmpRun({
+      migrations: {
+        0: (file: unknown) => ({
+          ...(file as object),
+          schemaVersion: 1
+        })
+      }
+    })
+    await writeFile(
+      join(dir, 'instances.json'),
+      JSON.stringify({
+        instances: [
+          {
+            id: oldId,
+            name: '旧实例',
+            transport: 'local',
+            authMode: 'auto',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z'
+          }
+        ]
+      }),
+      'utf8'
+    )
+    const list = await migrated.list()
+    expect(list).toHaveLength(1)
+    expect(list[0]?.id).toBe(oldId)
+    // 迁移后文件被重写为当前版本
+    const file = (await readRegistryFile()) as { schemaVersion: number }
+    expect(file.schemaVersion).toBe(1)
+  })
+
+  it('缺少迁移器或文件来自未来版本 → 隔离', async () => {
+    await writeFile(
+      join(dir, 'instances.json'),
+      JSON.stringify({ instances: [], schemaVersion: 0 }),
+      'utf8'
+    )
+    // 无迁移器(默认空表);每次用新 store 实例,避免读缓存
+    expect(await tmpRun().list()).toEqual([])
+    expect((await tmpRun().stats()).corruptCount).toBe(1)
+
+    await writeFile(
+      join(dir, 'instances.json'),
+      JSON.stringify({ instances: [], schemaVersion: 99 }),
+      'utf8'
+    )
+    expect(await tmpRun().list()).toEqual([])
+    expect((await tmpRun().stats()).corruptCount).toBe(2)
+  })
+})

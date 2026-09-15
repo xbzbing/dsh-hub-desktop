@@ -18,7 +18,10 @@ export default function App() {
       return
     }
     BRIDGE.getInfo()
-      .then(setInfo)
+      .then((result) => {
+        if (result.ok) setInfo(result.value)
+        else setBridgeError(result.message)
+      })
       .catch((error: unknown) => setBridgeError(String(error)))
   }, [])
 
@@ -30,7 +33,8 @@ export default function App() {
     if (!BRIDGE) return
     try {
       const result = await BRIDGE.ping('hello from renderer')
-      setPong(result)
+      if (result.ok) setPong(result.value)
+      else setBridgeError(result.message)
     } catch (error) {
       setBridgeError(String(error))
     }
