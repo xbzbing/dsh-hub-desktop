@@ -308,6 +308,12 @@ void app.whenReady().then(() => {
           isMainFrame: details.resourceType === 'mainFrame'
         })
         if (signal) {
+          // T9:会话失效 → 先静默重探(带已存 Cookie 自动恢复);仍失败才由 auth-panel 接手
+          if (signal === 'session-expired' && auth) {
+            void auth.probe(instance.id).catch((error: unknown) =>
+              console.error('[main] 静默重探失败：', error)
+            )
+          }
           for (const target of BrowserWindow.getAllWindows()) {
             if (!target.isDestroyed()) {
               target.webContents.send(AUTH_IPC.signal, {
