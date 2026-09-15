@@ -10,6 +10,8 @@ vi.mock('electron', () => ({
 }))
 
 import { ipcMain } from 'electron'
+import type { InstanceStatusEvent } from '@shared/contracts'
+import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import { createInstanceStore } from '../registry/instance-store'
 import { registerIpc } from './register'
 
@@ -19,6 +21,16 @@ const TEST_BASE = join(process.cwd(), 'hub-data', 'test-tmp')
 
 let dir: string
 let handlers: Map<string, Listener>
+let runtimeFake: {
+  onStatus: ReturnType<typeof vi.fn>
+  statusOf: ReturnType<typeof vi.fn>
+  runningIds: ReturnType<typeof vi.fn>
+  start: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
+  stopAll: ReturnType<typeof vi.fn>
+}
+let openInstanceView: ReturnType<typeof vi.fn>
+let currentStatus: InstanceStatusEvent | null
 
 beforeEach(async () => {
   await mkdir(TEST_BASE, { recursive: true })
@@ -28,7 +40,20 @@ beforeEach(async () => {
     handlers.set(channel as string, listener as Listener)
     return undefined as never
   })
-  registerIpc(createInstanceStore({ dir }))
+  currentStatus = null
+  runtimeFake = {
+    onStatus: vi.fn(() => () => undefined),
+    statusOf: vi.fn(() => currentStatus),
+    runningIds: vi.fn(() => []),
+    start: vi.fn(async () => undefined),
+    stop: vi.fn(async () => undefined),
+    stopAll: vi.fn(async () => undefined)
+  }
+  openInstanceView = vi.fn()
+  registerIpc(createInstanceStore({ dir }), {
+    runtime: runtimeFake as unknown as LocalRuntimeManager,
+    openInstanceView: openInstanceView as never
+  })
 })
 
 afterEach(async () => {
@@ -44,7 +69,7 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 const VALID_LOCAL = { transport: 'local', name: 'IPC 实例' }
 
 describe('registerIpc', () => {
-  it('注册 app 双探针 + 实例 CRUD 五个通道', () => {
+  it('注册 app 双探针 + 实例 CRUD + 运行时控制共十个通道', () => {
     const expected = [
       'app:info',
       'app:ping',
@@ -52,7 +77,10 @@ describe('registerIpc', () => {
       'instances:get',
       'instances:create',
       'instances:update',
-      'instances:delete'
+      'instances:delete',
+      'instances:start',
+      'instances:stop',
+      'instances:openView'
     ]
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
   })
@@ -153,5 +181,71 @@ describe('registerIpc', () => {
       value: { removed: boolean }
     }
     if (again.ok) expect(again.value.removed).toBe(false)
+  })
+
+  // —— T3 运行时控制 ——
+
+  it('start:local 实例 → 交给 runtime.start 并立即返回(不阻塞安装/启动)', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const result = (await invoke('instances:start', created.value.id)) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(runtimeFake.start).toHaveBeenCalledTimes(1)
+    const record = runtimeFake.start.mock.calls[0]?.[0]
+    expect(record).toMatchObject({ id: created.value.id, transport: 'local' })
+  })
+
+  it('start:非 local 实例 → invalid-input', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const result = (await invoke('instances:start', created.value.id)) as { ok: boolean; code: string }
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('invalid-input')
+    expect(runtimeFake.start).not.toHaveBeenCalled()
+  })
+
+  it('start:不存在的 id → not-found', async () => {
+    const result = (await invoke('instances:start', randomUUID())) as { ok: boolean; code: string }
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('not-found')
+  })
+
+  it('stop 交给 runtime.stop;openView 未运行 → invalid-state', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const stopResult = (await invoke('instances:stop', created.value.id)) as { ok: boolean }
+    expect(stopResult.ok).toBe(true)
+    expect(runtimeFake.stop).toHaveBeenCalledWith(created.value.id)
+
+    const viewResult = (await invoke('instances:openView', created.value.id)) as {
+      ok: boolean
+      code: string
+    }
+    expect(viewResult.ok).toBe(false)
+    if (!viewResult.ok) expect(viewResult.code).toBe('invalid-state')
+  })
+
+  it('openView:运行中实例 → 用就绪 URL 打开窗口', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    currentStatus = {
+      id: created.value.id,
+      status: 'running',
+      url: 'http://127.0.0.1:31234/?token=abc',
+      port: 31234,
+      at: '2026-09-15T00:00:00.000Z'
+    }
+
+    const result = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(openInstanceView).toHaveBeenCalledTimes(1)
+    expect(openInstanceView.mock.calls[0]?.[1]).toBe('http://127.0.0.1:31234/?token=abc')
   })
 })

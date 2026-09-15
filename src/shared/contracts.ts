@@ -124,6 +124,7 @@ export const InstanceRecordSchema = z.discriminatedUnion('transport', [
   HttpInstanceSchema
 ])
 export type InstanceRecord = z.infer<typeof InstanceRecordSchema>
+export type LocalInstance = Extract<InstanceRecord, { transport: 'local' }>
 
 // ===== 创建输入（IPC 边界，.strict()：未知字段一律拒绝） =====
 
@@ -231,7 +232,7 @@ export interface InstanceSummary {
   updatedAt: string
 }
 
-/** T2 注册的 CRUD 通道；start/stop/openView、auth:* 在其任务内追加（实现计划 §4） */
+/** T2 注册的 CRUD 通道；auth:* 在其任务内追加（实现计划 §4） */
 export const INSTANCE_IPC = {
   list: 'instances:list',
   get: 'instances:get',
@@ -240,7 +241,34 @@ export const INSTANCE_IPC = {
   delete: 'instances:delete'
 } as const
 
-export type IpcErrorCode = 'invalid-input' | 'not-found' | 'io-error' | 'internal'
+/** T3 本地运行时控制通道：start/stop 立即返回，进展由 `instance:status` 事件回推 */
+export const INSTANCE_RUNTIME_IPC = {
+  start: 'instances:start',
+  stop: 'instances:stop',
+  openView: 'instances:openView'
+} as const
+
+/** 主进程 → 渲染进程的状态推送通道（状态机推进的唯一来源） */
+export const INSTANCE_STATUS_EVENT = 'instance:status'
+
+export type InstanceRuntimeStatus = 'stopped' | 'starting' | 'running' | 'error'
+
+export interface InstanceStatusEvent {
+  id: string
+  status: InstanceRuntimeStatus
+  /** 就绪 URL（本地实例带 browser-auth 令牌）；status=running 时存在 */
+  url?: string
+  /** 实际监听端口（以 dsh 打印的就绪 URL 为准，可能与预分配端口不同） */
+  port?: number
+  /** 本次启动使用的 dsh 运行时版本（解析后回填，供 UI 展示与注册表回写） */
+  version?: string
+  /** 人读诊断信息（进度 / 失败归因） */
+  detail?: string
+  /** 事件时间（ISO） */
+  at: string
+}
+
+export type IpcErrorCode = 'invalid-input' | 'not-found' | 'invalid-state' | 'io-error' | 'internal'
 
 /** IPC 统一响应信封：错误码稳定，文案由渲染层按码表映射（PRD §8） */
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; code: IpcErrorCode; message: string }

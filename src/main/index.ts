@@ -1,8 +1,12 @@
 import { app, BrowserWindow, net, protocol, session, shell } from 'electron'
 import { join, normalize, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { INSTANCE_STATUS_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
+import { createLocalRuntime, type LocalRuntimeManager } from './local-runtime/local-runtime'
+import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import { createInstanceStore } from './registry/instance-store'
+import { closeInstanceWindow, openInstanceWindow } from './window-host'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'] ?? null
@@ -157,18 +161,62 @@ function registerCsp(): void {
   })
 }
 
+/** 运行中的本地实例管理器（退出前需回收进程树，故提到模块级） */
+let runtime: LocalRuntimeManager | null = null
+let quitting = false
+
 void app.whenReady().then(() => {
   registerRendererProtocol()
   registerCsp()
+
+  const dataRoot = app.getPath('userData')
   // 注册表落盘位置：<userData>/registry/instances.json（+ 滚动备份 + 损坏隔离）
-  const instanceStore = createInstanceStore({ dir: join(app.getPath('userData'), 'registry') })
-  registerIpc(instanceStore)
+  const instanceStore = createInstanceStore({ dir: join(dataRoot, 'registry') })
+  const installer = createRuntimeInstaller({
+    runtimesDir: join(dataRoot, 'runtimes'),
+    cacheDir: join(dataRoot, 'npm-cache')
+  })
+  runtime = createLocalRuntime({ installer, dataRoot })
+
+  // 状态推进 → 广播到所有窗口；并把实际端口/版本回写注册表、回收已停止实例的窗口
+  runtime.onStatus((event) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(INSTANCE_STATUS_EVENT, event)
+    }
+    if (event.status === 'running' && (event.port !== undefined || event.version !== undefined)) {
+      void instanceStore
+        .update(event.id, {
+          ...(event.port !== undefined ? { port: event.port } : {}),
+          ...(event.version !== undefined ? { dshVersion: event.version } : {})
+        })
+        .catch((error: unknown) => console.error('[main] 回写实例运行信息失败：', error))
+    }
+    if (event.status === 'stopped') closeInstanceWindow(event.id)
+  })
+
+  registerIpc(instanceStore, {
+    runtime,
+    openInstanceView: (instance, url) =>
+      openInstanceWindow({ instanceId: instance.id, title: instance.name, url })
+  })
+
   createWindow()
 
   app.on('activate', () => {
     // macOS 惯例：点击 Dock 图标且无窗口时重建窗口
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', (event) => {
+  // 退出前回收全部实例进程树（设计 §4.1：不留孤儿进程）
+  if (quitting || !runtime) return
+  quitting = true
+  event.preventDefault()
+  void runtime
+    .stopAll()
+    .catch((error: unknown) => console.error('[main] 停止实例失败：', error))
+    .finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

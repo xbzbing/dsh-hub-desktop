@@ -38,7 +38,7 @@ const FILE_NAME = 'instances.json'
 const BAK_PREFIX = `${FILE_NAME}.bak-`
 const CORRUPT_PREFIX = `${FILE_NAME}.corrupt-`
 
-export type StoreErrorCode = 'invalid-input' | 'not-found' | 'io-error'
+export type StoreErrorCode = 'invalid-input' | 'not-found' | 'invalid-state' | 'io-error'
 
 export class InstanceStoreError extends Error {
   readonly code: StoreErrorCode

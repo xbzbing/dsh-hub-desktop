@@ -10,6 +10,7 @@
 import type {
   CreateInstanceInput,
   InstanceRecord,
+  InstanceStatusEvent,
   InstanceSummary,
   IpcResult,
   PatchInstanceInput
@@ -55,4 +56,12 @@ export interface DshHubBridge {
     update: (id: string, patch: PatchInstanceInput) => Promise<IpcResult<InstanceRecord>>
     remove: (id: string) => Promise<IpcResult<{ removed: boolean }>>
   }
+  /** 本地实例运行时控制（T3）：start/stop 立即返回，进展经 onInstanceStatus 回推 */
+  runtime: {
+    start: (id: string) => Promise<IpcResult<null>>
+    stop: (id: string) => Promise<IpcResult<null>>
+    openView: (id: string) => Promise<IpcResult<null>>
+  }
+  /** 订阅实例状态事件；返回取消订阅函数（渲染层不接触原始 IPC 事件对象） */
+  onInstanceStatus: (listener: (event: InstanceStatusEvent) => void) => () => void
 }

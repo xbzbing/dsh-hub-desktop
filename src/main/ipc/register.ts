@@ -12,12 +12,21 @@ import {
   CreateInstanceInputSchema,
   formatZodIssues,
   INSTANCE_IPC,
+  INSTANCE_RUNTIME_IPC,
   PatchInstanceSchema,
   type InstanceRecord,
   type InstanceSummary,
   type IpcResult
 } from '@shared/contracts'
+import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
+
+export interface IpcDeps {
+  /** 本地运行时（T3）；SSH / HTTP 传输在各自任务内接入同一状态通道 */
+  runtime: LocalRuntimeManager
+  /** 打开实例视图窗口（electron 侧实现，便于 register 单测注入假实现） */
+  openInstanceView: (instance: InstanceRecord, url: string) => void
+}
 
 async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
   try {
@@ -49,7 +58,7 @@ function toSummary(record: InstanceRecord): InstanceSummary {
   }
 }
 
-export function registerIpc(store: InstanceStore): void {
+export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   const processVersions = process.versions as NodeJS.ProcessVersions & { electron?: string }
 
   // 全部通道统一返回 IpcResult 信封：错误码稳定，渲染层按码表映射文案（PRD §8）
@@ -96,5 +105,41 @@ export function registerIpc(store: InstanceStore): void {
     INSTANCE_IPC.delete,
     (_event, id: unknown): Promise<IpcResult<{ removed: boolean }>> =>
       wrap(async () => ({ removed: await store.remove(parseId(id)) }))
+  )
+
+  // —— 本地运行时控制（T3）：start/stop 立即返回，进展经 `instance:status` 事件回推 ——
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.start, (_event, id: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      const instance = await store.get(parseId(id))
+      if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
+      if (instance.transport !== 'local') {
+        throw new InstanceStoreError('invalid-input', '本机启动仅适用于 local 传输实例')
+      }
+      // 不 await：安装/启动可能耗时数十秒，进展与失败都走状态事件
+      void deps.runtime.start(instance)
+      return null
+    })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.stop, (_event, id: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      await deps.runtime.stop(parseId(id))
+      return null
+    })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.openView, (_event, id: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      const instanceId = parseId(id)
+      const instance = await store.get(instanceId)
+      if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
+      const status = deps.runtime.statusOf(instanceId)
+      if (status?.status !== 'running' || !status.url) {
+        throw new InstanceStoreError('invalid-state', '实例尚未运行，无法打开视图')
+      }
+      deps.openInstanceView(instance, status.url)
+      return null
+    })
   )
 }
