@@ -178,6 +178,42 @@ export const MESSAGES = {
   'detail.notRunning': { zh: '未运行', en: 'Not running' },
   'detail.instanceDetail': { zh: '实例详情', en: 'Instance details' },
 
+  // —— SSH 指纹/口令对话框（T11）——
+  'ssh.hostKeyChangedTitle': { zh: '服务器指纹已变化', en: 'Server fingerprint changed' },
+  'ssh.hostKeyTitle': { zh: '连接安全确认', en: 'Confirm connection security' },
+  'ssh.hostKeyChangedSub': { zh: '与此前信任的不一致', en: 'differs from what was trusted before' },
+  'ssh.hostKeyNewSub': { zh: '首次连接前需核对身份', en: 'verify the identity before first connecting' },
+  'ssh.hostKeyChangedHint': {
+    zh: '仅在你已与服务管理员核对过指纹后再继续',
+    en: 'Continue only after verifying the fingerprint with the server administrator'
+  },
+  'ssh.hostKeyNewHint': {
+    zh: '确认后会写入本机私有 known_hosts',
+    en: 'Confirming writes it to the app-private known_hosts'
+  },
+  'ssh.hostKeyMismatch': {
+    zh: '这台服务器出示的指纹与已信任的不一致。',
+    en: 'The fingerprint this server presents differs from the trusted one.'
+  },
+  'ssh.askpassTitle': { zh: '需要输入 SSH 口令', en: 'SSH passphrase required' },
+  'ssh.askpassTransient': {
+    zh: '口令只用于本次连接，不会写入磁盘或日志',
+    en: 'The passphrase is used for this connection only and is never written to disk or logs'
+  },
+  'ssh.askpassLabel': { zh: '口令 / 私钥口令', en: 'Passphrase / key passphrase' },
+  'ssh.confirmAdvanced': { zh: '我已确认（高级）', en: 'I have verified it (advanced)' },
+  'ssh.trustAndConnect': { zh: '这是我的服务器，信任并连接', en: 'This is my server — trust and connect' },
+  'ssh.changedWarning': {
+    zh: '可能是服务器重装或密钥轮换，也可能是中间人攻击。请先与服务管理员核对，再决定是否继续。',
+    en: 'This can be a reinstall or key rotation, but it can also be a man-in-the-middle attack. Verify with the server administrator before continuing.'
+  },
+  'ssh.untrustedHint': {
+    zh: '「{target}」还没有被信任过，请核对下面的指纹是否与服务端一致。',
+    en: '"{target}" has not been trusted yet. Check that the fingerprint below matches the server.'
+  },
+  'ssh.previouslyTrusted': { zh: '此前信任：', en: 'Previously trusted: ' },
+  'ssh.continue': { zh: '继续', en: 'Continue' },
+
   // —— 总览表格（T11）——
   'home.statInstances': { zh: '个实例，本地 / SSH / 远程统一入口', en: 'instances — one place for local, SSH and remote' },
   'home.statConnected': { zh: '个已连接，通道正常', en: 'connected with a healthy channel' },

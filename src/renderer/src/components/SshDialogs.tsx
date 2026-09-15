@@ -54,18 +54,18 @@ export default function SshDialogs(): ReactNode {
     return (
       <Modal
         closeLabel={t('common.close')}
-        title={changed ? '服务器指纹已变化' : '连接安全确认'}
-        sub={`${hostKey.target} · ${changed ? '与此前信任的不一致' : '首次连接前需核对身份'}`}
+        title={changed ? t('ssh.hostKeyChangedTitle') : t('ssh.hostKeyTitle')}
+        sub={`${hostKey.target} · ${changed ? t('ssh.hostKeyChangedSub') : t('ssh.hostKeyNewSub')}`}
         onClose={() => replyHostKey('reject')}
         testId="fingerprint-dialog"
         footer={
           <>
             <span className="meta">
-              {changed ? '仅在你已与服务管理员核对过指纹后再继续' : '确认后会写入本机私有 known_hosts'}
+              {changed ? t('ssh.hostKeyChangedHint') : t('ssh.hostKeyNewHint')}
             </span>
             <div className="right">
               <button className="btn btn-secondary" onClick={() => replyHostKey('reject')}>
-                取消
+               {t('common.cancel')}
               </button>
               {changed ? (
                 <button
@@ -73,7 +73,7 @@ export default function SshDialogs(): ReactNode {
                   data-testid="fingerprint-accept"
                   onClick={() => replyHostKey('trust')}
                 >
-                  我已确认（高级）
+                  {t('ssh.confirmAdvanced')}
                 </button>
               ) : (
                 <button
@@ -81,7 +81,7 @@ export default function SshDialogs(): ReactNode {
                   data-testid="fingerprint-accept"
                   onClick={() => replyHostKey('trust')}
                 >
-                  这是我的服务器，信任并连接
+                  {t('ssh.trustAndConnect')}
                 </button>
               )}
             </div>
@@ -92,13 +92,13 @@ export default function SshDialogs(): ReactNode {
           <div className="note n-err" data-testid="fingerprint-changed-warning">
             <Icon name="alert" />
             <span>
-              <b>这台服务器出示的指纹与已信任的不一致。</b>
-              可能是服务器重装或密钥轮换，也可能是中间人攻击。请先与服务管理员核对，再决定是否继续。
+              <b>{t('ssh.hostKeyMismatch')}</b>
+              {t('ssh.changedWarning')}
             </span>
           </div>
         ) : (
           <p style={{ fontSize: '12.5px', color: 'var(--muted)' }}>
-            「{hostKey.target}」还没有被信任过，请核对下面的指纹是否与服务端一致。
+            {t('ssh.untrustedHint', { target: hostKey.target })}
           </p>
         )}
         <div className="inset mt12">
@@ -111,13 +111,14 @@ export default function SshDialogs(): ReactNode {
                 className="btn btn-ghost btn-sm"
                 onClick={() => void navigator.clipboard.writeText(entry.fingerprint)}
               >
-                <Icon name="copy" /> 复制
+                <Icon name="copy" /> {t('common.copy')}
               </button>
             </div>
           ))}
           {changed && hostKey.previousFingerprints.length > 0 && (
             <div className="meta mt12" data-testid="fingerprint-previous">
-              此前信任：{hostKey.previousFingerprints.map((entry) => entry.fingerprint).join(' · ')}
+              {t('ssh.previouslyTrusted')}
+              {hostKey.previousFingerprints.map((entry) => entry.fingerprint).join(' · ')}
             </div>
           )}
         </div>
@@ -129,16 +130,16 @@ export default function SshDialogs(): ReactNode {
     return (
       <Modal
         closeLabel={t('common.close')}
-        title="需要输入 SSH 口令"
+        title={t('ssh.askpassTitle')}
         sub={askpass.prompt}
         onClose={() => replyAskpass(null)}
         testId="askpass-dialog"
         footer={
           <>
-            <span className="meta">口令只用于本次连接，不会写入磁盘或日志</span>
+            <span className="meta">{t('ssh.askpassTransient')}</span>
             <div className="right">
               <button className="btn btn-secondary" onClick={() => replyAskpass(null)}>
-                取消
+               {t('common.cancel')}
               </button>
               <button
                 className="btn btn-primary"
@@ -146,14 +147,14 @@ export default function SshDialogs(): ReactNode {
                 onClick={() => replyAskpass(secret)}
                 disabled={secret === ''}
               >
-                继续
+               {t('ssh.continue')}
               </button>
             </div>
           </>
         }
       >
         <div className="field">
-          <label htmlFor="askpass-secret">口令 / 私钥口令</label>
+          <label htmlFor="askpass-secret">{t('ssh.askpassLabel')}</label>
           <input
             id="askpass-secret"
             className="input"
