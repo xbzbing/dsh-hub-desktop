@@ -24,7 +24,7 @@ pnpm typecheck      # node + web + e2e 三工程(tsconfig ×3)
 pnpm lint           # eslint(flat config)
 pnpm test           # 单测(vitest,含 store/ipc/endpoint)
 pnpm build          # 三端产物(E2E 前置)
-pnpm test:e2e       # Playwright _electron(7 用例)
+pnpm test:e2e       # Playwright _electron(9 用例)
 ```
 
 - 提交前必须:`pnpm typecheck && pnpm lint && pnpm test` 全绿;E2E 至少跑一次
