@@ -4,8 +4,8 @@
  * 职责(不 import electron):
  * - `probeAndRestore()`:识别网关(302→/login、401 unauthenticated)并**优先静默恢复**
  *   (带已存 Cookie 打 `GET /login-api/settings` = 200 → 直接 connected,不打扰用户);
- * - `login(password)`:提交密码;400 otp-required → 进入验证码阶段;200 → connected;
- * - `submitOtp(otp)` / `submitBackupCode(code)`:验证码阶段提交(同一次请求带码优先);
+ * - `login(password, otp?)`:提交密码;400 otp-required → 进入验证码阶段;200 → connected;
+ *   验证码阶段**复用同一次密码**重发 /login/auth(设计 §5.2「优先单次请求带码」,不做分步 /otp/verify);
  * - `logout()`:清 Cookie 并回到 needs-auth;
  * - 429(rate-limited / too-many-attempts):以 `retryAfterSeconds` 为唯一计时依据,
  *   锁定期间 `canSubmit()` 为 false(UI 据此显示倒计时并禁用提交);
@@ -14,14 +14,7 @@
 import { createBackoff, type BackoffController } from './backoff'
 import { createGatewayClient, type GatewayClient, type GatewayResult } from './gateway-client'
 import { createCookieJar, type CookieJar } from './cookie-jar'
-import {
-  canSubmit,
-  canSubmitOtp,
-  eventFromFailure,
-  initialState,
-  type AuthState,
-  transition
-} from './gateway-state'
+import { canSubmit, eventFromFailure, initialState, type AuthState, transition } from './gateway-state'
 import type { HttpAuthDetection } from '@shared/contracts'
 import { detectAuthMode } from './detect'
 
@@ -49,11 +42,11 @@ export interface AuthClient {
   probeAndRestore(): Promise<AuthDetection>
   /** 提交密码(可同时带验证码完成单请求 2FA) */
   login(password: string, otp?: string): Promise<AuthState>
-  submitOtp(otp: string): Promise<AuthState>
-  submitBackupCode(code: string): Promise<AuthState>
   logout(): Promise<AuthState>
   /** 是否持有会话 Cookie(不代表服务端仍有效) */
   hasSession(): boolean
+  /** 刷新锁定剩余量(供 UI 倒计时调用;锁定由 backoff 单一计时来源派生) */
+  tick(): AuthState
 }
 
 export function createAuthClient(options: AuthClientOptions): AuthClient {
@@ -70,6 +63,20 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     state = next
     options.onState?.(next)
     return next
+  }
+
+  /**
+   * R1 修复:锁定剩余量以 backoff 为**单一计时来源**(此前状态机自己算一份且无人清零,
+   * 导致 429 后永久锁定)。每次读取状态/守卫前先同步一次。
+   */
+  function syncLock(): AuthState {
+    const remaining = backoff.state().remainingMs
+    if (remaining === state.lockedForMs) return state
+    return publish(
+      remaining > 0
+        ? { ...state, lockedForMs: remaining }
+        : { ...state, lockedForMs: 0, message: null, lastErrorCode: null }
+    )
   }
 
   function apply(event: Parameters<typeof transition>[1]): AuthState {
@@ -89,7 +96,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     instanceId: options.instanceId,
     jar: gateway.jar,
     backoff,
-    state: () => state,
+    state: () => syncLock(),
     hasSession: () => gateway.hasSession(),
 
     async probeAndRestore() {
@@ -101,7 +108,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
           apply({ type: 'session-restored', otpEnabled: settings.value.otpEnabled })
           return {
             mode: 'gateway',
-            gatewayEvidence: 'api-401',
+            gatewayEvidence: null,
             evidence: '已存会话有效（静默恢复）',
             status: 200,
             at: new Date().toISOString()
@@ -131,7 +138,7 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     },
 
     async login(password, otp) {
-      if (!backoff.canAttempt() || !canSubmit(state)) return state
+      if (!backoff.canAttempt() || !canSubmit(syncLock())) return syncLock()
       const result = await gateway.login({ password, ...(otp === undefined ? {} : { otp }) })
       if (result.ok) {
         backoff.recordSuccess()
@@ -140,42 +147,16 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       return handleFailure(result)
     },
 
-    async submitOtp(otp) {
-      if (!backoff.canAttempt() || !canSubmitOtp(state)) return state
-      // 已有会话(补验路径)优先走 /otp/verify;否则用「密码未知」场景由调用方走 login
-      if (gateway.hasSession()) {
-        const result = await gateway.verifyOtp(otp)
-        if (result.ok) {
-          backoff.recordSuccess()
-          return apply({ type: 'login-succeeded', usedOtp: true })
-        }
-        return handleFailure(result)
-      }
-      return state
-    },
-
-    async submitBackupCode(code) {
-      if (!backoff.canAttempt() || !canSubmitOtp(state)) return state
-      if (gateway.hasSession()) {
-        const result = await gateway.verifyBackupCode(code)
-        if (result.ok) {
-          backoff.recordSuccess()
-          return apply({ type: 'login-succeeded', usedOtp: true })
-        }
-        return handleFailure(result)
-      }
-      return state
-    },
 
     async logout() {
-      const result = await gateway.logout()
+      // 登出失败也清本地会话(用户意图明确);状态统一回「等待凭据」
+      await gateway.logout()
       backoff.recordSuccess()
-      if (!result.ok && result.code !== 'unauthenticated') {
-        // 登出失败也清本地会话(用户意图明确)
-        return apply({ type: 'session-absent' })
-      }
+      gateway.jar.clear()
       return apply({ type: 'session-absent' })
-    }
+    },
+
+    tick: () => syncLock()
   }
 }
 

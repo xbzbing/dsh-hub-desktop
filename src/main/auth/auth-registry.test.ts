@@ -24,10 +24,9 @@ function fakeClient(): AuthClient {
       at: 'now'
     })),
     login: vi.fn(async () => initialState()),
-    submitOtp: vi.fn(async () => initialState()),
-    submitBackupCode: vi.fn(async () => initialState()),
     logout: vi.fn(async () => initialState()),
-    hasSession: () => false
+    hasSession: () => false,
+    tick: () => initialState()
   }
 }
 
@@ -72,8 +71,6 @@ describe('auth-registry（T8 每实例客户端）', () => {
     const registry = createAuthRegistry({ resolveEndpoint: async () => null, factory: () => fakeClient() })
     expect(await registry.probe('x')).toBeNull()
     expect(await registry.login('x', 'pw')).toBeNull()
-    expect(await registry.submitOtp('x', '123456')).toBeNull()
-    expect(await registry.submitBackupCode('x', 'code')).toBeNull()
   })
 
   it('sessionCookie 无会话返回 null', async () => {

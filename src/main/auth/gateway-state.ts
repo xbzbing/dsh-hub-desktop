@@ -129,8 +129,14 @@ export function transition(state: AuthState, event: AuthEvent): AuthTransition {
       }
 
     case 'session-absent':
+      // 探测为网关且无有效会话 → 直接进入「等待凭据」(设计 §5.3 的 NEEDS_AUTH→AWAIT_CREDENTIALS 边)
       return {
-        state: { ...state, phase: 'needs-auth', message: null, lastErrorCode: null },
+        state: {
+          ...state,
+          phase: state.phase === 'needs-auth' ? 'await-credentials' : 'needs-auth',
+          message: null,
+          lastErrorCode: null
+        },
         action: 'none'
       }
 

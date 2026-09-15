@@ -9,6 +9,9 @@
 
 import type {
   AskpassPromptPayload,
+  AuthSignalEvent,
+  AuthStateEvent,
+  AuthStateSnapshot,
   CreateInstanceInput,
   HostKeyDecision,
   HostKeyPromptPayload,
@@ -87,5 +90,16 @@ export interface DshHubBridge {
   http: {
     /** 对草稿 URL 做 §2.3 探测；非法 URL 返回 invalid-input 信封 */
     detect: (endpointUrl: string) => Promise<IpcResult<HttpAuthDetection>>
+  }
+  /** 认证（T8）：状态流 + 登录提交（凭据只在主进程内存中流转） */
+  auth: {
+    probe: (instanceId: string) => Promise<IpcResult<AuthStateSnapshot | null>>
+    /** 提交密码（可同时带 OTP 完成单请求 2FA） */
+    login: (instanceId: string, password: string, otp?: string) => Promise<IpcResult<AuthStateSnapshot | null>>
+    logout: (instanceId: string) => Promise<IpcResult<AuthStateSnapshot | null>>
+    /** 订阅状态变化；返回取消订阅函数 */
+    onState: (listener: (event: AuthStateEvent) => void) => () => void
+    /** 订阅 webview 拦截信号（会话失效/需要验证码/需要改密） */
+    onSignal: (listener: (event: AuthSignalEvent) => void) => () => void
   }
 }

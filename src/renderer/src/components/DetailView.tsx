@@ -140,6 +140,21 @@ export default function DetailView(): ReactNode {
             </div>
           )}
           <div className="row mt12">
+            {record.transport !== 'local' && record.authMode !== 'none' && (
+              <button
+                className="btn btn-primary btn-sm"
+                data-testid="login-btn"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent('dsh-hub:open-auth', {
+                      detail: { id: record.id, name: record.name }
+                    })
+                  )
+                }
+              >
+                <Icon name="key" /> 登录 / 重新登录
+              </button>
+            )}
             <button className="btn btn-secondary btn-sm" onClick={() => void copyAddress()}>
               <Icon name="copy" /> 复制地址
             </button>

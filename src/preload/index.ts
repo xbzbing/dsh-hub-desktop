@@ -1,12 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC, type AppInfo, type DshHubBridge, type PingResult } from '@shared/bridge'
 import {
+  AUTH_IPC,
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
   HTTP_IPC,
   INSTANCE_STATUS_EVENT,
   SSH_IPC,
   type AskpassPromptPayload,
+  type AuthSignalEvent,
+  type AuthStateEvent,
+  type AuthStateSnapshot,
   type HostKeyDecision,
   type HostKeyPromptPayload,
   type HttpAuthDetection,
@@ -69,6 +73,30 @@ const bridge: DshHubBridge = {
   http: {
     detect: (endpointUrl: string) =>
       ipcRenderer.invoke(HTTP_IPC.detect, endpointUrl) as Promise<IpcResult<HttpAuthDetection>>
+  },
+  auth: {
+    probe: (instanceId: string) =>
+      ipcRenderer.invoke(AUTH_IPC.probe, instanceId) as Promise<IpcResult<AuthStateSnapshot | null>>,
+    login: (instanceId: string, password: string, otp?: string) =>
+      ipcRenderer.invoke(AUTH_IPC.login, instanceId, password, otp ?? null) as Promise<
+        IpcResult<AuthStateSnapshot | null>
+      >,
+    logout: (instanceId: string) =>
+      ipcRenderer.invoke(AUTH_IPC.logout, instanceId) as Promise<IpcResult<AuthStateSnapshot | null>>,
+    onState: (listener) => {
+      const handler = (_event: unknown, payload: AuthStateEvent): void => listener(payload)
+      ipcRenderer.on(AUTH_IPC.state, handler)
+      return () => {
+        ipcRenderer.removeListener(AUTH_IPC.state, handler)
+      }
+    },
+    onSignal: (listener) => {
+      const handler = (_event: unknown, payload: AuthSignalEvent): void => listener(payload)
+      ipcRenderer.on(AUTH_IPC.signal, handler)
+      return () => {
+        ipcRenderer.removeListener(AUTH_IPC.signal, handler)
+      }
+    }
   }
 }
 

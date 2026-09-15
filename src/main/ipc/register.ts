@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { EndpointParseError } from '@shared/endpoint'
 import { IPC, type AppInfo, type PingResult } from '@shared/bridge'
 import {
+  AUTH_IPC,
   CreateInstanceInputSchema,
   formatZodIssues,
   HTTP_IPC,
@@ -19,6 +20,7 @@ import {
   SSH_IPC,
   SshKeyPreviewInputSchema,
   type HostKeyDecision,
+  type AuthStateSnapshot,
   type HttpAuthDetection,
   type InstanceRecord,
   type InstanceSummary,
@@ -28,6 +30,7 @@ import { detectDraftEndpoint } from '../transport/http-endpoint'
 import type { HttpEndpointManager } from '../transport/http-endpoint'
 import { resolveSshKeyPreview } from '../ssh/key-preview'
 import type { PromptBroker } from '../ssh/prompt-broker'
+import type { AuthRegistry } from '../auth/auth-registry'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
@@ -43,6 +46,8 @@ export interface IpcDeps {
   prompts: PromptBroker
   /** T6 HTTP 直连传输 */
   http: HttpEndpointManager
+  /** T8 每实例认证客户端 */
+  auth: AuthRegistry
 }
 
 async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
@@ -223,6 +228,36 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         deps.prompts.replyHostKey(id, value)
         return null
       })
+  )
+
+  // —— 认证（T8）：状态流 + 登录提交（凭据只在主进程内存中流转） ——
+
+  const authSnapshot = (
+    state: Awaited<ReturnType<AuthRegistry['login']>>
+  ): AuthStateSnapshot | null => (state === null ? null : (state as unknown as AuthStateSnapshot))
+
+  // probe:返回状态快照(探测结论经 auth:state 事件与 T6 detect 暴露;此处主要驱动 UI 阶段)
+  ipcMain.handle(AUTH_IPC.probe, (_event, id: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
+    wrap(async () => {
+      const instanceId = parseId(id)
+      await deps.auth.probe(instanceId)
+      return authSnapshot(deps.auth.stateOf(instanceId) as never)
+    })
+  )
+
+  ipcMain.handle(
+    AUTH_IPC.login,
+    (_event, id: unknown, password: unknown, otp: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
+      wrap(async () => {
+        const instanceId = parseId(id)
+        const pwd = z.string().min(1).max(1024).parse(password)
+        const code = z.string().max(64).nullable().parse(otp ?? null)
+        return authSnapshot(await deps.auth.login(instanceId, pwd, code ?? undefined))
+      })
+  )
+
+  ipcMain.handle(AUTH_IPC.logout, (_event, id: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
+    wrap(async () => authSnapshot(await deps.auth.logout(parseId(id))))
   )
 
   ipcMain.handle(

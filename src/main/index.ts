@@ -2,7 +2,7 @@ import { app, BrowserWindow, net, protocol, session, shell } from 'electron'
 import { join, normalize, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { InstanceStatusEvent, PatchInstanceInput } from '@shared/contracts'
-import { INSTANCE_STATUS_EVENT } from '@shared/contracts'
+import { AUTH_IPC, INSTANCE_STATUS_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
 import { createLocalRuntime } from './local-runtime/local-runtime'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
@@ -12,7 +12,11 @@ import type { SshTunnelManager } from './transport/ssh-tunnel'
 import { createHttpEndpoints } from './transport/http-endpoint'
 import type { HttpEndpointManager } from './transport/http-endpoint'
 import { createPromptBroker } from './ssh/prompt-broker'
+import { createAuthRegistry } from './auth/auth-registry'
+import { importSessionCookie } from './webview/cookie-import'
+import { classifyAuthSignal } from './webview/intercept'
 import type { PromptBroker } from './ssh/prompt-broker'
+import type { AuthRegistry } from './auth/auth-registry'
 import { createInstanceStore } from './registry/instance-store'
 import { closeInstanceWindow, openInstanceWindow } from './window-host'
 
@@ -176,6 +180,8 @@ let tunnels: SshTunnelManager | null = null
 let httpEndpoints: HttpEndpointManager | null = null
 /** T5 提示代理:窗口关闭/退出时收敛所有待答请求(否则指纹/口令请求会挂满超时) */
 let prompts: PromptBroker | null = null
+/** T8 每实例认证客户端(登录成功 → 分区 Cookie 注入 → 打开视图) */
+let auth: AuthRegistry | null = null
 let quitting = false
 
 void app.whenReady().then(() => {
@@ -238,13 +244,73 @@ void app.whenReady().then(() => {
   tunnels.onStatus(handleStatusEvent)
   httpEndpoints.onStatus(handleStatusEvent)
 
+  // T8 认证:端点取自注册表;状态变化广播给渲染层(auth-panel / 工作区浮层)
+  auth = createAuthRegistry({
+    resolveEndpoint: async (instanceId) => {
+      const record = await instanceStore.get(instanceId)
+      if (!record || record.transport === 'local') return null
+      return record.transport === 'ssh' ? null : record.endpointUrl
+    },
+    onState: (instanceId, state) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send(AUTH_IPC.state, {
+            instanceId,
+            state,
+            at: new Date().toISOString()
+          })
+        }
+      }
+    }
+  })
+
   registerIpc(instanceStore, {
     runtime,
     tunnels,
     http: httpEndpoints,
+    auth,
     prompts: prompts as PromptBroker,
-    openInstanceView: (instance, url) =>
-      openInstanceWindow({ instanceId: instance.id, title: instance.name, url })
+    openInstanceView: (instance, url) => {
+      const win = openInstanceWindow({ instanceId: instance.id, title: instance.name, url })
+      // T8:把主进程会话 Cookie 写入该实例分区(§6.2),并挂 302/401 拦截(§6.3)
+      const cookie = auth?.sessionCookie(instance.id) ?? null
+      const parsed = (() => {
+        try {
+          return new URL(url)
+        } catch {
+          return null
+        }
+      })()
+      if (parsed && cookie) {
+        void importSessionCookie(win.webContents.session.cookies, {
+          origin: `${parsed.protocol}//${parsed.host}`,
+          basePath: parsed.pathname.replace(/\/+$/, '') || '/',
+          cookie
+        })
+      }
+      win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+        const signal = classifyAuthSignal({
+          statusCode: details.statusCode,
+          headers: details.responseHeaders ?? {},
+          url: details.url,
+          method: details.method,
+          isMainFrame: details.resourceType === 'mainFrame'
+        })
+        if (signal) {
+          for (const target of BrowserWindow.getAllWindows()) {
+            if (!target.isDestroyed()) {
+              target.webContents.send(AUTH_IPC.signal, {
+                instanceId: instance.id,
+                signal,
+                at: new Date().toISOString()
+              })
+            }
+          }
+        }
+        callback({ responseHeaders: details.responseHeaders ?? {} })
+      })
+      return win
+    }
   })
 
   createWindow()

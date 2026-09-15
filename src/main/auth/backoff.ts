@@ -50,7 +50,8 @@ export function createBackoff(options: BackoffOptions = {}): BackoffController {
         typeof retryAfterSeconds === 'number' && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
           ? retryAfterSeconds
           : null
-      const waitMs = Math.min(Math.max(seconds === null ? minWaitMs : seconds * 1000, minWaitMs), maxWaitMs)
+      // retryAfterSeconds 存在时以服务端为准(它是唯一计时依据);缺失时才用 ≥30s 下限
+      const waitMs = Math.min(seconds === null ? minWaitMs : seconds * 1000, maxWaitMs)
       until = now() + waitMs
       reason = why ?? '请求过于频繁，已暂停自动重试'
     },

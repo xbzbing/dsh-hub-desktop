@@ -48,6 +48,16 @@ let httpFake: {
   stop: ReturnType<typeof vi.fn>
   stopAll: ReturnType<typeof vi.fn>
 }
+let authFake: {
+  probe: ReturnType<typeof vi.fn>
+  login: ReturnType<typeof vi.fn>
+  logout: ReturnType<typeof vi.fn>
+  stateOf: ReturnType<typeof vi.fn>
+  forget: ReturnType<typeof vi.fn>
+  client: ReturnType<typeof vi.fn>
+  sessionCookie: ReturnType<typeof vi.fn>
+  clientIds: ReturnType<typeof vi.fn>
+}
 let promptsFake: {
   requestHostKey: ReturnType<typeof vi.fn>
   requestAskpass: ReturnType<typeof vi.fn>
@@ -90,6 +100,16 @@ beforeEach(async () => {
     stop: vi.fn(async () => undefined),
     stopAll: vi.fn(async () => undefined)
   }
+  authFake = {
+    probe: vi.fn(async () => null),
+    login: vi.fn(async () => null),
+    logout: vi.fn(async () => null),
+    stateOf: vi.fn(() => null),
+    forget: vi.fn(),
+    client: vi.fn(async () => null),
+    sessionCookie: vi.fn(() => null),
+    clientIds: vi.fn(() => [])
+  }
   openInstanceView = vi.fn()
   promptsFake = {
     requestHostKey: vi.fn(async () => 'trust'),
@@ -102,6 +122,7 @@ beforeEach(async () => {
     runtime: runtimeFake as unknown as LocalRuntimeManager,
     tunnels: tunnelsFake as unknown as SshTunnelManager,
     http: httpFake as unknown as HttpEndpointManager,
+    auth: authFake as never,
     prompts: promptsFake as never,
     openInstanceView: openInstanceView as never
   })
@@ -135,7 +156,10 @@ describe('registerIpc', () => {
       'ssh:keyPreview',
       'ssh:hostKeyReply',
       'ssh:askpassReply',
-      'http:detect'
+      'http:detect',
+      'auth:probe',
+      'auth:login',
+      'auth:logout'
     ]
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
   })

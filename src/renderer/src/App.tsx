@@ -7,6 +7,7 @@ import DetailView from './components/DetailView'
 import Wizard from './components/Wizard'
 import Toasts from './components/Toasts'
 import SshDialogs from './components/SshDialogs'
+import AuthPanel from './components/AuthPanel'
 
 const BRIDGE = window.dshHub
 
@@ -79,6 +80,7 @@ export default function App() {
       </main>
       {wizardOpen && <Wizard />}
       <SshDialogs />
+      <AuthPanel />
       <Toasts />
     </div>
   )

@@ -22,7 +22,7 @@ function htmlResponse(status: number, body: string, location?: string): Response
 }
 
 describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
-  it('探测:302 → /login 识别为网关,进入 needs-auth', async () => {
+  it('探测:302 → /login 识别为网关,进入 await-credentials(R6 设计边)', async () => {
     const client = createAuthClient({
       instanceId: 'i1',
       endpointUrl: 'https://gw.example.com/dsh',
@@ -30,7 +30,7 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     })
     const detection = await client.probeAndRestore()
     expect(detection.mode).toBe('gateway')
-    expect(client.state().phase).toBe('needs-auth')
+    expect(client.state().phase).toBe('await-credentials')
   })
 
   it('静默恢复:已存 Cookie 打 settings=200 → connected,不打扰用户', async () => {
@@ -157,5 +157,103 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     const state = await client.logout()
     expect(state.phase).toBe('needs-auth')
     expect(client.hasSession()).toBe(false)
+  })
+})
+
+describe('T7 评审回归防线', () => {
+  it('R1:429 锁定窗口过后自动解锁(单一计时来源,不再永久锁定)', async () => {
+    let now = 1_000_000
+    const fetchImpl = vi.fn(async (input: string | URL) =>
+      String(input).includes('/login/auth')
+        ? jsonResponse(429, { ok: false, error: 'too-many-attempts', retryAfterSeconds: 90 })
+        : htmlResponse(302, '', '/login')
+    ) as unknown as typeof fetch
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw/dsh',
+      fetchImpl,
+      now: () => now
+    })
+    await client.probeAndRestore()
+    const locked = await client.login('pw')
+    expect(locked.lockedForMs).toBe(90_000)
+
+    // 窗口未过:再提交仍被拒,且不新增请求
+    const callsBefore = (fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length
+    await client.login('pw')
+    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(callsBefore)
+
+    // 推进 91s → 自动解锁(此前会永久锁定:Critical)
+    now += 91_000
+    expect(client.backoff.canAttempt()).toBe(true)
+    expect(client.state().lockedForMs).toBe(0)
+    await client.login('pw')
+    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(
+      callsBefore
+    )
+  })
+
+  it('R2:锁定期间不发送任何认证请求(以 fetch 调用次数断言,而非死代码)', async () => {
+    const fetchImpl = vi.fn(async (input: string | URL) =>
+      String(input).includes('/login/auth')
+        ? jsonResponse(429, { ok: false, error: 'rate-limited' })
+        : htmlResponse(302, '', '/login')
+    ) as unknown as typeof fetch
+    const client = createAuthClient({ instanceId: 'i1', endpointUrl: 'https://gw/dsh', fetchImpl })
+    await client.probeAndRestore()
+    await client.login('pw')
+    const after429 = (fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length
+    await client.login('pw')
+    await client.login('pw')
+    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(after429)
+  })
+
+  it('R3:客户端请求强制 redirect:manual(含 /login/auth 自身请求)', async () => {
+    const seen: Array<{ url: string; init: RequestInit | undefined }> = []
+    const fetchImpl = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = String(input)
+      seen.push({ url, init })
+      if (url.includes('/login/auth')) {
+        return jsonResponse(200, { ok: true }, 'dsh_auth=t; Path=/; HttpOnly; SameSite=Strict; Max-Age=100')
+      }
+      return htmlResponse(302, '', '/login')
+    }) as unknown as typeof fetch
+    const client = createAuthClient({ instanceId: 'i1', endpointUrl: 'https://gw/dsh', fetchImpl })
+    await client.probeAndRestore()
+    await client.login('pw')
+    // 至少一次请求打到 /login/auth(否则本用例只观测到探测请求,无法锁住 client 自身行为)
+    expect(seen.some((item) => item.url.includes('/login/auth'))).toBe(true)
+    for (const item of seen) expect(item.init?.redirect).toBe('manual')
+  })
+
+  it('R5:验证码阶段复用同一次密码经 /login/auth 提交(而非分步 /otp/verify)', async () => {
+    const urls: string[] = []
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      urls.push(url)
+      if (url.includes('/login/auth')) {
+        return urls.filter((item) => item.includes('/login/auth')).length === 1
+          ? jsonResponse(400, { ok: false, error: 'otp-required' })
+          : jsonResponse(200, { ok: true }, 'dsh_auth=t; Path=/; HttpOnly; SameSite=Strict; Max-Age=100')
+      }
+      return htmlResponse(302, '', '/login')
+    }) as unknown as typeof fetch
+    const client = createAuthClient({ instanceId: 'i1', endpointUrl: 'https://gw/dsh', fetchImpl })
+    await client.probeAndRestore()
+    expect((await client.login('pw')).phase).toBe('await-otp')
+    // 复用同一密码 + 验证码 → 单请求完成
+    const state = await client.login('pw', '123456')
+    expect(state.phase).toBe('connected')
+    expect(urls.some((url) => url.includes('/otp/verify'))).toBe(false)
+  })
+
+  it('R6:探测为网关且无会话 → await-credentials(密码屏可达)', async () => {
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw/dsh',
+      fetchImpl: fakeFetch(() => htmlResponse(302, '', '/login'))
+    })
+    await client.probeAndRestore()
+    expect(client.state().phase).toBe('await-credentials')
   })
 })

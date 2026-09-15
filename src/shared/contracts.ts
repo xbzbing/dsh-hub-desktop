@@ -323,6 +323,57 @@ export interface HttpAuthDetection {
   at: string
 }
 
+// ===== 认证（T8）：状态流与登录提交 =====
+
+/**
+ * T8 通道:渲染层只触发登录与观察状态,凭据只在主进程内存中流转(绝不落盘/进日志)。
+ * - `auth:probe` 探测并静默恢复(带已存 Cookie);
+ * - `auth:login` 提交密码(可带 OTP 完成单请求 2FA —— 验证码阶段复用同一次密码重发,
+ *   设计 §5.2「优先单次请求带码」;不做分步 /otp/verify);
+ * - `auth:logout` 清除会话;
+ * - `auth:state`(主→渲染)状态机快照,驱动 auth-panel 与工作区浮层。
+ */
+export const AUTH_IPC = {
+  probe: 'auth:probe',
+  login: 'auth:login',
+  logout: 'auth:logout',
+  state: 'auth:state',
+  /** 会话失效/需要验证码等来自 webview 拦截的信号(主→渲染) */
+  signal: 'auth:signal'
+} as const
+
+export type AuthPhase =
+  | 'unknown'
+  | 'probe'
+  | 'needs-auth'
+  | 'await-credentials'
+  | 'await-otp'
+  | 'connected'
+  | 'error'
+
+export interface AuthStateSnapshot {
+  phase: AuthPhase
+  needsOnboarding: boolean
+  otpEnabled: boolean
+  lockedForMs: number
+  message: string | null
+  lastErrorCode: string | null
+}
+
+/** `auth:state` 事件载荷 */
+export interface AuthStateEvent {
+  instanceId: string
+  state: AuthStateSnapshot
+  at: string
+}
+
+/** `auth:signal` 事件载荷(webview 拦截结论) */
+export interface AuthSignalEvent {
+  instanceId: string
+  signal: 'session-expired' | 'needs-otp' | 'needs-onboarding'
+  at: string
+}
+
 // ===== 注册表文件与版本迁移 =====
 
 export const REGISTRY_SCHEMA_VERSION = 1

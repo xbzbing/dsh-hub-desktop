@@ -42,7 +42,9 @@ test('窗口打开并渲染出应用外壳', async () => {
 test('preload 白名单桥接形状正确(无多余暴露)', async () => {
   const api = await win.evaluate(() => (window.dshHub ? Object.keys(window.dshHub).sort() : null))
   // T5 起新增 ssh 组(密钥预览/指纹确认/口令输入);任何额外暴露都会让本用例失败
-  expect(api).toEqual(['getInfo', 'http', 'instances', 'onInstanceStatus', 'ping', 'runtime', 'ssh'].sort())
+  expect(api).toEqual(
+    ['auth', 'getInfo', 'http', 'instances', 'onInstanceStatus', 'ping', 'runtime', 'ssh'].sort()
+  )
   const sshKeys = await win.evaluate(() =>
     window.dshHub?.ssh ? Object.keys(window.dshHub.ssh).sort() : null
   )
@@ -59,6 +61,10 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
     window.dshHub?.http ? Object.keys(window.dshHub.http).sort() : null
   )
   expect(httpKeys).toEqual(['detect'])
+  const authKeys = await win.evaluate(() =>
+    window.dshHub?.auth ? Object.keys(window.dshHub.auth).sort() : null
+  )
+  expect(authKeys).toEqual(['login', 'logout', 'onSignal', 'onState', 'probe'])
 })
 
 test('空数据目录展示空态(真实注册表后端)', async () => {
