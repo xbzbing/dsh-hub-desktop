@@ -29,5 +29,12 @@ npm-debug.log*
 # --- 测试覆盖率 ---
 coverage/
 
+# --- Playwright 产物 ---
+test-results/
+playwright-report/
+
+# --- pnpm 本地兜底 store(全局 store 不可用时可能生成) ---
+.pnpm-store/
+
 # --- 应用运行时数据(实例注册表/SSH/审计/homes/runtimes) ---
 hub-data/

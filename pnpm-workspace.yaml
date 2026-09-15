@@ -1,0 +1,13 @@
+# 本仓库是独立的 pnpm 工作区根(单包仓库)。
+# 作用:阻断向上查找到 `~/pnpm-workspace.yaml`($HOME 级 workspace 会令所有子目录项目
+# 报 "No projects found")。pnpm 总是以「最近的 pnpm-workspace.yaml」为根。
+#
+# allowBuilds:pnpm 11 的构建脚本白名单。仅放行确有 postinstall 的依赖
+# (electron 需解压二进制;esbuild 需平台二进制)。其余一律不放行。
+packages:
+  - '.'
+allowBuilds:
+  electron: true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - eslint-plugin-react-refresh@0.5.7

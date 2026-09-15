@@ -1,0 +1,251 @@
+/* ============================================================
+   DSH Hub · 样式基座
+   Token 唯一真理源:design/brand-spec.md(OKLch)
+   仅承载 T1 骨架占位样式;T3 起随真实视图按设计稿逐步替换
+   ============================================================ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---- 六个基础 token(brand-spec §1) ---- */
+  --bg: oklch(0.982 0.003 265);
+  --surface: oklch(1 0 0);
+  --fg: oklch(0.24 0.02 265);
+  --muted: oklch(0.54 0.015 265);
+  --border: oklch(0.912 0.008 265);
+  --accent: oklch(0.52 0.19 265);
+  --accent-ink: oklch(0.99 0.004 265);
+
+  /* ---- 派生 ---- */
+  --accent-soft: color-mix(in oklch, var(--accent) 12%, transparent);
+  --hover: color-mix(in oklch, var(--fg) 5%, var(--surface));
+  --fg-soft: color-mix(in oklch, var(--fg) 6%, transparent);
+
+  /* ---- 状态色(brand-spec §2,先取骨架用到的) ---- */
+  --ok: oklch(0.6 0.14 152);
+  --warn: oklch(0.7 0.14 78);
+  --danger: oklch(0.56 0.19 27);
+
+  /* ---- 字体(brand-spec §3) ---- */
+  --font-body: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', system-ui,
+    sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, 'JetBrains Mono', monospace;
+
+  /* ---- 阴影层级(brand-spec §4.3) ---- */
+  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.185 0.012 265);
+    --surface: oklch(0.232 0.014 265);
+    --fg: oklch(0.955 0.006 265);
+    --muted: oklch(0.7 0.015 265);
+    --border: oklch(0.325 0.015 265);
+    --accent: oklch(0.66 0.17 265);
+    --accent-ink: oklch(0.17 0.02 265);
+    --ok: oklch(0.74 0.15 152);
+    --warn: oklch(0.8 0.14 82);
+    --danger: oklch(0.68 0.18 27);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   T1 骨架布局
+   ============================================================ */
+
+.shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 38px 1fr;
+}
+
+/* macOS hiddenInset 窗口的可拖拽区;左侧预留红绿灯位置(对应设计稿 .traffic 所在行) */
+.titlebar {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+html[data-platform='darwin'] .titlebar {
+  padding-left: 84px;
+}
+
+.app-body {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 0;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 14px;
+  background: color-mix(in oklch, var(--bg) 62%, var(--surface));
+  border-right: 1px solid var(--border);
+}
+
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.brand-name {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.content {
+  min-width: 0;
+  overflow: auto;
+  display: grid;
+  place-items: start center;
+  padding: 48px 32px;
+}
+
+.card {
+  width: min(640px, 100%);
+  padding: 28px 30px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-1);
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+h1 {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.lead {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13.5px;
+  max-width: 56ch;
+  user-select: text;
+}
+
+.versions {
+  margin: 0 0 18px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--fg-soft);
+  font-size: 12px;
+}
+
+.versions.muted {
+  color: var(--muted);
+}
+
+.warn {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--warn) 13%, var(--surface));
+  color: color-mix(in oklch, var(--warn) 70%, var(--fg));
+  font-size: 12.5px;
+  user-select: text;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.actions button {
+  -webkit-app-region: no-drag;
+  padding: 7px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.actions button:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pong {
+  margin: 0;
+  color: var(--ok);
+  font-size: 12px;
+}
+
+.meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  user-select: text;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
