@@ -125,6 +125,15 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
         case 'gateway':
           apply({ type: 'probe-gateway' })
           apply({ type: 'session-absent' })
+          // 评审 R1:探测已把三种网关状态区分在 `gatewayEvidence` 里
+          // (login-page / otp-page / onboarding,见 detect.ts),这里必须把它**消费掉** ——
+          // 旧实现忽略该字段,导致 needs-otp / needs-onboarding 永远退化到 await-credentials
+          // (`/api*` 的 401 JSON 无响应体可读,页面 302 的 location 才是唯一区分依据)。
+          if (detection.gatewayEvidence === 'otp-page') {
+            apply({ type: 'login-requires-otp', otpEnabled: true })
+          } else if (detection.gatewayEvidence === 'onboarding') {
+            apply({ type: 'onboarding-required' })
+          }
           break
         case 'none':
         case 'browser-auth':

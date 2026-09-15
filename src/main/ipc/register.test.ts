@@ -59,6 +59,8 @@ let authFake: {
   clientIds: ReturnType<typeof vi.fn>
 }
 let clearPartitionSession: ReturnType<typeof vi.fn>
+let vaultFake: Record<string, ReturnType<typeof vi.fn>>
+let auditSpy: (entry: { instanceId?: string | null; event: string; result?: string }) => void
 let promptsFake: {
   requestHostKey: ReturnType<typeof vi.fn>
   requestAskpass: ReturnType<typeof vi.fn>
@@ -112,6 +114,23 @@ beforeEach(async () => {
     clientIds: vi.fn(() => [])
   }
   clearPartitionSession = vi.fn(async () => undefined)
+  vaultFake = {
+    status: vi.fn(() => ({ available: true, degraded: false, instanceCount: 0 })),
+    getPolicy: vi.fn(() => ({ rememberPassword: false, rememberSession: false })),
+    setPolicy: vi.fn(async () => undefined),
+    rememberPassword: vi.fn(async () => undefined),
+    rememberSession: vi.fn(async () => undefined),
+    forgetPassword: vi.fn(async () => undefined),
+    forgetSession: vi.fn(async () => undefined),
+    forgetInstance: vi.fn(async () => undefined),
+    clearAll: vi.fn(async () => undefined),
+    hasPassword: vi.fn(() => false),
+    getPassword: vi.fn(() => null),
+    hasSession: vi.fn(() => false),
+    getSession: vi.fn(() => null),
+    rememberedIds: vi.fn(() => [])
+  }
+  auditSpy = vi.fn() as unknown as typeof auditSpy
   openInstanceView = vi.fn()
   promptsFake = {
     requestHostKey: vi.fn(async () => 'trust'),
@@ -125,6 +144,8 @@ beforeEach(async () => {
     tunnels: tunnelsFake as unknown as SshTunnelManager,
     http: httpFake as unknown as HttpEndpointManager,
     auth: authFake as never,
+    vault: vaultFake as never,
+    audit: auditSpy,
     clearPartitionSession: clearPartitionSession as never,
     prompts: promptsFake as never,
     openInstanceView: openInstanceView as never
@@ -162,7 +183,11 @@ describe('registerIpc', () => {
       'http:detect',
       'auth:probe',
       'auth:login',
-      'auth:logout'
+      'auth:logout',
+      'vault:status',
+      'vault:setPolicy',
+      'vault:forget',
+      'vault:clear'
     ]
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
   })

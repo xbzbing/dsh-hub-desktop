@@ -21,6 +21,12 @@
  *    不影响其它字段与其它实例;
  * 5. 凭据永不进日志/审计 —— 本模块不 import 任何日志设施,只经 `onError`
  *    上报错误对象(调用方负责不把密文/明文写进日志)。
+ *
+ * 关于**勾选策略**(§7.2 的「记住密码 / 记住登录态」):
+ * 它与「记住了什么」共享同一生命周期 —— 一键清除必须同时停止「继续记住」,
+ * 否则清空后下一次登录又会把凭据写回来。因此策略与条目放在同一文件(顶层
+ * `policy` 段,明文、非敏感),`clearAll`/`forgetInstance` 一并清掉。
+ * 降级模式不落盘:此时复选框本就无意义(钥匙串不可用,什么也记不住)。
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
@@ -72,12 +78,30 @@ export interface Vault {
   getSession(instanceId: string): StoredSession | null
   forgetSession(instanceId: string): Promise<void>
 
+  /** 读取勾选策略(未设置即「都不记住」) */
+  getPolicy(instanceId: string): VaultPolicy
+  /** 写入勾选策略 */
+  setPolicy(instanceId: string, policy: VaultPolicy): Promise<void>
+
   /** 清掉某实例的全部条目(删除实例时调用) */
   forgetInstance(instanceId: string): Promise<void>
   /** 一键清空(设计 §7.2「可一键清除」) */
   clearAll(): Promise<void>
   /** 已记住条目的实例 id(自检/测试) */
   rememberedIds(): string[]
+}
+
+/** 用户显式勾选的记住策略(§7.2;非敏感,明文存) */
+export interface VaultPolicy {
+  /** 记住网关密码(勾选后才写入钥匙串) */
+  rememberPassword: boolean
+  /** 记住登录态(会话 Cookie),重启静默复用 */
+  rememberSession: boolean
+}
+
+export const DEFAULT_VAULT_POLICY: VaultPolicy = {
+  rememberPassword: false,
+  rememberSession: false
 }
 
 /** 落盘格式(版本化,便于后续迁移) */
@@ -88,12 +112,22 @@ interface VaultItem {
 interface VaultFile {
   version: 1
   items: Record<string, VaultItem>
+  policy?: Record<string, VaultPolicy>
 }
 
 function isVaultFile(value: unknown): value is VaultFile {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Partial<VaultFile>
   return candidate.version === 1 && typeof candidate.items === 'object' && candidate.items !== null
+}
+
+function normalizePolicy(value: unknown): VaultPolicy {
+  if (typeof value !== 'object' || value === null) return { ...DEFAULT_VAULT_POLICY }
+  const candidate = value as Partial<VaultPolicy>
+  return {
+    rememberPassword: candidate.rememberPassword === true,
+    rememberSession: candidate.rememberSession === true
+  }
 }
 
 function isStoredSession(value: unknown): value is StoredSession {
@@ -114,6 +148,7 @@ export function createVault(options: VaultOptions): Vault {
    * 但降级模式永不落盘(见 persist),因此明文不会离开进程内存。
    */
   const items = new Map<string, VaultItem>()
+  const policy = new Map<string, VaultPolicy>()
   let loaded = false
 
   function load(): void {
@@ -134,6 +169,9 @@ export function createVault(options: VaultOptions): Vault {
         if (typeof raw.session === 'string') entry.session = raw.session
         if (entry.password !== undefined || entry.session !== undefined) items.set(id, entry)
       }
+      for (const [id, raw] of Object.entries(parsed.policy ?? {})) {
+        policy.set(id, normalizePolicy(raw))
+      }
     } catch (error) {
       onError(error)
     }
@@ -142,18 +180,31 @@ export function createVault(options: VaultOptions): Vault {
   /** 降级模式只留内存:退化成明文落盘是不可接受的 */
   async function persist(): Promise<void> {
     if (!available) return
-    const payload: VaultFile = { version: 1, items: {} }
+    const payload: VaultFile = { version: 1, items: {}, policy: {} }
     for (const [id, entry] of items) {
       const next: VaultItem = {}
       if (entry.password !== undefined) next.password = entry.password
       if (entry.session !== undefined) next.session = entry.session
       if (next.password !== undefined || next.session !== undefined) payload.items[id] = next
     }
+    for (const [id, value] of policy) {
+      if (value.rememberPassword || value.rememberSession) payload.policy![id] = value
+    }
     const path = options.filePath
     await mkdir(dirname(path), { recursive: true })
     const tmp = `${path}.tmp`
     await writeFile(tmp, `${JSON.stringify(payload)}\n`, { mode: 0o600 })
     await rename(tmp, path)
+  }
+
+  /**
+   * 显式勾选才允许落盘(§7.2「默认不存、显式勾选」)。
+   * 在模块内强制而非依赖调用方约定 —— 少一处调用方疏漏就少一条凭据落盘路径。
+   */
+  function requireOptIn(instanceId: string, field: keyof VaultPolicy): void {
+    if (!(policy.get(instanceId)?.[field] ?? false)) {
+      throw new Error(`未勾选「${field}」,拒绝写入 vault`)
+    }
   }
 
   function entryFor(instanceId: string): VaultItem {
@@ -171,7 +222,13 @@ export function createVault(options: VaultOptions): Vault {
     }
   }
 
-  /** 解密单个字段;失败即丢弃该字段(钥匙串变更/文件被篡改) */
+  /**
+   * 解密单个字段;失败即丢弃该字段(钥匙串变更/文件被篡改)。
+   *
+   * **读路径不写盘**:丢弃只发生在内存里,由下一次显式写入(persist 的调用方)落地。
+   * 旧实现在这里发起了 fire-and-forget 的 `persist()`,让一次「读」产生磁盘写 ——
+   * 那是并发不可控的副作用(单测在并行负载下会偶发失败),而且读操作本就不该有写副作用。
+   */
   function readField(instanceId: string, payload: string): string | null {
     if (!available) return payload // 降级模式条目本就是明文
     try {
@@ -182,7 +239,6 @@ export function createVault(options: VaultOptions): Vault {
       if (entry?.password === payload) delete entry.password
       if (entry?.session === payload) delete entry.session
       dropIfEmpty(instanceId)
-      void persist().catch(onError)
       return null
     }
   }
@@ -206,6 +262,7 @@ export function createVault(options: VaultOptions): Vault {
     async rememberPassword(instanceId, password) {
       if (password === '') throw new Error('空密码不写入 vault')
       load()
+      requireOptIn(instanceId, 'rememberPassword')
       entryFor(instanceId).password = encode(password)
       await persist()
     },
@@ -233,6 +290,7 @@ export function createVault(options: VaultOptions): Vault {
     async rememberSession(instanceId, session) {
       if (session.value === '') throw new Error('空会话不写入 vault')
       load()
+      requireOptIn(instanceId, 'rememberSession')
       entryFor(instanceId).session = encode(JSON.stringify(session))
       await persist()
     },
@@ -269,12 +327,36 @@ export function createVault(options: VaultOptions): Vault {
     async forgetInstance(instanceId) {
       load()
       items.delete(instanceId)
+      // 实例已删除:勾选策略一并清掉(否则重建同名实例会继承旧策略)
+      policy.delete(instanceId)
       await persist()
     },
 
     async clearAll() {
       load()
       items.clear()
+      policy.clear()
+      await persist()
+    },
+
+    getPolicy(instanceId) {
+      load()
+      return policy.get(instanceId) ?? { ...DEFAULT_VAULT_POLICY }
+    },
+
+    async setPolicy(instanceId, next) {
+      load()
+      const normalized = normalizePolicy(next)
+      // **取消勾选必须真的忘掉**,而不是只停止「继续记住」
+      const entry = items.get(instanceId)
+      if (!normalized.rememberPassword && entry?.password !== undefined) delete entry.password
+      if (!normalized.rememberSession && entry?.session !== undefined) delete entry.session
+      dropIfEmpty(instanceId)
+      if (normalized.rememberPassword || normalized.rememberSession) {
+        policy.set(instanceId, normalized)
+      } else {
+        policy.delete(instanceId)
+      }
       await persist()
     },
 

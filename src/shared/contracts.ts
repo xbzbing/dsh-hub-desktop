@@ -342,6 +342,34 @@ export const AUTH_IPC = {
   signal: 'auth:signal'
 } as const
 
+/**
+ * T10 凭据保险库（设计文档 §7.2）。
+ * 通道命名与 auth:* 并列:凭据写入是**用户显式勾选**的结果,不是登录的副作用。
+ */
+export const VAULT_IPC = {
+  status: 'vault:status',
+  setPolicy: 'vault:setPolicy',
+  forget: 'vault:forget',
+  clear: 'vault:clear'
+} as const
+
+/** 单个实例的记住策略(默认都不记住) */
+export const VaultPolicySchema = z.object({
+  rememberPassword: z.boolean(),
+  rememberSession: z.boolean()
+})
+export type VaultPolicy = z.infer<typeof VaultPolicySchema>
+
+/** vault 状态(渲染层据此显示降级告警与「已记住」标记) */
+export interface VaultStatusSnapshot {
+  /** 系统钥匙串可用(safeStorage) */
+  available: boolean
+  /** 降级为纯内存模式:此时勾选也无意义,UI 必须告警 */
+  degraded: boolean
+  /** 已记住凭据的实例 id */
+  rememberedInstances: string[]
+}
+
 export type AuthPhase =
   | 'unknown'
   | 'probe'

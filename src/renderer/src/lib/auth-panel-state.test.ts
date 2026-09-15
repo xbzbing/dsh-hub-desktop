@@ -3,6 +3,7 @@ import type { AuthStateEvent, AuthStateSnapshot } from '@shared/contracts'
 import {
   applyAuthSnapshot,
   applyAuthState,
+  clearLock,
   closeAuthPanel,
   initialAuthPanelModel,
   lockExpired,
@@ -121,6 +122,24 @@ describe('auth-panel-state（T8 评审修正）', () => {
     const switched = openAuthPanel(opened, { id: 'inst-b', name: '乙' })
     expect(switched.target?.id).toBe('inst-b')
     expect(switched.state).toBeNull()
+  })
+
+  it('到期后无条件解除锁定(评审 R4:重探失败也必须解锁)', () => {
+    const opened = openAuthPanel(initialAuthPanelModel, { id: 'inst-a', name: '甲' })
+    const locked = applyAuthState(
+      opened,
+      event('inst-a', snapshot({ phase: 'await-credentials', lockedForMs: 30_000 })),
+      T0
+    )
+    // 到期时 clearLock 必须把 lockUntil 置空,且不依赖任何重探结果
+    expect(lockRemaining(locked, T0 + 30_000)).toBe(0)
+    const unlocked = clearLock(locked)
+    expect(unlocked.lockUntil).toBeNull()
+    expect(lockRemaining(unlocked, T0 + 30_000)).toBe(0)
+    // 状态本身保留(仍然是等待凭据,用户可再次提交)
+    expect(unlocked.state?.phase).toBe('await-credentials')
+    // 幂等
+    expect(clearLock(unlocked)).toBe(unlocked)
   })
 
   it('关闭面板清空全部状态', () => {

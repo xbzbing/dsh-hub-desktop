@@ -19,10 +19,14 @@ import {
   PatchInstanceSchema,
   SSH_IPC,
   SshKeyPreviewInputSchema,
+  VAULT_IPC,
+  VaultPolicySchema,
   type HostKeyDecision,
   type AuthStateSnapshot,
   type HttpAuthDetection,
   type InstanceRecord,
+  type VaultPolicy,
+  type VaultStatusSnapshot,
   type InstanceSummary,
   type IpcResult
 } from '@shared/contracts'
@@ -34,6 +38,8 @@ import type { AuthRegistry } from '../auth/auth-registry'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
+import type { Vault } from '../vault/vault'
+import type { AuditEntry } from '../audit/audit-log'
 
 export interface IpcDeps {
   /** 本地运行时（T3）；SSH / HTTP 传输在各自任务内接入同一状态通道 */
@@ -54,6 +60,16 @@ export interface IpcDeps {
   auth: AuthRegistry
   /** T9 清理实例分区会话 Cookie(登出/切换账号时;缺省不清理,便于单测) */
   clearPartitionSession?: (instanceId: string) => Promise<void>
+  /**
+   * T10 凭据保险库(§7.2)。默认不存任何东西;只有实例策略显式勾选后
+   * 才在登录成功时写入,勾选取消即忘掉。
+   */
+  vault: Vault
+  /**
+   * T10 审计(§7.5)。只接收白名单字段(见 `audit/audit-log.ts`),缺省不审计(单测)。
+   * 审计写入本身异步且失败隔离,不阻塞业务。
+   */
+  audit?: (entry: AuditEntry) => void
 }
 
 async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
@@ -153,6 +169,8 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
         // T9:删除实例一并清该分区会话与认证客户端(不留悬挂会话)
         deps.auth.forget(instanceId)
+        // T10:实例没了,已记住的凭据与勾选策略一并清掉
+        await deps.vault.forgetInstance(instanceId)
         await deps.clearPartitionSession?.(instanceId).catch(() => undefined)
         return { removed: await store.remove(instanceId) }
       })
@@ -245,6 +263,28 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     state: Awaited<ReturnType<AuthRegistry['login']>>
   ): AuthStateSnapshot | null => (state === null ? null : (state as unknown as AuthStateSnapshot))
 
+  /**
+   * 写 vault 的「安静」包装:凭据记忆是**尽力而为**的附加动作,
+   * 失败(磁盘满/钥匙串不可用)绝不能把一次成功的登录变成错误。
+   */
+  async function rememberQuietly(instanceId: string, password: string): Promise<void> {
+    try {
+      await deps.vault.rememberPassword(instanceId, password)
+    } catch (error) {
+      console.error('[register] 记住密码失败(登录已成功)：', error)
+    }
+  }
+
+  /** vault 状态快照(渲染层据此显示降级告警与「已记住」标记) */
+  function vaultSnapshot(): VaultStatusSnapshot {
+    const status = deps.vault.status()
+    return {
+      available: status.available,
+      degraded: status.degraded,
+      rememberedInstances: deps.vault.rememberedIds()
+    }
+  }
+
   // probe:返回状态快照(探测结论经 auth:state 事件与 T6 detect 暴露;此处主要驱动 UI 阶段)
   ipcMain.handle(AUTH_IPC.probe, (_event, id: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
     wrap(async () => {
@@ -260,10 +300,19 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       wrap(async () => {
         const instanceId = parseId(id)
         const pwd = z.string().min(1).max(1024).parse(password)
-        // 验证码/备份码域:网关 OTP 为 6 位;备份码长度可配(默认 8,范围 6-12)
-        // —— 旧实现只限 max(64),与 UI 文案「6 位动态验证码」不符
-        const code = z.string().trim().min(6).max(12).nullable().parse(otp ?? null)
-        return authSnapshot(await deps.auth.login(instanceId, pwd, code ?? undefined))
+        // 验证码/备份码域:网关 TOTP 位数**可配**(`otpDigits`,默认 6,合法 4-10),
+        // 备份码长度也可配(`backupCodeLength`,默认 8,合法 6-12)。
+        // 因此下界必须是 4 —— 评审 R3:曾收紧到 min(6),会让 otpDigits=4|5 的实例
+        // 完全无法登录(合法验证码被 zod 拒掉)。
+        const code = z.string().trim().min(4).max(12).nullable().parse(otp ?? null)
+        const state = await deps.auth.login(instanceId, pwd, code ?? undefined)
+        // T10 §7.2:只有**登录成功**且用户显式勾选「记住密码」才写钥匙串。
+        // 失败绝不写(否则一次错误输入会把错密码存进钥匙串);未勾选时 vault 自身也会拒绝。
+        if (state?.phase === 'connected' && deps.vault.getPolicy(instanceId).rememberPassword) {
+          await rememberQuietly(instanceId, pwd)
+          deps.audit?.({ instanceId, event: 'vault-write', result: 'password' })
+        }
+        return authSnapshot(state)
       })
   )
 
@@ -273,7 +322,60 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       const snapshot = authSnapshot(await deps.auth.logout(instanceId))
       // T9:登出后必须清分区会话,否则 webview 仍带旧 Cookie 访问受保护页面
       await deps.clearPartitionSession?.(instanceId)
+      deps.audit?.({ instanceId, event: 'session-revoked', result: 'logout' })
+      deps.audit?.({ instanceId, event: 'cookie-cleared', result: 'logout' })
       return snapshot
+    })
+  )
+
+  // —— T10 凭据保险库（§7.2）：只暴露状态/勾选/忘记/清空,没有「读出凭据」的通道 ——
+
+  ipcMain.handle(VAULT_IPC.status, (): Promise<IpcResult<VaultStatusSnapshot>> =>
+    wrap(() => vaultSnapshot())
+  )
+
+  ipcMain.handle(
+    VAULT_IPC.setPolicy,
+    (_event, id: unknown, policy: unknown): Promise<IpcResult<VaultPolicy>> =>
+      wrap(async () => {
+        const instanceId = parseId(id)
+        const parsed = VaultPolicySchema.parse(policy)
+        await deps.vault.setPolicy(instanceId, parsed)
+        return parsed
+      })
+  )
+
+  ipcMain.handle(
+    VAULT_IPC.forget,
+    (_event, id: unknown, target: unknown): Promise<IpcResult<VaultPolicy>> =>
+      wrap(async () => {
+        const instanceId = parseId(id)
+        // 缺省 = 两个都忘(UI 的「清除已记住的凭据」)
+        const parsed = z
+          .object({ password: z.boolean().optional(), session: z.boolean().optional() })
+          .strict()
+          .nullable()
+          .parse(target ?? null)
+        const dropPassword = parsed?.password ?? true
+        const dropSession = parsed?.session ?? true
+        if (dropPassword) await deps.vault.forgetPassword(instanceId)
+        if (dropSession) await deps.vault.forgetSession(instanceId)
+        // 忘记凭据即取消勾选:否则下一次登录又会把它写回来
+        const policy = deps.vault.getPolicy(instanceId)
+        const next: VaultPolicy = {
+          rememberPassword: dropPassword ? false : policy.rememberPassword,
+          rememberSession: dropSession ? false : policy.rememberSession
+        }
+        await deps.vault.setPolicy(instanceId, next)
+        return next
+      })
+  )
+
+  ipcMain.handle(VAULT_IPC.clear, (): Promise<IpcResult<VaultStatusSnapshot>> =>
+    wrap(async () => {
+      await deps.vault.clearAll()
+      deps.audit?.({ event: 'vault-clear', result: 'ok' })
+      return vaultSnapshot()
     })
   )
 

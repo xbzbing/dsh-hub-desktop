@@ -79,6 +79,18 @@ export function applyAuthSnapshot(
   return applyAuthState(model, { instanceId, state, at: new Date(now).toISOString() }, now)
 }
 
+/**
+ * 清除锁定态(倒计时归零 / 用户已能再次提交)。
+ *
+ * 评审 R4:**到期必须无条件清掉 `lockUntil`**,不能等重探结果 ——
+ * 旧实现只在重探成功时才更新模型,重探返回 null/{ok:false} 时会永远停在
+ * 「锁定 0s」且按钮永久 disabled(且 effect 依赖 `[model]` 不再重跑)。
+ */
+export function clearLock(model: AuthPanelModel): AuthPanelModel {
+  if (model.lockUntil === null) return model
+  return { ...model, lockUntil: null }
+}
+
 /** 锁定剩余毫秒(按 deadline 派生,倒计时会走动) */
 export function lockRemaining(model: AuthPanelModel, now: number = Date.now()): number {
   if (model.lockUntil === null) return 0

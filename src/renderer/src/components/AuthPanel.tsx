@@ -4,11 +4,13 @@ import type { AuthSignalEvent, AuthStateEvent } from '@shared/contracts'
 import {
   applyAuthSnapshot,
   applyAuthState,
+  clearLock,
   closeAuthPanel,
   initialAuthPanelModel,
   lockExpired,
-  openAuthPanel,
-  lockSeconds
+  lockRemaining,
+  lockSeconds,
+  openAuthPanel
 } from '../lib/auth-panel-state'
 import type { AuthPanelModel } from '../lib/auth-panel-state'
 import { Icon } from '../lib/icons'
@@ -91,6 +93,9 @@ export default function AuthPanel(): ReactNode {
       setTick((value) => value + 1)
       if (lockExpired(model)) {
         clearInterval(timer)
+        // 评审 R4:先无条件解除锁定,再尝试重探刷新状态 ——
+        // 若把解锁绑定在重探成功上,重探返回 null/{ok:false} 时按钮会永久停在「锁定 0s」。
+        setModel((current) => clearLock(current))
         const openId = model.target?.id
         if (!openId) return
         void BRIDGE?.auth.probe(openId).then((result) => {
@@ -132,7 +137,8 @@ export default function AuthPanel(): ReactNode {
   const state = model.state
   if (!target || !state) return null
 
-  const locked = model.lockUntil !== null
+  // 以「剩余时间」为准(而非仅看 lockUntil 是否存在):即使 tick 尚未执行也不会误判为锁死
+  const locked = lockRemaining(model) > 0
   const lockedSeconds = lockSeconds(model)
   const phase = state.phase
 

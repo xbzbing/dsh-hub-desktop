@@ -51,7 +51,7 @@ describe('intercept（§6.3 302/401 判定）', () => {
     expect(classifyAuthSignal({ statusCode: 302, headers: { location: '/login' } })).toBeNull()
   })
 
-  it('401 = 会话失效(只按状态码,不依赖响应体)', () => {
+  it('401 JSON = 会话失效(不依赖响应体)', () => {
     expect(
       classifyAuthSignal({
         statusCode: 401,
@@ -59,7 +59,20 @@ describe('intercept（§6.3 302/401 判定）', () => {
         resourceType: 'xhr'
       })
     ).toBe('session-expired')
-    expect(classifyAuthSignal({ statusCode: 401, headers: {} })).toBe('session-expired')
+  })
+
+  it('401 非 JSON(dsh BrowserAuth 的 text/plain)不算网关信号', () => {
+    // dsh 内置 BrowserAuth 未认证响应:401 + text/plain + 固定文案。
+    // 若不加 content-type 判别,本地区实例的 401 会凭空触发网关登录面板。
+    expect(
+      classifyAuthSignal({
+        statusCode: 401,
+        headers: { 'content-type': 'text/plain; charset=utf-8' },
+        resourceType: 'mainFrame'
+      })
+    ).toBeNull()
+    // 缺 content-type 时保守不判(宁可漏判,由 probe 兜底)
+    expect(classifyAuthSignal({ statusCode: 401, headers: {} })).toBeNull()
   })
 
   it('200 与其它状态码不算信号(任何 HTTP 响应都说明传输通)', () => {

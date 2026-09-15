@@ -7,6 +7,7 @@ import {
   HTTP_IPC,
   INSTANCE_STATUS_EVENT,
   SSH_IPC,
+  VAULT_IPC,
   type AskpassPromptPayload,
   type AuthSignalEvent,
   type AuthStateEvent,
@@ -17,7 +18,9 @@ import {
   type InstanceStatusEvent,
   type IpcResult,
   type SshKeyPreviewInput,
-  type SshKeyPreviewResult
+  type SshKeyPreviewResult,
+  type VaultPolicy,
+  type VaultStatusSnapshot
 } from '@shared/contracts'
 
 /**
@@ -97,6 +100,22 @@ const bridge: DshHubBridge = {
         ipcRenderer.removeListener(AUTH_IPC.signal, handler)
       }
     }
+  },
+  // T10 凭据保险库(§7.2):只暴露「状态/勾选/忘记/清空」——没有「读出凭据」的通道,
+  // 渲染进程永远拿不到已存密码或会话值(凭据只在主进程内使用)。
+  vault: {
+    status: () =>
+      ipcRenderer.invoke(VAULT_IPC.status) as Promise<IpcResult<VaultStatusSnapshot>>,
+    setPolicy: (instanceId, policy) =>
+      ipcRenderer.invoke(VAULT_IPC.setPolicy, instanceId, policy) as Promise<
+        IpcResult<VaultPolicy>
+      >,
+    forget: (instanceId, target) =>
+      ipcRenderer.invoke(VAULT_IPC.forget, instanceId, target ?? null) as Promise<
+        IpcResult<VaultPolicy>
+      >,
+    clear: () =>
+      ipcRenderer.invoke(VAULT_IPC.clear) as Promise<IpcResult<VaultStatusSnapshot>>
   }
 }
 

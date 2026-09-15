@@ -5,6 +5,12 @@
  * - 页面/导航路径     → `302` 到 `<basePath>/login` | `/onboarding` | `/otp/verify`
  * - `/api*` 子资源    → `401` JSON(`error` 分别 unauthenticated / onboarding-required / otp-required)
  *
+ * **401 只认网关的 JSON 形态**:网关对 `/api*` 恒返回 `content-type: application/json`,
+ * 而 dsh 内置 BrowserAuth 的 401 是 `text/plain` + 固定文案(detect.ts 的
+ * `BROWSER_AUTH_MARKER`)。二者都用 401,若不加 content-type 判别,
+ * 本地/browser-auth 实例的 401 会被误判成网关会话失效(在 T9 接上信号消费者后
+ * 会凭空弹出网关登录面板)。
+ *
  * **本层为什么不解析 401 响应体**:`webRequest.onHeadersReceived` 的 details
  * (Electron 43 `OnHeadersReceivedListenerDetails`)只有 `statusCode/headers/resourceType/...`,
  * **不含响应体**;`filterResponseData` 在 Electron 43 不存在,也无其它取体途径。
@@ -80,9 +86,15 @@ export function classifyAuthSignal(
     return null
   }
 
-  // 不变式 2:401 只认状态码。`/api*` 的三个 error 码在无响应体时不可区分,
-  // 统一交给 auth.probe() 读体裁决(见文件头注释)。
-  if (response.statusCode === 401) return 'session-expired'
+  // 不变式 2:401 必须是网关的 JSON 形态(排除 dsh BrowserAuth 的 text/plain 401)。
+  // `/api*` 的三个 error 码在无响应体时不可区分 —— 页面 302 的 location 才是区分依据,
+  // 其余由 auth.probe() 的探测证据(gatewayEvidence)裁决。
+  if (response.statusCode === 401) {
+    const contentType = headerValue(response.headers, 'content-type')
+    return contentType !== null && contentType.toLowerCase().includes('json')
+      ? 'session-expired'
+      : null
+  }
 
   return null
 }

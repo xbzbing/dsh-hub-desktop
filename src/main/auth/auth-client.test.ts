@@ -33,6 +33,43 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     expect(client.state().phase).toBe('await-credentials')
   })
 
+  it('探测:302 → /otp/verify 消费 gatewayEvidence,进入 await-otp(评审 R1)', async () => {
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw.example.com/dsh',
+      fetchImpl: fakeFetch(() => htmlResponse(302, '', '/dsh/otp/verify'))
+    })
+    const detection = await client.probeAndRestore()
+    expect(detection.gatewayEvidence).toBe('otp-page')
+    // 旧实现丢弃该证据,一律退化到 await-credentials
+    expect(client.state().phase).toBe('await-otp')
+    expect(client.state().otpEnabled).toBe(true)
+  })
+
+  it('探测:302 → /onboarding 消费 gatewayEvidence,置 needsOnboarding(评审 R1)', async () => {
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw.example.com/dsh',
+      fetchImpl: fakeFetch(() => htmlResponse(302, '', '/dsh/onboarding'))
+    })
+    const detection = await client.probeAndRestore()
+    expect(detection.gatewayEvidence).toBe('onboarding')
+    expect(client.state().needsOnboarding).toBe(true)
+    expect(client.state().phase).toBe('await-credentials')
+  })
+
+  it('探测:302 → /login 仍是 await-credentials(证据为 login-page 时不误判)', async () => {
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw.example.com/dsh',
+      fetchImpl: fakeFetch(() => htmlResponse(302, '', '/dsh/login'))
+    })
+    const detection = await client.probeAndRestore()
+    expect(detection.gatewayEvidence).toBe('login-page')
+    expect(client.state().phase).toBe('await-credentials')
+    expect(client.state().needsOnboarding).toBe(false)
+  })
+
   it('静默恢复:已存 Cookie 打 settings=200 → connected,不打扰用户', async () => {
     const jar = { store: vi.fn(), header: () => 'dsh_auth=abc', get: () => ({ name: 'dsh_auth', value: 'abc', expiresAt: null, attributes: 'HttpOnly' }), clear: vi.fn(), describe: () => [] } as unknown as CookieJar
     const fetchImpl = fakeFetch((url) =>

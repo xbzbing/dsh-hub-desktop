@@ -19,6 +19,8 @@ import type {
   InstanceRecord,
   InstanceStatusEvent,
   InstanceSummary,
+  VaultPolicy,
+  VaultStatusSnapshot,
   IpcResult,
   PatchInstanceInput,
   SshKeyPreviewInput,
@@ -101,5 +103,17 @@ export interface DshHubBridge {
     onState: (listener: (event: AuthStateEvent) => void) => () => void
     /** 订阅 webview 拦截信号（会话失效/需要验证码/需要改密） */
     onSignal: (listener: (event: AuthSignalEvent) => void) => () => void
+  }
+  /** T10 凭据保险库（设计 §7.2）：默认不存，显式勾选后才落盘 */
+  vault: {
+    status: () => Promise<IpcResult<VaultStatusSnapshot>>
+    setPolicy: (instanceId: string, policy: VaultPolicy) => Promise<IpcResult<VaultPolicy>>
+    /** 忘掉某实例已记住的凭据(可只忘密码/只忘会话) */
+    forget: (
+      instanceId: string,
+      target?: { password?: boolean; session?: boolean }
+    ) => Promise<IpcResult<VaultPolicy>>
+    /** 一键清空全部已记住凭据 */
+    clear: () => Promise<IpcResult<VaultStatusSnapshot>>
   }
 }

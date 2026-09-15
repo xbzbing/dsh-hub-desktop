@@ -46,6 +46,7 @@ interface TestWin {
   }
   closedListener: (() => void) | null
   isDestroyed: ReturnType<typeof vi.fn>
+  loadURL: ReturnType<typeof vi.fn>
   setTitle: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
@@ -118,6 +119,60 @@ describe('openInstanceWindow（实例窗口接线,§6.6 拦截外跳）', () => 
     win.webContents.loadURL.mockRejectedValueOnce(new Error('net::ERR_CONNECTION_REFUSED'))
     openInstanceWindow({ instanceId: `l-${seq}`, title: 't2', url: ORIGIN })
     await vi.waitFor(() => expect(errSpy).toHaveBeenCalled())
+  })
+
+  it('autoLoad:false 时不自动加载(§6.2 顺序纪律的前提)', () => {
+    const id = `nl-${++seq}`
+    const win = openInstanceWindow({
+      instanceId: id,
+      title: 't',
+      url: ORIGIN,
+      autoLoad: false
+    }) as unknown as TestWin
+    // 顺序纪律(先注入 Cookie 再 loadURL)完全依赖这里不加载:
+    // 评审变异 g 曾证明「把 autoLoad 强制为 true」不会被任何测试发现
+    expect(win.loadURL).not.toHaveBeenCalled()
+    expect(win.webContents.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('autoLoad 缺省(及显式 true)时按原行为加载', () => {
+    const idDefault = `al-${++seq}`
+    const byDefault = openInstanceWindow({
+      instanceId: idDefault,
+      title: 't',
+      url: ORIGIN
+    }) as unknown as TestWin
+    expect(byDefault.loadURL).toHaveBeenCalledWith(ORIGIN)
+
+    const idTrue = `al-${++seq}`
+    const explicit = openInstanceWindow({
+      instanceId: idTrue,
+      title: 't',
+      url: ORIGIN,
+      autoLoad: true
+    }) as unknown as TestWin
+    expect(explicit.loadURL).toHaveBeenCalledWith(ORIGIN)
+  })
+
+  it('复用窗口时 autoLoad:false 同样不加载(编排负责注入后再加载)', () => {
+    const id = `rl-${++seq}`
+    const first = openInstanceWindow({
+      instanceId: id,
+      title: 't',
+      url: ORIGIN,
+      autoLoad: false
+    }) as unknown as TestWin
+    expect(first.loadURL).not.toHaveBeenCalled()
+
+    const reused = openInstanceWindow({
+      instanceId: id,
+      title: 't2',
+      url: ORIGIN,
+      autoLoad: false
+    }) as unknown as TestWin
+    expect(reused).toBe(first)
+    expect(reused.loadURL).not.toHaveBeenCalled()
+    expect(reused.focus).toHaveBeenCalled()
   })
 
   it('同实例复用窗口;close 后重新开窗', () => {

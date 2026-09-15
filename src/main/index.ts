@@ -1,7 +1,12 @@
-import { app, BrowserWindow, net, protocol, session, shell } from 'electron'
+import { app, BrowserWindow, net, protocol, safeStorage, session, shell } from 'electron'
 import { join, normalize, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { InstanceStatusEvent, PatchInstanceInput } from '@shared/contracts'
+import type {
+  AuthPhase,
+  InstanceRuntimeStatus,
+  InstanceStatusEvent,
+  PatchInstanceInput
+} from '@shared/contracts'
 import { AUTH_IPC, INSTANCE_STATUS_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
 import { createLocalRuntime } from './local-runtime/local-runtime'
@@ -22,6 +27,11 @@ import { clearSessionCookie, originOf } from './webview/session-cookie'
 import type { PromptBroker } from './ssh/prompt-broker'
 import type { AuthRegistry } from './auth/auth-registry'
 import { createInstanceStore } from './registry/instance-store'
+import { createVault } from './vault/vault'
+import { createAuditLog } from './audit/audit-log'
+import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
+import type { Vault } from './vault/vault'
+import type { AuditLog } from './audit/audit-log'
 import { closeInstanceWindow, openInstanceWindow } from './window-host'
 
 const isDev = !app.isPackaged
@@ -83,6 +93,48 @@ if (userDataOverride) app.setPath('userData', userDataOverride)
  * 实例窗口没有 preload，收到也无消费者；`auth:state` 仍广播（详情页可能在任一窗口）。
  */
 let hubWindow: BrowserWindow | null = null
+
+/** T10 数据面:凭据保险库与审计日志(在 whenReady 内装配) */
+let vault: Vault | null = null
+let audit: AuditLog | null = null
+
+/**
+ * 上一个「已广播」的状态,用于把迁移翻译成审计事件(§7.5)。
+ * 放在主进程而不是渲染层:即使没有窗口(后台启动)审计也要完整。
+ */
+/** auth 注册表引用(供会话持久化读取 Cookie;装配时赋值) */
+let authRegistryRef: AuthRegistry | null = null
+
+const lastAuthState = new Map<string, { phase: AuthPhase; lockedForMs: number; lastErrorCode: string | null }>()
+const lastRuntimeState = new Map<string, InstanceRuntimeStatus>()
+
+/** 审计是旁路:失败绝不冒泡进业务流(§7.1「I 泄露」的可用性对偶面) */
+function auditWrite(entry: Parameters<AuditLog['write']>[0]): void {
+  void audit?.write(entry).catch(() => undefined)
+}
+
+/**
+ * 会话建立后按勾选策略把 Cookie 写进钥匙串(§7.2)。
+ * 幂等:同一个值已在 vault 里就不再写(避免每次状态推进都写文件)。
+ * 失败只记日志:记住登录态是附加能力,不能影响已经成功的登录。
+ */
+async function persistSessionIfOptedIn(
+  instanceId: string,
+  registry: AuthRegistry | null = authRegistryRef
+): Promise<void> {
+  try {
+    if (!vault || !registry) return
+    if (!vault.getPolicy(instanceId).rememberSession) return
+    const cookie = registry.sessionCookie(instanceId)
+    if (!cookie || cookie.value === '') return
+    const existing = vault.getSession(instanceId)
+    if (existing?.value === cookie.value) return
+    await vault.rememberSession(instanceId, cookie)
+    auditWrite({ instanceId, event: 'vault-write', result: 'session' })
+  } catch (error) {
+    console.error('[main] 记住登录态失败(会话已建立)：', error)
+  }
+}
 
 /**
  * 302/401 拦截「每分区会话只装一次」守卫 —— 详见 `webview/instance-view.ts`
@@ -217,6 +269,30 @@ void app.whenReady().then(() => {
   const dataRoot = app.getPath('userData')
   // 注册表落盘位置：<userData>/registry/instances.json（+ 滚动备份 + 损坏隔离）
   const instanceStore = createInstanceStore({ dir: join(dataRoot, 'registry') })
+  // T10 §7.2:safeStorage 不可用时降级为纯内存(绝不退化成明文落盘),由 UI 告警
+  const safeStorageAvailable = (() => {
+    try {
+      return safeStorage.isEncryptionAvailable()
+    } catch {
+      return false
+    }
+  })()
+  vault = createVault({
+    filePath: join(dataRoot, 'vault', 'credentials.json'),
+    crypto: {
+      isAvailable: () => safeStorageAvailable,
+      encrypt: (plain) => safeStorage.encryptString(plain).toString('base64'),
+      decrypt: (payload) => safeStorage.decryptString(Buffer.from(payload, 'base64'))
+    }
+  })
+  // T10 §7.5:审计 JSONL(按日历日轮转,保留 90 天,不含任何凭据)
+  audit = createAuditLog({ dir: join(dataRoot, 'audit') })
+  if (!safeStorageAvailable) {
+    // 降级必须留痕,且只记枚举不记内容
+    auditWrite({ event: 'vault-unavailable', result: 'degraded' })
+  }
+  // 启动时清理过期归档(不阻塞启动)
+  void audit.prune().catch((error: unknown) => console.error('[main] 审计归档清理失败：', error))
   // npm registry 可经环境变量覆盖：默认跟随系统 npm 配置；
   // 内网/海外网络慢时可指到镜像，如 DSH_HUB_NPM_REGISTRY=https://registry.npmmirror.com
   const npmRegistry = process.env['DSH_HUB_NPM_REGISTRY']?.trim() || undefined
@@ -250,6 +326,16 @@ void app.whenReady().then(() => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(INSTANCE_STATUS_EVENT, event)
     }
+    // T10 §7.5:运行时迁移 → connect/disconnect/ssh-exit/ssh-reconnect
+    const previousStatus = lastRuntimeState.get(event.id) ?? null
+    for (const entry of mapRuntimeTransition(
+      event.id,
+      previousStatus === null ? null : { status: previousStatus },
+      { status: event.status }
+    )) {
+      auditWrite(entry)
+    }
+    lastRuntimeState.set(event.id, event.status)
     if (event.status === 'running' && (event.port !== undefined || event.version !== undefined)) {
       void instanceStore
         .get(event.id)
@@ -287,14 +373,30 @@ void app.whenReady().then(() => {
           })
         }
       }
+      // T10 §7.5:认证迁移 → login-success/login-failed/rate-limited/lockout/session-revoked
+      const previous = lastAuthState.get(instanceId) ?? null
+      for (const entry of mapAuthTransition(instanceId, previous, state)) {
+        auditWrite(entry)
+      }
+      lastAuthState.set(instanceId, {
+        phase: state.phase,
+        lockedForMs: state.lockedForMs,
+        lastErrorCode: state.lastErrorCode
+      })
+      // T10 §7.2:勾选了「记住登录态」才把会话 Cookie 写进钥匙串(重启静默复用的前提)
+      if (state.phase === 'connected') void persistSessionIfOptedIn(instanceId)
     }
   })
+
+  authRegistryRef = auth
 
   registerIpc(instanceStore, {
     runtime,
     tunnels,
     http: httpEndpoints,
     auth,
+    vault: vault as Vault,
+    audit: auditWrite,
     // T9:登出时清该实例分区内的会话 Cookie(origin 取自实例记录)
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
