@@ -67,6 +67,9 @@ interface AppState {
 
 let toastSeq = 0
 
+/** 系统主题监听的取消函数(避免重复订阅泄漏) */
+let systemThemeUnsubscribe: (() => void) | null = null
+
 function initialTheme(): 'light' | 'dark' {
   const saved = localStorage.getItem('dshhub-theme')
   if (saved === 'light' || saved === 'dark') return saved
@@ -148,8 +151,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   load: async () => {
     await get().hydrateSettings()
-    // 系统主题订阅只需一次;theme 变化由回调内部判定
-    get().subscribeSystemTheme()
+    // 重新订阅前先退订:此前直接丢弃返回的取消函数,每次 load() 都泄漏一个监听器
+    // (React.StrictMode 在开发下会双调用 effect,立即泄漏两个)
+    systemThemeUnsubscribe?.()
+    systemThemeUnsubscribe = get().subscribeSystemTheme()
     applyTheme(resolveTheme(get().settings.theme))
     // 平台信息(隐藏标题栏布局 / 平台差异化)与 userData 路径由主进程快照提供
     const info = await window.dshHub?.getInfo()
@@ -215,8 +220,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   toggleTheme: () => {
     // 只改本地状态会让灯箱(设置页高亮)与偏好分叉:重启后 hydrateSettings 会把选择覆盖回去。
     // 因此走 updateSettings(落盘 + 立即生效),本地 applyTheme 由它统一负责。
+    // 偏好是 system 时 get().theme 是**已解析**的值;直接持久化会把用户的
+    // 「跟随系统」无声改成显式明/暗。这里显式保留 system 语义:先落盘为显式值
+    // 是期望行为(用户点了切换),但失败必须可见。
     const next = get().theme === 'light' ? 'dark' : 'light'
-    void get().updateSettings({ theme: next })
+    void get().updateSettings({ theme: next }).catch(() => {
+      get().toast('err', get().t('settings.saveFailed'))
+    })
   },
 
   setWizardOpen: (open) => set({ wizardOpen: open }),

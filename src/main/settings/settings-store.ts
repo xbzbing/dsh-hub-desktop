@@ -32,6 +32,8 @@ export function createSettingsStore(options: SettingsStoreOptions): SettingsStor
     options.onError ?? ((error: unknown) => console.error('[settings] 读写失败：', error))
   const path = join(options.dir, 'settings.json')
   let cache: Settings | null = null
+  /** 写入队列:保证「读-合-写」串行(见 update 的说明) */
+  let tail: Promise<void> = Promise.resolve()
 
   function read(): Settings {
     if (cache) return cache
@@ -53,16 +55,28 @@ export function createSettingsStore(options: SettingsStoreOptions): SettingsStor
     read,
     filePath: () => path,
 
-    async update(patch) {
-      const next = normalizeSettings({ ...read(), ...patch })
-      await mkdir(dirname(path), { recursive: true })
-      // 唯一临时名:固定 `${path}.tmp` 会让并发 update 相互覆盖/竞争,
-      // 后写入者 rename 时前一个 tmp 已不存在 → ENOENT 且**丢失一次改动**(复审 R5)。
-      const tmp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
-      await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
-      await rename(tmp, path)
-      cache = next
-      return next
+    update(patch) {
+      // **串行化**是这里的核心正确性要求(复审 R5 二次指出):并发的
+      // read → merge → rename 会互相覆盖,先写入的那次改动**静默丢失**,
+      // 而两次调用都返回 ok → UI 对已经消失的改动提示「已保存」。
+      // 唯一临时名只能消除 ENOENT 崩溃,不能消除丢失更新;必须让整个
+      // 「读-合-写」处于临界区。
+      const run = async (): Promise<Settings> => {
+        const next = normalizeSettings({ ...read(), ...patch })
+        await mkdir(dirname(path), { recursive: true })
+        const tmp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
+        await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
+        await rename(tmp, path)
+        cache = next
+        return next
+      }
+      // 前一次失败不能阻断后续写入(tail 只用于排队,不传播拒绝)
+      const queued = tail.then(run, run)
+      tail = queued.then(
+        () => undefined,
+        () => undefined
+      )
+      return queued
     }
   }
 }

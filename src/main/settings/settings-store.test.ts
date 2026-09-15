@@ -73,4 +73,36 @@ describe('settings-store（T11 偏好落盘）', () => {
     expect(raw).toEqual({ ...DEFAULT_SETTINGS, language: 'en', notifications: false })
     expect(store.read()).toEqual(raw)
   })
+
+  it('并发 update 不得丢失改动(复审 R5 二次指出:仅唯一临时名不够)', async () => {
+    const store = createSettingsStore({ dir })
+    // 并发发起多笔互不相同的改动;串行化后每一笔都必须留下
+    await Promise.all([
+      store.update({ language: 'en' }),
+      store.update({ theme: 'dark' }),
+      store.update({ tray: true }),
+      store.update({ notifications: false })
+    ])
+    const persisted = JSON.parse(await readFile(store.filePath(), 'utf8')) as typeof DEFAULT_SETTINGS
+    expect(persisted).toEqual({
+      language: 'en',
+      theme: 'dark',
+      tray: true,
+      autoStart: false,
+      notifications: false
+    })
+    // 内存缓存也必须与落盘一致
+    expect(store.read()).toEqual(persisted)
+  })
+
+  it('并发 update 全部 resolve 成功(不得出现「返回 ok 但改动丢失」)', async () => {
+    const store = createSettingsStore({ dir })
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, index) => store.update({ theme: index % 2 ? 'dark' : 'light' }))
+    )
+    expect(results).toHaveLength(5)
+    for (const result of results) expect(result).toBeDefined()
+    const persisted = JSON.parse(await readFile(store.filePath(), 'utf8')) as { theme: string }
+    expect(['dark', 'light']).toContain(persisted.theme)
+  })
 })

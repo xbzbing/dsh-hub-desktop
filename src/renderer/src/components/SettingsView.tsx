@@ -44,7 +44,7 @@ export default function SettingsView(): ReactNode {
     void BRIDGE?.vault.clear().then((result) => {
       if (result.ok) {
         setVault(result.value)
-        toast('ok', t('settings.clearCredentials'))
+        toast('ok', t('settings.cleared'))
       }
     })
   }

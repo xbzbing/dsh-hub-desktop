@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MESSAGES, MESSAGE_KEYS } from '@shared/i18n/messages'
@@ -45,7 +45,7 @@ const CJK = /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/
  * 允许保留的字面量:语言选择器按惯例用**该语言自身**书写(「中文」/English),
  * 翻译它反而会让用户找不到自己的语言。
  */
-const ALLOWED_LITERALS = ['中文']
+const ALLOWED_LITERALS = [/^\{?language === 'zh' \? '中文' : 'English'\}?$/]
 
 /**
  * 去掉注释后再找文案:注释里出现中文是允许的(本仓库注释就是中文)。
@@ -53,14 +53,30 @@ const ALLOWED_LITERALS = ['中文']
  */
 function stripComments(source: string): string {
   return source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    // 块注释**保留其换行数**:直接删除会把后续行号整体上移,报错位置失真(复审 E10)
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
 }
 
-function readComponent(name: string): string {
+/** 递归收集目录下的源文件(此前用非递归 readdirSync,嵌套目录整体逃逸,复审 E3) */
+function collectSources(root: string, extensions: readonly string[]): string[] {
+  const found: string[] = []
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const full = join(root, entry.name)
+    if (entry.isDirectory()) found.push(...collectSources(full, extensions))
+    else if (extensions.some((ext) => entry.name.endsWith(ext))) found.push(full)
+  }
+  return found
+}
+
+function componentPath(name: string): string {
   return name.startsWith('../')
-    ? readFileSync(join(RENDERER_DIR, name.slice(3)), 'utf8')
-    : readFileSync(join(COMPONENTS_DIR, name), 'utf8')
+    ? join(RENDERER_DIR, name.slice(3))
+    : join(COMPONENTS_DIR, name)
+}
+
+function readComponent(name: string): string {
+  return readFileSync(componentPath(name), 'utf8')
 }
 
 describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
@@ -70,14 +86,30 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     // 复审据此在自己的文件里绕过了这条护栏。现在逐行判定,豁免只作用于该行。
     const offenders: string[] = []
     for (const name of MIGRATED) {
+      // 从清单里删掉一项就能让护栏「通过」—— 必须断言条目真实存在(复审 S11b)
+      expect(existsSync(componentPath(name)), `${name} 已不在磁盘上,请修正 MIGRATED 清单`).toBe(
+        true
+      )
       const lines = stripComments(readComponent(name)).split('\n')
       lines.forEach((text, index) => {
         if (!CJK.test(text)) return
-        if (ALLOWED_LITERALS.some((literal) => text.includes(literal))) return
+        // 精确匹配整行:此前用 `includes('中文')` 会让**任何**含「中文」的行整行豁免,
+        // 等于给同一行上的任意中文文案洗白(复审 E7)
+        if (ALLOWED_LITERALS.some((pattern) => pattern.test(text.trim()))) return
         offenders.push(`${name}:${index + 1}`)
       })
     }
     expect(offenders, `以下位置仍有硬编码文案,应改用 t('...'):\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('渲染层根目录的带文案文件不得从 MIGRATED 中移除(防止护栏被「缩小范围」绕过)', () => {
+    // 复审 S11b:把条目从 MIGRATED 删掉就能让护栏通过。这里钉住**已知带用户文案**的
+    // 渲染层根文件 —— 它们不在 components/ 下,不受下面「未登记组件」检查覆盖。
+    for (const required of ['../App.tsx', '../store.ts']) {
+      expect(MIGRATED, `${required} 必须保留在 MIGRATED 中(否则该文件的硬编码文案不再受检查)`).toContain(
+        required
+      )
+    }
   })
 
   it('PENDING 清单与磁盘一致(迁完必须从清单里删掉,避免进度虚报)', () => {
@@ -90,15 +122,15 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     expect(unlisted, `新组件必须加入 MIGRATED(默认可含硬编码文案会破坏双语完整性)`).toEqual([])
   })
 
-  it('渲染层 lib 不含硬编码文案', () => {
+  it('渲染层 lib 不含硬编码文案(递归,含 .tsx)', () => {
+    // 此前只扫 lib 顶层且只看 .ts —— 嵌套目录与 lib/*.tsx 整体逃逸(复审 E3b/E5b)
     const offenders: string[] = []
-    for (const name of readdirSync(RENDERER_LIB_DIR)) {
-      if (!name.endsWith('.ts') || name.endsWith('.test.ts')) continue
-      const code = stripComments(readFileSync(join(RENDERER_LIB_DIR, name), 'utf8'))
-      if (CJK.test(code)) {
-        const line = code.split('\n').findIndex((text) => CJK.test(text)) + 1
-        offenders.push(`${name}:${line}`)
-      }
+    for (const file of collectSources(RENDERER_LIB_DIR, ['.ts', '.tsx'])) {
+      if (file.endsWith('.test.ts') || file.endsWith('.test.tsx')) continue
+      const lines = stripComments(readFileSync(file, 'utf8')).split('\n')
+      lines.forEach((text, index) => {
+        if (CJK.test(text)) offenders.push(`${file.replace(`${process.cwd()}/`, '')}:${index + 1}`)
+      })
     }
     expect(offenders).toEqual([])
   })
