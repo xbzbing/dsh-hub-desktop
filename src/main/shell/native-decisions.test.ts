@@ -30,9 +30,13 @@ describe('native-decisions（T11 设置 → 原生行为）', () => {
     expect(shouldNotifyStatus({ status: 'starting' }, 'stopped', on)).toBe(false)
   })
 
-  it('托盘偏好直接决定关闭行为', () => {
-    expect(shouldMinimizeToTrayOnClose({ tray: true })).toBe(true)
-    expect(shouldMinimizeToTrayOnClose({ tray: false })).toBe(false)
+  it('托盘偏好 + 托盘存在才隐藏窗口', () => {
+    expect(shouldMinimizeToTrayOnClose({ tray: true }, true)).toBe(true)
+    expect(shouldMinimizeToTrayOnClose({ tray: false }, true)).toBe(false)
+  })
+
+  it('偏好开着但没有托盘时绝不隐藏(否则应用叫不回来)', () => {
+    expect(shouldMinimizeToTrayOnClose({ tray: true }, false)).toBe(false)
   })
 
   it('自启设置映射为登录项(自启时不抢焦点)', () => {

@@ -135,7 +135,12 @@ export const MESSAGES = {
     zh: '清除所有已记住的凭据',
     en: 'Clear all remembered credentials'
   },
-  'settings.saved': { zh: '设置已保存', en: 'Settings saved' }
+  'settings.saved': { zh: '设置已保存', en: 'Settings saved' },
+
+  // —— 托盘（T11）——
+  'tray.show': { zh: '显示主窗口', en: 'Show window' },
+  'tray.quit': { zh: '退出 DSH Hub', en: 'Quit DSH Hub' },
+  'tray.status': { zh: '{count} 个实例运行中', en: '{count} running' }
 } as const satisfies Record<string, Message>
 
 export type MessageKey = keyof typeof MESSAGES

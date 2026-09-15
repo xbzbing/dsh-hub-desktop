@@ -8,6 +8,7 @@ import {
   session,
   shell
 } from 'electron'
+import { existsSync } from 'node:fs'
 import { join, normalize, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type {
@@ -42,6 +43,11 @@ import { createInstanceStore } from './registry/instance-store'
 import { createVault } from './vault/vault'
 import { createAuditLog } from './audit/audit-log'
 import { createSettingsStore } from './settings/settings-store'
+import { createHubTray, updateTrayStatus } from './tray'
+import type { HubTrayLabels } from './tray'
+import { createTranslator } from '@shared/i18n'
+import { resolveLanguage } from '@shared/settings'
+import type { Tray } from 'electron'
 import type { SettingsStore } from './settings/settings-store'
 import {
   loginItemSettings,
@@ -123,6 +129,43 @@ let audit: AuditLog | null = null
  * (「关闭时最小化到托盘」),而窗口创建早于/独立于装配顺序。
  */
 let settingsRef: SettingsStore | null = null
+
+/** T11 托盘(仅在偏好开启时存在;close-to-tray 依赖它存在才允许隐藏) */
+let hubTray: Tray | null = null
+
+/**
+ * 托盘图标路径。
+ *
+ * 打包后资源不在 `out/main` 的相对位置,而是由 electron-builder 经
+ * `extraResources` 放到 `process.resourcesPath`(T13 配置)。两处都探测,
+ * 避免「开发能跑、打包后托盘空白」这类只在发行版出现的问题。
+ */
+function trayIconPath(): string {
+  const candidates = [
+    join(process.resourcesPath, 'trayTemplate.png'),
+    join(__dirname, '../../resources/trayTemplate.png')
+  ]
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+  return candidates[candidates.length - 1] as string
+}
+
+/** 从托盘召出主窗口(没有窗口就重建) */
+function showHubWindow(): void {
+  if (hubWindow && !hubWindow.isDestroyed()) {
+    hubWindow.show()
+    hubWindow.focus()
+  } else {
+    createWindow()
+  }
+}
+
+/** 从托盘退出(绕过「关闭即隐藏」) */
+function quitApp(): void {
+  quitting = true
+  app.quit()
+}
 
 /**
  * 上一个「已广播」的状态,用于把迁移翻译成审计事件(§7.5)。
@@ -213,7 +256,8 @@ function createWindow(): BrowserWindow {
   // T11:偏好「关闭窗口时最小化到托盘」——此时关闭不销毁窗口,而是隐藏
   win.on('close', (event) => {
     const current = settingsRef?.read()
-    if (!current || !shouldMinimizeToTrayOnClose(current)) return
+    // 托盘不存在时绝不隐藏:否则窗口关掉后应用无法召回(只剩 macOS Dock)
+    if (!current || !shouldMinimizeToTrayOnClose(current, hubTray !== null)) return
     event.preventDefault()
     win.hide()
   })
@@ -333,6 +377,42 @@ void app.whenReady().then(() => {
     } catch (error) {
       console.error('[main] 应用开机自启设置失败：', error)
     }
+    // T11 托盘:偏好开启才有托盘(关闭时销毁,避免留下无用的菜单栏图标)
+    try {
+      if (current.tray && !hubTray) {
+        hubTray = createHubTray({
+          iconPath: trayIconPath(),
+          labels: trayLabels(),
+          onShow: showHubWindow,
+          onQuit: quitApp
+        })
+      } else if (!current.tray && hubTray) {
+        hubTray.destroy()
+        hubTray = null
+      }
+    } catch (error) {
+      console.error('[main] 应用托盘设置失败：', error)
+    }
+  }
+
+  /** 当前处于 running 的实例数(托盘状态行) */
+  function runningInstanceCount(): number {
+    let count = 0
+    for (const status of lastRuntimeState.values()) if (status === 'running') count += 1
+    return count
+  }
+
+  /** 托盘文案跟随当前语言(与设置页一致) */
+  function trayLabels(): HubTrayLabels {
+    const language = resolveLanguage(settings.read().language, app.getLocale())
+    const tr = createTranslator(language)
+    return {
+      tooltip: tr('app.name'),
+      show: tr('tray.show'),
+      quit: tr('tray.quit'),
+      // 状态行取自主进程已在维护的运行时状态表(无需再读注册表)
+      status: tr('tray.status', { count: runningInstanceCount() })
+    }
   }
   applyNativeSettings(settings.read())
   // T10 §7.5:审计 JSONL(按日历日轮转,保留 90 天,不含任何凭据)
@@ -401,6 +481,14 @@ void app.whenReady().then(() => {
       }
     }
     lastRuntimeState.set(event.id, event.status)
+    // 托盘菜单的状态行跟随实例变化刷新(托盘存在时)
+    if (hubTray) {
+      try {
+        updateTrayStatus(hubTray, trayLabels(), showHubWindow, quitApp)
+      } catch (error) {
+        console.error('[main] 刷新托盘菜单失败：', error)
+      }
+    }
     if (event.status === 'running' && (event.port !== undefined || event.version !== undefined)) {
       void instanceStore
         .get(event.id)

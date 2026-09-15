@@ -31,9 +31,17 @@ export function shouldNotifyStatus(
   return NOTIFIABLE.includes(event.status)
 }
 
-/** 关闭窗口时是否应最小化到托盘(而不是退出应用) */
-export function shouldMinimizeToTrayOnClose(settings: Pick<Settings, 'tray'>): boolean {
-  return settings.tray
+/**
+ * 关闭窗口时是否应最小化到托盘(而不是退出应用)。
+ *
+ * **必须同时满足「偏好开启」与「托盘确实存在」**:偏好开着却没有托盘时隐藏窗口,
+ * 应用就再也叫不回来了(只剩 macOS Dock)。这是把「隐藏」当成不可逆操作来对待。
+ */
+export function shouldMinimizeToTrayOnClose(
+  settings: Pick<Settings, 'tray'>,
+  trayAvailable: boolean
+): boolean {
+  return settings.tray && trayAvailable
 }
 
 /**
