@@ -18,6 +18,7 @@ import {
   INSTANCE_RUNTIME_IPC,
   PatchInstanceSchema,
   SSH_IPC,
+  SETTINGS_IPC,
   SshKeyPreviewInputSchema,
   VAULT_IPC,
   VaultPolicySchema,
@@ -39,6 +40,9 @@ import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 import type { Vault } from '../vault/vault'
+import type { SettingsStore } from '../settings/settings-store'
+import { SettingsSchema } from '@shared/settings'
+import type { Settings } from '@shared/settings'
 import type { AuditEntry } from '../audit/audit-log'
 
 export interface IpcDeps {
@@ -65,6 +69,8 @@ export interface IpcDeps {
    * 才在登录成功时写入,勾选取消即忘掉。
    */
   vault: Vault
+  /** T11 应用设置(非敏感偏好) */
+  settings: SettingsStore
   /**
    * T10 审计(§7.5)。只接收白名单字段(见 `audit/audit-log.ts`),缺省不审计(单测)。
    * 审计写入本身异步且失败隔离,不阻塞业务。
@@ -377,6 +383,32 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       deps.audit?.({ event: 'vault-clear', result: 'ok' })
       return vaultSnapshot()
     })
+  )
+
+  // —— T11 应用设置（非敏感偏好;敏感项走 vault） ——
+
+  ipcMain.handle(
+    SETTINGS_IPC.get,
+    (): Promise<IpcResult<Settings>> => wrap(() => deps.settings.read())
+  )
+
+  ipcMain.handle(
+    SETTINGS_IPC.update,
+    (_event, patch: unknown): Promise<IpcResult<Settings>> =>
+      wrap(async () => {
+        // 只接受已知字段的**部分**补丁;未知字段由 .strict() 拒绝。
+        // 注意:`.partial()` 不会去掉字段自身的 `.default()`,会把未提交的字段也填上默认值 ——
+        // 那会让「只改语言」的补丁顺带回写其它字段(并把用户的其它偏好重置)。
+        // 因此这里先按未知字段校验,再**只挑出调用方真正给出的键**。
+        const raw = z.record(z.string(), z.unknown()).parse(patch)
+        SettingsSchema.partial().strict().parse(raw)
+        const known = Object.keys(SettingsSchema.shape) as Array<keyof Settings>
+        const provided: Partial<Settings> = {}
+        for (const key of known) {
+          if (key in raw) provided[key] = raw[key] as never
+        }
+        return deps.settings.update(provided)
+      })
   )
 
   ipcMain.handle(

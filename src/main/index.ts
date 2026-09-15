@@ -31,6 +31,7 @@ import type { AuthRegistry } from './auth/auth-registry'
 import { createInstanceStore } from './registry/instance-store'
 import { createVault } from './vault/vault'
 import { createAuditLog } from './audit/audit-log'
+import { createSettingsStore } from './settings/settings-store'
 import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
 import type { Vault } from './vault/vault'
 import type { AuditLog } from './audit/audit-log'
@@ -287,6 +288,8 @@ void app.whenReady().then(() => {
       decrypt: (payload) => safeStorage.decryptString(Buffer.from(payload, 'base64'))
     }
   })
+  // T11 偏好(非敏感):语言/主题/托盘/自启/通知
+  const settings = createSettingsStore({ dir: dataRoot })
   // T10 §7.5:审计 JSONL(按日历日轮转,保留 90 天,不含任何凭据)
   audit = createAuditLog({ dir: join(dataRoot, 'audit') })
   if (!safeStorageAvailable) {
@@ -405,6 +408,7 @@ void app.whenReady().then(() => {
     http: httpEndpoints,
     auth,
     vault: vault as Vault,
+    settings,
     audit: auditWrite,
     // T9:登出时清该实例分区内的会话 Cookie(origin 取自实例记录)
     clearPartitionSession: async (instanceId) => {

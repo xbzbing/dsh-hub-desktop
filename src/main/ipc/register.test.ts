@@ -61,6 +61,7 @@ let authFake: {
 let clearPartitionSession: ReturnType<typeof vi.fn>
 let vaultFake: Record<string, ReturnType<typeof vi.fn>>
 let auditSpy: (entry: { instanceId?: string | null; event: string; result?: string }) => void
+let settingsFake: Record<string, ReturnType<typeof vi.fn>>
 let promptsFake: {
   requestHostKey: ReturnType<typeof vi.fn>
   requestAskpass: ReturnType<typeof vi.fn>
@@ -131,6 +132,24 @@ beforeEach(async () => {
     rememberedIds: vi.fn(() => [])
   }
   auditSpy = vi.fn() as unknown as typeof auditSpy
+  settingsFake = {
+    read: vi.fn(() => ({
+      language: 'zh',
+      theme: 'system',
+      tray: false,
+      autoStart: false,
+      notifications: true
+    })),
+    update: vi.fn(async (patch: Record<string, unknown>) => ({
+      language: 'zh',
+      theme: 'system',
+      tray: false,
+      autoStart: false,
+      notifications: true,
+      ...patch
+    })),
+    filePath: vi.fn(() => '/tmp/settings.json')
+  }
   openInstanceView = vi.fn()
   promptsFake = {
     requestHostKey: vi.fn(async () => 'trust'),
@@ -145,6 +164,7 @@ beforeEach(async () => {
     http: httpFake as unknown as HttpEndpointManager,
     auth: authFake as never,
     vault: vaultFake as never,
+    settings: settingsFake as never,
     audit: auditSpy,
     clearPartitionSession: clearPartitionSession as never,
     prompts: promptsFake as never,
@@ -187,7 +207,9 @@ describe('registerIpc', () => {
       'vault:status',
       'vault:setPolicy',
       'vault:forget',
-      'vault:clear'
+      'vault:clear',
+      'settings:get',
+      'settings:update'
     ]
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
   })
@@ -714,5 +736,33 @@ describe('registerIpc', () => {
     if (!created.ok) throw new Error('创建失败')
     await invoke('instances:delete', created.value.id)
     expect(vaultFake['forgetInstance']).toHaveBeenCalledWith(created.value.id)
+  })
+
+  it('T11 settings:get 返回偏好快照', async () => {
+    const result = (await invoke('settings:get')) as {
+      ok: boolean
+      value: { language: string; theme: string }
+    }
+    expect(result.ok).toBe(true)
+    expect(result.value.language).toBe('zh')
+    expect(result.value.theme).toBe('system')
+  })
+
+  it('T11 settings:update 只接受已知字段的部分补丁', async () => {
+    const ok = (await invoke('settings:update', { language: 'en', tray: true })) as {
+      ok: boolean
+      value: { language: string; tray: boolean }
+    }
+    expect(ok.ok).toBe(true)
+    expect(settingsFake['update']).toHaveBeenCalledWith({ language: 'en', tray: true })
+
+    // 未知字段被 .strict() 拒绝(错误信封,不抛异常)
+    const unknown = (await invoke('settings:update', { nope: 1 })) as { ok: boolean; code?: string }
+    expect(unknown.ok).toBe(false)
+    expect(unknown.code).toBe('invalid-input')
+
+    // 非法取值同样被拒
+    const bad = (await invoke('settings:update', { theme: 'rainbow' })) as { ok: boolean }
+    expect(bad.ok).toBe(false)
   })
 })

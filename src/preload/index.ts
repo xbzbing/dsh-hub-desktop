@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { Settings } from '@shared/settings'
 import { IPC, type AppInfo, type DshHubBridge, type PingResult } from '@shared/bridge'
 import {
   AUTH_IPC,
@@ -6,6 +7,7 @@ import {
   INSTANCE_RUNTIME_IPC,
   HTTP_IPC,
   INSTANCE_STATUS_EVENT,
+  SETTINGS_IPC,
   SSH_IPC,
   VAULT_IPC,
   type AskpassPromptPayload,
@@ -100,6 +102,12 @@ const bridge: DshHubBridge = {
         ipcRenderer.removeListener(AUTH_IPC.signal, handler)
       }
     }
+  },
+  // T11 应用设置:非敏感偏好(语言/主题/托盘/自启/通知)
+  settings: {
+    get: () => ipcRenderer.invoke(SETTINGS_IPC.get) as Promise<IpcResult<Settings>>,
+    update: (patch) =>
+      ipcRenderer.invoke(SETTINGS_IPC.update, patch) as Promise<IpcResult<Settings>>
   },
   // T10 凭据保险库(§7.2):只暴露「状态/勾选/忘记/清空」——没有「读出凭据」的通道,
   // 渲染进程永远拿不到已存密码或会话值(凭据只在主进程内使用)。

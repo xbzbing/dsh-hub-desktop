@@ -370,6 +370,14 @@ export interface VaultStatusSnapshot {
   rememberedInstances: string[]
 }
 
+/**
+ * T11 应用设置通道(非敏感偏好;敏感项一律走 vault)。
+ */
+export const SETTINGS_IPC = {
+  get: 'settings:get',
+  update: 'settings:update'
+} as const
+
 export type AuthPhase =
   | 'unknown'
   | 'probe'

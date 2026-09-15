@@ -7,6 +7,7 @@
  * 实例注册表相关类型与通道常量见 `./contracts.ts`（T2 起）；本文件只承载桥接面本身。
  */
 
+import type { Settings } from './settings'
 import type {
   AskpassPromptPayload,
   AuthSignalEvent,
@@ -103,6 +104,11 @@ export interface DshHubBridge {
     onState: (listener: (event: AuthStateEvent) => void) => () => void
     /** 订阅 webview 拦截信号（会话失效/需要验证码/需要改密） */
     onSignal: (listener: (event: AuthSignalEvent) => void) => () => void
+  }
+  /** T11 应用设置（非敏感偏好：语言/主题/托盘/自启/通知） */
+  settings: {
+    get: () => Promise<IpcResult<Settings>>
+    update: (patch: Partial<Settings>) => Promise<IpcResult<Settings>>
   }
   /** T10 凭据保险库（设计 §7.2）：默认不存，显式勾选后才落盘 */
   vault: {
