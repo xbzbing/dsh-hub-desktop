@@ -147,6 +147,9 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
         else if (record?.transport === 'http') await deps.http.stop(instanceId)
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
+        // T9:删除实例一并清该分区会话与认证客户端(不留悬挂会话)
+        deps.auth.forget(instanceId)
+        await deps.clearPartitionSession?.(instanceId).catch(() => undefined)
         return { removed: await store.remove(instanceId) }
       })
   )

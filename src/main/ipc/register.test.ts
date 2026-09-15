@@ -191,6 +191,19 @@ describe('registerIpc', () => {
     }
   })
 
+  it('T9:删除实例一并清理认证客户端与分区会话', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    const result = (await invoke('instances:delete', created.value.id)) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(authFake.forget).toHaveBeenCalledWith(created.value.id)
+    expect(clearPartitionSession).toHaveBeenCalledWith(created.value.id)
+  })
+
   it('T9:logout 后清理实例分区会话 Cookie(否则 webview 仍带旧会话)', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     const result = (await invoke('auth:logout', id)) as { ok: boolean }
