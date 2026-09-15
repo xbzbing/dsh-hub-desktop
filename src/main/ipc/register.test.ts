@@ -39,6 +39,13 @@ let tunnelsFake: {
   stopAll: ReturnType<typeof vi.fn>
 }
 let openInstanceView: ReturnType<typeof vi.fn>
+let promptsFake: {
+  requestHostKey: ReturnType<typeof vi.fn>
+  requestAskpass: ReturnType<typeof vi.fn>
+  replyHostKey: ReturnType<typeof vi.fn>
+  replyAskpass: ReturnType<typeof vi.fn>
+  cancelAll: ReturnType<typeof vi.fn>
+}
 let currentStatus: InstanceStatusEvent | null
 
 beforeEach(async () => {
@@ -67,9 +74,17 @@ beforeEach(async () => {
     stopAll: vi.fn(async () => undefined)
   }
   openInstanceView = vi.fn()
+  promptsFake = {
+    requestHostKey: vi.fn(async () => 'trust'),
+    requestAskpass: vi.fn(async () => null),
+    replyHostKey: vi.fn(() => true),
+    replyAskpass: vi.fn(() => true),
+    cancelAll: vi.fn()
+  }
   registerIpc(createInstanceStore({ dir }), {
     runtime: runtimeFake as unknown as LocalRuntimeManager,
     tunnels: tunnelsFake as unknown as SshTunnelManager,
+    prompts: promptsFake as never,
     openInstanceView: openInstanceView as never
   })
 })
@@ -87,7 +102,7 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 const VALID_LOCAL = { transport: 'local', name: 'IPC 实例' }
 
 describe('registerIpc', () => {
-  it('注册 app 双探针 + 实例 CRUD + 运行时控制共十个通道', () => {
+  it('注册 app 双探针 + 实例 CRUD + 运行时控制 + T5 SSH 辅助共十三个通道', () => {
     const expected = [
       'app:info',
       'app:ping',
@@ -98,7 +113,10 @@ describe('registerIpc', () => {
       'instances:delete',
       'instances:start',
       'instances:stop',
-      'instances:openView'
+      'instances:openView',
+      'ssh:keyPreview',
+      'ssh:hostKeyReply',
+      'ssh:askpassReply'
     ]
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
   })
@@ -338,6 +356,32 @@ describe('registerIpc', () => {
     }
     expect(viewResult.ok).toBe(false)
     if (!viewResult.ok) expect(viewResult.code).toBe('invalid-state')
+  })
+
+  it('openView:ssh 实例 running → 从 tunnels 取状态开窗(评审缺陷 A 回归)', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '隧道',
+      host: 'dsh.internal',
+      username: 'dev'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    tunnelsFake.statusOf.mockReturnValue({
+      id: created.value.id,
+      status: 'running',
+      url: 'http://127.0.0.1:30000/',
+      port: 30000,
+      at: '2026-09-15T00:00:00.000Z'
+    })
+    // runtime 侧没有该实例的状态(running 只在 tunnels 里)
+    currentStatus = null
+
+    const result = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(tunnelsFake.statusOf).toHaveBeenCalledWith(created.value.id)
+    expect(openInstanceView).toHaveBeenCalledTimes(1)
+    expect(openInstanceView.mock.calls[0]?.[1]).toBe('http://127.0.0.1:30000/')
   })
 
   it('openView:运行中实例 → 用就绪 URL 打开窗口', async () => {

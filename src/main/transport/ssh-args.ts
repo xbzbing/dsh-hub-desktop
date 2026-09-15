@@ -48,9 +48,9 @@ export function buildSshArgs(
     // 前台，真正持隧道的是「未跟踪的 master」，停止/退出时回收不掉（实测孤儿）
     'ControlPersist=no',
     `ControlPath=${options.controlPath}`,
-    // 私有 known_hosts + accept-new：首次连接自动信任并写入 hub 私有文件；
-    // T5 的 TOFU 流程（keyscan 预取指纹 → UI 确认 → 写私有文件）会替换此策略
-    'StrictHostKeyChecking=accept-new',
+    // T5 起改为严格模式:TOFU 已在连接前完成(ssh-keyscan 预取指纹 → UI 确认 →
+    // 写入 hub 私有 known_hosts),此处不再允许 ssh 自行接受未知主机
+    'StrictHostKeyChecking=yes',
     `UserKnownHostsFile=${options.knownHostsPath}`
   ]
   for (const option of optionsList) args.push('-o', option)

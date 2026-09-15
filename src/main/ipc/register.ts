@@ -14,10 +14,15 @@ import {
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
   PatchInstanceSchema,
+  SSH_IPC,
+  SshKeyPreviewInputSchema,
+  type HostKeyDecision,
   type InstanceRecord,
   type InstanceSummary,
   type IpcResult
 } from '@shared/contracts'
+import { resolveSshKeyPreview } from '../ssh/key-preview'
+import type { PromptBroker } from '../ssh/prompt-broker'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
@@ -29,6 +34,8 @@ export interface IpcDeps {
   tunnels: SshTunnelManager
   /** 打开实例视图窗口（electron 侧实现，便于 register 单测注入假实现） */
   openInstanceView: (instance: InstanceRecord, url: string) => void
+  /** T5 用户提示代理（指纹确认 / 口令输入） */
+  prompts: PromptBroker
 }
 
 async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
@@ -159,12 +166,53 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       const instanceId = parseId(id)
       const instance = await store.get(instanceId)
       if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
-      const status = deps.runtime.statusOf(instanceId)
+      // 状态按 transport 取:ssh 隧道状态只存在于 tunnels 管理器,
+      // local 的只在 runtime;取错管理器会让 ssh 实例「已连接但打不开视图」(评审缺陷 A)
+      const status =
+        instance.transport === 'ssh'
+          ? deps.tunnels.statusOf(instanceId)
+          : deps.runtime.statusOf(instanceId)
       if (status?.status !== 'running' || !status.url) {
         throw new InstanceStoreError('invalid-state', '实例尚未运行，无法打开视图')
       }
       deps.openInstanceView(instance, status.url)
       return null
     })
+  )
+
+  // —— SSH 辅助（T5）：密钥预览 + 指纹确认/口令回复 ——
+
+  ipcMain.handle(SSH_IPC.keyPreview, (_event, input: unknown) =>
+    wrap(() => {
+      const parsed = SshKeyPreviewInputSchema.parse(input)
+      return resolveSshKeyPreview({
+        host: parsed.host,
+        port: parsed.port,
+        username: parsed.username,
+        identityFile: parsed.identityFile ?? null
+      })
+    })
+  )
+
+  ipcMain.handle(
+    SSH_IPC.hostKeyReply,
+    (_event, requestId: unknown, decision: unknown): Promise<IpcResult<null>> =>
+      wrap(() => {
+        const id = z.uuid().parse(requestId)
+        const value = z.enum(['trust', 'reject']).parse(decision) as HostKeyDecision
+        deps.prompts.replyHostKey(id, value)
+        return null
+      })
+  )
+
+  ipcMain.handle(
+    SSH_IPC.askpassReply,
+    (_event, requestId: unknown, secret: unknown): Promise<IpcResult<null>> =>
+      wrap(() => {
+        const id = z.uuid().parse(requestId)
+        const value = z.string().max(4096).nullable().parse(secret)
+        deps.prompts.replyAskpass(id, value)
+        return null
+      })
   )
 }

@@ -212,6 +212,90 @@ export type PatchInstanceInput = z.input<typeof PatchInstanceSchema>
 /** 经 schema 解析后的补丁（store 内部使用） */
 export type PatchInstanceParams = z.output<typeof PatchInstanceSchema>
 
+// ===== SSH 密钥预览 / 主机指纹确认 / askpass（T5） =====
+
+/**
+ * T5 通道：
+ * - `keyPreview`：向导/详情页只读展示「将使用哪个密钥」与 agent 状态（绝不含私钥内容）；
+ * - `hostKeyDecision`(主→渲染) + `hostKeyReply`(渲染→主)：TOFU 指纹确认（首次/变化双变体）；
+ * - `askpassRequest`(主→渲染) + `askpassReply`(渲染→主)：SSH 口令/密钥口令弹窗，
+ *   口令只经 IPC 瞬时传递，不落盘、不入日志、不进审计。
+ */
+export const SSH_IPC = {
+  keyPreview: 'ssh:keyPreview',
+  hostKeyDecision: 'ssh:hostKeyDecision',
+  hostKeyReply: 'ssh:hostKeyReply',
+  askpassRequest: 'ssh:askpassRequest',
+  askpassReply: 'ssh:askpassReply'
+} as const
+
+/** 密钥预览输入（向导里的草稿，未必已入库） */
+export const SshKeyPreviewInputSchema = z
+  .object({
+    host: SSH_HOST_SCHEMA,
+    port: PORT_SCHEMA.default(22),
+    username: z.string().trim().min(1, 'SSH 用户名不能为空').max(128),
+    identityFile: z.string().trim().max(512).nullable().optional()
+  })
+  .strict()
+export type SshKeyPreviewInput = z.input<typeof SshKeyPreviewInputSchema>
+
+export type SshAgentStatus = 'ready' | 'empty' | 'unavailable'
+
+export interface SshAgentKeyInfo {
+  type: string
+  typeLabel: string
+  /** 公钥体（只读展示，不含任何私钥信息） */
+  blob: string
+  comment: string | null
+  fingerprint: string
+}
+
+export interface SshKeyPreviewResult {
+  target: string
+  resolved: { user: string; host: string; port: number }
+  identityFiles: string[]
+  agent: { status: SshAgentStatus; keys: SshAgentKeyInfo[] }
+  explicitIdentityFile: string | null
+}
+
+export interface HostKeyFingerprintInfo {
+  type: string
+  typeLabel: string
+  fingerprint: string
+}
+
+/** 指纹确认请求（主 → 渲染）；verdict=changed 时 UI 走红色警示且默认拒绝 */
+export interface HostKeyPromptPayload {
+  requestId: string
+  instanceId: string
+  /** 目标标签（host 或 host:port） */
+  target: string
+  verdict: 'unknown' | 'changed'
+  fingerprints: HostKeyFingerprintInfo[]
+  previousFingerprints: HostKeyFingerprintInfo[]
+}
+
+export type HostKeyDecision = 'trust' | 'reject'
+
+export interface HostKeyReplyPayload {
+  requestId: string
+  decision: HostKeyDecision
+}
+
+/** askpass 口令请求（主 → 渲染）；secret 只经 IPC 瞬时传递 */
+export interface AskpassPromptPayload {
+  requestId: string
+  instanceId: string
+  prompt: string
+}
+
+export interface AskpassReplyPayload {
+  requestId: string
+  /** null = 用户取消 */
+  secret: string | null
+}
+
 // ===== 注册表文件与版本迁移 =====
 
 export const REGISTRY_SCHEMA_VERSION = 1

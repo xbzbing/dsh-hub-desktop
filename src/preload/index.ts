@@ -4,8 +4,14 @@ import {
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
   INSTANCE_STATUS_EVENT,
+  SSH_IPC,
+  type AskpassPromptPayload,
+  type HostKeyDecision,
+  type HostKeyPromptPayload,
   type InstanceStatusEvent,
-  type IpcResult
+  type IpcResult,
+  type SshKeyPreviewInput,
+  type SshKeyPreviewResult
 } from '@shared/contracts'
 
 /**
@@ -35,6 +41,28 @@ const bridge: DshHubBridge = {
     return () => {
       ipcRenderer.removeListener(INSTANCE_STATUS_EVENT, handler)
     }
+  },
+  ssh: {
+    keyPreview: (input: SshKeyPreviewInput) =>
+      ipcRenderer.invoke(SSH_IPC.keyPreview, input) as Promise<IpcResult<SshKeyPreviewResult>>,
+    onHostKeyDecision: (listener) => {
+      const handler = (_event: unknown, payload: HostKeyPromptPayload): void => listener(payload)
+      ipcRenderer.on(SSH_IPC.hostKeyDecision, handler)
+      return () => {
+        ipcRenderer.removeListener(SSH_IPC.hostKeyDecision, handler)
+      }
+    },
+    replyHostKey: (requestId: string, decision: HostKeyDecision) =>
+      ipcRenderer.invoke(SSH_IPC.hostKeyReply, requestId, decision),
+    onAskpassRequest: (listener) => {
+      const handler = (_event: unknown, payload: AskpassPromptPayload): void => listener(payload)
+      ipcRenderer.on(SSH_IPC.askpassRequest, handler)
+      return () => {
+        ipcRenderer.removeListener(SSH_IPC.askpassRequest, handler)
+      }
+    },
+    replyAskpass: (requestId: string, secret: string | null) =>
+      ipcRenderer.invoke(SSH_IPC.askpassReply, requestId, secret)
   }
 }
 

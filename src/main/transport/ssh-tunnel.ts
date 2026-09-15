@@ -20,6 +20,22 @@ import {
   isPortFree
 } from '../local-runtime/port-allocator'
 import type { PortProbe } from '../local-runtime/port-allocator'
+import {
+  askpassSocketPath,
+  ensureAskpassScripts,
+  startAskpassServer,
+  type AskpassServer
+} from '../ssh/askpass'
+import {
+  createHostTrustProbe,
+  evaluateHostTrust,
+  hostTargetLabel,
+  knownHostsHostField,
+  recordHostTrust,
+  toFingerprints,
+  type HostKeyEntry,
+  type HostKeyPrompt
+} from '../ssh/host-trust'
 import { classifySshExit, type SshExitAttribution } from './attribution'
 import { sshTunnelEndpoint } from './endpoint-resolver'
 import { httpHealthProbe, sleep, type HealthProbe } from './probe'
@@ -60,6 +76,12 @@ export interface SshTunnelOptions {
   stableResetMs?: number
   stopGraceMs?: number
   now?: () => number
+  /** T5 askpass:ssh 索要口令/密钥口令时询问用户(返回 null = 取消);未接线则不启用 */
+  askpass?: (request: { instanceId: string; prompt: string }) => Promise<string | null>
+  /** T5 TOFU:新主机/指纹变化时请用户确认;未接线则跳过确认(单测路径) */
+  confirmHostKey?: (request: HostKeyPrompt) => Promise<'trust' | 'reject'>
+  /** askpass helper 使用的 Node 命令(缺省 process.execPath + ELECTRON_RUN_AS_NODE) */
+  askpassNode?: { command: string; args: string[] }
 }
 
 export interface SshTunnelManager {
@@ -95,6 +117,10 @@ interface TunnelEntry {
   forwardFailed: boolean
   reconnectCount: number
   controlPath: string
+  /** 本实例的 askpass socket 服务(T5);stop 时关闭 */
+  askpassServer: AskpassServer | null
+  /** SSH_ASKPASS 指向的包装脚本路径(T5 起用) */
+  askpassWrapperPath: string | null
 }
 
 /** 本实例 ControlPath 基础目录：unix socket 名上限 104 字节（含 NUL），ssh 还会给
@@ -129,6 +155,9 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
   const stableResetMs = options.stableResetMs ?? 60_000
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const now = options.now ?? (() => Date.now())
+  const askpass = options.askpass
+  const confirmHostKey = options.confirmHostKey
+  const askpassNode = options.askpassNode ?? { command: process.execPath, args: [] }
 
   const entries = new Map<string, TunnelEntry>()
   const statuses = new Map<string, InstanceStatusEvent>()
@@ -167,6 +196,65 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
   }
 
+  /** T5 TOFU:连接前校验服务器指纹(未见过 → 询问;变化 → 告警/拒绝) */
+  async function ensureTrust(instance: SshInstance, emitWaiting: (detail: string) => void): Promise<boolean> {
+    const knownHostsPath = join(dataRoot, 'ssh', 'known_hosts')
+    const hostField = knownHostsHostField(instance.host, instance.port)
+    const probe = createHostTrustProbe(instance.host, instance.port, { knownHostsPath })
+    const trusted = await probe.readTrusted()
+    let scanned: HostKeyEntry[]
+    try {
+      scanned = await probe.scan()
+    } catch {
+      // keyscan 拿不到公钥(主机不可达/网络抖动):不做 TOFU 判定,交给 ssh 自己连接并归因
+      return true
+    }
+    if (scanned.length === 0) return true
+    const evaluation = evaluateHostTrust(trusted, scanned)
+    if (evaluation.verdict === 'trusted') return true
+    if (!confirmHostKey) return true // 未接线(单测)则直接放行
+    emitWaiting(
+      evaluation.verdict === 'changed' ? '等待确认服务器指纹（已变化）' : '等待确认服务器指纹'
+    )
+    const decision = await confirmHostKey({
+      instanceId: instance.id,
+      target: hostTargetLabel(instance.host, instance.port),
+      verdict: evaluation.verdict,
+      fingerprints: toFingerprints(scanned),
+      previousFingerprints: toFingerprints(evaluation.mismatched)
+    })
+    if (decision !== 'trust') return false
+    await recordHostTrust(
+      knownHostsPath,
+      hostField,
+      scanned,
+      evaluation.verdict === 'changed' ? 'replace' : 'append'
+    )
+    return true
+  }
+
+  /** T5 askpass:按实例起一条 unix socket 服务,把 ssh 的口令提示转给用户 */
+  async function startAskpassFor(entry: TunnelEntry): Promise<AskpassServer | null> {
+    if (!askpass) return null
+    const scripts = await ensureAskpassScripts(join(dataRoot, 'ssh'), askpassNode.command, askpassNode.args)
+    const server = await startAskpassServer({
+      socketPath: askpassSocketPath(socketsDirFor(dataRoot), controlSlug2(entry)),
+      onPrompt: async ({ prompt }) => {
+        emit(entry.id, 'starting', { detail: '等待输入 SSH 口令（不落盘）' })
+        const secret = await askpass({ instanceId: entry.id, prompt })
+        if (secret !== null) emit(entry.id, 'starting', { detail: '已收到口令，继续建立隧道' })
+        return secret
+      }
+    })
+    entry.askpassWrapperPath = scripts.wrapperPath
+    return server
+  }
+
+  /** askpass socket 用的实例 slug(= 实例 UUID 前 12 hex) */
+  function controlSlug2(entry: TunnelEntry): string {
+    return entry.id.replace(/-/g, '').slice(0, 12)
+  }
+
   /** 端口可用性 = 未被本管理器保留 + 可绑定（portProbe 可注入） */
   async function isPortAvailable(port: number): Promise<boolean> {
     if (reservedPorts.has(port)) return false
@@ -202,12 +290,23 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       controlPath: entry.controlPath,
       knownHostsPath: join(dataRoot, 'ssh', 'known_hosts')
     })
-    // SSH_ASKPASS_REQUIRE=never：T4 不做口令输入（T5 引 askpass），无 tty 下需要
-    // 口令的认证直接失败走归因，避免任何挂起
+    // T5:启用 askpass（SSH_ASKPASS 指向运行时写入的包装脚本 + REQUIRE=force）
+    // - DISPLAY 需非空,OpenSSH 才会走 askpass 分支（无 tty 场景）
+    // - ELECTRON_RUN_AS_NODE=1 让包装脚本用 Electron 自带 Node 执行 helper
+    // - DSH_HUB_ASKPASS_SOCKET 指向本实例的 unix socket
+    const askpassEnv = entry.askpassWrapperPath
+      ? {
+          SSH_ASKPASS: entry.askpassWrapperPath,
+          SSH_ASKPASS_REQUIRE: 'force',
+          DISPLAY: process.env['DISPLAY'] ?? 'dsh-hub',
+          ELECTRON_RUN_AS_NODE: '1',
+          DSH_HUB_ASKPASS_SOCKET: askpassSocketPath(socketsDirFor(dataRoot), controlSlug2(entry))
+        }
+      : { SSH_ASKPASS_REQUIRE: 'never' as const }
     const child = spawnImpl({
       command: sshCommand,
       args,
-      env: { ...process.env, SSH_ASKPASS_REQUIRE: 'never' },
+      env: { ...process.env, ...askpassEnv },
       cwd: join(dataRoot, 'ssh'),
       detached: true
     })
@@ -259,6 +358,17 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     }
   }
 
+  /** 取消已排队的重连：清 timer **必须同时复位 reconnectScheduled**,
+   *  否则后续 scheduleReconnect 会被幂等守卫短路 → 看门狗永久卡死
+   *  （实测:僵尸兜底先 schedule、迟到 exit 又清 timer 时就复现） */
+  function cancelReconnect(entry: TunnelEntry): void {
+    if (entry.reconnectTimer) {
+      clearTimeout(entry.reconnectTimer)
+      entry.reconnectTimer = null
+    }
+    entry.reconnectScheduled = false
+  }
+
   /** 看门狗：按当前退避调度重连（幂等：已调度则不重复） */
   function scheduleReconnect(entry: TunnelEntry): void {
     if (entry.stopping || entry.reconnectScheduled) return
@@ -286,6 +396,8 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       entry.stopping = true
       entries.delete(entry.id)
       reservedPorts.delete(entry.localPort)
+      if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
+      entry.askpassServer = null
       emit(entry.id, 'stopped', { detail: '实例已删除' })
       return
     }
@@ -325,15 +437,14 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       emit(id, 'error', { detail: `SSH 进程启动失败：${error.message}` })
       entries.delete(id)
       reservedPorts.delete(entry.localPort)
+      if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
+      entry.askpassServer = null
     })
 
     child.on('exit', (code) => {
       if (entries.get(id) !== entry || entry.child !== child) return
       entry.child = null
-      if (entry.reconnectTimer) {
-        clearTimeout(entry.reconnectTimer)
-        entry.reconnectTimer = null
-      }
+      cancelReconnect(entry)
       if (entry.stopping) return // stop() 独占发布 stopped
       const attribution = entry.pendingReason ?? classifySshExit(code, entry.log.join('\n'))
       entry.pendingReason = null
@@ -374,6 +485,13 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       if (entries.has(id) || startingIds.has(id)) {
         const existing = entries.get(id)
         if (existing) {
+          if (!existing.ready && !existing.stopping && existing.child === null && !existing.reconnectScheduled) {
+            // 自愈:看门狗链路断了(无子进程、无待重连)时,用户点「启动」应能恢复
+            existing.backoffMs = backoffBaseMs
+            emit(id, 'starting', { detail: '检测到隧道已中断，重新建立连接' })
+            scheduleReconnect(existing)
+            return
+          }
           emit(id, existing.ready ? 'running' : 'starting', {
             ...(existing.url ? { url: existing.url } : {}),
             ...(existing.ready ? { port: existing.localPort } : {}),
@@ -420,9 +538,28 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
           pendingReason: null,
           forwardFailed: false,
           reconnectCount: 0,
+          askpassServer: null,
+          askpassWrapperPath: null,
           // 短名 + 目标哈希:同一目标的多实例/多连接天然复用同一条主连接(ControlMaster=auto)
           controlPath: join(socketsDirFor(dataRoot), `ctl-${controlSlug(instance)}`)
         }
+        emit(id, 'starting', { detail: '校验服务器指纹' })
+        const trusted = await ensureTrust(instance, (detail) => emit(id, 'starting', { detail }))
+        if (!trusted) {
+          reservedPorts.delete(localPort)
+          emit(id, 'error', { detail: '服务器指纹未确认（或已变化），已拒绝连接' })
+          return
+        }
+        if (cancelRequested.delete(id)) {
+          reservedPorts.delete(localPort)
+          emit(id, 'stopped', { detail: '已取消启动' })
+          return
+        }
+        // T5 askpass:口令提示通道(仅当接线了 askpass 时)
+        entry.askpassServer = await startAskpassFor(entry).catch((error: unknown) => {
+          console.error('[ssh-tunnel] askpass 通道启动失败：', error)
+          return null
+        })
         entries.set(id, entry)
         emit(id, 'starting', {
           detail: `建立 SSH 隧道（${localPort} → ${entry.remoteLabel}）`
@@ -450,10 +587,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         return
       }
       entry.stopping = true
-      if (entry.reconnectTimer) {
-        clearTimeout(entry.reconnectTimer)
-        entry.reconnectTimer = null
-      }
+      cancelReconnect(entry)
       const child = entry.child
       if (child) {
         killProcessGroup(child, 'SIGTERM')
@@ -466,6 +600,8 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       entries.delete(id)
       reservedPorts.delete(entry.localPort)
       void rm(entry.controlPath, { force: true })
+      if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
+      entry.askpassServer = null
       emit(id, 'stopped', { detail: '隧道已停止' })
     },
 

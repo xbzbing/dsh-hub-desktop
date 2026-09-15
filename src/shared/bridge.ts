@@ -8,12 +8,17 @@
  */
 
 import type {
+  AskpassPromptPayload,
   CreateInstanceInput,
+  HostKeyDecision,
+  HostKeyPromptPayload,
   InstanceRecord,
   InstanceStatusEvent,
   InstanceSummary,
   IpcResult,
-  PatchInstanceInput
+  PatchInstanceInput,
+  SshKeyPreviewInput,
+  SshKeyPreviewResult
 } from './contracts'
 
 export const IPC = {
@@ -64,4 +69,17 @@ export interface DshHubBridge {
   }
   /** 订阅实例状态事件；返回取消订阅函数（渲染层不接触原始 IPC 事件对象） */
   onInstanceStatus: (listener: (event: InstanceStatusEvent) => void) => () => void
+  /** SSH 传输辅助（T5）：密钥预览 / 主机指纹确认 / 口令输入 */
+  ssh: {
+    /** 只读密钥预览（ssh -G + ssh-add -L）；不含私钥内容 */
+    keyPreview: (input: SshKeyPreviewInput) => Promise<IpcResult<SshKeyPreviewResult>>
+    /** 订阅指纹确认请求（TOFU；首次/变化双变体） */
+    onHostKeyDecision: (listener: (payload: HostKeyPromptPayload) => void) => () => void
+    /** 回复指纹确认；decision=trust 才会写入 hub 私有 known_hosts */
+    replyHostKey: (requestId: string, decision: HostKeyDecision) => Promise<IpcResult<null>>
+    /** 订阅口令输入请求（ssh 索要私钥口令/密码）；口令不落盘 */
+    onAskpassRequest: (listener: (payload: AskpassPromptPayload) => void) => () => void
+    /** 回复口令；secret=null 表示取消 */
+    replyAskpass: (requestId: string, secret: string | null) => Promise<IpcResult<null>>
+  }
 }

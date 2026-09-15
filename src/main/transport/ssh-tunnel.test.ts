@@ -247,7 +247,7 @@ describe('createSshTunnels（T4 隧道管理器 + 看门狗）', () => {
       readyTimeoutMs: 2000,
       backoffBaseMs: 40,
       backoffMaxMs: 400,
-      stableResetMs: 150,
+      stableResetMs: 100,
       stopGraceMs: 30
     })
     const instance = sshInstance()
@@ -259,9 +259,9 @@ describe('createSshTunnels（T4 隧道管理器 + 看门狗）', () => {
     await waitForStatus(manager, instance.id, 'error')
     expect(manager.statusOf(instance.id)?.detail).toContain('0.04s')
 
-    // 重连并稳定 200ms(≥150ms) 后再断线 → 退避重置回基数
+    // 重连并稳定 400ms(≫100ms 阈值,留足并行跑余量) 后再断线 → 退避重置回基数
     await waitForStatus(manager, instance.id, 'running', 5000)
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    await new Promise((resolve) => setTimeout(resolve, 400))
     children[1]?.emit('exit', 1, null)
     await waitForStatus(manager, instance.id, 'error')
     expect(manager.statusOf(instance.id)?.detail).toContain('0.04s') // 而非 0.08s

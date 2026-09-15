@@ -9,6 +9,7 @@ import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import { createSshTunnels } from './transport/ssh-tunnel'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
+import { createPromptBroker } from './ssh/prompt-broker'
 import { createInstanceStore } from './registry/instance-store'
 import { closeInstanceWindow, openInstanceWindow } from './window-host'
 
@@ -186,7 +187,20 @@ void app.whenReady().then(() => {
     ...(npmRegistry ? { registry: npmRegistry } : {})
   })
   runtime = createLocalRuntime({ installer, dataRoot })
-  tunnels = createSshTunnels({ dataRoot })
+
+  // T5 用户提示代理：指纹确认 / 口令输入 → 广播到 hub 渲染窗口 → 等待回答
+  const prompts = createPromptBroker({
+    send: (channel, payload) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send(channel, payload)
+      }
+    }
+  })
+  tunnels = createSshTunnels({
+    dataRoot,
+    confirmHostKey: (request) => prompts.requestHostKey(request),
+    askpass: (request) => prompts.requestAskpass(request)
+  })
 
   // 状态推进（local + ssh 共用同一通道）→ 广播到所有窗口；把实际端口/版本回写注册表
   // （transport 感知：ssh 的「端口」是隧道本地口 localPort，local 的才是监听 port）；
@@ -217,6 +231,7 @@ void app.whenReady().then(() => {
   registerIpc(instanceStore, {
     runtime,
     tunnels,
+    prompts,
     openInstanceView: (instance, url) =>
       openInstanceWindow({ instanceId: instance.id, title: instance.name, url })
   })

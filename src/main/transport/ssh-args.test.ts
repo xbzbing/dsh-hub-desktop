@@ -46,7 +46,8 @@ describe('buildSshArgs（§4.2 参数库）', () => {
     // 必须显式 ControlPersist=no:否则用户 ~/.ssh/config 的 controlpersist yes 会注入,
     // ssh fork 出未跟踪的后台 master、前台退出 0 → hub 停止时回收不掉(实测孤儿)
     expect(optionValues).toContain('ControlPersist=no')
-    expect(optionValues).toContain('StrictHostKeyChecking=accept-new')
+    // T5 起 TOFU 前置完成 → 严格校验（不再 accept-new）
+    expect(optionValues).toContain('StrictHostKeyChecking=yes')
     expect(optionValues).toContain('UserKnownHostsFile=/data/ssh/known_hosts')
     // 目标主机在队尾
     expect(args[args.length - 1]).toBe('dsh.internal')

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { CreateInstanceInput } from '@shared/contracts'
 import { tryParseEndpoint } from '@shared/endpoint'
 import { Icon } from '../lib/icons'
+import KeyPreview from './KeyPreview'
 import { TYPE_INFO } from '../lib/format'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
@@ -293,10 +294,13 @@ export default function Wizard(): ReactNode {
                   />
                 </div>
               </div>
+              <div className="mt12">
+                <KeyPreview host={form.host} username={form.username} sshPort={form.sshPort} />
+              </div>
               <div className="hintbar mt12">
                 <Icon name="info" />
                 <span>
-                  复用系统 ssh-agent 与 ~/.ssh/config；密钥内容绝不展示、也不会写入应用存储（T4 接入）。
+                  复用系统 ssh-agent 与 ~/.ssh/config；密钥内容绝不展示、也不会写入应用存储。
                 </span>
               </div>
             </>
