@@ -371,11 +371,17 @@ void app.whenReady().then(() => {
    * 把偏好施加到原生层(开机自启)。失败只记日志:
    * 偏好已落盘,系统层面设置失败不该让设置页报错。
    */
-  const applyNativeSettings = (current: Settings): void => {
-    try {
-      app.setLoginItemSettings(loginItemSettings(current))
-    } catch (error) {
-      console.error('[main] 应用开机自启设置失败：', error)
+  const applyNativeSettings = (current: Settings, options: { startup?: boolean } = {}): void => {
+    // 启动时只在「需要开启」时写登录项:否则每次启动都对系统写一次「关闭」,
+    // 既无意义(此前也没开),又会在开发/未签名环境下打出一条 Electron 权限错误
+    // (实测:Unable to set login item ... Operation not permitted)。
+    // 运行期切换(含关闭)仍然照实写入,尊重用户显式操作。
+    if (!options.startup || current.autoStart) {
+      try {
+        app.setLoginItemSettings(loginItemSettings(current))
+      } catch (error) {
+        console.error('[main] 应用开机自启设置失败：', error)
+      }
     }
     // T11 托盘:偏好开启才有托盘(关闭时销毁,避免留下无用的菜单栏图标)
     try {
@@ -414,7 +420,7 @@ void app.whenReady().then(() => {
       status: tr('tray.status', { count: runningInstanceCount() })
     }
   }
-  applyNativeSettings(settings.read())
+  applyNativeSettings(settings.read(), { startup: true })
   // T10 §7.5:审计 JSONL(按日历日轮转,保留 90 天,不含任何凭据)
   audit = createAuditLog({ dir: join(dataRoot, 'audit') })
   if (!safeStorageAvailable) {
