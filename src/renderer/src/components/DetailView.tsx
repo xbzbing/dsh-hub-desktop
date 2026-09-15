@@ -36,16 +36,16 @@ export default function DetailView(): ReactNode {
   const logout = async (): Promise<void> => {
     if (!record) return
     const result = await window.dshHub?.auth.logout(record.id)
-    if (result?.ok) toast('ok', '已登出', '该实例的分区会话已清除')
+    if (result?.ok) toast('ok', t('detail.loggedOut'), t('detail.loggedOutDetail'))
   }
 
   if (!selection) return null
   if (!record) {
     return (
       <section data-testid="view-detail-missing">
-        <p className="meta">实例不存在或已被删除。</p>
+        <p className="meta">{t('detail.missingHint')}</p>
         <button className="btn btn-secondary btn-sm mt12" onClick={() => select(null)}>
-          回到总览
+          {t('common.backToOverview')}
         </button>
       </section>
     )
@@ -60,9 +60,9 @@ export default function DetailView(): ReactNode {
   const copyAddress = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(addressOf(record))
-      toast('ok', '地址已复制')
+      toast('ok', t('detail.addressCopied'))
     } catch {
-      toast('err', '复制失败')
+      toast('err', t('detail.copyFailed'))
     }
   }
 
@@ -71,10 +71,10 @@ export default function DetailView(): ReactNode {
     if (!bridge) return
     const result = await bridge.instances.remove(record.id)
     if (!result.ok) {
-      toast('err', '删除失败', result.message)
+      toast('err', t('detail.deleteFailed'), result.message)
       return
     }
-    toast('ok', `「${record.name}」已删除`)
+    toast('ok', t('detail.deleted', { name: record.name }))
     select(null)
     void refreshList()
   }
@@ -102,7 +102,7 @@ export default function DetailView(): ReactNode {
         </div>
         <div className="row">
           <button className="btn btn-ghost btn-sm" onClick={() => select(null)}>
-            <Icon name="back" /> 总览
+            <Icon name="back" /> {t('detail.overview')}
           </button>
         </div>
       </div>
@@ -110,33 +110,37 @@ export default function DetailView(): ReactNode {
       <div className="grid-2 mt20">
         <div className="card">
           <div className="card-head">
-            <h3>连接方式</h3>
-            <span className="meta">{record.transport === 'local' ? '本机回环' : record.transport === 'ssh' ? '加密隧道' : '直连'}</span>
+            <h3>{t('detail.connection')}</h3>
+            <span className="meta">{record.transport === 'local'
+                  ? t('detail.loopback')
+                  : record.transport === 'ssh'
+                    ? t('detail.tunnelEncrypted')
+                    : t('detail.direct')}</span>
           </div>
           <dl className="kv">
-            <dt>地址</dt>
+            <dt>{t('detail.address')}</dt>
             <dd className="num">{addressOf(record)}</dd>
             {record.transport === 'ssh' && (
               <>
-                <dt>SSH 端口</dt>
+                <dt>{t('detail.sshPort')}</dt>
                 <dd className="num">{record.port}</dd>
-                <dt>远端端口</dt>
+                <dt>{t('detail.remotePort')}</dt>
                 <dd className="num">{record.remotePort}</dd>
-                <dt>隧道</dt>
-                <dd className="num">{record.localPort ? `127.0.0.1:${record.localPort}` : '未分配'}</dd>
-                <dt>使用密钥</dt>
-                <dd className="num">{record.identityFile ?? '默认（agent 优先）'}</dd>
+                <dt>{t('detail.tunnel')}</dt>
+                <dd className="num">{record.localPort ? `127.0.0.1:${record.localPort}` : t('detail.unassigned')}</dd>
+                <dt>{t('detail.identityFile')}</dt>
+                <dd className="num">{record.identityFile ?? t('detail.defaultAgentFirst')}</dd>
               </>
             )}
             {record.transport === 'http' && (
               <>
-                <dt>认证</dt>
+                <dt>{t('detail.authMode')}</dt>
                 <dd>
                   {record.authMode === 'none'
-                    ? '无需登录'
+                    ? t('detail.authNone')
                     : record.authMode === 'gateway'
-                      ? '网关登录（密码 + 动态验证码）'
-                      : '自动探测（连接后识别；登录面板在 T8 提供）'}
+                      ? t('detail.authGateway')
+                      : t('detail.authAuto')}
                 </dd>
               </>
             )}
@@ -145,7 +149,7 @@ export default function DetailView(): ReactNode {
             <div className="note n-warn mt12">
               <Icon name="alert" />
               <span>
-                本机回环连接未加密。仅本机可访问，不会经过网络；实例页面由 dsh 自带的浏览器令牌保护（browser-auth，T6 细化）。
+                {t('detail.loopbackWarning')}
               </span>
             </div>
           )}
@@ -162,11 +166,11 @@ export default function DetailView(): ReactNode {
                   )
                 }
               >
-                <Icon name="key" /> 登录 / 重新登录
+                <Icon name="key" /> {t('detail.login')}
               </button>
             )}
             <button className="btn btn-secondary btn-sm" onClick={() => void copyAddress()}>
-              <Icon name="copy" /> 复制地址
+              <Icon name="copy" /> {t('detail.address')}
             </button>
             {/* T9-3:登出此前只有 IPC 通道、没有渲染层入口 ——
                 导致「登出即清分区会话」这条链路在产品里根本走不到 */}
@@ -176,7 +180,7 @@ export default function DetailView(): ReactNode {
                 data-testid="logout-btn"
                 onClick={() => void logout()}
               >
-                <Icon name="close" /> 登出
+                <Icon name="close" /> {t('detail.logout')}
               </button>
             )}
           </div>
@@ -189,13 +193,13 @@ export default function DetailView(): ReactNode {
 
         <div className="card">
           <div className="card-head">
-            <h3>运行信息</h3>
-            <span className="meta">{record.transport === 'local' ? '本机' : '远端'}</span>
+            <h3>{t('detail.runInfo')}</h3>
+            <span className="meta">{record.transport === 'local' ? t('detail.localSide') : t('detail.remoteSide')}</span>
           </div>
           <dl className="kv">
-            <dt>dsh 版本</dt>
+            <dt>{t('detail.dshVersion')}</dt>
             <dd className="num">{version}</dd>
-            <dt>运行时长</dt>
+            <dt>{t('detail.uptime')}</dt>
             <dd className="num">
               {runningSince !== null
                 ? fmtDuration(Date.now() - runningSince, t)
@@ -203,10 +207,10 @@ export default function DetailView(): ReactNode {
             </dd>
             {record.transport === 'local' && (
               <>
-                <dt>端口</dt>
-                <dd className="num">{record.port ?? '未分配'}</dd>
-                <dt>数据目录</dt>
-                <dd className="num" title="该实例隔离的 DSH_HOME（评审结论 R7）">
+                <dt>{t('detail.port')}</dt>
+                <dd className="num">{record.port ?? t('detail.unassigned')}</dd>
+                <dt>{t('settings.dataDir')}</dt>
+                <dd className="num" title={t('detail.dataDirTitle')}>
                   {userDataPath ? `${userDataPath}/homes/${record.id}` : `…/homes/${record.id}`}
                 </dd>
               </>
@@ -223,7 +227,7 @@ export default function DetailView(): ReactNode {
                     onClick={() => void window.dshHub?.runtime.stop(record.id)}
                     data-testid="stop-btn"
                   >
-                    <Icon name="power" /> 停止
+                    <Icon name="power" /> {t('detail.stop')}
                   </button>
                 ) : (
                   <button
@@ -232,24 +236,24 @@ export default function DetailView(): ReactNode {
                     disabled={display === 'connecting'}
                     data-testid="start-btn"
                   >
-                    {display === 'connecting' ? '启动中…' : '启动'}
+                    {display === 'connecting' ? t('detail.starting') : t('detail.start')}
                   </button>
                 )}
                 <button
                   className="btn btn-secondary btn-sm"
                   onClick={() => {
                     void window.dshHub?.runtime.openView(record.id).then((result) => {
-                      if (result && !result.ok) toast('err', '打开视图失败', result.message)
+                      if (result && !result.ok) toast('err', t('detail.openViewFailed'), result.message)
                     })
                   }}
                   disabled={display !== 'connected'}
                   data-testid="open-view-btn"
                 >
-                  <Icon name="external" /> 打开视图
+                  <Icon name="external" /> {t('detail.openView')}
                 </button>
               </>
             ) : (
-              <span className="meta">该传输类型暂不支持运行时控制</span>
+              <span className="meta">{t('detail.noRuntimeControl')}</span>
             )}
           </div>
         </div>
@@ -257,12 +261,12 @@ export default function DetailView(): ReactNode {
 
       <div className="card mt16">
         <div className="card-head">
-          <h3>危险操作</h3>
-          <span className="meta">不可撤销</span>
+          <h3>{t('detail.dangerZone')}</h3>
+          <span className="meta">{t('detail.irreversible')}</span>
         </div>
         <div className="row-between">
           <p className="meta" style={{ maxWidth: '52ch' }}>
-            删除后本地保存的登录信息与连接记录会一并移除，远端 dsh 本身不受影响。
+            {t('detail.deleteBody')}
           </p>
           <button
             className="btn btn-sm"
@@ -273,7 +277,7 @@ export default function DetailView(): ReactNode {
             onClick={() => setConfirmDelete(true)}
             data-testid="delete-btn"
           >
-            <Icon name="trash" /> 删除实例
+            <Icon name="trash" /> {t('detail.deleteInstance')}
           </button>
         </div>
       </div>
@@ -281,25 +285,25 @@ export default function DetailView(): ReactNode {
       {confirmDelete && (
         <Modal
       closeLabel={t('common.close')}
-          title="删除实例"
+          title={t('detail.deleteTitle')}
           onClose={() => setConfirmDelete(false)}
           testId="confirm-delete"
           footer={
             <>
-              <span className="meta">此操作不可撤销</span>
+              <span className="meta">{t('detail.deleteCannotUndo')}</span>
               <div className="right">
                 <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDelete(false)}>
-                  取消
+                 {t('common.cancel')}
                 </button>
                 <button className="btn btn-danger btn-sm" onClick={() => void deleteInstance()}>
-                  删除
+                 {t('detail.delete')}
                 </button>
               </div>
             </>
           }
         >
           <p className="meta">
-            确定删除「{record.name}」吗？如果是运行中的实例，会先停止其进程。
+            {t('detail.deleteConfirm', { name: record.name })}
           </p>
         </Modal>
       )}

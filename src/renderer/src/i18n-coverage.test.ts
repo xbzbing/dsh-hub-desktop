@@ -29,14 +29,12 @@ const MIGRATED = [
   'UrlDetect.tsx',
   'KeyPreview.tsx',
   'HomeView.tsx',
-  'SshDialogs.tsx'
+  'SshDialogs.tsx',
+  'DetailView.tsx'
 ]
 
 /** 尚未迁移:迁完一个就从这里删掉(清单即进度) */
-const PENDING = [
-  'DetailView.tsx',
-  'Wizard.tsx'
-]
+const PENDING = ['Wizard.tsx']
 
 const CJK = /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/
 
