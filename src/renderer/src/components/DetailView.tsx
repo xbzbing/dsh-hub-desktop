@@ -9,6 +9,7 @@ import VaultCard from './VaultCard'
 /** 实例详情(设计稿 view-detail 基础卡片版;认证/审计/日志随 T7/T6 扩展) */
 export default function DetailView(): ReactNode {
   const selection = useAppStore((state) => state.selection)
+  const t = useAppStore((state) => state.t)
   const record = useAppStore((state) => (selection ? state.records[selection] : undefined))
   const status = useAppStore((state) => (selection ? state.statuses[selection] : undefined))
   const ensureRecord = useAppStore((state) => state.ensureRecord)
@@ -89,11 +90,11 @@ export default function DetailView(): ReactNode {
               <h2>{record.name}</h2>
               <span className="badge">
                 <Icon name={TYPE_INFO[record.transport].icon} size={11} />
-                {TYPE_INFO[record.transport].label}
+                {t(TYPE_INFO[record.transport].labelKey)}
               </span>
             </div>
             <p className="meta" style={{ marginTop: 3 }}>
-              <span className={`chip ${info.chipClass}`}>{info.label}</span>
+              <span className={`chip ${info.chipClass}`}>{t(info.labelKey)}</span>
               {status?.detail ? ` · ${status.detail}` : ''}
             </p>
           </div>
@@ -195,7 +196,9 @@ export default function DetailView(): ReactNode {
             <dd className="num">{version}</dd>
             <dt>运行时长</dt>
             <dd className="num">
-              {runningSince !== null ? fmtDuration(Date.now() - runningSince) : '未运行'}
+              {runningSince !== null
+                ? fmtDuration(Date.now() - runningSince, t)
+                : t('detail.notRunning')}
             </dd>
             {record.transport === 'local' && (
               <>

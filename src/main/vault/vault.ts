@@ -89,6 +89,14 @@ export interface Vault {
   clearAll(): Promise<void>
   /** 已记住条目的实例 id(自检/测试) */
   rememberedIds(): string[]
+  /**
+   * **已设置策略**的实例 id。
+   *
+   * 与 `rememberedIds` 刻意分开:用户可能先勾选「记住密码」、下一次登录才真正写入凭据,
+   * 此期间策略已设但条目为空。UI 若按「有条目」下发策略,复选框会显示未勾选,
+   * 用户再动另一个开关就会把刚设的策略覆盖掉(复审 F1/F2)。
+   */
+  policyIds(): string[]
 }
 
 /** 用户显式勾选的记住策略(§7.2;非敏感,明文存) */
@@ -363,6 +371,11 @@ export function createVault(options: VaultOptions): Vault {
     rememberedIds() {
       load()
       return [...items.keys()]
+    },
+
+    policyIds() {
+      load()
+      return [...policy.keys()]
     }
   }
 }

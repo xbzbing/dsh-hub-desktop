@@ -62,10 +62,14 @@ export default function App() {
         <div className="topbar">
           <div className="tb-left">
             <span className="tb-title" data-testid="tb-title">
-              {settingsOpen ? t('settings.title') : selection ? '实例详情' : title}
+              {settingsOpen
+                ? t('settings.title')
+                : selection
+                  ? t('detail.instanceDetail')
+                  : title}
             </span>
             <span className="tb-sub" data-testid="tb-sub">
-              {selectedStatus?.detail ?? `${instances.length} 个实例`}
+              {selectedStatus?.detail ?? t('nav.instanceCount', { n: instances.length })}
             </span>
           </div>
         </div>

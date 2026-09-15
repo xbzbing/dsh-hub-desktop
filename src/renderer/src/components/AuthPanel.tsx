@@ -15,6 +15,7 @@ import {
 import type { AuthPanelModel } from '../lib/auth-panel-state'
 import { Icon } from '../lib/icons'
 import { Modal } from './Modal'
+import { useAppStore } from '../store'
 
 const BRIDGE = window.dshHub
 
@@ -69,6 +70,7 @@ async function openAndProbe(
  */
 export default function AuthPanel(): ReactNode {
   // 面板状态经纯归约函数流转(auth-panel-state.ts):跨实例事件被忽略、锁定用绝对到期时刻
+  const t = useAppStore((state) => state.t)
   const [model, setModel] = useState(initialAuthPanelModel)
   const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
@@ -168,7 +170,11 @@ export default function AuthPanel(): ReactNode {
   // 密码屏:needs-auth 与 await-credentials 都渲染(await-credentials 仅用于失败回退)
   const isPasswordPhase = phase !== 'await-otp'
   const title =
-    phase === 'await-otp' ? '输入动态验证码' : phase === 'connected' ? '已连接' : '需要登录'
+    phase === 'await-otp'
+      ? t('auth.titleOtp')
+      : phase === 'connected'
+        ? t('auth.titleConnected')
+        : t('auth.title')
 
   return (
     <Modal
@@ -180,12 +186,12 @@ export default function AuthPanel(): ReactNode {
         <>
           <span className="meta">
             {locked
-              ? `失败次数过多，请等待 ${lockedSeconds}s`
-              : '凭据仅用于本次登录；未勾选「记住」时不会存入保险库'}
+              ? t('auth.locked', { seconds: lockedSeconds })
+              : t('auth.credentialsLocalOnly')}
           </span>
           <div className="right">
             <button className="btn btn-secondary" onClick={close}>
-              取消
+              {t('common.cancel')}
             </button>
             <button
               className="btn btn-primary"
@@ -194,9 +200,13 @@ export default function AuthPanel(): ReactNode {
               // D5:await-otp 阶段验证码与密码都要有 —— register 侧要求密码 min(1),
               // 只禁用验证码会提交出 invalid-input 而不是给出「按钮不可用」的提示
               disabled={busy || locked || (phase === 'await-otp' ? otp === '' || password === '' : password === '')}
-              title={phase === 'await-otp' && password === '' ? '需要复用本次登录的密码' : undefined}
+              title={phase === 'await-otp' && password === '' ? t('auth.needReusedPassword') : undefined}
             >
-              {busy ? '提交中…' : locked ? `锁定 ${lockedSeconds}s` : '登录'}
+              {busy
+                ? t('auth.submitting')
+                : locked
+                  ? t('auth.lockButton', { seconds: lockedSeconds })
+                  : t('auth.submit')}
             </button>
           </div>
         </>
@@ -205,7 +215,7 @@ export default function AuthPanel(): ReactNode {
       {state.needsOnboarding && (
         <div className="note n-warn" data-testid="auth-onboarding">
           <Icon name="alert" />
-          <span>该实例仍在使用初始密码，请先在实例页面内完成改密（设置新密码）后再登录。</span>
+          <span>{t('auth.onboarding')}</span>
         </div>
       )}
 
@@ -218,7 +228,7 @@ export default function AuthPanel(): ReactNode {
 
       {phase === 'await-otp' && password === '' && (
         <div className="field mt12">
-          <label htmlFor="auth-password-otp">密码（验证码需与密码同一次提交）</label>
+          <label htmlFor="auth-password-otp">{t('auth.passwordForOtp')}</label>
           <input
             id="auth-password-otp"
             className="input"
@@ -232,7 +242,7 @@ export default function AuthPanel(): ReactNode {
 
       {isPasswordPhase ? (
         <div className="field mt12">
-          <label htmlFor="auth-password">密码</label>
+          <label htmlFor="auth-password">{t('auth.password')}</label>
           <input
             id="auth-password"
             className="input"
@@ -248,7 +258,7 @@ export default function AuthPanel(): ReactNode {
         </div>
       ) : (
         <div className="field mt12">
-          <label htmlFor="auth-otp">{useBackup ? '备份码' : '6 位动态验证码'}</label>
+          <label htmlFor="auth-otp">{useBackup ? t('auth.backupCode') : t('auth.otp')}</label>
           <input
             id="auth-otp"
             className="input num"
@@ -269,7 +279,7 @@ export default function AuthPanel(): ReactNode {
               setOtp('')
             }}
           >
-            {useBackup ? '改用动态验证码' : '改用备份码'}
+            {useBackup ? t('auth.useOtp') : t('auth.useBackup')}
           </button>
         </div>
       )}
@@ -277,7 +287,7 @@ export default function AuthPanel(): ReactNode {
       {state.otpEnabled && phase !== 'await-otp' && (
         <div className="hintbar mt12">
           <Icon name="shield" />
-          <span>该实例启用了二因素认证，提交密码后会要求输入验证码。</span>
+          <span>{t('auth.otpHint')}</span>
         </div>
       )}
 

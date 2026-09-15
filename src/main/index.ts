@@ -526,12 +526,11 @@ void app.whenReady().then(() => {
       const record = await instanceStore.get(instanceId)
       if (!record) return null
       // 认证探测端点与「开窗/探测」同源(§2.4):ssh 走隧道本地口,隧道未就绪则为 null
-      // ssh:优先取隧道实时端口;隧道已停(如删除实例时先停隧道再清 Cookie)则回落到
-      // 注册表持久化的 localPort —— 否则清理会静默 no-op(评审 D4)
+      // 只取**实时**隧道端口:注册表的 localPort 可能已陈旧(隧道重启会重新分配),
+      // 用它会让 auth-registry 提前创建并永久缓存一个指向死端口的客户端(复审回归 b)。
+      // 「隧道已停也要能清 Cookie」的需求由 clearPartitionSession 的 plan 承担。
       const tunnelPort =
-        record.transport === 'ssh'
-          ? (tunnels?.statusOf(instanceId)?.port ?? record.localPort ?? undefined)
-          : undefined
+        record.transport === 'ssh' ? tunnels?.statusOf(instanceId)?.port : undefined
       return authEndpointOf(record, tunnelPort)
     },
     onState: (instanceId, state) => {

@@ -32,8 +32,8 @@ describe('i18n 目录（T11 R6 双语）', () => {
 
   it('zh 与 en 都非空且互不相同(除非故意同形)', () => {
     const identical = MESSAGE_KEYS.filter((key) => MESSAGES[key].zh === MESSAGES[key].en)
-    // 只允许品牌名同形
-    expect(identical).toEqual(['app.name'])
+    // 只允许品牌名与技术缩写同形
+    expect(identical.sort()).toEqual(['app.name', 'transport.ssh'])
   })
 })
 

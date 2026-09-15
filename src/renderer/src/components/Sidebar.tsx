@@ -7,6 +7,7 @@ import { useAppStore } from '../store'
 
 /** 侧边栏:品牌 / 搜索 / 分组 / 实例列表 / 底部操作 */
 export default function Sidebar(): ReactNode {
+  const t = useAppStore((state) => state.t)
   const instances = useAppStore((state) => state.instances)
   const selection = useAppStore((state) => state.selection)
   const rail = useAppStore((state) => state.rail)
@@ -16,7 +17,6 @@ export default function Sidebar(): ReactNode {
   const toggleTheme = useAppStore((state) => state.toggleTheme)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
   const setSettingsOpen = useAppStore((state) => state.setSettingsOpen)
-  const t = useAppStore((state) => state.t)
 
   const [query, setQuery] = useState('')
   const [groupByType, setGroupByType] = useState(false)
@@ -45,8 +45,8 @@ export default function Sidebar(): ReactNode {
       <div className="side-head">
         <button
           className="collapse-btn"
-          aria-label={rail ? '展开侧边栏' : '收起侧边栏'}
-          title={rail ? '展开侧边栏 (⌘B)' : '收起侧边栏 (⌘B)'}
+          aria-label={rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+          title={`${rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')} (⌘B)`}
           onClick={toggleRail}
         >
           <Icon name={rail ? 'expand' : 'collapse'} />
@@ -55,7 +55,7 @@ export default function Sidebar(): ReactNode {
       <button
         className="brand"
         onClick={() => select(null)}
-        title="回到实例工作台"
+        title={t('nav.backToWorkbench')}
         data-testid="brand"
       >
         <span className="brand-mark">
@@ -63,7 +63,7 @@ export default function Sidebar(): ReactNode {
         </span>
         <span className="brand-text">
           <b>DSH Hub</b>
-          <em>实例管理</em>
+          <em>{t('nav.brandTagline')}</em>
         </span>
       </button>
       <div className="side-tools">
@@ -71,29 +71,29 @@ export default function Sidebar(): ReactNode {
           <Icon name="search" />
           <input
             type="search"
-            placeholder="搜索实例或地址"
-            aria-label="搜索实例"
+            placeholder={t('nav.searchPlaceholder')}
+            aria-label={t('nav.searchLabel')}
             autoComplete="off"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
-        <div className="seg" role="group" aria-label="列表分组方式">
+        <div className="seg" role="group" aria-label={t('nav.groupBy')}>
           <button aria-pressed={!groupByType} onClick={() => setGroupByType(false)}>
-            混排
+            {t('nav.groupMixed')}
           </button>
           <button aria-pressed={groupByType} onClick={() => setGroupByType(true)}>
-            按类型分组
+            {t('nav.groupByType')}
           </button>
         </div>
       </div>
-      <nav className="side-scroll" aria-label="实例列表">
+      <nav className="side-scroll" aria-label={t('nav.instanceList')}>
         {grouped ? (
           grouped.map((group) => (
             <div key={group.transport}>
               <div className="group-head">
                 <span>
-                  {TYPE_INFO[group.transport].label} · {group.items.length}
+                  {t(TYPE_INFO[group.transport].labelKey)} · {group.items.length}
                 </span>
               </div>
               {group.items.map((item) => (
@@ -129,7 +129,7 @@ export default function Sidebar(): ReactNode {
           </button>
           <button
             className="btn btn-ghost btn-sm icon-btn"
-            title={theme === 'light' ? '切换到深色外观' : '切换到浅色外观'}
+            title={theme === 'light' ? t('nav.toDark') : t('nav.toLight')}
             onClick={toggleTheme}
             data-testid="theme-toggle"
           >
@@ -146,6 +146,7 @@ function InstanceItem(props: {
   selected: boolean
   onClick: (id: string | null) => void
 }): ReactNode {
+  const t = useAppStore((state) => state.t)
   const statuses = useAppStore((state) => state.statuses)
   const instances = useAppStore((state) => state.instances)
   const item = instances.find((entry) => entry.id === props.id)
@@ -167,7 +168,7 @@ function InstanceItem(props: {
       </span>
       <span className="badge">
         <Icon name={TYPE_INFO[item.transport].icon} size={11} />
-        <span className="type-label">{TYPE_INFO[item.transport].label}</span>
+        <span className="type-label">{t(TYPE_INFO[item.transport].labelKey)}</span>
       </span>
     </button>
   )

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { VaultPolicy, VaultStatusSnapshot } from '@shared/contracts'
+import { canSubmitPolicy, effectivePolicy } from '../lib/vault-policy'
 import { Icon } from '../lib/icons'
+
+import { useAppStore } from '../store'
 
 const BRIDGE = window.dshHub
 
@@ -17,6 +20,7 @@ const BRIDGE = window.dshHub
  * 卡片必须**明确告警**,而不是让用户以为勾选生效了。
  */
 export default function VaultCard({ instanceId }: { instanceId: string }): ReactNode {
+  const t = useAppStore((state) => state.t)
   const [status, setStatus] = useState<VaultStatusSnapshot | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -30,7 +34,7 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
   }, [refresh, instanceId])
 
   const applyPolicy = async (next: VaultPolicy): Promise<void> => {
-    if (!BRIDGE || busy) return
+    if (!BRIDGE || !interactive) return
     setBusy(true)
     try {
       await BRIDGE.vault.setPolicy(instanceId, next)
@@ -60,27 +64,23 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
    * 提交过时的策略对 —— 而 `setPolicy` 对「取消勾选」的语义是真的忘掉,
    * 于是会静默删除已存密码(评审 T10-1 Critical)。
    */
-  const effective: VaultPolicy = status?.policies[instanceId] ?? {
-    rememberPassword: false,
-    rememberSession: false
-  }
+  const effective = effectivePolicy(status, instanceId)
+  // 快照到达前禁止交互:否则会以「全 false」兜底值提交,静默清掉已存凭据(复审 F3)
+  const interactive = canSubmitPolicy(status, busy)
 
   return (
     <div className="card" data-testid="vault-card">
       <div className="card-head">
-        <h3>凭据存储</h3>
+        <h3>{t('vault.title')}</h3>
         <span className="meta">
-          {degraded ? '仅本次会话（系统钥匙串不可用）' : '系统钥匙串（safeStorage）'}
+          {degraded ? t('vault.backendMemory') : t('vault.backendKeychain')}
         </span>
       </div>
 
       {degraded && (
         <div className="note n-warn mt12" data-testid="vault-degraded">
           <Icon name="alert" />
-          <span>
-            系统钥匙串不可用：勾选**不会**生效，保险库中的凭据只在本次运行期间保留在内存中，
-            重启后需要重新登录。
-          </span>
+          <span>{t('vault.degraded')}</span>
         </div>
       )}
 
@@ -89,12 +89,12 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
           type="checkbox"
           data-testid="vault-remember-password"
           checked={effective.rememberPassword}
-          disabled={busy}
+          disabled={!interactive || !status}
           onChange={(event) =>
             void applyPolicy({ ...effective, rememberPassword: event.target.checked })
           }
         />
-        <span>记住密码（写入系统钥匙串；取消勾选会立即删除已存密码）</span>
+        <span>{t('vault.rememberPassword')}</span>
       </label>
 
       <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
@@ -102,31 +102,29 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
           type="checkbox"
           data-testid="vault-remember-session"
           checked={effective.rememberSession}
-          disabled={busy}
+          disabled={!interactive || !status}
           onChange={(event) =>
             void applyPolicy({ ...effective, rememberSession: event.target.checked })
           }
         />
-        <span>记住登录态（重启后静默复用会话；取消勾选会立即删除已存会话）</span>
+        <span>{t('vault.rememberSession')}</span>
       </label>
 
       <div className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
         <button
           className="btn btn-secondary btn-sm"
           data-testid="vault-clear"
-          disabled={busy}
+          disabled={busy || !status}
           onClick={() => void clear()}
         >
-          <Icon name="trash" /> 清除已记住的凭据
+          <Icon name="trash" /> {t('vault.clear')}
         </button>
         <span className="meta" data-testid="vault-state">
-          {rememberedHere ? '该实例已记住凭据' : '该实例未记住任何凭据'}
+          {rememberedHere ? t('vault.remembered') : t('vault.notRemembered')}
         </span>
       </div>
 
-      <p className="meta mt12">
-        动态验证码（TOTP）密钥永不存储 —— 它只存在于你自己的认证器里。
-      </p>
+      <p className="meta mt12">{t('vault.otpNeverStored')}</p>
     </div>
   )
 }

@@ -129,7 +129,8 @@ beforeEach(async () => {
     getPassword: vi.fn(() => null),
     hasSession: vi.fn(() => false),
     getSession: vi.fn(() => null),
-    rememberedIds: vi.fn(() => [])
+    rememberedIds: vi.fn(() => []),
+    policyIds: vi.fn(() => [])
   }
   auditSpy = vi.fn() as unknown as typeof auditSpy
   settingsFake = {
@@ -609,6 +610,8 @@ describe('registerIpc', () => {
   it('T10 vault:status 返回降级与已记住实例', async () => {
     vaultFake['status']!.mockReturnValueOnce({ available: false, degraded: true, instanceCount: 2 })
     vaultFake['rememberedIds']!.mockReturnValueOnce(['a', 'b'])
+    // 复审 F1:策略表可能包含「已勾选但尚无凭据」的实例,必须一并下发
+    vaultFake['policyIds']!.mockReturnValueOnce(['a', 'b', 'c'])
     vaultFake['getPolicy']!.mockReturnValue({ rememberPassword: true, rememberSession: false })
     const result = (await invoke('vault:status')) as {
       ok: boolean
@@ -627,7 +630,8 @@ describe('registerIpc', () => {
       rememberedInstances: ['a', 'b'],
       policies: {
         a: { rememberPassword: true, rememberSession: false },
-        b: { rememberPassword: true, rememberSession: false }
+        b: { rememberPassword: true, rememberSession: false },
+        c: { rememberPassword: true, rememberSession: false }
       }
     })
   })

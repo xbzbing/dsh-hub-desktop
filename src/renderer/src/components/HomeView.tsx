@@ -12,6 +12,7 @@ export default function HomeView(): ReactNode {
 }
 
 function HomeContent(): ReactNode {
+  const t = useAppStore((state) => state.t)
   const instances = useAppStore((state) => state.instances)
   const statuses = useAppStore((state) => state.statuses)
   const select = useAppStore((state) => state.select)
@@ -65,7 +66,7 @@ function HomeContent(): ReactNode {
               <TableRow
                 key={item.id}
                 item={item}
-                statusLabel={STATUS_INFO[toDisplayStatus(statuses[item.id]?.status)].label}
+                statusLabel={t(STATUS_INFO[toDisplayStatus(statuses[item.id]?.status)].labelKey)}
                 chipClass={STATUS_INFO[toDisplayStatus(statuses[item.id]?.status)].chipClass}
                 version={statuses[item.id]?.version}
                 onDetail={() => openDetail(item.id)}
@@ -94,6 +95,7 @@ function TableRow(props: {
   version?: string
   onDetail: () => void
 }): ReactNode {
+  const t = useAppStore((state) => state.t)
   return (
     <tr>
       <td>
@@ -105,7 +107,7 @@ function TableRow(props: {
       <td>
         <span className="badge">
           <Icon name={TYPE_INFO[props.item.transport].icon} size={11} />
-          {TYPE_INFO[props.item.transport].label}
+          {t(TYPE_INFO[props.item.transport].labelKey)}
         </span>
       </td>
       <td>

@@ -290,8 +290,9 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   function vaultSnapshot(): VaultStatusSnapshot {
     const status = deps.vault.status()
     const remembered = deps.vault.rememberedIds()
+    // 用 policyIds 而非 rememberedIds:策略可以先于凭据存在(复审 F1)
     const policies: Record<string, VaultPolicy> = {}
-    for (const id of remembered) {
+    for (const id of deps.vault.policyIds()) {
       const policy = deps.vault.getPolicy(id)
       if (policy.rememberPassword || policy.rememberSession) policies[id] = policy
     }

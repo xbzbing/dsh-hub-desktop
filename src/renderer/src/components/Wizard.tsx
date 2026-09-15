@@ -35,6 +35,7 @@ const EMPTY_FORM: WizardForm = {
 
 /** 创建向导(设计稿 wizard):三步 —— 类型 → 表单 → 确认;本期本地分支创建后自动启动并开窗 */
 export default function Wizard(): ReactNode {
+  const t = useAppStore((state) => state.t)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
   const refreshList = useAppStore((state) => state.refreshList)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
@@ -334,7 +335,7 @@ export default function Wizard(): ReactNode {
               <dd>{form.name}</dd>
               <dt>连接方式</dt>
               <dd>
-                {TYPE_INFO[transport].label}
+                {t(TYPE_INFO[transport].labelKey)}
                 {transport === 'ssh' && form.username ? ` · ${form.username}@${form.host}` : ''}
               </dd>
               <dt>地址</dt>
@@ -368,6 +369,7 @@ function TypeCard(props: {
   pressed: boolean
   onClick: () => void
 }): ReactNode {
+  const t = useAppStore((state) => state.t)
   const copy: Record<'local' | 'ssh' | 'http', { title: string; desc: string }> = {
     local: { title: '本机运行的 dsh', desc: '版本按需安装，互不干扰' },
     ssh: { title: '经 SSH 隧道连接', desc: '复用系统密钥与 ssh-agent' },
@@ -383,7 +385,7 @@ function TypeCard(props: {
       <span className="tc-icon">
         <Icon name={TYPE_INFO[props.transport].icon} />
       </span>
-      <b>{TYPE_INFO[props.transport].label}</b>
+      <b>{t(TYPE_INFO[props.transport].labelKey)}</b>
       <span>{copy[props.transport].title}</span>
       <span>{copy[props.transport].desc}</span>
     </button>
