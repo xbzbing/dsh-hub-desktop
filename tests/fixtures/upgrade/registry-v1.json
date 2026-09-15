@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "instances": [
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "name": "本地开发",
+      "transport": "local",
+      "authMode": "auto",
+      "notes": "v0.1.0 升级夹具:本地实例",
+      "dshVersion": "0.1.5-rc.1",
+      "port": 8002,
+      "profile": "dev",
+      "autoStart": true,
+      "createdAt": "2026-01-05T02:14:33.000Z",
+      "updatedAt": "2026-01-06T07:41:02.000Z"
+    },
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3302",
+      "name": "远程构建机",
+      "transport": "ssh",
+      "authMode": "gateway",
+      "host": "build.example.internal",
+      "port": 22,
+      "username": "xbzbing",
+      "remotePort": 3080,
+      "localPort": 32222,
+      "identityFile": null,
+      "createdAt": "2026-01-07T09:00:00.000Z",
+      "updatedAt": "2026-01-07T09:12:45.000Z"
+    },
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3303",
+      "name": "云端网关",
+      "transport": "http",
+      "authMode": "gateway",
+      "endpointUrl": "https://dsh.example.com/hub",
+      "createdAt": "2026-01-08T11:20:10.000Z",
+      "updatedAt": "2026-01-08T11:20:10.000Z"
+    }
+  ]
+}

@@ -7,7 +7,9 @@ node_modules/
 # --- 构建产物 ---
 dist/
 out/
-release/
+# 只忽略根目录的 release/(打包输出目录);必须锚定 —— 不锚定的 `release/`
+# 会连带忽略 `scripts/release/`,让 T14 的发布脚本静默进不了仓库。
+/release/
 *.tsbuildinfo
 *.tgz
 

@@ -22,10 +22,23 @@
 pnpm dev            # dev server + electron 窗口
 pnpm typecheck      # node + web + e2e 三工程(tsconfig ×3)
 pnpm lint           # eslint(flat config)
-pnpm test           # 单测(vitest,含 store/ipc/endpoint)
+pnpm test           # 单测(vitest,含 store/ipc/endpoint/升级路径/发布元数据)
 pnpm build          # 三端产物(E2E 前置)
 pnpm test:e2e       # Playwright _electron(9 用例)
 ```
+
+发布相关(T14,详见 `docs/T14-发布演练.md`):
+
+```bash
+pnpm dist:mac:zip      # 产出 mac zip + 更新元数据 dist/latest-mac.yml
+pnpm dist:mac          # 含 dmg target(需网络可下 dmg 附加依赖)
+pnpm dist:win          # NSIS + latest.yml(需 Windows/wine)
+pnpm release:checksums # 生成 dist/SHA256SUMS.txt(手工下载的完整性依据)
+pnpm release:check     # 发布演练:离线可校验部分,任一不符即非零退出
+```
+
+- 发布检查单与「本机无法演练」的欠账表:`docs/T14-发布演练.md` §6/§7
+- `dist`/`dist:*` 脚本**一律带 `--publish never`**(结构上不可能误发布),并由单测钉住
 
 - 提交前必须:`pnpm typecheck && pnpm lint && pnpm test` 全绿;E2E 至少跑一次
 - 提交信息:`feat|fix|chore|test|docs: 描述`(规则 2)

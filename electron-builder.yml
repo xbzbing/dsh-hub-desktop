@@ -1,9 +1,21 @@
 # T13 打包配置(方案见 docs/T13-打包方案.md)
+# T14 增补 `publish` / 更新元数据(见 docs/T14-发布演练.md)
 appId: dev.dshhub.desktop
 productName: DSH Hub
 directories:
   buildResources: build
   output: dist
+# 更新元数据(自动更新的输入):构建 mac 的 zip/dmg 或 win 的 nsis 时,
+# 额外产出 `latest-mac.yml` / `latest.yml`,内含 version 与各产物的 sha512。
+generateUpdatesFilesForAllChannels: false
+publish:
+  provider: github
+  # 本仓库当前**没有 git remote**(纯本地),provider 无法自动推断,必须显式给出。
+  # 首次真实发布前需确认 owner/repo —— 见 docs/T14-发布演练.md §4。
+  owner: xbzbing
+  repo: dsh-hub-desktop
+  # 发布只创建**草稿** Release,人工确认后再手动转正
+  releaseType: draft
 # 只随包 out/ 与 package.json;源码、测试、docs 不入包
 files:
   - out/**

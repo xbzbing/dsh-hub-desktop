@@ -1,0 +1,232 @@
+/**
+ * 发布演练的纯逻辑(T14)。
+ *
+ * 独立成 `lib.mjs` 而不是全写在脚本里,是为了让这些判断**可被单测钉住**:
+ * 发布元数据的字段名、URL 归一化规则、校验和比对,任何一条错了都会让
+ * 自动更新要么不更新、要么更新到错误产物,而这两件事在本地都「看起来正常」。
+ *
+ * 刻意不引入 YAML 依赖(zero-dep 纪律):这里只解析 electron-builder 产出的
+ * **固定形态**子集,遇到不认识的结构一律抛错,而不是猜。
+ */
+
+export class UpdateMetadataError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = 'UpdateMetadataError'
+  }
+}
+
+/**
+ * electron-builder 会把产物名里的空格换成连字符再写进更新元数据的 `url`
+ * (磁盘上仍是 `DSH Hub-0.1.0-arm64-mac.zip`)。
+ * 自动更新客户端按 URL 取文件,所以元数据里是连字符形态;
+ * 而本地校验必须能把这两者对上,否则校验会假报「产物缺失」。
+ */
+export function normalizeArtifactUrl(url) {
+  const decoded = safeDecode(url)
+  const base = decoded.split('/').pop() ?? decoded
+  return base.replace(/ /g, '-')
+}
+
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function unquote(value) {
+  const trimmed = value.trim()
+  if (
+    (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2)
+  ) {
+    return trimmed.slice(1, -1)
+  }
+  return trimmed
+}
+
+/**
+ * 解析 electron-builder 的 `latest-mac.yml` / `latest.yml`。
+ *
+ * 只接受本应用实际产出的形态:
+ *
+ * ```yaml
+ * version: 0.1.0
+ * files:
+ *   - url: DSH-Hub-0.1.0-arm64-mac.zip
+ *     sha512: <base64>
+ *     size: 120994809
+ * path: DSH-Hub-0.1.0-arm64-mac.zip
+ * sha512: <base64>
+ * releaseDate: '2026-09-15T20:24:52.305Z'
+ * ```
+ *
+ * @returns {{version: string, files: Array<{url: string, sha512: string, size: number|null}>, path: string, sha512: string, releaseDate: string|null}}
+ */
+export function parseUpdateYaml(text) {
+  if (typeof text !== 'string' || text.trim() === '') {
+    throw new UpdateMetadataError('更新元数据为空')
+  }
+  const result = { version: '', files: [], path: '', sha512: '', releaseDate: null }
+  let inFiles = false
+  let current = null
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    if (rawLine.trim() === '' || rawLine.trimStart().startsWith('#')) continue
+    const indent = rawLine.length - rawLine.trimStart().length
+    const line = rawLine.trim()
+    const colon = line.indexOf(':')
+    if (colon === -1) throw new UpdateMetadataError(`无法解析的行：${line}`)
+    const key = line.slice(0, colon).trim()
+    const value = line.slice(colon + 1).trim()
+
+    if (indent === 0) {
+      inFiles = false
+      current = null
+      if (key === 'files') {
+        inFiles = true
+      } else if (key === 'version') {
+        result.version = unquote(value)
+      } else if (key === 'path') {
+        result.path = unquote(value)
+      } else if (key === 'sha512') {
+        result.sha512 = unquote(value)
+      } else if (key === 'releaseDate') {
+        result.releaseDate = unquote(value)
+      }
+      continue
+    }
+
+    if (!inFiles) continue
+    if (line.startsWith('- ')) {
+      current = { url: '', sha512: '', size: null }
+      result.files.push(current)
+      const entryKey = line.slice(2)
+      const entryColon = entryKey.indexOf(':')
+      if (entryColon === -1) throw new UpdateMetadataError(`无法解析的 files 条目：${line}`)
+      assignFileField(current, entryKey.slice(0, entryColon).trim(), entryKey.slice(entryColon + 1).trim())
+      continue
+    }
+    if (!current) throw new UpdateMetadataError(`files 下的缩进字段缺少所属条目：${line}`)
+    assignFileField(current, key, value)
+  }
+
+  if (!result.version) throw new UpdateMetadataError('更新元数据缺少 version')
+  if (result.files.length === 0) throw new UpdateMetadataError('更新元数据缺少 files 条目')
+  for (const entry of result.files) {
+    if (!entry.url) throw new UpdateMetadataError('更新元数据存在缺少 url 的 files 条目')
+    if (!entry.sha512) throw new UpdateMetadataError(`更新元数据 ${entry.url} 缺少 sha512`)
+  }
+  return result
+}
+
+function assignFileField(entry, key, value) {
+  if (key === 'url') entry.url = unquote(value)
+  else if (key === 'sha512') entry.sha512 = unquote(value)
+  else if (key === 'size') {
+    const size = Number(unquote(value))
+    entry.size = Number.isFinite(size) ? size : null
+  }
+}
+
+/**
+ * 校验更新元数据与磁盘产物是否自洽。
+ *
+ * @param {object} input
+ * @param {ReturnType<typeof parseUpdateYaml>} input.metadata
+ * @param {string} input.appVersion
+ * @param {Array<{name: string, sha512: string, size: number}>} input.artifacts 磁盘实测值
+ * @returns {{ok: boolean, problems: string[]}}
+ */
+export function verifyUpdateMetadata({ metadata, appVersion, artifacts }) {
+  const problems = []
+  if (metadata.version !== appVersion) {
+    problems.push(`版本不一致：元数据 ${metadata.version} ≠ package.json ${appVersion}`)
+  }
+
+  const byName = new Map()
+  for (const artifact of artifacts) {
+    byName.set(artifact.name, artifact)
+    byName.set(normalizeArtifactUrl(artifact.name), artifact)
+  }
+
+  for (const entry of metadata.files) {
+    const artifact = byName.get(entry.url) ?? byName.get(normalizeArtifactUrl(entry.url))
+    if (!artifact) {
+      problems.push(`元数据引用了不存在的产物：${entry.url}`)
+      continue
+    }
+    if (artifact.sha512 !== entry.sha512) {
+      problems.push(`sha512 不匹配：${entry.url}(元数据与实际字节不一致 → 更新包会被客户端拒绝)`)
+    }
+    if (entry.size !== null && entry.size !== artifact.size) {
+      problems.push(`size 不匹配：${entry.url}（元数据 ${entry.size} ≠ 实际 ${artifact.size}）`)
+    }
+  }
+
+  // 顶层 path/sha512 必须指向 files[0]：自动更新客户端优先读顶层字段
+  const first = metadata.files[0]
+  if (first) {
+    if (normalizeArtifactUrl(metadata.path) !== normalizeArtifactUrl(first.url)) {
+      problems.push(`顶层 path(${metadata.path}) 与 files[0].url(${first.url}) 不一致`)
+    }
+    if (metadata.sha512 !== first.sha512) {
+      problems.push('顶层 sha512 与 files[0].sha512 不一致')
+    }
+  }
+  return { ok: problems.length === 0, problems }
+}
+
+/**
+ * 从发布说明里抽出「机器可校验」的三样东西。
+ *
+ * 格式契约(发布说明必须长这样,否则发布演练会失败):
+ *
+ * ```md
+ * # DSH Hub v0.1.0
+ *
+ * - 发布日期: 2026-09-16
+ *
+ * ## 产物
+ *
+ * - `DSH Hub-0.1.0-arm64-mac.zip`
+ * ```
+ */
+export function parseReleaseNotes(markdown) {
+  if (typeof markdown !== 'string' || markdown.trim() === '') {
+    throw new UpdateMetadataError('发布说明为空')
+  }
+  const headingMatch = /^#\s+.*?v(\d+\.\d+\.\d+[^\s]*)\s*$/m.exec(markdown)
+  if (!headingMatch) throw new UpdateMetadataError('发布说明缺少形如「# DSH Hub v1.2.3」的一级标题')
+  const dateMatch = /^-\s*发布日期[:：]\s*(\d{4}-\d{2}-\d{2})\s*$/m.exec(markdown)
+  if (!dateMatch) throw new UpdateMetadataError('发布说明缺少「- 发布日期: YYYY-MM-DD」行')
+
+  // 逐行取「## 产物」小节:用行扫描而不是 `\Z` 之类的锚点
+  // （`\Z` 是 PCRE 语法,在 JS 里不是锚点,写出来只会是个无意义的转义)
+  const lines = markdown.split(/\r?\n/)
+  const start = lines.findIndex((line) => /^##\s+产物\s*$/.test(line))
+  if (start === -1) throw new UpdateMetadataError('发布说明缺少「## 产物」小节')
+  const section = []
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^##\s/.test(line)) break
+    section.push(line)
+  }
+  const artifacts = section
+    .map((line) => /^-\s*`([^`]+)`/.exec(line))
+    .filter((match) => match !== null)
+    .map((match) => match[1])
+  if (artifacts.length === 0) {
+    throw new UpdateMetadataError('「## 产物」小节里没有任何 ``- `文件名` `` 条目')
+  }
+  return { version: headingMatch[1], date: dateMatch[1], artifacts }
+}
+
+/** 发布说明里不允许残留的占位符 */
+export const PLACEHOLDER_MARKERS = ['TODO', 'TBD', '待填', 'XXX', '<填', '{{']
+
+export function findPlaceholders(markdown) {
+  return PLACEHOLDER_MARKERS.filter((marker) => markdown.includes(marker))
+}
