@@ -150,6 +150,19 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
     }
   }
 
+  /** stop 的具名实现(避免 stopAll 依赖 this 绑定) */
+  async function stopById(id: string): Promise<void> {
+    cancelGen.set(id, (cancelGen.get(id) ?? 0) + 1)
+    const entry = entries.get(id)
+    if (!entry) {
+      emit(id, 'stopped', { detail: '实例未在运行' })
+      return
+    }
+    entry.stopping = true
+    entries.delete(id)
+    emit(id, 'stopped', { detail: '已停止' })
+  }
+
   return {
     onStatus(listener) {
       listeners.add(listener)
@@ -187,30 +200,20 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
         }
         await runStart(instance, myGen)
       })
-      startChains.set(
-        id,
-        next.catch(() => undefined).finally(() => {
-          if (startChains.get(id) === next) startChains.delete(id)
-        })
-      )
+      // 注意:必须比较「存进 map 的那个派生 promise」,否则 compare-and-delete 恒假(评审 Nit)
+      const chained = next.catch(() => undefined).finally(() => {
+        if (startChains.get(id) === chained) startChains.delete(id)
+      })
+      startChains.set(id, chained)
       return next
     },
 
-    async stop(id) {
-      cancelGen.set(id, (cancelGen.get(id) ?? 0) + 1)
-      const entry = entries.get(id)
-      if (!entry) {
-        emit(id, 'stopped', { detail: '实例未在运行' })
-        return
-      }
-      entry.stopping = true
-      entries.delete(id)
-      emit(id, 'stopped', { detail: '已停止' })
-    },
+    stop: stopById,
 
     async stopAll() {
-      const ids = [...entries.keys()]
-      await Promise.all(ids.map((id) => this.stop(id)))
+      // 除在跑条目外,也要作废「已排队但尚未建立条目」的启动(before-quit 不留窗口)
+      const ids = new Set([...entries.keys(), ...startChains.keys()])
+      await Promise.all([...ids].map((id) => stopById(id)))
     }
   }
 }

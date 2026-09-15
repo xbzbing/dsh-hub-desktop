@@ -121,7 +121,13 @@ export default function DetailView(): ReactNode {
             {record.transport === 'http' && (
               <>
                 <dt>认证</dt>
-                <dd>登录认证（后续里程碑接入）</dd>
+                <dd>
+                  {record.authMode === 'none'
+                    ? '无需登录'
+                    : record.authMode === 'gateway'
+                      ? '网关登录（密码 + 动态验证码）'
+                      : '自动探测（连接后识别；登录面板在 T8 提供）'}
+                </dd>
               </>
             )}
           </dl>
@@ -164,7 +170,9 @@ export default function DetailView(): ReactNode {
             )}
           </dl>
           <div className="row mt12">
-            {record.transport === 'local' || record.transport === 'ssh' ? (
+            {record.transport === 'local' ||
+            record.transport === 'ssh' ||
+            record.transport === 'http' ? (
               <>
                 {display === 'connected' ? (
                   <button
@@ -198,7 +206,7 @@ export default function DetailView(): ReactNode {
                 </button>
               </>
             ) : (
-              <span className="meta">HTTP 直连传输在后续里程碑提供</span>
+              <span className="meta">该传输类型暂不支持运行时控制</span>
             )}
           </div>
         </div>

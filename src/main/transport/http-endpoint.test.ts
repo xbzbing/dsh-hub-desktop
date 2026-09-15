@@ -143,6 +143,24 @@ describe('T6 评审回归:端点校验与陈旧 start', () => {
     }
   })
 
+  it('陈旧 start:stop 后不重启,挂起的 start 不得误报 running(评审 Required-1)', async () => {
+    let release!: () => void
+    const gate = new Promise<boolean>((resolve) => {
+      release = () => resolve(true)
+    })
+    const probe = vi.fn(() => gate)
+    const manager = createHttpEndpoints({ probe: probe as never, healthProbeRetries: 1 })
+    const instance = httpInstance()
+    const firstStart = manager.start(instance)
+    await vi.waitFor(() => expect(probe).toHaveBeenCalled())
+    await manager.stop(instance.id)
+    release()
+    await firstStart
+    // 陈旧 start 必须停在被 stop 的状态,不得把已停止实例重新推成 running
+    expect(manager.statusOf(instance.id)?.status).toBe('stopped')
+    expect(manager.runningIds()).toEqual([])
+  })
+
   it('陈旧 start:探测期间 stop 后立即重启,旧 start 不得删掉新条目', async () => {
     let release!: () => void
     const gate = new Promise<boolean>((resolve) => {

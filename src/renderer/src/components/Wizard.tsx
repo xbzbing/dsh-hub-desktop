@@ -353,7 +353,7 @@ export default function Wizard(): ReactNode {
               {transport === 'local'
                 ? '本机实例创建完成后会自动安装 dsh 并启动，就绪后直接打开工作区。'
                 : transport === 'ssh'
-                  ? '首次连接需要核对服务器指纹，确认后才会建立加密通道（后续里程碑）。'
+                  ? '首次连接需要核对服务器指纹，确认后才会建立加密通道。'
                   : '粘贴网址后已在第二步实时探测登录方式。'}
             </span>
           </div>

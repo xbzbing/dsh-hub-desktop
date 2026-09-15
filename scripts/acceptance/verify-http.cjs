@@ -144,7 +144,7 @@ async function main() {
 
   // C2) 网关 API 401 JSON 路径 → 判为 gateway(api-401)
   const api401 = await createAndStart('验收 · 网关 API', `http://127.0.0.1:${GATEWAY_PORT}/api/remote.mux`)
-  if (!api401.detail.includes('检测到登录认证')) throw new Error(`401 JSON 探测结论异常:${api401.detail}`)
+  if (!api401.detail.includes('401 JSON')) throw new Error(`401 JSON 探测结论异常:${api401.detail}`)
   console.log(`[ok] 网关 API 401 JSON:${api401.detail}`)
 
   // D) openView 应能开窗(T6 起 http 状态走 http 管理器)
