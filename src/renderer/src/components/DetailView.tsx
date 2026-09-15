@@ -4,6 +4,7 @@ import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, addressOf, fmtDuration, toDisplayStatus } from '../lib/format'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
+import VaultCard from './VaultCard'
 
 /** 实例详情(设计稿 view-detail 基础卡片版;认证/审计/日志随 T7/T6 扩展) */
 export default function DetailView(): ReactNode {
@@ -160,6 +161,11 @@ export default function DetailView(): ReactNode {
             </button>
           </div>
         </div>
+
+        {/* T10 §7.2:凭据存储策略(显式勾选才持久化;降级必须在 UI 告警) */}
+        {record.transport !== 'local' && record.authMode !== 'none' && (
+          <VaultCard instanceId={record.id} />
+        )}
 
         <div className="card">
           <div className="card-head">

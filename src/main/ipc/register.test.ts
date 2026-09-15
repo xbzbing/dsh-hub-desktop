@@ -583,4 +583,136 @@ describe('registerIpc', () => {
     expect(openInstanceView).toHaveBeenCalledTimes(1)
     expect(openInstanceView.mock.calls[0]?.[1]).toBe('http://127.0.0.1:31234/?token=abc')
   })
+
+  it('T10 vault:status 返回降级与已记住实例', async () => {
+    vaultFake['status']!.mockReturnValueOnce({ available: false, degraded: true, instanceCount: 2 })
+    vaultFake['rememberedIds']!.mockReturnValueOnce(['a', 'b'])
+    const result = (await invoke('vault:status')) as {
+      ok: boolean
+      value: { available: boolean; degraded: boolean; rememberedInstances: string[] }
+    }
+    expect(result.ok).toBe(true)
+    expect(result.value).toEqual({ available: false, degraded: true, rememberedInstances: ['a', 'b'] })
+  })
+
+  it('T10 vault:setPolicy 经 zod 边界校验后落库', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const ok = (await invoke('vault:setPolicy', created.value.id, {
+      rememberPassword: true,
+      rememberSession: false
+    })) as { ok: boolean; value: { rememberPassword: boolean } }
+    expect(ok.ok).toBe(true)
+    expect(ok.value.rememberPassword).toBe(true)
+    expect(vaultFake['setPolicy']).toHaveBeenCalledWith(created.value.id, {
+      rememberPassword: true,
+      rememberSession: false
+    })
+
+    // 非法入参在 IPC 边界被拒(错误信封,不抛异常)
+    const bad = (await invoke('vault:setPolicy', created.value.id, { rememberPassword: 'yes' })) as {
+      ok: boolean
+      code?: string
+    }
+    expect(bad.ok).toBe(false)
+    expect(bad.code).toBe('invalid-input')
+  })
+
+  it('T10 vault:forget 缺省两个都忘,并同步取消勾选', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    vaultFake['getPolicy']!.mockReturnValue({ rememberPassword: true, rememberSession: true })
+
+    const result = (await invoke('vault:forget', created.value.id)) as {
+      ok: boolean
+      value: { rememberPassword: boolean; rememberSession: boolean }
+    }
+    expect(result.ok).toBe(true)
+    expect(vaultFake['forgetPassword']).toHaveBeenCalledWith(created.value.id)
+    expect(vaultFake['forgetSession']).toHaveBeenCalledWith(created.value.id)
+    // 忘记凭据必须同时取消勾选,否则下次登录又写回来
+    expect(vaultFake['setPolicy']).toHaveBeenCalledWith(created.value.id, {
+      rememberPassword: false,
+      rememberSession: false
+    })
+  })
+
+  it('T10 vault:clear 清空并写审计(审计只记枚举)', async () => {
+    const result = (await invoke('vault:clear')) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(vaultFake['clearAll']).toHaveBeenCalledTimes(1)
+    expect(auditSpy).toHaveBeenCalledWith({ event: 'vault-clear', result: 'ok' })
+  })
+
+  it('T10 登录成功且勾选「记住密码」才写 vault(失败不写)', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    // 未勾选:登录成功也不写
+    authFake.login.mockResolvedValueOnce({
+      phase: 'connected',
+      needsOnboarding: false,
+      otpEnabled: false,
+      lockedForMs: 0,
+      message: null,
+      lastErrorCode: null
+    })
+    await invoke('auth:login', created.value.id, 'pw', null)
+    expect(vaultFake['rememberPassword']).not.toHaveBeenCalled()
+
+    // 勾选 + 成功 → 写
+    vaultFake['getPolicy']!.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    authFake.login.mockResolvedValueOnce({
+      phase: 'connected',
+      needsOnboarding: false,
+      otpEnabled: false,
+      lockedForMs: 0,
+      message: null,
+      lastErrorCode: null
+    })
+    await invoke('auth:login', created.value.id, 'hunter2', null)
+    expect(vaultFake['rememberPassword']).toHaveBeenCalledWith(created.value.id, 'hunter2')
+    expect(auditSpy).toHaveBeenCalledWith({
+      instanceId: created.value.id,
+      event: 'vault-write',
+      result: 'password'
+    })
+
+    // 勾选但登录失败 → 不写(否则一次错误输入会把错密码存进钥匙串)
+    vaultFake['rememberPassword']!.mockClear()
+    authFake.login.mockResolvedValueOnce({
+      phase: 'await-credentials',
+      needsOnboarding: false,
+      otpEnabled: false,
+      lockedForMs: 0,
+      message: '凭据不正确',
+      lastErrorCode: 'invalid-credentials'
+    })
+    await invoke('auth:login', created.value.id, 'wrong', null)
+    expect(vaultFake['rememberPassword']).not.toHaveBeenCalled()
+  })
+
+  it('T10 删除实例一并清掉已记住凭据与勾选策略', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    await invoke('instances:delete', created.value.id)
+    expect(vaultFake['forgetInstance']).toHaveBeenCalledWith(created.value.id)
+  })
 })
