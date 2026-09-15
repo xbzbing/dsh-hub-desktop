@@ -4,6 +4,10 @@
  */
 import { create } from 'zustand'
 import type { InstanceRecord, InstanceStatusEvent, InstanceSummary } from '@shared/contracts'
+import { DEFAULT_SETTINGS, resolveLanguage } from '@shared/settings'
+import type { Language, Settings, Theme } from '@shared/settings'
+import { createTranslator } from '@shared/i18n'
+import type { Translator } from '@shared/i18n'
 
 export interface ToastItem {
   id: number
@@ -27,11 +31,19 @@ interface AppState {
   rail: boolean
   theme: 'light' | 'dark'
   wizardOpen: boolean
+  /** T11 设置页是否打开(与实例选中互斥展示) */
+  settingsOpen: boolean
   /** 向导创建后待自动打开的实例集合(多个实例并发启动时各自独立) */
   pendingOpen: string[]
   /** 主进程 userData 路径(app:info 快照;详情页展示实例数据目录用) */
   userDataPath: string | null
   toasts: ToastItem[]
+  /** T11 非敏感偏好(主进程 settings.json 是真理源) */
+  settings: Settings
+  /** 实际生效的语言(偏好 + 系统语言推断后的结果) */
+  language: Language
+  /** 当前语言的翻译函数(组件统一从这里取文案) */
+  t: Translator
 
   load: () => Promise<void>
   refreshList: () => Promise<void>
@@ -41,9 +53,14 @@ interface AppState {
   toggleRail: () => void
   toggleTheme: () => void
   setWizardOpen: (open: boolean) => void
+  setSettingsOpen: (open: boolean) => void
   setPendingOpen: (id: string) => void
   toast: (kind: ToastKind, title: string, detail?: string) => void
   dismissToast: (id: number) => void
+  /** T11:从主进程拉取偏好并应用(启动时调用) */
+  hydrateSettings: () => Promise<void>
+  /** T11:更新偏好(落盘 + 立即生效) */
+  updateSettings: (patch: Partial<Settings>) => Promise<void>
 }
 
 let toastSeq = 0
@@ -59,6 +76,17 @@ function applyTheme(theme: 'light' | 'dark'): void {
   localStorage.setItem('dshhub-theme', theme)
 }
 
+/** 偏好主题(system/light/dark)解析为实际明暗 */
+function resolveTheme(preference: Theme): 'light' | 'dark' {
+  if (preference === 'light' || preference === 'dark') return preference
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+/** 初始语言:偏好未知时先按系统语言推断,hydrate 后再以主进程为准 */
+function initialLanguage(): Language {
+  return resolveLanguage(null, navigator.language)
+}
+
 export const useAppStore = create<AppState>()((set, get) => ({
   loaded: false,
   instances: [],
@@ -68,12 +96,35 @@ export const useAppStore = create<AppState>()((set, get) => ({
   rail: false,
   theme: initialTheme(),
   wizardOpen: false,
+  settingsOpen: false,
   pendingOpen: [],
   userDataPath: null,
   toasts: [],
+  settings: DEFAULT_SETTINGS,
+  language: initialLanguage(),
+  t: createTranslator(initialLanguage()),
+
+  hydrateSettings: async () => {
+    const result = await window.dshHub?.settings.get()
+    if (!result?.ok) return
+    const settings = result.value
+    const language = resolveLanguage(settings.language, navigator.language)
+    applyTheme(resolveTheme(settings.theme))
+    set({ settings, language, theme: resolveTheme(settings.theme), t: createTranslator(language) })
+  },
+
+  updateSettings: async (patch) => {
+    const result = await window.dshHub?.settings.update(patch)
+    if (!result?.ok) return
+    const settings = result.value
+    const language = resolveLanguage(settings.language, navigator.language)
+    applyTheme(resolveTheme(settings.theme))
+    set({ settings, language, theme: resolveTheme(settings.theme), t: createTranslator(language) })
+  },
 
   load: async () => {
-    applyTheme(get().theme)
+    await get().hydrateSettings()
+    applyTheme(resolveTheme(get().settings.theme))
     // 平台信息(隐藏标题栏布局 / 平台差异化)与 userData 路径由主进程快照提供
     const info = await window.dshHub?.getInfo()
     if (info?.ok) {
@@ -141,6 +192,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   setWizardOpen: (open) => set({ wizardOpen: open }),
+  setSettingsOpen: (open) => set({ settingsOpen: open, ...(open ? { selection: null } : {}) }),
 
   setPendingOpen: (id) => set((state) => ({ pendingOpen: [...state.pendingOpen, id] })),
 

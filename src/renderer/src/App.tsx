@@ -8,6 +8,7 @@ import Wizard from './components/Wizard'
 import Toasts from './components/Toasts'
 import SshDialogs from './components/SshDialogs'
 import AuthPanel from './components/AuthPanel'
+import SettingsView from './components/SettingsView'
 
 const BRIDGE = window.dshHub
 
@@ -19,6 +20,8 @@ export default function App() {
   const loaded = useAppStore((state) => state.loaded)
   const instances = useAppStore((state) => state.instances)
   const selection = useAppStore((state) => state.selection)
+  const settingsOpen = useAppStore((state) => state.settingsOpen)
+  const t = useAppStore((state) => state.t)
   const rail = useAppStore((state) => state.rail)
   const wizardOpen = useAppStore((state) => state.wizardOpen)
   const toggleRail = useAppStore((state) => state.toggleRail)
@@ -50,7 +53,7 @@ export default function App() {
   }, [setWizardOpen, toggleRail])
 
   const selectedStatus = selection ? statuses[selection] : undefined
-  const title = selection ? undefined : '实例工作台'
+  const title = t('nav.overview')
 
   return (
     <div className={`app-shell${rail ? ' rail' : ''}`} data-testid="app-shell">
@@ -59,7 +62,7 @@ export default function App() {
         <div className="topbar">
           <div className="tb-left">
             <span className="tb-title" data-testid="tb-title">
-              {selection ? '实例详情' : title}
+              {settingsOpen ? t('settings.title') : selection ? '实例详情' : title}
             </span>
             <span className="tb-sub" data-testid="tb-sub">
               {selectedStatus?.detail ?? `${instances.length} 个实例`}
@@ -67,7 +70,9 @@ export default function App() {
           </div>
         </div>
         <div className="content-scroll" data-testid="content-scroll">
-          {selection !== null && loaded ? (
+          {settingsOpen ? (
+            <SettingsView />
+          ) : selection !== null && loaded ? (
             <DetailView />
           ) : !loaded ? (
             <HomeView />

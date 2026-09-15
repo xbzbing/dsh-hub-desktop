@@ -15,7 +15,8 @@ export default function Sidebar(): ReactNode {
   const toggleRail = useAppStore((state) => state.toggleRail)
   const toggleTheme = useAppStore((state) => state.toggleTheme)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
-  const toast = useAppStore((state) => state.toast)
+  const setSettingsOpen = useAppStore((state) => state.setSettingsOpen)
+  const t = useAppStore((state) => state.t)
 
   const [query, setQuery] = useState('')
   const [groupByType, setGroupByType] = useState(false)
@@ -115,15 +116,16 @@ export default function Sidebar(): ReactNode {
           <span className="fx-icon">
             <Icon name="plus" />
           </span>
-          <span className="fx-label">新建实例</span>
+          <span className="fx-label">{t('nav.newInstance')}</span>
         </button>
         <div className="row">
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => toast('info', '设置页将在后续里程碑提供')}
+            data-testid="settings-btn"
+            onClick={() => setSettingsOpen(true)}
           >
             <Icon name="gear" />
-            <span className="fx-label">设置</span>
+            <span className="fx-label">{t('nav.settings')}</span>
           </button>
           <button
             className="btn btn-ghost btn-sm icon-btn"

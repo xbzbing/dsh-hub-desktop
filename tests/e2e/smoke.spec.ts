@@ -41,7 +41,8 @@ test('窗口打开并渲染出应用外壳', async () => {
 
 test('preload 白名单桥接形状正确(无多余暴露)', async () => {
   const api = await win.evaluate(() => (window.dshHub ? Object.keys(window.dshHub).sort() : null))
-  // T5 起新增 ssh 组;T10 起新增 vault 组;任何额外暴露都会让本用例失败
+  // T5 起新增 ssh 组;T10 起新增 vault 组;T11 起新增 settings 组;
+  // 任何额外暴露都会让本用例失败
   expect(api).toEqual(
     [
       'auth',
@@ -51,6 +52,7 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
       'onInstanceStatus',
       'ping',
       'runtime',
+      'settings',
       'ssh',
       'vault'
     ].sort()
@@ -80,6 +82,11 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
     window.dshHub?.vault ? Object.keys(window.dshHub.vault).sort() : null
   )
   expect(vaultKeys).toEqual(['clear', 'forget', 'setPolicy', 'status'])
+  // T11 应用设置:只暴露 get/update
+  const settingsKeys = await win.evaluate(() =>
+    window.dshHub?.settings ? Object.keys(window.dshHub.settings).sort() : null
+  )
+  expect(settingsKeys).toEqual(['get', 'update'])
 })
 
 test('空数据目录展示空态(真实注册表后端)', async () => {

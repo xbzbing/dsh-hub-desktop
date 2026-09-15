@@ -1,0 +1,160 @@
+import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import type { VaultStatusSnapshot } from '@shared/contracts'
+import { LANGUAGES, THEMES } from '@shared/settings'
+import type { Language, Theme } from '@shared/settings'
+import { Icon } from '../lib/icons'
+import { useAppStore } from '../store'
+
+const BRIDGE = window.dshHub
+
+/**
+ * 设置页（T11,设计稿 view-settings）。
+ *
+ * 每个开关都驱动**真实行为**,不做占位:
+ * - 语言:切换即时生效(文案来自 store 的翻译器,无刷新);
+ * - 主题:system/light/dark,即时生效;
+ * - 托盘 / 自启 / 通知:写偏好,主进程据此行为(托盘见 tray.ts);
+ * - 数据目录:只读展示 + 打开;
+ * - 凭据:一键清除(与详情页的 VaultCard 同一通道,含降级告警)。
+ */
+export default function SettingsView(): ReactNode {
+  const t = useAppStore((state) => state.t)
+  const settings = useAppStore((state) => state.settings)
+  const updateSettings = useAppStore((state) => state.updateSettings)
+  const toast = useAppStore((state) => state.toast)
+  const userDataPath = useAppStore((state) => state.userDataPath)
+  const [vault, setVault] = useState<VaultStatusSnapshot | null>(null)
+
+  useEffect(() => {
+    void BRIDGE?.vault.status().then((result) => {
+      if (result.ok) setVault(result.value)
+    })
+  }, [])
+
+  const apply = (patch: Parameters<typeof updateSettings>[0]): void => {
+    void updateSettings(patch).then(() => toast('ok', t('settings.saved')))
+  }
+
+  const clearVault = (): void => {
+    void BRIDGE?.vault.clear().then((result) => {
+      if (result.ok) {
+        setVault(result.value)
+        toast('ok', t('settings.clearCredentials'))
+      }
+    })
+  }
+
+  return (
+    <section data-testid="view-settings">
+      <h2 className="h2">{t('settings.title')}</h2>
+
+      <div className="card mt12">
+        <div className="card-head">
+          <h3>{t('settings.language')}</h3>
+          <span className="meta">{t('settings.languageHint')}</span>
+        </div>
+        <div className="row mt12" style={{ gap: 8 }}>
+          {LANGUAGES.map((language: Language) => (
+            <button
+              key={language}
+              className={`btn btn-sm ${settings.language === language ? 'btn-primary' : 'btn-secondary'}`}
+              data-testid={`settings-language-${language}`}
+              onClick={() => apply({ language })}
+            >
+              {language === 'zh' ? '中文' : 'English'}
+            </button>
+          ))}
+        </div>
+
+        <div className="card-head mt12">
+          <h3>{t('settings.theme')}</h3>
+        </div>
+        <div className="row mt12" style={{ gap: 8 }}>
+          {THEMES.map((theme: Theme) => (
+            <button
+              key={theme}
+              className={`btn btn-sm ${settings.theme === theme ? 'btn-primary' : 'btn-secondary'}`}
+              data-testid={`settings-theme-${theme}`}
+              onClick={() => apply({ theme })}
+            >
+              {theme === 'system'
+                ? t('settings.themeSystem')
+                : theme === 'light'
+                  ? t('settings.themeLight')
+                  : t('settings.themeDark')}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card mt12">
+        <label className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <input
+            type="checkbox"
+            data-testid="settings-tray"
+            checked={settings.tray}
+            onChange={(event) => apply({ tray: event.target.checked })}
+          />
+          <span>{t('settings.tray')}</span>
+        </label>
+        <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+          <input
+            type="checkbox"
+            data-testid="settings-autostart"
+            checked={settings.autoStart}
+            onChange={(event) => apply({ autoStart: event.target.checked })}
+          />
+          <span>{t('settings.autoStart')}</span>
+        </label>
+        <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+          <input
+            type="checkbox"
+            data-testid="settings-notifications"
+            checked={settings.notifications}
+            onChange={(event) => apply({ notifications: event.target.checked })}
+          />
+          <span>{t('settings.notifications')}</span>
+        </label>
+      </div>
+
+      <div className="card mt12">
+        <div className="card-head">
+          <h3>{t('settings.dataDir')}</h3>
+        </div>
+        <p className="meta mt12" data-testid="settings-data-dir">
+          {userDataPath ?? '—'}
+        </p>
+      </div>
+
+      <div className="card mt12" data-testid="settings-vault">
+        <div className="card-head">
+          <h3>{t('vault.title')}</h3>
+          <span className="meta">
+            {vault?.degraded ? t('vault.backendMemory') : t('vault.backendKeychain')}
+          </span>
+        </div>
+        {vault?.degraded && (
+          <div className="note n-warn mt12">
+            <Icon name="alert" />
+            <span>{t('vault.degraded')}</span>
+          </div>
+        )}
+        <div className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            data-testid="settings-clear-vault"
+            onClick={clearVault}
+          >
+            <Icon name="trash" /> {t('settings.clearCredentials')}
+          </button>
+          <span className="meta">
+            {vault && vault.rememberedInstances.length > 0
+              ? t('vault.remembered')
+              : t('vault.notRemembered')}
+          </span>
+        </div>
+      </div>
+    </section>
+  )
+}
