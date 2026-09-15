@@ -56,7 +56,9 @@ export function createSettingsStore(options: SettingsStoreOptions): SettingsStor
     async update(patch) {
       const next = normalizeSettings({ ...read(), ...patch })
       await mkdir(dirname(path), { recursive: true })
-      const tmp = `${path}.tmp`
+      // 唯一临时名:固定 `${path}.tmp` 会让并发 update 相互覆盖/竞争,
+      // 后写入者 rename 时前一个 tmp 已不存在 → ENOENT 且**丢失一次改动**(复审 R5)。
+      const tmp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
       await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
       await rename(tmp, path)
       cache = next

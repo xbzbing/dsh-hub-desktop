@@ -163,12 +163,13 @@ export const MESSAGES = {
   'settings.autoStart': { zh: '开机自启', en: 'Launch at login' },
   'settings.notifications': { zh: '实例状态通知', en: 'Instance status notifications' },
   'settings.dataDir': { zh: '数据目录', en: 'Data directory' },
-  'settings.openDataDir': { zh: '打开数据目录', en: 'Open data directory' },
   'settings.clearCredentials': {
     zh: '清除所有已记住的凭据',
     en: 'Clear all remembered credentials'
   },
   'settings.saved': { zh: '设置已保存', en: 'Settings saved' },
+  'settings.saveFailed': { zh: '设置保存失败', en: 'Failed to save settings' },
+  'settings.cleared': { zh: '已清除所有记住的凭据', en: 'All remembered credentials cleared' },
 
   // —— 运行时长（T11:原先在 lib/format.ts 里拼中文）——
   'duration.seconds': { zh: '{n} 秒', en: '{n}s' },
@@ -379,6 +380,8 @@ export const MESSAGES = {
   'detect.probing': { zh: '正在探测端点…', en: 'Probing the endpoint…' },
 
   // —— 托盘（T11）——
+  'notify.connected': { zh: '已连接', en: 'Connected' },
+  'notify.error': { zh: '出错', en: 'Error' },
   'tray.show': { zh: '显示主窗口', en: 'Show window' },
   'tray.quit': { zh: '退出 DSH Hub', en: 'Quit DSH Hub' },
   'tray.status': { zh: '{count} 个实例运行中', en: '{count} running' }

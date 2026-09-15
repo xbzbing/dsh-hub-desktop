@@ -19,6 +19,8 @@ const RENDERER_LIB_DIR = join(RENDERER_DIR, 'lib')
 /** 已完成文案迁移的文件(出现中日韩文案即失败);`../App.tsx` 表示渲染层根组件 */
 const MIGRATED = [
   '../App.tsx',
+  // 复审 R1:store.ts 也含用户可见文案(toast),此前完全不在扫描范围内
+  '../store.ts',
   'Sidebar.tsx',
   'SettingsView.tsx',
   'AuthPanel.tsx',
@@ -62,16 +64,18 @@ function readComponent(name: string): string {
 }
 
 describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
-  it('已迁移的组件不含硬编码中日韩文案', () => {
+  it('已迁移的组件不含硬编码中日韩文案(**逐行**扫描)', () => {
+    // 曾经的实现只找「第一处」中日韩文案、且命中豁免词就 `continue` **整个文件** ——
+    // 于是 SettingsView.tsx(第一处是语言选择器的『中文』)与 store.ts 被整体豁免,
+    // 复审据此在自己的文件里绕过了这条护栏。现在逐行判定,豁免只作用于该行。
     const offenders: string[] = []
     for (const name of MIGRATED) {
-      const code = stripComments(readComponent(name))
-      if (CJK.test(code)) {
-        const line = code.split('\n').findIndex((text) => CJK.test(text)) + 1
-        const text = code.split('\n')[line - 1] ?? ''
-        if (ALLOWED_LITERALS.some((literal) => text.includes(literal))) continue
-        offenders.push(`${name}:${line}`)
-      }
+      const lines = stripComments(readComponent(name)).split('\n')
+      lines.forEach((text, index) => {
+        if (!CJK.test(text)) return
+        if (ALLOWED_LITERALS.some((literal) => text.includes(literal))) return
+        offenders.push(`${name}:${index + 1}`)
+      })
     }
     expect(offenders, `以下位置仍有硬编码文案,应改用 t('...'):\n${offenders.join('\n')}`).toEqual([])
   })
@@ -110,6 +114,23 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
       'settings.dataDir',
       'settings.clearCredentials',
       'settings.saved',
+      'tray.show',
+      'tray.quit',
+      'tray.status'
+    ]
+    const missing = required.filter((key) => !MESSAGE_KEYS.includes(key as never))
+    expect(missing).toEqual([])
+  })
+
+  it('主线使用的 key 确实存在于文案目录(缺键会在界面显示原始 key)', () => {
+    // 只做「目录 → 存在性」方向:反向的「死键」检测需要扫描全部源码字符串,
+    // 当前以人工清理为主(复审 R6 已清掉 settings.openDataDir)。
+    const required = [
+      'settings.saveFailed',
+      'settings.cleared',
+      'notify.connected',
+      'notify.error',
+      'detail.openViewFailed',
       'tray.show',
       'tray.quit',
       'tray.status'

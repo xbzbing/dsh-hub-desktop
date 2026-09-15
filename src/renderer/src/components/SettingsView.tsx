@@ -33,7 +33,11 @@ export default function SettingsView(): ReactNode {
   }, [])
 
   const apply = (patch: Parameters<typeof updateSettings>[0]): void => {
-    void updateSettings(patch).then(() => toast('ok', t('settings.saved')))
+    // 只有真的落盘成功才提示「已保存」(复审 R5:此前无论成败都提示)
+    void updateSettings(patch).then(
+      () => toast('ok', t('settings.saved')),
+      (error: unknown) => toast('err', t('settings.saveFailed'), String(error))
+    )
   }
 
   const clearVault = (): void => {

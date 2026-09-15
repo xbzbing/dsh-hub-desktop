@@ -395,6 +395,9 @@ void app.whenReady().then(() => {
       } else if (!current.tray && hubTray) {
         hubTray.destroy()
         hubTray = null
+      } else if (current.tray && hubTray) {
+        // 复审 R3:托盘已存在时此前什么都不做 —— 切换语言后菜单仍停留在旧语言
+        updateTrayStatus(hubTray, trayLabels(), showHubWindow, quitApp)
       }
     } catch (error) {
       console.error('[main] 应用托盘设置失败：', error)
@@ -476,9 +479,12 @@ void app.whenReady().then(() => {
     if (shouldNotifyStatus(event, notifyPrevious, settings.read())) {
       try {
         if (Notification.isSupported()) {
-          const label = event.status === 'running' ? '已连接' : '出错'
+          // 文案跟随当前语言(复审 R2:此前硬编码中文);body 取诊断信息,缺失时回落到实例 id
+          const tr = createTranslator(resolveLanguage(settings.read().language, app.getLocale()))
+          const label =
+            event.status === 'running' ? tr('notify.connected') : tr('notify.error')
           new Notification({
-            title: `DSH Hub · ${label}`,
+            title: `${tr('app.name')} · ${label}`,
             body: event.detail ?? event.id
           }).show()
         }

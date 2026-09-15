@@ -54,6 +54,8 @@ interface AppState {
   toggleTheme: () => void
   setWizardOpen: (open: boolean) => void
   setSettingsOpen: (open: boolean) => void
+  /** T11:跟随系统明暗变化(仅 theme='system' 生效);返回取消订阅函数 */
+  subscribeSystemTheme: () => () => void
   setPendingOpen: (id: string) => void
   toast: (kind: ToastKind, title: string, detail?: string) => void
   dismissToast: (id: number) => void
@@ -104,6 +106,24 @@ export const useAppStore = create<AppState>()((set, get) => ({
   language: initialLanguage(),
   t: createTranslator(initialLanguage()),
 
+  /**
+   * 订阅系统明暗变化(复审 R7):`theme: 'system'` 此前只在启动时解析一次,
+   * 运行中改系统外观不会跟随。回调里只重算「实际生效的明暗」,不改偏好本身。
+   */
+  subscribeSystemTheme: () => {
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)')
+    if (!media) return () => undefined
+    const onChange = (): void => {
+      const state = get()
+      if (state.settings.theme !== 'system') return
+      const resolved = resolveTheme('system')
+      applyTheme(resolved)
+      set({ theme: resolved })
+    }
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  },
+
   hydrateSettings: async () => {
     const result = await window.dshHub?.settings.get()
     if (!result?.ok) return
@@ -115,7 +135,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   updateSettings: async (patch) => {
     const result = await window.dshHub?.settings.update(patch)
-    if (!result?.ok) return
+    // 失败必须抛出:此前静默 return 让设置页「无论成败都提示已保存」(复审 R5),
+    // 用户以为改动生效,实际被丢弃。
+    // 文案由调用方经 t() 呈现;store 内不留硬编码文案(走查护栏逐行扫描)
+    if (!result) throw new Error('settings-unavailable')
+    if (!result.ok) throw new Error(result.message)
     const settings = result.value
     const language = resolveLanguage(settings.language, navigator.language)
     applyTheme(resolveTheme(settings.theme))
@@ -124,6 +148,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   load: async () => {
     await get().hydrateSettings()
+    // 系统主题订阅只需一次;theme 变化由回调内部判定
+    get().subscribeSystemTheme()
     applyTheme(resolveTheme(get().settings.theme))
     // 平台信息(隐藏标题栏布局 / 平台差异化)与 userData 路径由主进程快照提供
     const info = await window.dshHub?.getInfo()
@@ -159,7 +185,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
           // 打开失败要可见(评审 N9):此前 void 吞掉结果,用户只看到「已连接但没窗口」
           void window.dshHub?.runtime.openView(event.id).then((result) => {
             if (result && !result.ok) {
-              useAppStore.getState().toast('err', '打开实例视图失败', result.message)
+              const t = useAppStore.getState().t
+              useAppStore.getState().toast('err', t('detail.openViewFailed'), result.message)
             }
           })
         } else if (event.status === 'error' || event.status === 'stopped') {
@@ -186,9 +213,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   toggleRail: () => set((state) => ({ rail: !state.rail })),
 
   toggleTheme: () => {
-    const theme = get().theme === 'light' ? 'dark' : 'light'
-    applyTheme(theme)
-    set({ theme })
+    // 只改本地状态会让灯箱(设置页高亮)与偏好分叉:重启后 hydrateSettings 会把选择覆盖回去。
+    // 因此走 updateSettings(落盘 + 立即生效),本地 applyTheme 由它统一负责。
+    const next = get().theme === 'light' ? 'dark' : 'light'
+    void get().updateSettings({ theme: next })
   },
 
   setWizardOpen: (open) => set({ wizardOpen: open }),
