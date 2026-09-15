@@ -90,6 +90,12 @@ let hubWindow: BrowserWindow | null = null
  */
 const shouldInstallIntercept = createOncePerSession<Electron.Session>()
 
+/**
+ * 会话失效「静默重探」在飞守卫:一个会话失效的页面会因多个子资源产生多条信号,
+ * 无守卫时会对同一实例并发重探多次(徒增网关压力)。渲染层侧另有同义守卫。
+ */
+const reprobeInFlight = new Set<string>()
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1180,
@@ -333,10 +339,12 @@ void app.whenReady().then(() => {
               })
               if (signal) {
                 // T9:会话失效 → 先静默重探(带已存 Cookie 自动恢复);仍失败才由 auth-panel 接手
-                if (signal === 'session-expired' && auth) {
-                  void auth.probe(instance.id).catch((error: unknown) =>
-                    console.error('[main] 静默重探失败：', error)
-                  )
+                if (signal === 'session-expired' && auth && !reprobeInFlight.has(instance.id)) {
+                  reprobeInFlight.add(instance.id)
+                  void auth
+                    .probe(instance.id)
+                    .catch((error: unknown) => console.error('[main] 静默重探失败：', error))
+                    .finally(() => reprobeInFlight.delete(instance.id))
                 }
                 // 只发给 hub 窗口:实例窗口无 preload,收到也无消费者
                 if (hubWindow && !hubWindow.isDestroyed()) {

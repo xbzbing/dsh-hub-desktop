@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
-import type { AuthStateEvent } from '@shared/contracts'
+import type { Dispatch, ReactNode, SetStateAction } from 'react'
+import type { AuthSignalEvent, AuthStateEvent } from '@shared/contracts'
 import {
   applyAuthSnapshot,
   applyAuthState,
@@ -10,10 +10,50 @@ import {
   openAuthPanel,
   lockSeconds
 } from '../lib/auth-panel-state'
+import type { AuthPanelModel } from '../lib/auth-panel-state'
 import { Icon } from '../lib/icons'
 import { Modal } from './Modal'
 
 const BRIDGE = window.dshHub
+
+/** 实例名(信号只带 id;取不到时退化为 id 前缀) */
+async function instanceNameOf(instanceId: string): Promise<string> {
+  const list = await BRIDGE?.instances.list()
+  if (list?.ok) {
+    const found = list.value.find((item) => item.id === instanceId)
+    if (found) return found.name
+  }
+  return instanceId.slice(0, 8)
+}
+
+/**
+ * 在飞重探守卫:一个会话失效的页面会因多个子资源发出多条 `auth:signal`,
+ * 没有守卫就会对同一实例并发打 N 次网关(并发闸只限流不合并)。
+ */
+const probing = new Set<string>()
+
+/**
+ * 打开面板并立即重探(T9:让 `auth:signal` 有真实消费者)。
+ *
+ * 面板在拿到快照前 `state` 为 null → 渲染为「无」(见下方 early return),
+ * 因此**静默恢复成功时不会闪出登录面板**:重探返回 `connected` 时归约会关闭面板。
+ */
+async function openAndProbe(
+  instanceId: string,
+  setModel: Dispatch<SetStateAction<AuthPanelModel>>
+): Promise<void> {
+  const name = await instanceNameOf(instanceId)
+  setModel((current) => openAuthPanel(current, { id: instanceId, name }))
+  if (probing.has(instanceId)) return
+  probing.add(instanceId)
+  try {
+    const result = await BRIDGE?.auth.probe(instanceId)
+    const value = result?.ok ? result.value : null
+    if (value) setModel((current) => applyAuthSnapshot(current, instanceId, value))
+  } finally {
+    probing.delete(instanceId)
+  }
+}
 
 /**
  * 认证面板（T8,设计稿 auth-panel / 设计文档 §5.3）。
@@ -75,6 +115,17 @@ export default function AuthPanel(): ReactNode {
     }
     window.addEventListener('dsh-hub:open-auth', open)
     return () => window.removeEventListener('dsh-hub:open-auth', open)
+  }, [])
+
+  /**
+   * T9:消费拦截层信号(`auth:signal`)—— 会话失效/需二因素/需引导时打开面板并重探。
+   * 此前该信号全仓无渲染层消费者(评审 Minor),主进程只能盲目重探。
+   */
+  useEffect(() => {
+    if (!BRIDGE) return
+    return BRIDGE.auth.onSignal((event: AuthSignalEvent) => {
+      void openAndProbe(event.instanceId, setModel)
+    })
   }, [])
 
   const target = model.target
