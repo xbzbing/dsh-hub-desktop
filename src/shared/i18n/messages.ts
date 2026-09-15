@@ -178,6 +178,26 @@ export const MESSAGES = {
   'detail.notRunning': { zh: '未运行', en: 'Not running' },
   'detail.instanceDetail': { zh: '实例详情', en: 'Instance details' },
 
+  // —— 总览表格（T11）——
+  'home.statInstances': { zh: '个实例，本地 / SSH / 远程统一入口', en: 'instances — one place for local, SSH and remote' },
+  'home.statConnected': { zh: '个已连接，通道正常', en: 'connected with a healthy channel' },
+  'home.statAttention': { zh: '个需要处理，登录或重试', en: 'need attention — sign in or retry' },
+  'home.allInstances': { zh: '全部实例', en: 'All instances' },
+  'home.liveStatus': { zh: '状态实时刷新', en: 'Status updates live' },
+  'home.colInstance': { zh: '实例', en: 'Instance' },
+  'home.colType': { zh: '类型', en: 'Type' },
+  'home.colStatus': { zh: '状态', en: 'Status' },
+  'home.colAddress': { zh: '地址', en: 'Address' },
+  'home.colVersion': { zh: '版本', en: 'Version' },
+  'home.colActions': { zh: '操作', en: 'Actions' },
+  'home.loadingList': { zh: '正在加载实例列表', en: 'Loading instance list' },
+  'home.heroTitle': { zh: '{n} 个实例已连接', en: '{n} instances connected' },
+  'home.heroBody': {
+    zh: '本机、SSH 与远程实例都在这里。连接后工作区会嵌在应用内，断线自动重连，远程实例的登录与动态验证码也不用再切浏览器。',
+    en: 'Local, SSH and remote instances all live here. Once connected, the workspace is embedded in the app, reconnects automatically, and remote sign-in with TOTP no longer needs a browser.'
+  },
+  'home.viewDetail': { zh: '查看详情', en: 'View details' },
+
   // —— SSH 密钥预览（T11）——
   'keyPreview.failed': { zh: '密钥解析失败', en: 'Key resolution failed' },
   'keyPreview.hint': {

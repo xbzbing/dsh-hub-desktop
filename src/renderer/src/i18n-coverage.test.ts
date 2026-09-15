@@ -27,14 +27,14 @@ const MIGRATED = [
   'Toasts.tsx',
   'Modal.tsx',
   'UrlDetect.tsx',
-  'KeyPreview.tsx'
+  'KeyPreview.tsx',
+  'HomeView.tsx'
 ]
 
 /** 尚未迁移:迁完一个就从这里删掉(清单即进度) */
 const PENDING = [
   'DetailView.tsx',
   'Wizard.tsx',
-  'HomeView.tsx',
   'SshDialogs.tsx'
 ]
 

@@ -3,6 +3,7 @@ import type { InstanceSummary } from '@shared/contracts'
 import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, toDisplayStatus } from '../lib/format'
 import { useAppStore } from '../store'
+import type { MessageKey } from '@shared/i18n/messages'
 
 /** 总览页:统计卡 + 全部实例表格(设计稿 view-home,D1 已决表格形态) */
 export default function HomeView(): ReactNode {
@@ -35,30 +36,30 @@ function HomeContent(): ReactNode {
     <section data-od-id="view-home" data-testid="view-home">
       <div className="page-head">
         <p className="eyebrow">INSTANCE OVERVIEW</p>
-        <h1>{connected} 个实例已连接</h1>
+        <h1>{t('home.heroTitle', { n: connected })}</h1>
         <p className="lead">
-          本机、SSH 与远程实例都在这里。连接后工作区会嵌在应用内，断线自动重连，远程实例的登录与动态验证码也不用再切浏览器。
+          {t('home.heroBody')}
         </p>
       </div>
       <div className="grid-3 mt24">
-        <StatCard n={instances.length} label="个实例，本地 / SSH / 远程统一入口" />
-        <StatCard n={connected} label="个已连接，通道正常" />
-        <StatCard n={attention} label="个需要处理，登录或重试" />
+        <StatCard n={instances.length} label={t('home.statInstances')} />
+        <StatCard n={connected} label={t('home.statConnected')} />
+        <StatCard n={attention} label={t('home.statAttention')} />
       </div>
       <div className="card mt20">
         <div className="card-head">
-          <h3>全部实例</h3>
-          <span className="meta">状态实时刷新</span>
+          <h3>{t('home.allInstances')}</h3>
+          <span className="meta">{t('home.liveStatus')}</span>
         </div>
         <table className="ds-table" data-testid="instances-table">
           <thead>
             <tr>
-              <th>实例</th>
-              <th>类型</th>
-              <th>状态</th>
-              <th>地址</th>
-              <th className="num-col">版本</th>
-              <th className="num-col">操作</th>
+              <th>{t('home.colInstance')}</th>
+              <th>{t('home.colType')}</th>
+              <th>{t('home.colStatus')}</th>
+              <th>{t('home.colAddress')}</th>
+              <th className="num-col">{t('home.colVersion')}</th>
+              <th className="num-col">{t('home.colActions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -117,7 +118,7 @@ function TableRow(props: {
       <td className="num-col meta">{props.version ?? '—'}</td>
       <td className="num-col">
         <button className="btn btn-ghost btn-sm" onClick={props.onDetail} data-testid={`detail-${props.item.id}`}>
-          查看详情
+          {t('home.viewDetail')}
         </button>
       </td>
     </tr>
@@ -126,8 +127,9 @@ function TableRow(props: {
 
 /** 首载骨架屏(R6):统计卡 + 表格行占位,不出现空白闪烁 */
 function SkeletonHome(): ReactNode {
+  const t = useAppStore((state) => state.t)
   return (
-    <section data-testid="view-home-skeleton" aria-busy="true" aria-label="正在加载实例列表">
+    <section data-testid="view-home-skeleton" aria-busy="true" aria-label={t('home.loadingList')}>
       <div className="page-head">
         <div className="skel" style={{ width: 150, height: 13 }} />
         <div className="skel" style={{ width: 260, height: 26, marginTop: 8 }} />
@@ -148,8 +150,15 @@ function SkeletonHome(): ReactNode {
         <table className="ds-table">
           <thead>
             <tr>
-              {['实例', '类型', '状态', '地址', '版本', '操作'].map((head) => (
-                <th key={head}>{head}</th>
+              {[
+                'home.colInstance',
+                'home.colType',
+                'home.colStatus',
+                'home.colAddress',
+                'home.colVersion',
+                'home.colActions'
+              ].map((head) => (
+                <th key={head}>{t(head as MessageKey)}</th>
               ))}
             </tr>
           </thead>
