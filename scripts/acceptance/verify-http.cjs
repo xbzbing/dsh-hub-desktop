@@ -4,7 +4,7 @@
    前置:pnpm build;需已安装 dsh 运行时(hub-data/verify-real/runtimes 或指定 DSH_RUNTIME_ENTRY) */
 const { _electron: electron } = require('@playwright/test')
 const { mkdir, rm } = require('node:fs/promises')
-const { join, resolve } = require('node:path')
+const { resolve } = require('node:path')
 const { execSync, spawn } = require('node:child_process')
 const http = require('node:http')
 const { globSync } = require('node:fs')
