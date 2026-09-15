@@ -1,0 +1,31 @@
+# T13 打包配置(方案见 docs/T13-打包方案.md)
+appId: dev.dshhub.desktop
+productName: DSH Hub
+directories:
+  buildResources: build
+  output: dist
+# 只随包 out/ 与 package.json;源码、测试、docs 不入包
+files:
+  - out/**
+  - package.json
+extraResources:
+  # trayIconPath() 优先读 process.resourcesPath/<name>
+  - from: resources/trayTemplate.png
+    to: trayTemplate.png
+  - from: resources/trayTemplate@2x.png
+    to: trayTemplate@2x.png
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
