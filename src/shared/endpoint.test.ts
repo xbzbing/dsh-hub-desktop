@@ -42,6 +42,15 @@ describe('parseEndpointUrl / 正常输入', () => {
     expect(endpoint.port).toBe(3080)
   })
 
+  it('host:port 带尾斜杠或子路径时不被误判为协议', () => {
+    expect(parseEndpointUrl('localhost:3000/').baseUrl).toBe('http://localhost:3000')
+    const withPath = parseEndpointUrl('dsh.internal:3080/path')
+    expect(withPath.host).toBe('dsh.internal')
+    expect(withPath.port).toBe(3080)
+    expect(withPath.pathname).toBe('/path')
+    expect(withPath.baseUrl).toBe('http://dsh.internal:3080/path')
+  })
+
   it('https 未写端口时补 443，且不写进 hostport', () => {
     const endpoint = parseEndpointUrl('https://dsh.example.com')
     expect(endpoint.port).toBe(443)
@@ -95,6 +104,7 @@ describe('parseEndpointUrl / 非法输入', () => {
   it('非 http(s) 协议判为 unsupported-scheme', () => {
     expect(codeOf('ftp://dsh.example.com')).toBe('unsupported-scheme')
     expect(codeOf('file:///tmp/dsh')).toBe('unsupported-scheme')
+    expect(codeOf('mailto:x')).toBe('unsupported-scheme')
   })
 
   it('缺主机判为 missing-host', () => {
@@ -114,6 +124,11 @@ describe('parseEndpointUrl / 非法输入', () => {
 
   it('端口 0 判为 invalid-port', () => {
     expect(codeOf('http://127.0.0.1:0')).toBe('invalid-port')
+  })
+
+  it('超长端口与带路径的超界端口交给 URL 判定为 malformed', () => {
+    expect(codeOf('dsh.internal:3080123')).toBe('malformed')
+    expect(codeOf('example.com:65536/x')).toBe('malformed')
   })
 
   it('端口越界与畸形地址判为 malformed', () => {
@@ -174,7 +189,7 @@ describe('isSameEndpoint', () => {
 
 describe('isLoopbackHost', () => {
   it('识别回环写法', () => {
-    for (const host of ['localhost', 'LOCALHOST', '127.0.0.1', '127.1.2.3', '::1', '[::1]', 'dsh.localhost']) {
+    for (const host of ['localhost', 'LOCALHOST', '127.0.0.1', '127.1.2.3', '127.1', '::1', '[::1]', 'dsh.localhost']) {
       expect(isLoopbackHost(host), host).toBe(true)
     }
   })

@@ -28,8 +28,12 @@ export default function App() {
 
   const runPing = async (): Promise<void> => {
     if (!BRIDGE) return
-    const result = await BRIDGE.ping('hello from renderer')
-    setPong(result)
+    try {
+      const result = await BRIDGE.ping('hello from renderer')
+      setPong(result)
+    } catch (error) {
+      setBridgeError(String(error))
+    }
   }
 
   return (

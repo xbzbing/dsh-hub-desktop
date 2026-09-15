@@ -79,9 +79,11 @@ export function parseEndpointUrl(raw: string): Endpoint {
     if (colon !== -1) {
       const candidate = input.slice(0, colon)
       const after = input.slice(colon + 1)
-      // `dsh.internal:3080` 的冒号前缀不是协议（端口只可能是数字）；
-      // 其余非数字冒号前缀按协议处理（如 `mailto:x` 报 unsupported-scheme）
-      if (/^[a-zA-Z][a-zA-Z0-9+.-]*$/.test(candidate) && !/^\d{1,5}$/.test(after)) {
+      // `dsh.internal:3080`、`localhost:3000/path` 的冒号前缀不是协议：
+      // 冒号后以数字开头（可能带路径/尾斜杠）一律按 host:port 处理，
+      // 端口合法性交给 WHATWG URL 与后续边界检查判定；
+      // 冒号后非数字开头（如 `mailto:x`）按协议处理，报 unsupported-scheme。
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*$/.test(candidate) && !/^\d/.test(after)) {
         scheme = normalizeScheme(input, candidate)
         rest = after
       }
@@ -181,7 +183,8 @@ export function isLoopbackHost(host: string): boolean {
     .replace(/^\[/, '')
     .replace(/\]$/, '')
   if (h === 'localhost' || h === '::1' || h.endsWith('.localhost')) return true
-  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)
+  // 127.0.0.0/8，含 `127.1` 这类省略写法
+  return /^127(\.\d{1,3}){1,3}$/.test(h)
 }
 
 function normalizePathname(pathname: string): string {

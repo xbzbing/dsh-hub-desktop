@@ -15,13 +15,23 @@ const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'] ?? null
 const RENDERER_ORIGIN = 'app://hub'
 
 /**
- * 生产环境 CSP（设计文档 §7 安全基线）。
- * dev 由 Vite/HMR 自行管理资源，不注入，避免打断热更新。
+ * 判定 URL 是否属于本应用渲染器 origin。
+ * 不能用 `url.origin === RENDERER_ORIGIN`：Node 的 WHATWG URL 不认识 `app:` 注册为
+ * standard scheme（那是 Electron 侧注册的），对非 standard scheme `origin` 恒为 `'null'`。
+ */
+function isRendererOrigin(url: URL): boolean {
+  return url.protocol === 'app:' && url.hostname === 'hub'
+}
+
+/**
+ * 生产形态 CSP（设计文档 §7 安全基线）。
+ * 仅当不使用 Vite dev server 时注入（dev 由 HMR 自行管理资源，注入会打断热更新）。
+ * 不依赖 isPackaged：E2E 以未打包形态启动但无 dev server，同样会走到注入路径，让 CSP 可被冒烟覆盖。
  */
 const CSP_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
+  "style-src 'self'",
   "img-src 'self' data:",
   "font-src 'self'",
   "connect-src 'self'",
@@ -90,7 +100,7 @@ function isAllowedNavigation(url: string): boolean {
   try {
     const target = new URL(url)
     if (isDev && rendererDevUrl) return target.origin === new URL(rendererDevUrl).origin
-    return target.origin === RENDERER_ORIGIN
+    return isRendererOrigin(target)
   } catch {
     return false
   }
@@ -99,13 +109,17 @@ function isAllowedNavigation(url: string): boolean {
 function registerRendererProtocol(): void {
   const root = join(__dirname, '../renderer')
   protocol.handle('app', (request) => {
-    let pathname: string
+    let url: URL
     try {
-      pathname = decodeURIComponent(new URL(request.url).pathname)
+      url = new URL(request.url)
     } catch {
       return new Response('Bad Request', { status: 400 })
     }
-    const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
+    // 只服务 `app://hub` 这个固定 origin，host 不一致一律拒绝
+    if (!isRendererOrigin(url)) {
+      return new Response('Forbidden', { status: 403 })
+    }
+    const rel = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\/+/, '')
     const filePath = normalize(join(root, rel))
     // 目录穿越防护：解析结果必须仍位于 renderer 产物根之下
     if (filePath !== root && !filePath.startsWith(`${root}${sep}`)) {
@@ -116,12 +130,26 @@ function registerRendererProtocol(): void {
 }
 
 function registerCsp(): void {
-  if (isDev) return
-  // 注意：同一条 onHeadersReceived 通道会在 T4 用于 HttpOnly cookie 注入，届时在此扩展
+  // 语义见 CSP_POLICY 注释：不用 isDev，用「是否挂 dev server」决定
+  if (rendererDevUrl) return
+  // 注意：同一条 onHeadersReceived 通道会在 T4 用于 HttpOnly cookie 注入，届时在此扩展。
+  // CSP 只作用于本应用 origin，绝不扩散到未来 webview 加载的远端实例内容。
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    let url: URL | null = null
+    try {
+      url = new URL(details.url)
+    } catch {
+      url = null
+    }
+    if (!url || !isRendererOrigin(url)) {
+      callback({ responseHeaders: details.responseHeaders ?? {} })
+      return
+    }
+    // 注意：必须保留原响应头（含 Content-Type —— module script 依赖 JS MIME 才允许执行），
+    // 只追加 CSP；responseHeaders 为空时也要兜底，否则会丢掉所有原有头。
     callback({
       responseHeaders: {
-        ...details.responseHeaders,
+        ...(details.responseHeaders ?? {}),
         'Content-Security-Policy': [CSP_POLICY]
       }
     })
