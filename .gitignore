@@ -1,0 +1,33 @@
+# --- macOS ---
+.DS_Store
+
+# --- 依赖 ---
+node_modules/
+
+# --- 构建产物 ---
+dist/
+out/
+release/
+*.tsbuildinfo
+*.tgz
+
+# --- 日志 ---
+*.log
+npm-debug.log*
+
+# --- 环境变量与密钥 ---
+.env
+.env.*
+!.env.example
+
+# --- IDE / 编辑器 ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# --- 测试覆盖率 ---
+coverage/
+
+# --- 应用运行时数据(实例注册表/SSH/审计/homes/runtimes) ---
+hub-data/

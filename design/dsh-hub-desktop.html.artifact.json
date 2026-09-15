@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "DSH Hub · 桌面实例管理原型",
+  "entry": "dsh-hub-desktop.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "primary": true,
+  "createdAt": "2026-09-15T09:03:18.914Z",
+  "updatedAt": "2026-09-15T09:03:18.921Z",
+  "metadata": {
+    "identifier": "dsh-hub-desktop",
+    "artifactType": "text/html",
+    "inferred": false
+  }
+}

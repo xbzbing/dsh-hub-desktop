@@ -1,0 +1,1390 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DSH Hub · 实例管理原型</title>
+<style>
+:root{
+  --bg:oklch(0.982 0.003 265);
+  --surface:oklch(1 0 0);
+  --fg:oklch(0.24 0.02 265);
+  --muted:oklch(0.54 0.015 265);
+  --border:oklch(0.912 0.008 265);
+  --accent:oklch(0.52 0.19 265);
+  --accent-ink:oklch(0.99 0.004 265);
+  --backdrop:oklch(0.945 0.006 265);
+  --idle:oklch(0.66 0.01 265);
+  --info:oklch(0.58 0.14 250);
+  --warn:oklch(0.70 0.14 78);
+  --ok:oklch(0.60 0.14 152);
+  --danger:oklch(0.56 0.19 27);
+
+  --accent-soft:color-mix(in oklch, var(--accent) 12%, transparent);
+  --fg-soft:color-mix(in oklch, var(--fg) 6%, transparent);
+  --hover:color-mix(in oklch, var(--fg) 5%, var(--surface));
+  --sel:color-mix(in oklch, var(--fg) 8%, var(--surface));
+  --idle-soft:color-mix(in oklch, var(--idle) 14%, var(--surface));
+  --info-soft:color-mix(in oklch, var(--info) 14%, var(--surface));
+  --warn-soft:color-mix(in oklch, var(--warn) 16%, var(--surface));
+  --ok-soft:color-mix(in oklch, var(--ok) 14%, var(--surface));
+  --danger-soft:color-mix(in oklch, var(--danger) 13%, var(--surface));
+  --idle-ink:color-mix(in oklch, var(--idle) 70%, var(--fg));
+  --info-ink:color-mix(in oklch, var(--info) 84%, var(--fg));
+  --warn-ink:color-mix(in oklch, var(--warn) 70%, var(--fg));
+  --ok-ink:color-mix(in oklch, var(--ok) 84%, var(--fg));
+  --danger-ink:color-mix(in oklch, var(--danger) 88%, var(--fg));
+
+  --shadow-1:0 1px 2px rgb(0 0 0 / .05), 0 1px 1px rgb(0 0 0 / .04);
+  --shadow-layer:0 10px 24px rgb(0 0 0 / .10), 0 2px 6px rgb(0 0 0 / .06);
+  --shadow-pop:0 12px 32px rgb(0 0 0 / .16);
+  --shadow-win:0 26px 64px rgb(0 0 0 / .16), 0 4px 14px rgb(0 0 0 / .08);
+
+  --font-display:-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-body:var(--font-display);
+  --font-mono:ui-monospace, 'SF Mono', Menlo, 'JetBrains Mono', monospace;
+
+  --fs-h1:23px; --fs-h2:19px; --fs-h3:14.5px; --fs-lead:14px; --fs-body:13.5px; --fs-meta:11.5px;
+  --gap-xs:6px; --gap-sm:10px; --gap-md:16px; --gap-lg:24px; --gap-xl:40px;
+  --radius:8px; --radius-lg:12px; --radius-xl:14px;
+}
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:oklch(0.185 0.012 265);
+  --surface:oklch(0.232 0.014 265);
+  --fg:oklch(0.955 0.006 265);
+  --muted:oklch(0.70 0.015 265);
+  --border:oklch(0.325 0.015 265);
+  --accent:oklch(0.66 0.17 265);
+  --accent-ink:oklch(0.17 0.02 265);
+  --backdrop:oklch(0.135 0.01 265);
+  --idle:oklch(0.62 0.012 265);
+  --info:oklch(0.70 0.14 250);
+  --warn:oklch(0.80 0.14 82);
+  --ok:oklch(0.74 0.15 152);
+  --danger:oklch(0.68 0.18 27);
+  --shadow-1:0 1px 2px rgb(0 0 0 / .4);
+  --shadow-layer:0 14px 34px rgb(0 0 0 / .5);
+  --shadow-pop:0 16px 40px rgb(0 0 0 / .55);
+  --shadow-win:0 30px 70px rgb(0 0 0 / .6);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--backdrop);color:var(--fg);
+  font-family:var(--font-body);font-size:var(--fs-body);line-height:1.5;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+img,svg{display:block}svg{flex:none}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0}
+p{margin:0;text-wrap:pretty}
+h1,h2,h3,h4{margin:0;font-family:var(--font-display);text-wrap:balance}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+::selection{background:var(--accent-soft)}
+.container{max-width:1120px;margin-inline:auto;padding-inline:24px}
+.stack{display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:var(--gap-sm)}
+.row-between{display:flex;align-items:center;justify-content:space-between;gap:var(--gap-sm)}
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--gap-lg)}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap-md)}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--gap-md)}
+.grid-2-1{display:grid;grid-template-columns:2fr 1fr;gap:var(--gap-lg);align-items:start}
+.grid-1-2{display:grid;grid-template-columns:1fr 2fr;gap:var(--gap-lg);align-items:start}
+.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mt20{margin-top:20px}.mt24{margin-top:24px}
+h1,.h1{font-size:var(--fs-h1);line-height:1.2;letter-spacing:-.02em;font-weight:600}
+h2,.h2{font-size:var(--fs-h2);line-height:1.25;letter-spacing:-.015em;font-weight:600}
+h3,.h3{font-size:var(--fs-h3);line-height:1.35;font-weight:600}
+.lead{font-size:var(--fs-lead);color:var(--muted);max-width:62ch}
+.eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.meta{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--muted)}
+.num{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;background:var(--fg-soft);color:var(--muted);font-family:var(--font-mono);font-size:11px;letter-spacing:.03em}
+.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border:1px solid var(--border);border-radius:999px;font-size:11.5px;color:var(--muted)}
+.rule{border:0;border-top:1px solid var(--border);margin:0}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.03em;color:var(--muted);background:var(--surface);white-space:nowrap}
+.badge svg{width:11px;height:11px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:500;white-space:nowrap}
+.chip svg{width:12px;height:12px}
+.c-idle{background:var(--idle-soft);color:var(--idle-ink)}
+.c-info{background:var(--info-soft);color:var(--info-ink)}
+.c-warn{background:var(--warn-soft);color:var(--warn-ink)}
+.c-ok{background:var(--ok-soft);color:var(--ok-ink)}
+.c-err{background:var(--danger-soft);color:var(--danger-ink)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 13px;border-radius:8px;border:1px solid transparent;font-size:13px;font-weight:500;transition:background .15s ease,border-color .15s ease,color .15s ease;min-height:31px}
+.btn svg{width:14px;height:14px}
+.btn:active{transform:translateY(.5px)}
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-primary:hover{background:color-mix(in oklch, var(--accent) 86%, var(--fg));color:var(--accent-ink)}
+.btn-primary:disabled{background:var(--fg-soft);color:var(--muted);cursor:not-allowed}
+.btn-secondary{background:var(--surface);color:var(--fg);border-color:var(--border)}
+.btn-secondary:hover{background:var(--hover);border-color:color-mix(in oklch, var(--fg) 28%, var(--border))}
+.btn-ghost{color:var(--muted)}
+.btn-ghost:hover{background:var(--hover);color:var(--fg)}
+.btn-danger{background:var(--danger);color:oklch(0.99 0.005 27)}
+.btn-danger:hover{background:color-mix(in oklch, var(--danger) 86%, black)}
+.btn-danger:disabled{background:var(--fg-soft);color:var(--muted);cursor:not-allowed}
+.btn-block{width:100%}
+.btn-sm{padding:5px 10px;font-size:12px;min-height:27px}
+.btn-arrow::after{content:'→'}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px}
+.card-flat{background:transparent;border:0;padding:0}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px}
+.card-head h3{font-size:13.5px;font-weight:600}
+.feature .feature-mark{width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--border);border-radius:9px;color:var(--muted);margin-bottom:12px}
+.stat .stat-num{font-family:var(--font-display);font-size:30px;line-height:1;letter-spacing:-.03em;font-weight:600}
+.stat .stat-label{color:var(--muted);font-size:12px;margin-top:6px}
+.quote{font-size:20px;line-height:1.4}
+.field{display:flex;flex-direction:column;gap:5px}
+.field>label{font-size:12px;color:var(--muted)}
+.field .hint{font-size:11.5px;color:var(--muted)}
+.input,.textarea,.select{width:100%;padding:7px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--fg);font:inherit;font-size:13px;min-height:32px}
+.select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 15px) 14px,calc(100% - 10px) 14px;background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:30px}
+.input:hover,.select:hover{border-color:color-mix(in oklch, var(--fg) 22%, var(--border))}
+.input:focus,.textarea:focus,.select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.input[aria-invalid="true"]{border-color:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
+.textarea{min-height:72px;resize:vertical;line-height:1.55}
+.err{font-size:11.5px;color:var(--danger-ink);display:flex;align-items:center;gap:4px}
+.ds-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.ds-table th,.ds-table td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border)}
+.ds-table th{color:var(--muted);font-weight:500;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase}
+.ds-table tbody tr:hover{background:var(--hover)}
+.ds-table tbody tr:last-child td{border-bottom:0}
+.num-col{font-family:var(--font-mono);font-variant-numeric:tabular-nums;text-align:right}
+.content-img{display:block;max-width:100%;max-height:min(70vh,720px);width:auto;height:auto;object-fit:contain;border-radius:var(--radius-lg)}
+
+/* menubar + window */
+.menubar{height:28px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 8px;font-size:12.5px;background:color-mix(in oklch, var(--surface) 65%, transparent);backdrop-filter:blur(20px) saturate(1.4);border-bottom:1px solid var(--border);z-index:30}
+.mb-left,.mb-right{display:flex;align-items:center;gap:2px}
+.mb-app{padding:2px 9px;border-radius:6px;font-weight:600}
+.mb-menu{padding:2px 9px;border-radius:6px;color:var(--muted)}
+.mb-menu:hover,.mb-app:hover{background:var(--hover);color:var(--fg)}
+.mb-tray{position:relative;display:grid;place-items:center;width:26px;height:22px;border-radius:6px;color:var(--muted)}
+.mb-tray:hover{background:var(--hover);color:var(--fg)}
+.mb-tray i{position:absolute;right:3px;top:2px;width:5px;height:5px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 1.5px color-mix(in oklch, var(--bg) 80%, transparent)}
+.mb-clock{padding:2px 9px;color:var(--muted)}
+.window{flex:1;min-height:0;margin:9px 11px 11px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-win);overflow:hidden}
+.win-body{height:100%;display:grid;grid-template-columns:262px 1fr}
+
+/* sidebar */
+.sidebar{display:flex;flex-direction:column;min-height:0;background:color-mix(in oklch, var(--bg) 62%, var(--surface));border-right:1px solid var(--border)}
+.traffic{display:flex;gap:8px}
+.traffic i{width:12px;height:12px;border-radius:50%;box-shadow:inset 0 -1px 1px rgb(0 0 0 / .18)}
+.t-r{background:oklch(0.69 0.19 27)}
+.t-y{background:oklch(0.82 0.16 85)}
+.t-g{background:oklch(0.72 0.16 145)}
+.brand{display:flex;align-items:center;gap:9px;padding:12px 12px 10px;border-radius:10px;width:100%;text-align:left}
+.brand:hover{background:var(--hover)}
+.brand-mark{width:28px;height:28px;border-radius:8px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+.brand-mark svg{width:16px;height:16px}
+.brand b{display:block;font-size:13.5px;font-weight:600;letter-spacing:-.01em}
+.brand em{display:block;font-style:normal;font-size:11px;color:var(--muted)}
+.side-tools{padding:0 12px 8px;display:grid;gap:8px}
+.search{display:flex;align-items:center;gap:7px;height:30px;padding:0 9px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--muted)}
+.search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.search svg{width:13px;height:13px}
+.search input{flex:1;min-width:0;border:0;background:none;outline:none;font-size:12.5px;color:var(--fg)}
+.search input::placeholder{color:var(--muted)}
+.seg{display:inline-flex;padding:2px;gap:2px;background:var(--fg-soft);border:1px solid var(--border);border-radius:9px}
+.seg button{padding:4px 9px;border-radius:7px;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.seg button:hover{color:var(--fg)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);font-weight:600;box-shadow:var(--shadow-1)}
+.side-scroll{flex:1;min-height:0;overflow-y:auto;padding:2px 8px 12px}
+.group-head{display:flex;align-items:center;justify-content:space-between;padding:10px 8px 5px;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.inst{position:relative;display:grid;grid-template-columns:8px 1fr auto;gap:9px;align-items:center;width:100%;padding:7px 9px;border:1px solid transparent;border-radius:9px;text-align:left}
+.inst:hover{background:var(--hover)}
+.inst[aria-current="true"]{background:var(--sel);border-color:var(--border)}
+.inst[aria-current="true"]::before{content:'';position:absolute;left:-1px;top:8px;bottom:8px;width:2.5px;border-radius:2px;background:var(--accent)}
+.inst-text{display:block;min-width:0}
+.inst-name{display:block;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inst-meta{display:block;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--idle);box-shadow:0 0 0 3px color-mix(in oklch, var(--idle) 16%, transparent)}
+.s-connecting{background:var(--info);box-shadow:0 0 0 3px color-mix(in oklch, var(--info) 16%, transparent);animation:pulse 1.4s ease-in-out infinite}
+.s-auth,.s-locked,.s-interrupted{background:var(--warn);box-shadow:0 0 0 3px color-mix(in oklch, var(--warn) 18%, transparent)}
+.s-connected{background:var(--ok);box-shadow:0 0 0 3px color-mix(in oklch, var(--ok) 16%, transparent)}
+.s-error{background:var(--danger);box-shadow:0 0 0 3px color-mix(in oklch, var(--danger) 16%, transparent)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.side-foot{flex:none;padding:10px 12px 12px;border-top:1px solid var(--border);display:grid;gap:7px}
+.side-foot .row{gap:6px}
+.side-foot .row .btn{flex:1}
+.icon-btn{width:31px;padding:0;flex:none!important}
+
+/* sidebar collapse */
+.side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 10px 0 14px}
+.collapse-btn{display:grid;place-items:center;width:24px;height:24px;flex:none;border-radius:7px;color:var(--muted)}
+.collapse-btn:hover{background:var(--hover);color:var(--fg)}
+.collapse-btn svg{width:15px;height:15px}
+.fx-icon,.rail-btn{display:none}
+@media (min-width:921px){
+  .win-body{transition:grid-template-columns .2s ease}
+  .win-body.rail{grid-template-columns:64px 1fr}
+  .win-body.rail .side-head{flex-direction:column;justify-content:center;gap:8px;padding:11px 0 0}
+  .win-body.rail .traffic{gap:5px}
+  .win-body.rail .traffic i{width:10px;height:10px}
+  .win-body.rail .brand{flex-direction:column;gap:0;padding:9px 0}
+  .win-body.rail .brand-text{display:none}
+  .win-body.rail .side-tools{display:none}
+  .win-body.rail .rail-btn{display:grid;place-items:center;align-self:center;width:46px;height:30px;margin:6px 0 2px;border-radius:8px;color:var(--muted)}
+  .win-body.rail .rail-btn:hover{background:var(--hover);color:var(--fg)}
+  .win-body.rail .side-scroll{padding:2px 0 12px}
+  .win-body.rail .group-head{justify-content:center;padding:10px 0 4px}
+  .win-body.rail .group-head span:first-child{display:none}
+  .win-body.rail .inst{grid-template-columns:1fr;justify-items:center;gap:0;padding:9px 0}
+  .win-body.rail .inst-text{display:none}
+  .win-body.rail .inst .badge{border:0;background:none;padding:0;color:var(--muted);gap:0}
+  .win-body.rail .inst .type-label{display:none}
+  .win-body.rail .inst .badge svg{width:17px;height:17px}
+  .win-body.rail .inst:hover .badge,.win-body.rail .inst[aria-current="true"] .badge{color:var(--fg)}
+  .win-body.rail .inst .status-dot{position:absolute;right:13px;top:5px;width:7px;height:7px;box-shadow:0 0 0 2px color-mix(in oklch, var(--bg) 62%, var(--surface))}
+  .win-body.rail .inst[aria-current="true"]::before{left:1px;top:6px;bottom:6px}
+  .win-body.rail .side-foot{padding:10px 8px 12px;gap:6px}
+  .win-body.rail .side-foot .row{display:grid;grid-template-columns:1fr;gap:6px}
+  .win-body.rail .side-foot .btn{width:100%;padding:0;min-height:32px}
+  .win-body.rail .fx-label{display:none}
+  .win-body.rail .fx-icon{display:grid;place-items:center}
+}
+
+/* content */
+.content{display:flex;flex-direction:column;min-width:0;min-height:0}
+.topbar{flex:none;min-height:46px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:7px 16px;border-bottom:1px solid var(--border)}
+.tb-left,.tb-right{display:flex;align-items:center;gap:9px;min-width:0}
+.tb-title{font-size:14px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+.tb-sub{font-size:11.5px;color:var(--muted);font-family:var(--font-mono)}
+.content-scroll{flex:1;min-height:0;overflow-y:auto;padding:18px 18px 28px}
+.content-scroll.flush{padding:0;display:flex;flex-direction:column}
+.page-head{display:flex;flex-direction:column;gap:6px}
+.banner{display:flex;align-items:center;gap:9px;padding:8px 16px;font-size:12.5px;background:var(--warn-soft);color:var(--warn-ink);border-bottom:1px solid color-mix(in oklch, var(--warn) 30%, var(--border))}
+.banner svg{width:14px;height:14px}
+.banner .spacer{flex:1}
+.progress-line{height:2px;background:var(--border);overflow:hidden;flex:none}
+.progress-line i{display:block;height:100%;width:38%;background:var(--accent);animation:slide 1.3s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(320%)}}
+.kv{display:grid;grid-template-columns:104px 1fr;gap:8px 14px;font-size:12.5px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.kv dd.num{font-family:var(--font-mono)}
+.tl-item{display:grid;grid-template-columns:104px 1fr;gap:12px;padding:8px 0;border-top:1px solid var(--border);font-size:12.5px}
+.tl-item:first-child{border-top:0}
+.tl-item time{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.empty{max-width:400px;margin:52px auto;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted)}
+.empty .glyph{color:var(--muted);opacity:.5}
+.empty .glyph svg{width:76px;height:76px}
+.empty h2{color:var(--fg)}
+.menu-pop{position:fixed;top:34px;right:11px;width:258px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-pop);padding:6px;z-index:70;font-size:13px}
+.menu-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border-radius:7px;text-align:left;color:var(--fg)}
+.menu-item svg{width:14px;height:14px;color:var(--muted)}
+.menu-item:hover{background:var(--hover)}
+.menu-item:disabled{color:var(--muted);cursor:not-allowed}
+.menu-item:disabled svg{opacity:.5}
+.menu-sep{border-top:1px solid var(--border);margin:5px 4px}
+.menu-label{padding:7px 9px 3px;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;color:var(--muted);text-transform:uppercase}
+.sub-item{display:flex;align-items:center;gap:8px;padding:6px 9px 6px 20px;border-radius:7px;width:100%;text-align:left}
+.sub-item:hover{background:var(--hover)}
+.sub-item .meta{margin-left:auto}
+
+/* overlays */
+.overlay{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:color-mix(in oklch, var(--backdrop) 55%, transparent);backdrop-filter:blur(4px);animation:fade .18s ease}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes rise{from{opacity:0;transform:translateY(8px) scale(.99)}to{opacity:1;transform:none}}
+.modal{width:min(452px,100%);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xl);box-shadow:var(--shadow-layer);overflow:hidden;animation:rise .2s ease}
+.modal.wide{width:min(700px,100%)}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:15px 18px 13px;border-bottom:1px solid var(--border)}
+.modal-head h2{font-size:15.5px}
+.modal-head .sub{font-size:12px;color:var(--muted);margin-top:3px}
+.modal-body{padding:16px 18px}
+.modal-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 18px;border-top:1px solid var(--border);background:color-mix(in oklch, var(--bg) 45%, var(--surface))}
+.modal-foot .right{display:flex;gap:9px;margin-left:auto}
+.x-btn{display:grid;place-items:center;width:26px;height:26px;border-radius:7px;color:var(--muted);flex:none}
+.x-btn:hover{background:var(--hover);color:var(--fg)}
+.inset{background:color-mix(in oklch, var(--bg) 55%, var(--surface));border:1px solid var(--border);border-radius:10px;padding:12px 13px}
+.note{display:flex;gap:9px;padding:10px 12px;border-radius:10px;font-size:12.5px;line-height:1.5}
+.note svg{width:15px;height:15px;margin-top:1px}
+.n-info{background:var(--info-soft);color:var(--info-ink)}
+.n-warn{background:var(--warn-soft);color:var(--warn-ink)}
+.n-err{background:var(--danger-soft);color:var(--danger-ink)}
+.n-ok{background:var(--ok-soft);color:var(--ok-ink)}
+.otp{display:flex;gap:8px;justify-content:center}
+.otp input{width:44px;height:54px;text-align:center;font-family:var(--font-mono);font-size:22px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--fg);padding:0}
+.otp input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.otp input[aria-invalid="true"]{border-color:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
+.code-input{font-family:var(--font-mono);font-size:18px;letter-spacing:.28em;text-align:center;height:46px}
+.check{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;cursor:pointer}
+.check input{margin:2px 0 0;width:14px;height:14px;accent-color:var(--accent);flex:none}
+.check .hint{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.switch{position:relative;width:36px;height:21px;border-radius:999px;background:var(--border);flex:none;transition:background .18s ease;border:0;padding:0}
+.switch::after{content:'';position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--surface);box-shadow:var(--shadow-1);transition:transform .18s ease}
+.switch[aria-checked="true"]{background:var(--accent)}
+.switch[aria-checked="true"]::after{transform:translateX(15px)}
+.switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stepper{display:flex;align-items:center;gap:0;padding:14px 18px;border-bottom:1px solid var(--border)}
+.step{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.step b{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1px solid var(--border);font-family:var(--font-mono);font-size:11px;font-weight:500;background:var(--surface)}
+.step.on{color:var(--fg)}
+.step.on b{border-color:var(--fg);color:var(--fg);font-weight:600}
+.step.done b{background:var(--fg);border-color:var(--fg);color:var(--surface)}
+.step-line{flex:1;height:1px;background:var(--border);margin:0 10px;min-width:12px}
+.type-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.type-card{display:flex;flex-direction:column;gap:8px;padding:13px;border:1px solid var(--border);border-radius:11px;text-align:left;background:var(--surface)}
+.type-card:hover{background:var(--hover)}
+.type-card[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.type-card .tc-icon{width:26px;height:26px;color:var(--muted)}
+.type-card[aria-pressed="true"] .tc-icon{color:var(--accent)}
+.type-card b{font-size:13px;font-weight:600}
+.type-card span{font-size:11.5px;color:var(--muted);line-height:1.45}
+details.adv{border:1px solid var(--border);border-radius:10px;padding:0 12px}
+details.adv summary{cursor:pointer;padding:9px 0;font-size:12.5px;color:var(--muted);list-style:none}
+details.adv summary::-webkit-details-marker{display:none}
+details.adv summary::before{content:'▸ ';font-family:var(--font-mono)}
+details.adv[open] summary::before{content:'▾ '}
+details.adv[open]{padding-bottom:12px}
+.toasts{position:fixed;right:16px;bottom:16px;z-index:90;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{display:flex;gap:10px;align-items:flex-start;min-width:250px;max-width:340px;padding:10px 12px;border:1px solid var(--border);border-radius:11px;background:var(--surface);box-shadow:var(--shadow-layer);font-size:12.5px;animation:rise .2s ease}
+.toast svg{width:15px;height:15px;margin-top:1px}
+.toast b{display:block;font-weight:600;font-size:12.5px}
+.toast p{color:var(--muted);font-size:11.5px;margin-top:1px}
+.t-ok svg{color:var(--ok)}.t-info svg{color:var(--info)}.t-warn svg{color:var(--warn)}.t-err svg{color:var(--danger)}
+.t-ok{gap:9px}.t-info{gap:9px}.t-warn{gap:9px}.t-err{gap:9px}
+.hintbar{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px dashed var(--border);border-radius:9px;font-family:var(--font-mono);font-size:11px;color:var(--muted);line-height:1.45}
+
+/* workspace */
+.webview{position:relative;flex:1;min-height:0;display:flex;overflow:hidden;background:var(--surface)}
+.ds-rail{width:196px;flex:none;border-right:1px solid var(--border);padding:10px;display:flex;flex-direction:column;gap:6px;background:color-mix(in oklch, var(--bg) 55%, var(--surface))}
+.ds-rail .rail-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 6px;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;color:var(--muted);text-transform:uppercase}
+.rail-item{display:block;width:100%;text-align:left;padding:7px 9px;border-radius:8px;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rail-item:hover{background:var(--hover);color:var(--fg)}
+.rail-item[aria-current="true"]{background:var(--sel);color:var(--fg);font-weight:500}
+.ds-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.ds-chat{flex:1;min-height:0;overflow-y:auto;padding:20px 22px;display:flex;flex-direction:column;gap:16px}
+.msg{display:flex;gap:10px;max-width:660px}
+.msg .avatar{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;flex:none;font-family:var(--font-mono);font-size:10px;border:1px solid var(--border);color:var(--muted)}
+.msg .body{font-size:13px;line-height:1.62}
+.msg .body code{font-family:var(--font-mono);font-size:12px;background:var(--fg-soft);padding:1px 5px;border-radius:5px}
+.msg.user{margin-left:auto;flex-direction:row-reverse}
+.msg.user .body{background:var(--fg-soft);border-radius:11px;padding:9px 12px}
+.msg.user .avatar{border-color:transparent;background:var(--fg-soft)}
+.file-chip{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:5px 9px;border:1px solid var(--border);border-radius:8px;font-family:var(--font-mono);font-size:11.5px;color:var(--muted)}
+.composer{flex:none;margin:0 18px 16px;border:1px solid var(--border);border-radius:11px;padding:10px 12px;display:flex;align-items:center;gap:10px;background:var(--surface);color:var(--muted);font-size:12.5px}
+.composer .send{margin-left:auto;display:grid;place-items:center;width:26px;height:26px;border-radius:7px;border:1px solid var(--border);color:var(--muted)}
+.composer .send:hover{background:var(--hover);color:var(--fg)}
+.expired-layer{position:absolute;inset:0;display:grid;place-items:center;padding:24px;background:color-mix(in oklch, var(--backdrop) 62%, transparent);backdrop-filter:blur(3px);z-index:5}
+.expired-card{width:min(360px,100%);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xl);box-shadow:var(--shadow-layer);padding:20px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px}
+.expired-card .glyph{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--warn-soft);color:var(--warn-ink)}
+
+@media (max-width:920px){
+  .grid-2,.grid-3,.grid-4,.grid-2-1,.grid-1-2,.type-cards{grid-template-columns:1fr}
+  body{overflow:auto}
+  .menubar{display:none}
+  .window{margin:0;border-radius:0;border:0}
+  .win-body{grid-template-columns:1fr}
+  .sidebar{max-height:42vh;border-right:0;border-bottom:1px solid var(--border)}
+  .traffic{display:none}
+  .side-head{display:none}
+  .topbar{flex-wrap:wrap;row-gap:8px}
+  .tb-right{flex-wrap:wrap;row-gap:8px}
+  .webview{flex-direction:column}
+  .ds-rail{width:100%;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border)}
+  .ds-rail .rail-head{display:none}
+  .rail-item{width:auto;white-space:nowrap}
+  .modal-foot{flex-direction:column;align-items:stretch}
+  .modal-foot .right{flex-direction:column}
+  .otp input{width:38px;height:48px;font-size:19px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+}
+</style>
+</head>
+<body>
+<header class="menubar" data-od-id="menubar">
+  <div class="mb-left">
+    <span class="mb-app">DSH Hub</span>
+    <span class="mb-menu">文件</span>
+    <span class="mb-menu">编辑</span>
+    <span class="mb-menu">视图</span>
+    <span class="mb-menu">窗口</span>
+    <span class="mb-menu">帮助</span>
+  </div>
+  <div class="mb-right">
+    <button class="mb-tray" id="trayBtn" aria-haspopup="menu" aria-expanded="false" title="DSH Hub 托盘"><span id="trayIcon"></span><i id="trayDot"></i></button>
+    <span class="mb-clock num" id="clock">--:--</span>
+  </div>
+</header>
+
+<div class="window" data-od-id="window">
+  <div class="win-body">
+    <aside class="sidebar" data-od-id="sidebar">
+      <div class="side-head">
+        <div class="traffic" aria-hidden="true"><i class="t-r"></i><i class="t-y"></i><i class="t-g"></i></div>
+        <button class="collapse-btn" id="collapseBtn" aria-expanded="true" aria-label="收起侧边栏" title="收起侧边栏 (⌘B)"><span id="collapseIcon"></span></button>
+      </div>
+      <button class="brand" id="brandBtn" title="回到实例工作台">
+        <span class="brand-mark" id="brandMark"></span>
+        <span class="brand-text"><b>DSH Hub</b><em>实例管理</em></span>
+      </button>
+      <div class="side-tools">
+        <label class="search"><span id="searchIcon"></span><input id="q" type="search" placeholder="搜索实例或地址" aria-label="搜索实例" autocomplete="off" /></label>
+        <div class="seg" role="group" aria-label="列表分组方式">
+          <button data-group="mixed" aria-pressed="true">混排</button>
+          <button data-group="type" aria-pressed="false">按类型分组</button>
+        </div>
+      </div>
+      <button class="rail-btn" id="railSearchBtn" aria-label="搜索实例" title="搜索实例"><span id="railSearchIcon"></span></button>
+      <nav class="side-scroll" id="instList" aria-label="实例列表"></nav>
+      <div class="side-foot">
+        <button class="btn btn-primary btn-block" id="newBtn" title="新建实例"><span class="fx-icon" id="newIcon"></span><span class="fx-label">新建实例</span></button>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" id="settingsBtn" title="设置"><span class="fx-icon" id="setIcon"></span><span class="fx-label">设置</span></button>
+          <button class="btn btn-ghost btn-sm icon-btn" id="themeBtn" title="切换外观"></button>
+        </div>
+      </div>
+    </aside>
+    <main class="content" data-od-id="content">
+      <div class="topbar">
+        <div class="tb-left"><span class="tb-title" id="tbTitle">实例工作台</span><span class="tb-sub" id="tbSub"></span></div>
+        <div class="tb-right" id="tbRight"></div>
+      </div>
+      <div id="bannerSlot"></div>
+      <div class="content-scroll" id="viewHost"></div>
+    </main>
+  </div>
+</div>
+
+<div id="layer"></div>
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<script>
+const sv=function(p,w){w=w||16;return '<svg viewBox="0 0 24 24" width="'+w+'" height="'+w+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';};
+const ICON={
+  hub:sv('<circle cx="12" cy="12" r="2.4"/><circle cx="4.8" cy="6" r="1.7"/><circle cx="19.2" cy="6" r="1.7"/><circle cx="4.8" cy="18" r="1.7"/><circle cx="19.2" cy="18" r="1.7"/><path d="M6.2 7.3l3.9 3.1M17.8 7.3l-3.9 3.1M6.2 16.7l3.9-3.1M17.8 16.7l-3.9-3.1"/>'),
+  local:sv('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16v4"/>'),
+  ssh:sv('<rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.5 9.5l2.5 2.5-2.5 2.5M12.5 15H17"/>'),
+  remote:sv('<circle cx="12" cy="12" r="8.8"/><path d="M3.4 12h17.2M12 3.2c2.6 3.2 2.6 14.4 0 17.6M12 3.2c-2.6 3.2-2.6 14.4 0 17.6"/>'),
+  search:sv('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>'),
+  plus:sv('<path d="M12 5v14M5 12h14"/>'),
+  gear:sv('<path d="M20.65 9.92A8.9 8.9 0 0 1 20.65 14.08L17.83 13.40A6 6 0 0 1 16.13 16.35L18.13 18.46A8.9 8.9 0 0 1 14.53 20.53L13.70 17.75A6 6 0 0 1 10.30 17.75L9.47 20.53A8.9 8.9 0 0 1 5.87 18.46L7.87 16.35A6 6 0 0 1 6.17 13.40L3.35 14.08A8.9 8.9 0 0 1 3.35 9.92L6.17 10.60A6 6 0 0 1 7.87 7.65L5.87 5.54A8.9 8.9 0 0 1 9.47 3.47L10.30 6.25A6 6 0 0 1 13.70 6.25L14.53 3.47A8.9 8.9 0 0 1 18.13 5.54L16.13 7.65A6 6 0 0 1 17.83 10.60Z"/><circle cx="12" cy="12" r="3.15"/>'),
+  sun:sv('<circle cx="12" cy="12" r="4"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.6 5.6L7.2 7.2M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/>'),
+  moon:sv('<path d="M20 14.6A8.6 8.6 0 1 1 9.4 4a6.9 6.9 0 0 0 10.6 10.6Z"/>'),
+  check:sv('<path d="M4.6 12.6l5 5 10-11.2"/>'),
+  alert:sv('<path d="M12 4.4l8.6 15.2H3.4L12 4.4Z"/><path d="M12 10v4.2M12 17.2h.01"/>'),
+  info:sv('<circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.2M12 7.8h.01"/>'),
+  lock:sv('<rect x="4.6" y="10" width="14.8" height="9.8" rx="2"/><path d="M8 10V7.4a4 4 0 0 1 8 0V10"/><path d="M12 13.6v2.6"/>'),
+  shield:sv('<path d="M12 3.4l7 2.5v6c0 4.4-3 7.6-7 8.7-4-1.1-7-4.3-7-8.7v-6l7-2.5Z"/>'),
+  key:sv('<circle cx="8" cy="8" r="4.4"/><path d="M11.2 11.2L20 20M16.4 16.4l-2 2"/>'),
+  power:sv('<path d="M12 3.4v7.4"/><path d="M7.4 6.9a7 7 0 1 0 9.2 0"/>'),
+  external:sv('<path d="M14 4.5h5.5V10"/><path d="M19.5 4.5L11 13"/><path d="M18 14.6v4a1.6 1.6 0 0 1-1.6 1.6H5.1a1.6 1.6 0 0 1-1.6-1.6v-11a1.6 1.6 0 0 1 1.6-1.6h4"/>'),
+  copy:sv('<rect x="8.6" y="8.6" width="11" height="11" rx="2"/><path d="M15.4 8.6V6.6a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>'),
+  more:sv('<circle cx="5.4" cy="12" r="1.35"/><circle cx="12" cy="12" r="1.35"/><circle cx="18.6" cy="12" r="1.35"/>'),
+  close:sv('<path d="M6 6l12 12M18 6L6 18"/>'),
+  clock:sv('<circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.2 2"/>'),
+  doc:sv('<path d="M7 3.5h7l4 4v13H7z"/><path d="M13.6 3.5v4.4H18"/>'),
+  tray:sv('<rect x="3" y="4.6" width="18" height="14.8" rx="2"/><path d="M3 13.4h5l1.4 2.4h5.2l1.4-2.4h5"/>'),
+  send:sv('<path d="M5 12h13M13 6.5l5.5 5.5L13 17.5"/>'),
+  link:sv('<path d="M9.6 14.4l4.8-4.8"/><path d="M13 7.6l1.6-1.6a3.6 3.6 0 0 1 5.1 5.1L18 12.7"/><path d="M11 16.4l-1.6 1.6a3.6 3.6 0 0 1-5.1-5.1L6 11.3"/>'),
+  trash:sv('<path d="M4.5 7h15M9.5 7V5.4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.5 7l.9 12a1 1 0 0 0 1 .9h7.2a1 1 0 0 0 1-.9L17.5 7"/>'),
+  edit:sv('<path d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5z"/><path d="M14.5 7.5l2 2"/>'),
+  back:sv('<path d="M14 6l-6 6 6 6"/>'),
+  refresh:sv('<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4h-4"/>'),
+  collapse:sv('<path d="M14 5.5L7.5 12 14 18.5"/><path d="M18.5 5.5v13"/>'),
+  expand:sv('<path d="M10 5.5L16.5 12 10 18.5"/><path d="M5.5 5.5v13"/>'),
+  wifi:sv('<path d="M4.5 10.2a11 11 0 0 1 15 0"/><path d="M7.6 13.4a6.6 6.6 0 0 1 8.8 0"/><circle cx="12" cy="17" r="1"/><path d="M2.5 7.4a15 15 0 0 1 19 0"/>')
+};
+const TYPE={local:{label:'本地',icon:ICON.local},ssh:{label:'SSH',icon:ICON.ssh},remote:{label:'远程',icon:ICON.remote}};
+const STATUS={
+  idle:{t:'未连接',c:'c-idle',dot:'',icon:''},
+  connecting:{t:'连接中',c:'c-info',dot:'s-connecting',icon:ICON.refresh},
+  auth:{t:'需要登录',c:'c-warn',dot:'s-auth',icon:ICON.key},
+  connected:{t:'已连接',c:'c-ok',dot:'s-connected',icon:ICON.check},
+  interrupted:{t:'重连中',c:'c-warn',dot:'s-interrupted',icon:ICON.wifi},
+  error:{t:'连接错误',c:'c-err',dot:'s-error',icon:ICON.alert},
+  locked:{t:'已锁定',c:'c-err',dot:'s-locked',icon:ICON.lock}
+};
+let instances=[];
+function seed(){
+  const now=Date.now();
+  instances=[
+    {id:'dev-local',name:'开发 · 日常',type:'local',status:'connected',since:now-8040000,addr:'127.0.0.1:3080',secure:false,
+     version:'0.9.4',dir:'~/dsh/dev',disk:'1.8 GB',tunnel:'本机回环,无隧道',twofa:false,trusted:true,
+     audit:[['今天 14:02','登录成功 · 会话有效 30 天'],['今天 14:02','连接成功 · 本机回环 127.0.0.1:3080'],['今天 14:01','已启动 dsh 0.9.4']]},
+    {id:'plugin-test',name:'插件测试',type:'local',status:'idle',since:null,addr:'127.0.0.1:3091',secure:false,
+     version:'0.9.5-rc1',dir:'~/dsh/plugin-test',disk:'640 MB',tunnel:'本机回环,无隧道',twofa:false,trusted:true,
+     audit:[['昨天 19:41','断开连接'],['昨天 18:02','连接成功 · 本机回环']]},
+    {id:'srv-main',name:'服务器 · 主力',type:'ssh',status:'auth',since:null,addr:'build-01.internal',port:2222,user:'dev',
+     key:'ed25519 (ssh-agent)',secure:true,needsAuth:true,twofa:true,trusted:true,fingerprint:'SHA256:AbC1x7…XyZ9',
+     version:'0.9.3',dir:'/srv/dsh/main',disk:'12.4 GB',tunnel:'127.0.0.1:3080 → build-01.internal:3080',
+     audit:[['今天 13:58','登录已过期 · 需重新登录'],['今天 09:12','通道断开,自动重连 1 次后恢复'],['今天 09:04','登录成功 · 会话有效 30 天']]},
+    {id:'edge-preview',name:'版本尝鲜',type:'remote',status:'idle',since:null,addr:'https://dsh-preview.corp.example:8443',secure:true,
+     needsAuth:true,twofa:true,initialPw:true,trusted:true,fingerprint:'SHA256:Qd7m02…Kk41',
+     version:'0.9.5-rc1',dir:'远端托管',disk:'2.2 GB',tunnel:'直连 HTTPS,无本地隧道',
+     audit:[['昨天 21:30','会话过期,自动登出'],['昨天 20:11','登录成功 · 使用备份码']]},
+    {id:'gpu-lab',name:'GPU 实验机',type:'ssh',status:'idle',since:null,addr:'gpu-lab-07.internal',port:22,user:'dev',
+     key:'ed25519 (ssh-agent)',secure:true,trusted:false,fingerprint:'SHA256:Vv93bd…Rt20',twofa:true,needsAuth:true,
+     version:'—',dir:'/srv/dsh/gpu',disk:'—',tunnel:'尚未建立',
+     audit:[['09-12 11:20','创建实例 · 尚未首次连接']]},
+    {id:'srv-legacy',name:'旧版沙箱',type:'ssh',status:'error',since:null,addr:'legacy-02.internal',port:22,user:'dev',
+     key:'ed25519 (ssh-agent)',secure:true,trusted:true,fpChanged:true,fingerprint:'SHA256:Zx10pp…Mn77',
+     err:'通道断开,自动重连 3 次仍失败',version:'0.8.7',dir:'/srv/dsh/legacy',disk:'9.1 GB',tunnel:'隧道已关闭',
+     audit:[['今天 12:40','重连失败 · 已超过重试上限'],['今天 12:39','通道断开,自动重连(第 3 次)'],['今天 12:31','连接成功 · 加密通道 AES-256-GCM']]}
+  ];
+}
+const S={view:'home',sel:null,group:'mixed',theme:'light',mode:'system',q:'',rail:false};
+const auth={open:false,id:null,step:'pw',attempts:0,lockedUntil:0,busy:false,error:'',pw:'',remember:false};
+const wiz={open:false,step:1,type:'local',hostKey:'',detect:'',busy:false};
+let fp=null,onboard=null,trayOpen=false,confirmDlg=null,menu=null,timers=[];
+const $=function(s,r){return (r||document).querySelector(s);};
+const $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};
+const get=function(id){return instances.filter(function(i){return i.id===id;})[0];};
+const esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+const fmtDur=function(ms){var s=Math.max(0,Math.floor(ms/1000)),h=Math.floor(s/3600),m=Math.floor((s%3600)/60);
+  if(h)return h+' 小时 '+m+' 分';if(m)return m+' 分 '+(s%60)+' 秒';return s+' 秒';};
+const mmss=function(ms){var s=Math.max(0,Math.ceil(ms/1000));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+function later(fn,ms){var t=setTimeout(fn,ms);timers.push(t);return t;}
+function clearTimers(){timers.forEach(clearTimeout);timers=[];}
+function toast(kind,title,body){
+  var map={ok:ICON.check,info:ICON.info,warn:ICON.alert,err:ICON.alert};
+  var n=document.createElement('div');
+  n.className='toast t-'+kind;n.setAttribute('role','status');
+  n.innerHTML='<span>'+map[kind]+'</span><div><b>'+esc(title)+'</b>'+(body?'<p>'+esc(body)+'</p>':'')+'</div>';
+  document.getElementById('toasts').appendChild(n);
+  setTimeout(function(){n.style.opacity='0';n.style.transition='opacity .2s';setTimeout(function(){n.remove();},220);},3600);
+}
+function statusLine(it){
+  if(it.status==='connected')return '已连接 · 通道正常';
+  if(it.status==='connecting')return '正在建立加密通道…';
+  if(it.status==='auth')return it.needsAuth?'需要登录 · 请完成认证':'登录已过期 · 请重新登录';
+  if(it.status==='interrupted')return '通道断开,正在自动重连…';
+  if(it.status==='locked')return '尝试次数过多,已暂时锁定';
+  if(it.status==='error')return it.err||'连接失败';
+  return '未连接';
+}
+function chipFor(it){
+  var st=STATUS[it.status]||STATUS.idle;
+  return '<span class="chip '+st.c+'">'+(st.icon||'')+esc(st.t)+'</span>';
+}
+function renderSidebar(){
+  var list=$('#instList'),q=S.q.trim().toLowerCase();
+  var arr=instances.filter(function(i){
+    if(!q)return true;
+    return (i.name+' '+i.addr+' '+TYPE[i.type].label).toLowerCase().indexOf(q)>-1;
+  });
+  var html='';
+  if(!instances.length){
+    html='<p class="meta" style="padding:12px 8px">暂无实例</p>';
+  }else if(!arr.length){
+    html='<p class="meta" style="padding:12px 8px">没有匹配「'+esc(S.q)+'」的实例</p>';
+  }else if(S.group==='type'){
+    ['local','ssh','remote'].forEach(function(t){
+      var g=arr.filter(function(i){return i.type===t;});if(!g.length)return;
+      html+='<div class="group-head"><span>'+TYPE[t].label+'实例</span><span>'+g.length+'</span></div>';
+      g.forEach(function(i){html+=instRow(i);});
+    });
+  }else{
+    arr.slice().sort(function(a,b){
+      var o={connected:0,connecting:1,interrupted:2,auth:3,locked:4,error:5,idle:6};
+      return o[a.status]-o[b.status]||a.name.localeCompare(b.name,'zh');
+    }).forEach(function(i){html+=instRow(i);});
+  }
+  list.innerHTML=html;
+}
+function instRow(it){
+  var st=STATUS[it.status]||STATUS.idle;
+  var sel=(S.sel===it.id)?'true':'false';
+  return '<button class="inst" data-select="'+it.id+'" aria-current="'+sel+'" data-tip="'+esc(it.name)+' · '+esc(st.t)+'">'
+    +'<span class="status-dot '+st.dot+'" title="'+esc(st.t)+'"></span>'
+    +'<span class="inst-text"><span class="inst-name">'+esc(it.name)+'</span><span class="inst-meta">'+esc(statusLine(it))+'</span></span>'
+    +'<span class="badge" title="'+TYPE[it.type].label+'实例">'+TYPE[it.type].icon+'<span class="type-label">'+TYPE[it.type].label+'</span></span>'
+    +'</button>';
+}
+function renderTopbar(){
+  var t=$('#tbTitle'),s=$('#tbSub'),r=$('#tbRight'),b=$('#bannerSlot');
+  var conn=instances.filter(function(i){return i.status==='connected';}).length;
+  b.innerHTML='';
+  if(S.view==='home'){
+    t.textContent='实例工作台';
+    s.textContent=instances.length+' 个实例 · '+conn+' 个已连接';
+    r.innerHTML='<button class="btn btn-secondary btn-sm" data-open="settings">'+ICON.gear+'设置</button>';
+  }else if(S.view==='settings'){
+    t.textContent='设置';s.textContent='v0.9.4 (20260915)';
+    r.innerHTML='<button class="btn btn-ghost btn-sm" data-goto="home">'+ICON.back+'返回工作台</button>';
+  }else if(S.view==='detail'){
+    var it=get(S.sel);if(!it)return;
+    t.textContent=it.name;s.textContent='实例详情 · '+it.addr;
+    r.innerHTML='<button class="btn btn-ghost btn-sm" data-goto="workspace">'+ICON.back+'返回工作区</button>'+detailActions(it);
+  }else if(S.view==='workspace'){
+    var w=get(S.sel);if(!w)return;
+    t.textContent=w.name;
+    s.textContent=(w.tunnel&&w.tunnel.indexOf('127.0.0.1')===0)?w.tunnel.split(' ')[0]:w.addr;
+    r.innerHTML=chipFor(w)
+      +(w.status==='connected'?'<button class="btn btn-secondary btn-sm" data-act="disconnect">断开连接</button><button class="btn btn-ghost btn-sm" data-act="newwin">'+ICON.external+'新窗口</button>':'')
+      +'<button class="btn btn-ghost btn-sm" data-act="open-detail">'+ICON.info+'实例详情</button>';
+    if(w.status==='interrupted'){
+      b.innerHTML='<div class="banner" role="status">'+ICON.wifi+'<span>通道断开,正在自动重连…(第 '+(w.retry||1)+' 次)</span><span class="spacer"></span><span class="meta">重连成功后本条提示会自动消失</span></div>';
+    }else if(w.status==='error'){
+      b.innerHTML='<div class="banner" style="background:var(--danger-soft);color:var(--danger-ink);border-color:color-mix(in oklch, var(--danger) 30%, var(--border))" role="alert">'+ICON.alert+'<span>'+esc(w.err||'连接失败')+'</span><span class="spacer"></span><button class="btn btn-secondary btn-sm" data-act="connect">立即重试</button></div>';
+    }
+  }
+}
+function detailActions(it){
+  var primary='';
+  if(it.status==='connected')primary='<button class="btn btn-secondary btn-sm" data-act="disconnect">断开连接</button>';
+  else if(it.status==='connecting')primary='<button class="btn btn-secondary btn-sm" data-act="cancel">取消连接</button>';
+  else if(it.status==='auth'||it.status==='locked')primary='<button class="btn btn-primary btn-sm" data-act="login">打开登录面板</button>';
+  else if(it.status==='error')primary='<button class="btn btn-primary btn-sm" data-act="connect">重新连接</button>';
+  else primary='<button class="btn btn-primary btn-sm" data-act="connect">连接</button>';
+  return primary+'<button class="btn btn-secondary btn-sm" data-act="menu">'+ICON.more+'</button>';
+}
+function renderView(){
+  var host=$('#viewHost');
+  host.className='content-scroll'+(S.view==='workspace'?' flush':'');
+  if(S.view==='home')host.innerHTML=viewHome();
+  else if(S.view==='detail')host.innerHTML=viewDetail();
+  else if(S.view==='workspace')host.innerHTML=viewWorkspace();
+  else host.innerHTML=viewSettings();
+}
+function viewHome(){
+  if(!instances.length)return emptyState();
+  var conn=instances.filter(function(i){return i.status==='connected';}).length;
+  var attn=instances.filter(function(i){return i.status==='auth'||i.status==='error'||i.status==='locked';}).length;
+  var idle=instances.length-conn-attn;
+  var rows=instances.slice().sort(function(a,b){return a.name.localeCompare(b.name,'zh');}).map(function(it){
+    return '<tr>'
+      +'<td><button class="row" data-select="'+it.id+'" style="gap:7px"><span class="status-dot '+STATUS[it.status].dot+'"></span><span>'+esc(it.name)+'</span></button></td>'
+      +'<td><span class="badge">'+TYPE[it.type].icon+TYPE[it.type].label+'</span></td>'
+      +'<td>'+chipFor(it)+'</td>'
+      +'<td class="meta">'+esc(it.addr)+'</td>'
+      +'<td class="num-col meta">'+esc(it.version||'—')+'</td>'
+      +'<td class="num-col"><button class="btn btn-ghost btn-sm" data-detail="'+it.id+'">查看详情</button></td>'
+      +'</tr>';
+  }).join('');
+  return '<section data-od-id="view-home">'
+    +'<div class="page-head"><p class="eyebrow">INSTANCE OVERVIEW</p><h1>'+conn+' 个实例已连接</h1>'
+    +'<p class="lead">本机、SSH 与远程实例都在这里。连接后工作区会嵌在应用内,断线自动重连,远程实例的登录与动态验证码也不用再切浏览器。</p></div>'
+    +'<div class="grid-3 mt24">'
+      +statCard(instances.length,'个实例,本地 / SSH / 远程统一入口')
+      +statCard(conn,'个已连接,通道正常')
+      +statCard(attn,'个需要处理,登录或重试')
+    +'</div>'
+    +'<div class="card mt20"><div class="card-head"><h3>全部实例</h3><span class="meta">'+(idle?'其中 '+idle+' 个未连接 · ':'')+'状态实时刷新</span></div>'
+    +'<table class="ds-table"><thead><tr><th>实例</th><th>类型</th><th>状态</th><th>地址</th><th class="num-col">版本</th><th class="num-col">操作</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+    +'</section>';
+}
+function statCard(n,label){return '<div class="card stat"><div class="stat-num num">'+n+'</div><p class="stat-label">'+esc(label)+'</p></div>';}
+function emptyState(){
+  return '<section data-od-id="view-empty"><div class="empty">'
+    +'<span class="glyph">'+sv('<circle cx="12" cy="12" r="2.2"/><circle cx="4.6" cy="6" r="1.6"/><circle cx="19.4" cy="6" r="1.6"/><circle cx="4.6" cy="18" r="1.6"/><circle cx="19.4" cy="18" r="1.6"/><path d="M6 7.2l3.9 3.1M18 7.2l-3.9 3.1M6 16.8l3.9-3.1M18 16.8l-3.9-3.1"/><circle cx="12" cy="12" r="9.4" stroke-dasharray="3 4"/>',76)+'</span>'
+    +'<h2>还没有实例</h2>'
+    +'<p>添加一个本机实例开始用,或者通过 SSH / 网址连接服务器上已经在跑的 dsh。</p>'
+    +'<button class="btn btn-primary" data-act="new" style="margin-top:4px">新建第一个实例</button>'
+    +'<p class="meta">快捷键 ⌘N</p>'
+    +'</div></section>';
+}
+function viewDetail(){
+  var it=get(S.sel);if(!it)return '';
+  var fpRows=it.type==='local'?'':'<div class="tl-item"><dt>主机指纹</dt><dd class="num">'+esc(it.fingerprint||'—')+(it.trusted?' · 已信任':' · 未确认')+'</dd></div>';
+  return '<section data-od-id="view-detail">'
+  +'<div class="row-between" style="align-items:flex-start">'
+    +'<div class="row" style="gap:10px"><span class="brand-mark">'+TYPE[it.type].icon+'</span>'
+      +'<div><div class="row" style="gap:8px"><h2>'+esc(it.name)+'</h2><span class="badge">'+TYPE[it.type].label+'</span></div>'
+      +'<p class="meta" style="margin-top:3px">'+esc(statusLine(it))+'</p></div></div>'
+    +'<div class="row">'+detailActions(it)+'</div>'
+  +'</div>'
+  +'<div class="grid-2 mt20">'
+    +'<div class="card"><div class="card-head"><h3>连接方式</h3><span class="meta">'+(it.secure?'加密通道':'本机回环')+'</span></div>'
+      +'<dl class="kv"><dt>地址</dt><dd class="num">'+esc(it.addr)+'</dd>'
+      +(it.port?'<dt>SSH 端口</dt><dd class="num">'+it.port+'</dd>':'')
+      +'<dt>隧道</dt><dd class="num">'+esc(it.tunnel||'—')+'</dd>'
+      +(it.key?'<dt>使用密钥</dt><dd class="num">'+esc(it.key)+'</dd>':'')
+      +'</dl>'
+      +(it.secure?'' :'<div class="note n-warn mt12">'+ICON.alert+'<span>本机回环连接未加密。仅本机可访问,不会经过网络,如需加密请改用 SSH 实例。</span></div>')
+      +'<div class="row mt12"><button class="btn btn-secondary btn-sm" data-act="copy">'+ICON.copy+'复制地址</button></div>'
+    +'</div>'
+    +'<div class="card"><div class="card-head"><h3>认证</h3><span class="meta">'+(it.twofa?'密码 + 动态验证码':'无登录门禁')+'</span></div>'
+      +'<dl class="kv"><dt>双因素</dt><dd>'+(it.twofa?'已启用(密码 + TOTP)':'未启用')+'</dd>'
+      +'<dt>登录状态</dt><dd>'+loginState(it)+'</dd>'
+      +'<dt>会话有效期</dt><dd>30 天,到期后自动弹出重新登录</dd></dl>'
+      +'<div class="row mt12" style="flex-wrap:wrap">'
+        +(it.status==='connected'? '<button class="btn btn-secondary btn-sm" data-act="logout">退出登录</button>' : '<button class="btn btn-secondary btn-sm" data-act="login">登录</button>')
+        +'<button class="btn btn-ghost btn-sm" data-act="clear-session">清除已保存的登录信息</button>'
+      +'</div>'
+    +'</div>'
+  +'</div>'
+  +'<div class="grid-2 mt16">'
+    +'<div class="card"><div class="card-head"><h3>运行信息</h3><span class="meta">'+(it.type==='local'?'本机':'远端')+'</span></div>'
+      +'<dl class="kv"><dt>dsh 版本</dt><dd class="num">'+esc(it.version||'—')+'</dd>'
+      +'<dt>运行时长</dt><dd class="num">'+(it.since?fmtDur(Date.now()-it.since):'未运行')+'</dd>'
+      +'<dt>数据目录</dt><dd class="num">'+esc(it.dir)+'</dd>'
+      +'<dt>磁盘占用</dt><dd class="num">'+esc(it.disk)+'</dd></dl>'
+      +'<div class="row mt12"><button class="btn btn-secondary btn-sm" data-act="log">'+ICON.doc+'查看日志</button></div>'
+    +'</div>'
+    +'<div class="card"><div class="card-head"><h3>连接与登录记录</h3><span class="meta">最近 '+(it.audit?it.audit.length:0)+' 条</span></div>'
+      +((it.audit&&it.audit.length)?it.audit.map(function(a){return '<div class="tl-item"><time>'+esc(a[0])+'</time><span>'+esc(a[1])+'</span></div>';}).join(''):'<p class="meta">暂无记录</p>')
+    +'</div>'
+  +'</div>'
+  +'<div class="card mt16"><div class="card-head"><h3>危险操作</h3><span class="meta">不可撤销</span></div>'
+    +'<div class="row-between"><p class="meta" style="max-width:52ch">删除后本地保存的登录信息与连接记录会一并移除,远端 dsh 本身不受影响。</p>'
+    +'<button class="btn btn-sm" style="color:var(--danger-ink);border:1px solid color-mix(in oklch, var(--danger) 40%, var(--border))" data-act="delete">'+ICON.trash+'删除实例</button></div>'
+  +'</div>'
+  +'</section>';
+}
+function loginState(it){
+  if(it.status==='locked')return '<span class="chip c-err">'+ICON.lock+'已锁定</span>';
+  if(it.status==='connected')return '<span class="chip c-ok">'+ICON.check+'已登录</span>';
+  if(it.status==='auth')return '<span class="chip c-warn">'+ICON.key+'未登录</span>';
+  return '<span class="chip c-idle">未登录</span>';
+}
+function viewWorkspace(){
+  var it=get(S.sel);if(!it)return '';
+  var overlay='';
+  if(it.status==='auth'){
+    overlay='<div class="expired-layer"><div class="expired-card">'
+      +'<span class="glyph">'+ICON.lock+'</span>'
+      +'<h2 style="font-size:16px">'+(it.needsAuth?'此实例需要登录':'登录已过期')+'</h2>'
+      +'<p class="meta" style="max-width:34ch">'+(it.needsAuth?'完成密码与动态验证码验证后即可进入工作区。':'会话已失效,工作区内容仍然保留,重新登录后即可继续。')+'</p>'
+      +'<button class="btn btn-primary mt8" data-act="login">'+(it.needsAuth?'立即登录':'重新登录')+'</button>'
+      +'</div></div>';
+  }
+  if(it.status==='idle'){
+    overlay='<div class="expired-layer"><div class="expired-card"><span class="glyph" style="background:var(--idle-soft);color:var(--idle-ink)">'+ICON.power+'</span><h2 style="font-size:16px">尚未连接</h2><p class="meta" style="max-width:34ch">连接后「'+esc(it.name)+'」的 dsh 工作区会嵌在这里,断开也不会丢失会话内容。</p><button class="btn btn-primary mt8" data-act="connect">连接并打开工作区</button></div></div>';
+  }
+  if(it.status==='error'){
+    overlay='<div class="expired-layer"><div class="expired-card"><span class="glyph" style="background:var(--danger-soft);color:var(--danger-ink)">'+ICON.alert+'</span><h2 style="font-size:16px">连接失败</h2><p class="meta" style="max-width:34ch">'+esc(it.err||'无法建立通道,请确认远端 dsh 正在运行。')+'</p><button class="btn btn-primary mt8" data-act="connect">重新连接</button></div></div>';
+  }
+  if(it.status==='connecting'){
+    overlay='<div class="expired-layer"><div class="expired-card"><span class="glyph" style="background:var(--info-soft);color:var(--info-ink)">'+ICON.refresh+'</span><h2 style="font-size:16px">正在建立加密通道</h2><p class="meta">正在通过 SSH 隧道连接 '+esc(it.addr)+'…</p></div></div>';
+  }
+  var msgs=[
+    ['u','把 <code>workspace/src/auth/totp.ts</code> 的校验窗口改成可配置,默认 30 秒。'],
+    ['a','已读取 3 个文件。当前实现把窗口硬编码为 1,我准备改成从 profile 配置读取,并在越界时回退到默认值。'],
+    ['u','顺便把备份码校验一起重构,现在重复代码太多。'],
+    ['a','明白。先补测试再改实现,预计涉及 <code>totp.ts</code>、<code>backup.ts</code> 与配置 schema。']
+  ];
+  var chat=msgs.map(function(m){
+    return '<div class="msg '+(m[0]==='u'?'user':'')+'"><span class="avatar">'+(m[0]==='u'?'你':'dsh')+'</span><div class="body">'+m[1]+'</div></div>';
+  }).join('');
+  return '<section data-od-id="view-workspace" style="display:flex;flex:1;min-height:0;flex-direction:column">'
+    +(it.status==='connecting'?'<div class="progress-line"><i></i></div>':'')
+    +'<div class="webview">'
+      +'<div class="ds-rail">'
+        +'<div class="rail-head"><span>会话</span><span>'+ICON.plus+'</span></div>'
+        +'<button class="rail-item" aria-current="true">totp 窗口可配置</button>'
+        +'<button class="rail-item">备份码重构</button>'
+        +'<button class="rail-item">CI 失败排查</button>'
+        +'<button class="rail-item">新插件脚手架</button>'
+        +'<div style="margin-top:auto;padding:6px 4px 0;border-top:1px solid var(--border)">'
+          +'<span class="meta">'+esc(it.name)+'</span>'
+        +'</div>'
+      +'</div>'
+      +'<div class="ds-main">'
+        +'<div class="ds-chat">'+chat
+          +'<div class="msg"><span class="avatar">dsh</span><div class="body">已生成补丁草稿,等待你确认后写入。<span class="file-chip">'+ICON.doc+'totp.ts +18 −6</span></div></div>'
+        +'</div>'
+        +'<div class="composer"><span>向 dsh 描述你的任务…</span><span class="send">'+ICON.send+'</span></div>'
+      +'</div>'
+      +overlay
+    +'</div>'
+  +'</section>';
+}
+function viewSettings(){
+  return '<section data-od-id="view-settings">'
+  +'<div class="page-head"><p class="eyebrow">PREFERENCES</p><h1>设置</h1><p class="lead">低频使用的偏好集中在这里,危险操作单独分组并需要二次确认。</p></div>'
+  +'<div class="card mt20"><div class="card-head"><h3>通用</h3></div><div class="stack" style="gap:14px">'
+    +rowSetting('外观','跟随系统、浅色或深色,切换立即生效','<div class="seg" role="group" aria-label="外观">'
+      +'<button data-mode="system" aria-pressed="'+(S.mode==='system')+'">跟随系统</button>'
+      +'<button data-mode="light" aria-pressed="'+(S.mode==='light')+'">浅色</button>'
+      +'<button data-mode="dark" aria-pressed="'+(S.mode==='dark')+'">深色</button></div>')
+    +rowSetting('语言','界面语言','<select class="select" style="width:150px" aria-label="语言"><option>中文(简体)</option><option>English</option></select>')
+    +rowSetting('关闭窗口时最小化到托盘','关闭后 DSH Hub 继续在后台保持连接','<button class="switch" role="switch" aria-checked="true" data-switch="tray"></button>')
+    +rowSetting('开机自动启动','登录系统后静默启动,不打开窗口','<button class="switch" role="switch" aria-checked="false" data-switch="autostart"></button>')
+    +rowSetting('系统通知','断线重连、会话过期、登录锁定时发送通知','<button class="switch" role="switch" aria-checked="true" data-switch="notify"></button>')
+  +'</div></div>'
+  +'<div class="card mt16"><div class="card-head"><h3>数据</h3><span class="meta">本机</span></div><div class="stack" style="gap:14px">'
+    +rowSetting('数据目录','实例配置与连接记录存放位置','<div class="row"><span class="meta num">~/Library/Application Support/DSH Hub</span><button class="btn btn-secondary btn-sm" data-act="open-dir">打开</button></div>')
+    +rowSetting('清除所有已保存的登录信息','所有实例回到「未登录」,下次进入需重新认证','<button class="btn btn-secondary btn-sm" data-act="clear-all">清除登录信息</button>')
+    +rowSetting('清除全部实例','删除本机保存的所有实例与连接记录','<button class="btn btn-sm" style="color:var(--danger-ink);border:1px solid color-mix(in oklch, var(--danger) 40%, var(--border))" data-act="clear-inst">清除全部实例</button>')
+  +'</div></div>'
+  +'<div class="card mt16"><div class="card-head"><h3>关于</h3><span class="meta">DSH Hub</span></div><div class="stack" style="gap:14px">'
+    +rowSetting('当前版本','<span class="num">0.9.4</span> (build 20260915)','<div class="row"><button class="btn btn-secondary btn-sm" data-act="update">检查更新</button><button class="btn btn-ghost btn-sm" data-act="log">'+ICON.doc+'查看审计日志</button></div>')
+  +'</div></div>'
+  +'</section>';
+}
+function rowSetting(title,desc,control){
+  return '<div class="row-between" style="align-items:center;gap:16px;flex-wrap:wrap"><div style="min-width:0;max-width:56ch"><div style="font-size:13px">'+title+'</div><p class="meta" style="margin-top:2px">'+desc+'</p></div>'+control+'</div>';
+}
+function render(){
+  renderSidebar();renderTopbar();renderView();
+  $('#themeBtn').innerHTML=(S.theme==='dark'?ICON.sun:ICON.moon);
+  $('#themeBtn').title='当前:'+({system:'跟随系统',light:'浅色',dark:'深色'}[S.mode])+' · 点击切换明暗';
+  $$('[data-group]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.group===S.group));});
+  applyRail();
+}
+function renderLayer(){
+  var l=$('#layer'),html='';
+  if(trayOpen)html+=trayMenu();
+  if(fp)html+=fpDialog();
+  if(wiz.open)html+=wizardDialog();
+  if(auth.open)html+=authDialog();
+  if(onboard)html+=onboardDialog();
+  if(confirmDlg)html+=confirmDialog();
+  if(menu)html+=itemMenu();
+  l.innerHTML=html;
+}
+function overlayWrap(inner,label){
+  return '<div class="overlay" data-layer="backdrop" role="dialog" aria-modal="true" aria-label="'+label+'">'+inner+'</div>';
+}
+function trayMenu(){
+  var running=instances.filter(function(i){return i.status==='connected'||i.status==='connecting'||i.status==='interrupted';});
+  var sub=running.length?running.map(function(i){
+    return '<button class="sub-item" data-tray-open="'+i.id+'"><span class="status-dot '+STATUS[i.status].dot+'"></span><span>'+esc(i.name)+'</span><span class="meta">打开</span></button>';
+  }).join(''):'<p class="meta" style="padding:4px 9px 6px 20px">没有运行中的实例</p>';
+  return '<div class="menu-pop" role="menu" data-od-id="tray-menu">'
+    +'<button class="menu-item" data-tray="show">'+ICON.hub+'打开 DSH Hub</button>'
+    +'<div class="menu-label">运行中的实例 · '+running.length+'</div>'+sub
+    +'<div class="menu-sep"></div>'
+    +'<button class="menu-item" data-tray="notify">'+ICON.info+'系统通知<span style="margin-left:auto" class="meta">已开启</span></button>'
+    +'<button class="menu-item" data-tray="quit" style="color:var(--danger-ink)">'+ICON.power+'退出 DSH Hub</button>'
+    +'</div>';
+}
+function itemMenu(){
+  var it=get(S.sel);if(!it)return '';
+  return '<div class="menu-pop" style="top:104px;right:18px;width:190px" role="menu">'
+    +'<button class="menu-item" data-act="edit">'+ICON.edit+'编辑实例</button>'
+    +'<button class="menu-item" data-act="copy">'+ICON.copy+'复制地址</button>'
+    +'<button class="menu-item" data-act="clear-session">'+ICON.key+'清除登录信息</button>'
+    +'<div class="menu-sep"></div>'
+    +'<button class="menu-item" data-act="delete" style="color:var(--danger-ink)">'+ICON.trash+'删除实例</button>'
+    +'</div>';
+}
+function fpDialog(){
+  var changed=fp.mode==='changed';
+  return overlayWrap('<div class="modal" data-od-id="fingerprint-dialog">'
+    +'<div class="modal-head"><div><h2>'+(changed?'服务器指纹已变化':'连接安全确认')+'</h2>'
+    +'<p class="sub">'+esc(fp.host)+' · 首次连接'+(changed?'':'前需核对身份')+'</p></div></div>'
+    +'<div class="modal-body">'
+    +(changed
+      ? '<div class="note n-err">'+ICON.alert+'<span><b>这台服务器出示的指纹与已信任的不一致。</b>可能是服务器重装或密钥轮换,也可能是中间人攻击。请先与服务管理员核对,再决定是否继续。</span></div>'
+      : '<p style="font-size:12.5px;color:var(--muted)">「'+esc(fp.host)+'」还没有被信任过,请核对下面的指纹是否与服务端一致。</p>')
+    +'<div class="inset mt12"><div class="row-between"><code class="num" style="font-size:12.5px">'+esc(fp.fingerprint)+'</code>'
+    +'<button class="btn btn-ghost btn-sm" data-act="copy-fp">'+ICON.copy+'复制</button></div></div>'
+    +(changed?'':'<label class="check mt12"><input type="checkbox" id="fpTrust" /><span>不再询问(仅信任此设备)<span class="hint">默认不勾选。指纹变化时仍会重新确认。</span></span></label>')
+    +'</div>'
+    +'<div class="modal-foot"><span class="meta">'+(changed?'仅在你已经与管理员核对过指纹后再继续':'首次连接会写入本机 known_hosts')+'</span>'
+    +'<div class="right"><button class="btn btn-secondary" data-act="fp-cancel">取消</button>'
+    +(changed
+      ? '<button class="btn btn-danger" data-act="fp-accept">我已确认(高级)</button>'
+      : '<button class="btn btn-primary" data-act="fp-accept">这是我的服务器,信任并连接</button>')
+    +'</div></div></div>','连接安全确认');
+}
+function stepperHtml(step){
+  var names=['选择连接方式','传输配置','认证与确认'];
+  return '<div class="stepper">'+names.map(function(n,i){
+    var k=i+1,cls=k===step?'step on':(k<step?'step done':'step');
+    return (i?'<span class="step-line"></span>':'')+'<span class="'+cls+'"><b>'+(k<step?'✓':k)+'</b>'+n+'</span>';
+  }).join('')+'</div>';
+}
+function wizardDialog(){
+  var body='';
+  if(wiz.step===1){
+    body='<p class="meta" style="margin-bottom:12px">先确定 dsh 跑在哪里,后面两步会按类型给不同的表单。</p><div class="type-cards">'
+      +wizCard('local','本地实例','在此电脑上运行','适合日常开发、插件测试、版本尝鲜,自动安装 dsh 版本')
+      +wizCard('ssh','SSH 服务器','通过加密通道连接服务器','连接服务器上已在运行的 dsh,断线自动重连')
+      +wizCard('remote','远程网址','直接连接远程地址','输入带登录认证的实例网址(支持动态验证码)')
+      +'</div>';
+  }else if(wiz.step===2){
+    body=wizForm();
+  }else{
+    body=wizConfirm();
+  }
+  var foot='<div class="modal-foot">'
+    +'<span class="meta">第 '+wiz.step+' / 3 步 · '+(wiz.step===1?'可随时返回修改':(wiz.step===2?'高级选项默认折叠,可留空':''))+'</span>'
+    +'<div class="right">'
+    +(wiz.step>1?'<button class="btn btn-secondary" data-act="wiz-prev">上一步</button>':'<button class="btn btn-ghost" data-act="wiz-close">取消</button>')
+    +(wiz.step<3
+      ? '<button class="btn btn-primary" data-act="wiz-next"'+(wiz.busy?' disabled':'')+'>下一步</button>'
+      : '<button class="btn btn-primary" data-act="wiz-create">创建并连接</button>')
+    +'</div></div>';
+  return overlayWrap('<div class="modal wide" data-od-id="wizard">'
+    +'<div class="modal-head"><div><h2>新建实例</h2><p class="sub">三步创建一个可连接的 dsh 实例</p></div>'
+    +'<button class="x-btn" data-act="wiz-close" aria-label="关闭">'+ICON.close+'</button></div>'
+    +stepperHtml(wiz.step)
+    +'<div class="modal-body">'+body+'</div>'+foot+'</div>','新建实例');
+}
+function wizCard(v,label,title,desc){
+  return '<button class="type-card" data-type="'+v+'" aria-pressed="'+(wiz.type===v)+'">'
+    +'<span class="tc-icon">'+TYPE[v].icon+'</span><b>'+label+'</b><span>'+title+'</span><span>'+desc+'</span></button>';
+}
+function wizForm(){
+  if(wiz.type==='local'){
+    return '<div class="field"><label for="wName">实例名称</label><input class="input" id="wName" placeholder="例如:开发 · 日常" value="'+esc(wiz.data?wiz.data.name:'')+'" /><span class="hint">只在本机使用,便于在侧边栏区分不同环境。</span></div>'
+    +'<details class="adv mt12"><summary>高级设置(版本 / 数据目录 / 端口)</summary><div class="grid-3 mt8">'
+      +'<div class="field"><label for="wVer">dsh 版本</label><select class="select" id="wVer"><option>0.9.4(最新稳定)</option><option>0.9.5-rc1</option><option>0.8.7</option></select></div>'
+      +'<div class="field"><label for="wDir">数据目录</label><input class="input" id="wDir" value="~/dsh/'+esc((wiz.data&&wiz.data.name)||'')+'" /></div>'
+      +'<div class="field"><label for="wPort">端口</label><input class="input num" id="wPort" value="3080" /></div>'
+    +'</div></details>';
+  }
+  if(wiz.type==='ssh'){
+    return '<div class="grid-2"><div class="field"><label for="wName">昵称</label><input class="input" id="wName" placeholder="例如:服务器 · 主力" value="'+esc(wiz.data?wiz.data.name:'')+'" /></div>'
+    +'<div class="field"><label for="wHost">主机(或 ~/.ssh/config 别名)</label><input class="input" id="wHost" placeholder="build-01.internal 或 build-01" value="'+esc(wiz.data?wiz.data.host:'')+'" /></div>'
+    +'<div class="field"><label for="wUser">用户名</label><input class="input" id="wUser" placeholder="dev" value="'+esc(wiz.data?wiz.data.user:'')+'" /></div>'
+    +'<div class="field"><label for="wSport">SSH 端口</label><input class="input num" id="wSport" value="22" /></div></div>'
+    +'<div class="field mt12"><label>认证方式</label><div class="row" style="gap:14px">'
+      +'<label class="check"><input type="radio" name="wAuth" value="key" checked /><span>密钥(推荐)</span></label>'
+      +'<label class="check"><input type="radio" name="wAuth" value="pw" /><span>密码</span></label></div></div>'
+    +'<div id="keyPreview" class="mt12">'+keyPreview(wiz.hostKey)+'</div>'
+    +'<div class="hintbar mt12">'+ICON.info+'<span>密钥内容绝不展示、也不会写入应用存储;这里只读取 ssh-agent 与默认密钥配置。</span></div>';
+  }
+  return '<div class="grid-2"><div class="field"><label for="wName">名称</label><input class="input" id="wName" placeholder="例如:版本尝鲜" value="'+esc(wiz.data?wiz.data.name:'')+'" /></div>'
+  +'<div class="field"><label for="wUrl">实例网址</label><input class="input num" id="wUrl" placeholder="https://host:8443" value="'+esc(wiz.data?wiz.data.url:'')+'" /><span class="hint">粘贴完整 URL 会自动解析,末尾的路径会被忽略。</span></div></div>'
+  +'<div id="urlDetect" class="mt12">'+urlDetect(wiz.detect)+'</div>';
+}
+function keyPreview(host){
+  if(!host)return '<div class="hintbar">'+ICON.key+'<span>填写主机后会自动展示将使用哪个密钥。</span></div>';
+  if(/legacy/i.test(host))return '<div class="note n-warn">'+ICON.alert+'<span>未检测到可用密钥,请在系统设置中启动 ssh-agent,或改用密码认证。</span></div>';
+  return '<div class="note n-ok">'+ICON.key+'<span>将使用密钥:<span class="num">ed25519 (ssh-agent)</span> · 与 ~/.ssh/config 中该别名的配置一致。</span></div>';
+}
+function urlDetect(url){
+  if(!url||wiz.detect!=='ok')return '<div class="hintbar">'+ICON.link+'<span>粘贴完整网址后自动识别是否需要登录。</span></div>';
+  return '<div class="note n-ok">'+ICON.check+'<span>已识别 <b class="num">'+esc(url)+'</b> · 检测到登录认证(密码 + 动态验证码)。</span></div>';
+}
+function wizConfirm(){
+  var t=wiz.type;
+  var name=(t==='remote'?(wiz.data.url||''):(wiz.data.name||''));
+  var detect='';
+  if(t==='remote')detect='<div class="note n-info mt12">'+ICON.info+'<span>已检测到登录认证(密码 + 动态验证码),创建后会立即打开登录面板。</span></div>';
+  if(t==='ssh')detect='<div class="note n-info mt12">'+ICON.shield+'<span>首次连接需要核对服务器指纹,确认后才会建立加密通道。</span></div>';
+  if(t==='local')detect='<div class="note n-info mt12">'+ICON.check+'<span>本机实例不需要登录,创建完成后会直接安装并进入工作区。</span></div>';
+  return '<p class="meta">最后确认一遍,名称与地址之后仍可在实例详情里修改。</p>'
+  +'<div class="inset mt12"><dl class="kv">'
+    +'<dt>名称</dt><dd>'+esc(wiz.data.name||'')+'</dd>'
+    +'<dt>连接方式</dt><dd>'+TYPE[t].label+(t==='ssh'&&wiz.data.user?' · '+esc(wiz.data.user)+'@'+esc(wiz.data.host):'')+'</dd>'
+    +'<dt>地址</dt><dd class="num">'+(t==='local'?'127.0.0.1:3080':esc(wiz.data.host||wiz.data.url||''))+'</dd>'
+    +'<dt>数据目录</dt><dd class="num">'+(t==='ssh'?'自动探测':'~/dsh/'+esc(wiz.data.name||''))+'</dd>'
+  +'</dl></div>'
+  +detect
+  +'<div class="stack mt16" style="gap:10px">'
+    +'<label class="check"><input type="checkbox" id="wRemember" /><span>记住登录状态(30 天)<span class="hint">勾选后重启应用无需重新登录;会话凭证保存在系统钥匙串。</span></span></label>'
+    +'<label class="check"><input type="checkbox" id="wRememberPw" /><span>记住密码<span class="hint">安全性更低:密码会写入系统钥匙串,建议只在完全可控的机器上勾选。</span></span></label>'
+  +'</div>';
+}
+function authDialog(){
+  var it=get(auth.id);if(!it)return '';
+  var body='';
+  if(auth.lockedUntil>Date.now()){
+    body='<div class="stack" style="align-items:center;text-align:center;gap:10px">'
+      +'<span style="width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--danger-soft);color:var(--danger-ink)">'+ICON.lock+'</span>'
+      +'<h3 style="font-size:14px">尝试次数过多,已锁定</h3>'
+      +'<p class="num" style="font-size:30px;font-weight:600;letter-spacing:-.02em" data-lock>'+mmss(auth.lockedUntil-Date.now())+'</p>'
+      +'<p class="meta" style="max-width:36ch">倒计时结束后自动恢复,无需重新打开面板。期间提交按钮保持禁用。</p>'
+      +'</div>';
+  }else if(auth.step==='pw'){
+    body='<p class="meta">「'+esc(it.name)+'」需要登录后才能打开工作区。密码与验证码都不会在界面里回显。</p>'
+    +'<div class="field mt12"><label for="aUser">账号</label><input class="input num" id="aUser" value="'+esc(it.user||'dev')+'" readonly /></div>'
+    +'<div class="field mt12"><label for="aPw">密码</label><input class="input" id="aPw" type="password" placeholder="输入密码" autocomplete="current-password" /></div>'
+    +'<label class="check mt12"><input type="checkbox" id="aRemember" /><span>记住登录状态(30 天)<span class="hint">只在完全可控的设备上勾选。</span></span></label>'
+    +authError();
+  }else if(auth.step==='otp'){
+    body='<p class="meta">密码已通过。请输入认证器里的 6 位动态验证码。</p>'
+    +'<div class="otp mt16">'+[0,1,2,3,4,5].map(function(i){return '<input inputmode="numeric" maxlength="1" aria-label="验证码第 '+(i+1)+' 位" '+(auth.error?'aria-invalid="true"':'')+' />';}).join('')+'</div>'
+    +'<div class="row mt12" style="justify-content:center"><button class="btn btn-ghost btn-sm" data-act="use-backup">认证器不可用,使用备份码</button></div>'
+    +authError();
+  }else if(auth.step==='backup'){
+    body='<p class="meta">输入 8 位备份码。每枚备份码只能使用一次。</p>'
+    +'<input class="input code-input mt16" id="aBackup" maxlength="9" placeholder="XXXX-XXXX" aria-label="备份码" '+(auth.error?'aria-invalid="true"':'')+' />'
+    +'<div class="row mt12" style="justify-content:center"><button class="btn btn-ghost btn-sm" data-act="use-otp">返回动态验证码</button></div>'
+    +authError();
+  }else if(auth.step==='done'){
+    body='<div class="stack" style="align-items:center;text-align:center;gap:8px"><span style="width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--ok-soft);color:var(--ok-ink)">'+ICON.check+'</span><h3 style="font-size:14px">登录成功</h3><p class="meta">正在进入工作区…</p></div>';
+  }
+  var remaining=5-auth.attempts;
+  var foot=(auth.step==='done')?'<div class="modal-foot"><span class="meta">登录成功后本面板会自动关闭</span></div>'
+    :'<div class="modal-foot"><span class="meta">'+(auth.step==='pw'?'':'剩余 '+remaining+' 次机会 · ')+'⌘D 确认</span>'
+      +'<div class="right">'
+      +(auth.step!=='pw'&&!auth.locked?'<button class="btn btn-ghost" data-act="auth-back">返回</button>':'<button class="btn btn-secondary" data-act="auth-cancel">取消</button>')
+      +'<button class="btn btn-primary" data-act="auth-submit"'+(auth.busy||auth.lockedUntil>Date.now()?' disabled':'')+'>'+(auth.busy?'验证中…':'登录')+'</button>'
+      +'</div></div>';
+  return overlayWrap('<div class="modal" data-od-id="auth-panel" style="width:min(412px,100%)">'
+    +'<div class="modal-head"><div><h2>登录 '+esc(it.name)+'</h2><p class="sub">'+(it.type==='remote'?'远程直连':'SSH 隧道')+' · '+esc(it.addr)+'</p></div>'
+    +(auth.step==='done'?'':'<button class="x-btn" data-act="auth-cancel" aria-label="关闭">'+ICON.close+'</button>')+'</div>'
+    +'<div class="modal-body">'+body+'</div>'+foot
+    +'<div class="modal-body" style="border-top:1px solid var(--border);padding-top:12px">'
+      +'<div class="hintbar">'+ICON.info+'<span>原型演示:验证码输入 000000 触发失败与锁定;其余 6 位数字视为通过。</span></div>'
+    +'</div></div>','登录面板');
+}
+function authError(){
+  if(!auth.error)return '';
+  return '<div class="note n-err mt12" role="alert">'+ICON.alert+'<span>'+esc(auth.error)+'</span></div>';
+}
+function onboardDialog(){
+  var it=get(onboard.id);
+  return overlayWrap('<div class="modal" data-od-id="onboarding-change-password">'
+    +'<div class="modal-head"><div><h2>设置你的个人密码</h2><p class="sub">'+esc(it.name)+' · 首次使用</p></div></div>'
+    +'<div class="modal-body">'
+    +'<div class="note n-info">'+ICON.shield+'<span>这个实例目前仍在用部署时生成的初始密码,任何人都可能知道它。设置个人密码后,初始密码立即失效。</span></div>'
+    +'<div class="field mt12"><label for="oOld">初始密码(已自动填入)</label><input class="input" id="oOld" type="password" value="initial-dsh-2f9c" /></div>'
+    +'<div class="field mt12"><label for="oNew">新密码</label><input class="input" id="oNew" type="password" placeholder="至少 8 位,含大小写或特殊字符" /></div>'
+    +'<div class="field mt12"><label for="oNew2">确认新密码</label><input class="input" id="oNew2" type="password" /></div>'
+    +'<div id="oErr"></div>'
+    +'</div>'
+    +'<div class="modal-foot"><span class="meta">完成后会自动用新密码登录</span>'
+    +'<div class="right"><button class="btn btn-secondary" data-act="onboard-later">稍后再说</button>'
+    +'<button class="btn btn-primary" data-act="onboard-save">设置并登录</button></div></div></div>','首次改密');
+}
+function confirmDialog(){
+  var c=confirmDlg;
+  var body='<p style="font-size:12.5px;color:var(--muted)">'+c.body+'</p>';
+  if(c.list&&c.list.length){
+    body+='<div class="inset mt12">'+c.list.map(function(x){return '<div class="row-between" style="padding:4px 0"><span>'+esc(x.name)+'</span><span class="meta">'+esc(x.addr)+'</span></div>';}).join('')+'</div>';
+  }
+  if(c.requireText){
+    body+='<div class="field mt12"><label for="cInput">输入实例名 <b class="num">'+esc(c.requireText)+'</b> 以确认</label>'
+      +'<input class="input" id="cInput" autocomplete="off" placeholder="'+esc(c.requireText)+'" /></div>';
+  }
+  return overlayWrap('<div class="modal" data-od-id="confirm-dialog" style="width:min(400px,100%)">'
+    +'<div class="modal-head"><div><h2>'+esc(c.title)+'</h2></div></div>'
+    +'<div class="modal-body">'+body+'</div>'
+    +'<div class="modal-foot"><span class="meta">'+(c.foot||'')+'</span><div class="right">'
+    +'<button class="btn btn-secondary" data-act="c-cancel">取消</button>'
+    +'<button class="btn '+(c.danger?'btn-danger':'btn-primary')+'" data-act="c-ok"'+(c.requireText?' disabled':'')+'>'+esc(c.ok)+'</button>'
+    +'</div></div></div>',c.title);
+}
+function applyTheme(){
+  var dark=S.mode==='dark'||(S.mode==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  S.theme=dark?'dark':'light';
+  document.documentElement.setAttribute('data-theme',S.theme);
+}
+function openWorkspace(id){S.sel=id;S.view='workspace';persist();render();}
+function persist(){try{localStorage.setItem('dshhub.theme',S.mode);localStorage.setItem('dshhub.group',S.group);localStorage.setItem('dshhub.rail',S.rail?'1':'0');}catch(e){}}
+function applyRail(){
+  var w=$('.win-body');if(w)w.classList.toggle('rail',S.rail);
+  var b=$('#collapseBtn');if(!b)return;
+  var label=S.rail?'展开侧边栏':'收起侧边栏';
+  b.setAttribute('aria-expanded',S.rail?'false':'true');
+  b.setAttribute('aria-label',label);b.title=label+' (⌘B)';
+  $('#collapseIcon').innerHTML=S.rail?ICON.expand:ICON.collapse;
+  $$('#instList .inst').forEach(function(n){
+    if(S.rail)n.setAttribute('title',n.dataset.tip||'');else n.removeAttribute('title');
+  });
+}
+function toggleRail(force){
+  S.rail=(typeof force==='boolean')?force:!S.rail;
+  applyRail();persist();
+}
+function startConnect(it){
+  it.status='connecting';it.needsAuth=it.needsAuth||false;render();
+  if(S.view==='workspace'&&S.sel===it.id)render();
+  later(function(){
+    if(it.needsAuth){it.status='auth';render();auth.open=true;auth.id=it.id;auth.step='pw';auth.error='';auth.attempts=0;renderLayer();focusFirst();}
+    else{it.status='connected';it.since=Date.now();render();openWorkspace(it.id);toast('ok','连接成功',it.name+' 已就绪');simulate(it);}
+  },1150);
+}
+function simulate(it){
+  if(it.type==='ssh'&&!it._recon){
+    it._recon=true;
+    later(function(){
+      if(it.status!=='connected')return;
+      it.status='interrupted';it.retry=1;render();
+      later(function(){
+        if(it.status!=='interrupted')return;
+        it.status='connected';render();
+        toast('ok','通道已恢复','自动重连成功,工作区已继续');
+        it.audit.unshift(['刚刚','通道断开后自动重连成功']);
+      },2600);
+    },4200);
+  }
+  if(it.type==='remote'&&!it._expired){
+    it._expired=true;
+    later(function(){
+      if(it.status!=='connected')return;
+      it.status='auth';it.needsAuth=false;render();
+      toast('warn','登录已过期','重新登录后即可继续工作');
+      it.audit.unshift(['刚刚','会话过期,需要重新登录']);
+    },9000);
+  }
+}
+function connectRequest(id){
+  var it=get(id);if(!it)return;
+  S.sel=id;
+  if(it.status==='connected'){openWorkspace(id);return;}
+  if(!it.trusted){fp={id:id,mode:'new',host:it.addr,fingerprint:it.fingerprint||'SHA256:Vv93bd…Rt20'};renderLayer();focusFirst();return;}
+  if(it.fpChanged){fp={id:id,mode:'changed',host:it.addr,fingerprint:'SHA256:Zx10pp…Mn77',real:it.fingerprint};renderLayer();focusFirst();return;}
+  startConnect(it);
+}
+function focusFirst(){
+  var f=$('#layer input:not([readonly]), #layer select, #layer button.btn-primary, #layer button.menu-item');
+  if(f)f.focus();
+}
+document.addEventListener('click',function(e){
+  var t=e.target,closeMenus=true;
+  var b=t.closest('[data-select]');if(b){S.sel=b.dataset.select;S.view='workspace';render();return;}
+  var dt=t.closest('[data-detail]');if(dt){S.sel=dt.dataset.detail;S.view='detail';render();return;}
+  var g=t.closest('[data-goto]');if(g){S.view=g.dataset.goto;S.sel=S.view==='home'?S.sel:S.sel;render();return;}
+  var o=t.closest('[data-open]');if(o){S.view=o.dataset.open;render();return;}
+  var grp=t.closest('[data-group]');if(grp){S.group=grp.dataset.group;persist();render();return;}
+  var mode=t.closest('[data-mode]');if(mode){S.mode=mode.dataset.mode;applyTheme();persist();render();return;}
+  var a=t.closest('[data-act]');if(a){handleAct(a.dataset.act,a);return;}
+  var ty=t.closest('[data-type]');if(ty){wiz.type=ty.dataset.type;renderLayer();return;}
+  var tr=t.closest('[data-tray]');if(tr){handleTray(tr.dataset.tray);return;}
+  var to=t.closest('[data-tray-open]');if(to){trayOpen=false;var id=to.dataset.trayOpen;var it=get(id);renderLayer();
+    if(it.status==='connected')openWorkspace(id);else connectRequest(id);return;}
+  if(closeMenus){if(menu){menu=null;renderLayer();}if(trayOpen&&!t.closest('#trayBtn')&&!t.closest('.menu-pop')){trayOpen=false;renderLayer();}}
+});
+document.addEventListener('change',function(e){
+  var sw=e.target.closest('[data-switch]');
+  if(sw){sw.setAttribute('aria-checked',sw.getAttribute('aria-checked')==='true'?'false':'true');
+    toast('info','设置已保存',(sw.dataset.switch==='tray'?'关闭窗口时最小化到托盘':sw.dataset.switch==='autostart'?'开机自动启动':'系统通知')+' · '+(sw.getAttribute('aria-checked')==='true'?'已开启':'已关闭'));
+    return;}
+  var ci=e.target.closest('#cInput');
+  if(ci&&confirmDlg&&confirmDlg.requireText){
+    var ok=ci.value.trim()===confirmDlg.requireText;
+    var btn=document.querySelector('[data-act="c-ok"]');if(btn)btn.disabled=!ok;
+  }
+});
+document.addEventListener('input',function(e){
+  var q=e.target.closest('#q');if(q){S.q=q.value;renderSidebar();return;}
+  if(e.target.id==='wHost'||e.target.id==='wUrl'){
+    var v=e.target.value;
+    if(wiz.type==='ssh'){wiz.hostKey=v;var kp=$('#keyPreview');if(kp)kp.innerHTML=keyPreview(v);}
+    else{var m=/^https?:\/\/[^\s]+/.test(v.trim());wiz.detect=m?'ok':'';var ud=$('#urlDetect');if(ud)ud.innerHTML=urlDetect(v.trim());}
+    return;
+  }
+  if(e.target.closest('.otp input')){
+    var box=e.target;
+    box.value=String(box.value).replace(/\D/g,'').slice(0,1);
+    var boxes=$$('.otp input');
+    if(box.value&&boxes.indexOf(box)<boxes.length-1)boxes[boxes.indexOf(box)+1].focus();
+    boxes.forEach(function(b){b.setAttribute('aria-invalid','false');});
+    return;
+  }
+  if(e.target.id==='aBackup'){
+    var d=e.target.value.replace(/\D/g,'').slice(0,8);
+    e.target.value=d.length>4?d.slice(0,4)+'-'+d.slice(4):d;
+  }
+});
+document.addEventListener('keydown',function(e){
+  var boxes=$$('.otp input');
+  if(boxes.indexOf(document.activeElement)>-1){
+    if(e.key==='Backspace'&&!document.activeElement.value){
+      var i=boxes.indexOf(document.activeElement);if(i>0)boxes[i-1].focus();
+    }
+    if(e.key==='ArrowLeft'&&boxes.indexOf(document.activeElement)>0)boxes[boxes.indexOf(document.activeElement)-1].focus();
+    if(e.key==='ArrowRight'&&boxes.indexOf(document.activeElement)<boxes.length-1)boxes[boxes.indexOf(document.activeElement)+1].focus();
+  }
+  if(e.key==='Enter'){
+    if(auth.open&&!auth.busy&&auth.lockedUntil<=Date.now()){e.preventDefault();handleAct('auth-submit');return;}
+    if(wiz.open){e.preventDefault();handleAct(wiz.step<3?'wiz-next':'wiz-create');return;}
+  }
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='b'){e.preventDefault();toggleRail();return;}
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openWizard();return;}
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='d'){if(auth.open){e.preventDefault();handleAct('auth-submit');}return;}
+  if(e.key==='Escape'){
+    if(confirmDlg){confirmDlg=null;renderLayer();return;}
+    if(fp){fp=null;renderLayer();return;}
+    if(onboard){onboard=null;renderLayer();return;}
+    if(auth.open&&!auth.busy){closeAuth();return;}
+    if(wiz.open){wiz.open=false;renderLayer();return;}
+    if(trayOpen){trayOpen=false;renderLayer();return;}
+    if(menu){menu=null;renderLayer();}
+  }
+});
+function openWizard(){wiz.open=true;wiz.step=1;wiz.type='local';wiz.data=null;wiz.detect='';wiz.hostKey='';renderLayer();focusFirst();}
+function closeAuth(){auth.open=false;auth.busy=false;auth.lockedUntil=0;renderLayer();render();}
+function handleAct(act,node){
+  var it=get(auth.id)||get(S.sel);
+  if(act==='new'){openWizard();return;}
+  if(act==='connect'){menu=null;connectRequest(S.sel);render();return;}
+  if(act==='cancel'){var x=get(S.sel);if(x){x.status='idle';clearTimers();render();}return;}
+  if(act==='connect-ws'){return;}
+  if(act==='open-detail'){S.view='detail';render();return;}
+  if(act==='disconnect'){var y=get(S.sel);if(y){y.status='idle';y.since=null;y.tunnel=y.type==='ssh'?'隧道已关闭':y.tunnel;render();toast('info','已断开连接',y.name);}return;}
+  if(act==='login'){var z=get(S.sel);if(z){auth.open=true;auth.id=z.id;auth.step='pw';auth.error='';auth.attempts=0;auth.lockedUntil=0;renderLayer();focusFirst();}return;}
+  if(act==='logout'){var w=get(S.sel);if(w){w.status='idle';w.since=null;w.needsAuth=Boolean(w.twofa);w.audit.unshift(['刚刚','退出登录 · 会话已清除']);render();toast('ok','已退出登录',w.name+' 回到了未登录状态');}return;}
+  if(act==='clear-session'){var c=get(S.sel);if(c){c.needsAuth=Boolean(c.twofa);c.status=c.status==='connected'?'idle':c.status;c.since=null;render();toast('ok','已清除登录信息',c.name+' 下次进入需要重新认证');}return;}
+  if(act==='clear-all'){confirmDlg={title:'清除所有已保存的登录信息',body:'所有实例都会回到「未登录」,下次进入时需要重新输入密码与验证码。远端 dsh 不受影响。',ok:'全部清除',danger:true,foot:'强确认操作',onOk:function(){instances.forEach(function(i){i.needsAuth=Boolean(i.twofa);if(i.status==='connected'){i.status='idle';i.since=null;}});toast('ok','已清除全部登录信息','共 '+instances.length+' 个实例已回到未登录');}};renderLayer();return;}
+  if(act==='clear-inst'){confirmDlg={title:'清除全部实例',body:'本机保存的实例、连接记录与登录信息都会被删除,且不可撤销。远端 dsh 不受影响。',ok:'删除全部',danger:true,foot:'不可撤销',onOk:function(){instances=[];S.sel=null;S.view='home';toast('ok','已清除全部实例');}};renderLayer();return;}
+  if(act==='delete'){menu=null;var d=get(S.sel);if(d){confirmDlg={title:'删除实例',body:'删除后本地保存的登录信息与连接记录会一并移除,远端 dsh 本身不受影响。',ok:'删除实例',danger:true,requireText:d.name,foot:'不可撤销',onOk:function(){instances=instances.filter(function(i){return i.id!==d.id;});S.sel=instances.length?(instances[0].id):null;S.view=instances.length?'home':'home';toast('ok','已删除实例',d.name);}};renderLayer();focusFirst();}return;}
+  if(act==='edit'){menu=null;renderLayer();openWizard();toast('info','编辑实例','原型中编辑复用创建向导表单');return;}
+  if(act==='copy'||act==='copy-fp'){
+    menu=null;var v=act==='copy-fp'?(fp?fp.fingerprint:''):(get(S.sel)?get(S.sel).addr:'');
+    try{if(navigator.clipboard)navigator.clipboard.writeText(v);}catch(err){}
+    toast('ok','已复制',v);if(menu===null)renderLayer();return;}
+  if(act==='log'){toast('info','审计日志','已在本机打开日志目录');return;}
+  if(act==='open-dir'){toast('info','已打开数据目录','~/Library/Application Support/DSH Hub');return;}
+  if(act==='update'){toast('info','检查更新','当前已是最新版本 0.9.4');return;}
+  if(act==='menu'){menu=menu?null:{};renderLayer();return;}
+  if(act==='newwin'){toast('info','已在新窗口打开','该窗口与本窗口共享登录状态');return;}
+  if(act==='fp-cancel'){fp=null;var f1=get(S.sel);if(f1&&f1.status==='connecting')f1.status='idle';renderLayer();render();return;}
+  if(act==='fp-accept'){
+    var f=get(fp.id);var mode=fp.mode;
+    if(f){f.trusted=true;if(mode==='changed'){f.fpChanged=false;f.fingerprint='SHA256:Zx10pp…Mn77';f.audit.unshift(['刚刚','指纹已重新确认 · 高级操作']);toast('warn','已按高级流程信任','指纹变化已记录到审计');}else{f.audit.unshift(['刚刚','指纹已确认 · 写入 known_hosts']);}}
+    fp=null;renderLayer();
+    if(f){f.status='idle';startConnect(f);}
+    return;}
+  if(act==='wiz-close'){wiz.open=false;renderLayer();return;}
+  if(act==='wiz-prev'){wiz.step=Math.max(1,wiz.step-1);renderLayer();return;}
+  if(act==='wiz-next'){wizNext();return;}
+  if(act==='wiz-create'){wizCreate();return;}
+  if(act==='auth-cancel'){closeAuth();var a1=get(auth.id);if(a1&&a1.status==='connecting')a1.status='idle';render();return;}
+  if(act==='auth-back'){auth.step=auth.step==='backup'?'otp':'pw';auth.error='';renderLayer();focusFirst();return;}
+  if(act==='use-backup'){auth.step='backup';auth.error='';renderLayer();focusFirst();return;}
+  if(act==='use-otp'){auth.step='otp';auth.error='';renderLayer();focusFirst();return;}
+  if(act==='auth-submit'){authSubmit();return;}
+  if(act==='onboard-later'){var o1=get(onboard.id);onboard=null;renderLayer();if(o1){o1.initialPw=false;o1.status='connected';o1.since=Date.now();openWorkspace(o1.id);toast('warn','仍在使用初始密码','建议尽快在实例设置里设置个人密码');}return;}
+  if(act==='onboard-save'){onboardSave();return;}
+  if(act==='c-cancel'){confirmDlg=null;renderLayer();return;}
+  if(act==='c-ok'){var fn=confirmDlg.onOk;confirmDlg=null;renderLayer();if(fn)fn();render();return;}
+}
+function handleTray(kind){
+  if(kind==='show'){trayOpen=false;renderLayer();S.view='home';render();toast('info','已唤起主窗口','DSH Hub 已回到前台');return;}
+  if(kind==='notify'){toast('info','系统通知已切换','可在设置中重新开启');return;}
+  if(kind==='quit'){
+    var running=instances.filter(function(i){return i.status==='connected'||i.status==='connecting'||i.status==='interrupted';});
+    trayOpen=false;
+    if(!running.length){toast('ok','DSH Hub 已退出','没有正在运行的实例');renderLayer();return;}
+    confirmDlg={title:'退出 DSH Hub',body:'以下实例仍在运行,退出会一并断开它们的连接。',list:running,ok:'退出并断开 '+running.length+' 个实例',danger:true,foot:'可重新启动后恢复',
+      onOk:function(){running.forEach(function(i){i.status='idle';i.since=null;});toast('ok','已退出','共断开 '+running.length+' 个实例');}};
+    renderLayer();return;
+  }
+}
+function wizNext(){
+  if(wiz.step===1){wiz.step=2;renderLayer();focusFirst();return;}
+  var name=$('#wName')?$('#wName').value.trim():'';
+  if(!name){toast('err','请填写名称','名称用于在侧边栏区分实例');var n=$('#wName');if(n){n.setAttribute('aria-invalid','true');n.focus();}return;}
+  if(wiz.type==='ssh'){
+    var host=$('#wHost').value.trim(),user=$('#wUser').value.trim(),port=$('#wSport').value.trim();
+    if(!host){$('#wHost').setAttribute('aria-invalid','true');$('#wHost').focus();toast('err','主机不能为空','支持 ssh 别名,例如 build-01');return;}
+    if(!user){$('#wUser').setAttribute('aria-invalid','true');$('#wUser').focus();toast('err','用户名不能为空','');return;}
+    if(!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535){$('#wSport').setAttribute('aria-invalid','true');$('#wSport').focus();toast('err','SSH 端口无效','请输入 1–65535 之间的端口');return;}
+    wiz.data={name:name,host:host,user:user,port:Number(port)};
+  }else if(wiz.type==='remote'){
+    var url=$('#wUrl').value.trim();
+    if(!/^https?:\/\/[^\s]+$/.test(url)){$('#wUrl').setAttribute('aria-invalid','true');$('#wUrl').focus();toast('err','网址格式不正确','请输入完整网址,例如 https://host:8443');return;}
+    wiz.data={name:name,url:url};
+  }else{
+    wiz.data={name:name};
+  }
+  wiz.step=3;renderLayer();focusFirst();
+}
+function wizCreate(){
+  var id='inst-'+Date.now();
+  var t=wiz.type,base={id:id,name:wiz.data.name,type:t,status:'idle',since:null,audit:[['刚刚','创建实例 · 尚未连接']],secure:t!=='local',dir:t==='local'?'~/dsh/'+wiz.data.name:'自动探测',disk:'—',version:'—'};
+  if(t==='local'){base.addr='127.0.0.1:3080';base.tunnel='本机回环,无隧道';base.trusted=true;base.twofa=false;}
+  if(t==='ssh'){base.addr=wiz.data.host;base.port=wiz.data.port;base.user=wiz.data.user;base.key='ed25519 (ssh-agent)';base.tunnel='尚未建立';base.trusted=false;base.twofa=true;base.needsAuth=true;base.fingerprint='SHA256:Nn42kq…Wp08';}
+  if(t==='remote'){base.addr=wiz.data.url;base.tunnel='直连 HTTPS,无本地隧道';base.trusted=true;base.twofa=true;base.needsAuth=true;base.fingerprint='SHA256:Yt55mn…Lq31';}
+  instances.unshift(base);
+  wiz.open=false;S.sel=id;S.view='detail';renderLayer();render();
+  toast('ok','实例已创建',base.name+' · 正在连接');
+  later(function(){connectRequest(id);},300);
+}
+function authSubmit(){
+  if(auth.busy||auth.lockedUntil>Date.now())return;
+  var it=get(auth.id);if(!it)return;
+  if(auth.step==='pw'){
+    var pw=$('#aPw')?$('#aPw').value:'';
+    if(!pw){$('#aPw').setAttribute('aria-invalid','true');$('#aPw').focus();auth.error='请输入密码';renderLayer();focusFirst();return;}
+    auth.remember=$('#aRemember')?$('#aRemember').checked:false;
+    auth.busy=true;auth.error='';renderLayer();
+    later(function(){
+      auth.busy=false;
+      if(it.twofa){auth.step='otp';renderLayer();focusFirst();}
+      else{authSuccess(it);}
+    },700);
+    return;
+  }
+  var code='';
+  if(auth.step==='otp'){code=$$('.otp input').map(function(b){return b.value||'';}).join('');}
+  else{code=($('#aBackup')?$('#aBackup').value:'').replace(/\D/g,'');}
+  if(auth.step==='otp'&&code.length<6){auth.error='请输入完整的 6 位验证码';renderLayer();focusFirst();return;}
+  if(auth.step==='backup'&&code.length<8){auth.error='请输入完整的 8 位备份码';renderLayer();focusFirst();return;}
+  auth.busy=true;auth.error='';renderLayer();
+  later(function(){
+    auth.busy=false;
+    var bad=(auth.step==='otp'&&code==='000000');
+    if(bad){
+      auth.attempts++;
+      if(auth.attempts>=5){
+        auth.lockedUntil=Date.now()+5*60*1000;
+        auth.error='';
+        it.audit.unshift(['刚刚','登录失败 5 次 · 触发 5 分钟锁定']);
+        toast('err','登录已锁定','尝试次数过多,5 分钟后自动恢复');
+      }else{
+        auth.error='账号或验证码错误,请重试(还剩 '+(5-auth.attempts)+' 次机会)';
+        it.audit.unshift(['刚刚','登录失败 · 凭据不匹配']);
+      }
+      renderLayer();focusFirst();
+      return;
+    }
+    authSuccess(it);
+  },750);
+}
+function authSuccess(it){
+  auth.step='done';auth.error='';renderLayer();
+  it.needsAuth=false;it.status='connected';it.since=Date.now();
+  it.audit.unshift(['刚刚','登录成功 · 会话有效 30 天']);
+  later(function(){
+    closeAuth();
+    if(it.initialPw){onboard={id:it.id};renderLayer();focusFirst();return;}
+    openWorkspace(it.id);
+    toast('ok','登录成功',it.name+' · 会话 30 天内不再打扰');
+    simulate(it);
+  },760);
+}
+function onboardSave(){
+  var n=$('#oNew'),n2=$('#oNew2'),e=$('#oErr');
+  var v=n.value,v2=n2.value;
+  var bad='';
+  if(v.length<8)bad='新密码至少 8 位';
+  else if(!(/[A-Z]/.test(v)||/[^A-Za-z0-9]/.test(v)))bad='需包含大写字母或特殊字符';
+  else if(v!==v2)bad='两次输入的新密码不一致';
+  if(bad){e.innerHTML='<div class="note n-err mt12" role="alert">'+ICON.alert+'<span>'+bad+'</span></div>';renderLayer();$('#oNew').value=v;$('#oNew2').value=v2;return;}
+  var it=get(onboard.id);onboard=null;renderLayer();
+  if(it){it.initialPw=false;it.status='connected';it.since=Date.now();it.audit.unshift(['刚刚','已设置个人密码 · 初始密码失效']);openWorkspace(it.id);toast('ok','密码已更新','已使用新密码登录 '+it.name);simulate(it);}
+}
+function tick(){
+  var d=new Date();
+  $('#clock').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  $$('[data-uptime]').forEach(function(n){var it=get(n.dataset.uptime);if(it&&it.since)n.textContent=fmtDur(Date.now()-it.since);});
+  var l=$('[data-lock]');
+  if(l&&auth.lockedUntil>Date.now())l.textContent=mmss(auth.lockedUntil-Date.now());
+  if(auth.open&&auth.lockedUntil&&auth.lockedUntil<=Date.now()){
+    auth.lockedUntil=0;auth.attempts=0;auth.step='pw';auth.error='';
+    renderLayer();focusFirst();toast('info','锁定已解除','可以重新登录了');
+  }
+  if(S.view==='detail'||S.view==='home'){
+    $$('[data-dur]').forEach(function(n){var it=get(n.dataset.dur);if(it&&it.since)n.textContent=fmtDur(Date.now()-it.since);});
+  }
+}
+function boot(){
+  $('#searchIcon').innerHTML=ICON.search;
+  $('#brandMark').innerHTML=ICON.hub;
+  $('#trayIcon').innerHTML=ICON.tray;
+  $('#railSearchIcon').innerHTML=ICON.search;
+  $('#newIcon').innerHTML=ICON.plus;
+  $('#setIcon').innerHTML=ICON.gear;
+  try{
+    S.mode=localStorage.getItem('dshhub.theme')||'system';
+    S.group=localStorage.getItem('dshhub.group')||'mixed';
+    S.rail=localStorage.getItem('dshhub.rail')==='1';
+  }catch(e){S.mode='system';}
+  applyTheme();applyRail();
+  if(window.matchMedia('(prefers-color-scheme: dark)').addEventListener){
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(){if(S.mode==='system'){applyTheme();render();}});
+  }
+  seed();
+  S.sel=instances[0].id;S.view='home';
+  render();tick();
+  setInterval(tick,1000);
+  later(function(){toast('info','实例列表已就绪',instances.length+' 个实例,其中 1 个已连接');},900);
+}
+$('#trayBtn').addEventListener('click',function(e){e.stopPropagation();trayOpen=!trayOpen;renderLayer();});
+$('#brandBtn').addEventListener('click',function(){S.view='home';render();});
+$('#collapseBtn').addEventListener('click',function(){toggleRail();});
+$('#railSearchBtn').addEventListener('click',function(){
+  toggleRail(false);
+  setTimeout(function(){var i=$('#q');if(i)i.focus();},210);
+});
+$('#newBtn').addEventListener('click',openWizard);
+$('#settingsBtn').addEventListener('click',function(){S.view='settings';render();});
+$('#themeBtn').addEventListener('click',function(){S.mode=S.theme==='dark'?'light':'dark';applyTheme();persist();render();});
+boot();
+</script>
+</body>
+</html>
