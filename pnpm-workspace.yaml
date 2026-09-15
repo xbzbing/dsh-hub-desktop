@@ -8,6 +8,10 @@ packages:
   - '.'
 allowBuilds:
   electron: true
+  # Windows 只用 NSIS(见 docs/T13-打包方案.md),不用 Squirrel 安装器,
+  # 因此不需要 electron-winstaller 的 postinstall。pnpm 会以占位符形式追加此行,
+  # 保持未决值会让 pnpm install/test 以 ERR_PNPM_IGNORED_BUILDS 非零退出。
+  electron-winstaller: false
   esbuild: true
 minimumReleaseAgeExclude:
   - eslint-plugin-react-refresh@0.5.7

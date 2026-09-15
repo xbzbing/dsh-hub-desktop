@@ -73,6 +73,11 @@ tests/e2e/          smoke(壳链路)+ registry(注册表端到端)
 - 受限环境跑 E2E:`DSH_HUB_E2E_ARGS="--no-sandbox --disable-gpu" pnpm test:e2e`(CI 自动带 `--no-sandbox` + xvfb);E2E 数据自动隔离到 `hub-data/e2e*`,不污染真实 userData。
 - npm 装 dsh 运行时走内网 registry 极慢时,启动应用/验收脚本前设 `DSH_HUB_NPM_REGISTRY=https://registry.npmmirror.com`(实测 15s vs 8min+);dsh web 需要 `--expose-internals`(应用已内置,勿删)。
 - 后台 bash 任务的工作目录落点在 `$HOME`(环境限制):后台命令请用 `cd <工作区> && ...` 或 `pnpm --dir <工作区>`。
+- **无 TTY 时跑 `pnpm <script>` 必须带 `CI=true`**:pnpm 11 在执行脚本前会做依赖状态检查,
+  一旦它认为 `node_modules` 需要重建(例如改了 `pnpm-workspace.yaml` 的 `allowBuilds`),
+  就会尝试清理并因无 TTY 以 `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 失败 ——
+  报错发生在**脚本真正运行之前**,很容易被误读成测试失败。本会话起统一用
+  `CI=true pnpm <script>`。
 
 ## 工作流(用户已确认)
 
