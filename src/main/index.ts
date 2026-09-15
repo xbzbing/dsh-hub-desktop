@@ -30,11 +30,12 @@ import { createPromptBroker } from './ssh/prompt-broker'
 import { createAuthRegistry } from './auth/auth-registry'
 import { restoreSessionFromVault } from './auth/session-restore'
 import { buildOpenViewPlan, classifyViewResponse } from './webview/open-view-plan'
+import { planPartitionClear } from './webview/partition-clear-plan'
 import {
   createOncePerSession,
   openInstanceView as openInstanceViewFlow
 } from './webview/instance-view'
-import { clearSessionCookie, originOf } from './webview/session-cookie'
+import { clearSessionCookie } from './webview/session-cookie'
 import type { PromptBroker } from './ssh/prompt-broker'
 import type { AuthRegistry } from './auth/auth-registry'
 import { createInstanceStore } from './registry/instance-store'
@@ -478,27 +479,12 @@ void app.whenReady().then(() => {
     // T9:登出时清该实例分区内的会话 Cookie(origin 取自实例记录)
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
-      if (!record || record.transport === 'local') return
-      // 与注入侧用**同一套** origin/basePath 规则(评审 R8):注入写 cookieUrlFor(origin, basePath),
-      // 清理必须命中同一个 URL,否则两侧参数不再对称(网关 Cookie 的 Path 恰为 '/',故当前无害)
-      const endpoint = authEndpointOf(
-        record,
-        record.transport === 'ssh'
-          ? (tunnels?.statusOf(instanceId)?.port ?? record.localPort ?? undefined)
-          : undefined
-      )
-      if (!endpoint) return
-      const origin = originOf(endpoint)
-      if (!origin) return
-      const basePath = (() => {
-        try {
-          return new URL(endpoint).pathname.replace(/\/+$/, '') || '/'
-        } catch {
-          return '/'
-        }
-      })()
-      const target = session.fromPartition(`persist:inst-${record.id}`)
-      await clearSessionCookie(target.cookies, { origin, basePath })
+      // 计划由可测纯函数推导(T9-2):隧道已停时回落注册表持久化的 localPort,
+      // 否则「先停隧道再清 Cookie」会静默 no-op
+      const plan = planPartitionClear(record, tunnels?.statusOf(instanceId)?.port)
+      if (!plan) return
+      const target = session.fromPartition(plan.partition)
+      await clearSessionCookie(target.cookies, { origin: plan.origin, basePath: plan.basePath })
     },
     prompts: prompts as PromptBroker,
     openInstanceView: async (instance, url) => {
