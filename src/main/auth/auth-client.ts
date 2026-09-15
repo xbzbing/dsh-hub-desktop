@@ -110,6 +110,24 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       if (gateway.hasSession()) {
         const settings = await gateway.settings()
         if (settings.ok) {
+          // **settings 200 不等于可以进入**:网关的 `#verifiedTokenOr401` 只检查
+          // OTP 验证,不检查 onboarding,所以「会话有效但欠引导改密」时 settings 仍返回
+          // 200(真实网关复现)。若直接静默恢复,界面会显示「已连接」而 webview 停在
+          // 引导页(复审 T8-D1 的 onboarding 半边)。
+          // 因此这里再做一次**带 Cookie 的页面探测**,让页面门禁的证据优先于 settings 200。
+          const gate = await detectEndpoint(options.endpointUrl, options, gateway.jar.header())
+          if (gate.mode === 'gateway' && gate.gatewayEvidence === 'onboarding') {
+            apply({ type: 'probe-gateway' })
+            apply({ type: 'session-absent' })
+            apply({ type: 'onboarding-required' })
+            return gate
+          }
+          if (gate.mode === 'gateway' && gate.gatewayEvidence === 'otp-page') {
+            apply({ type: 'probe-gateway' })
+            apply({ type: 'session-absent' })
+            apply({ type: 'login-requires-otp', otpEnabled: true })
+            return gate
+          }
           apply({ type: 'session-restored', otpEnabled: settings.value.otpEnabled })
           return {
             mode: 'gateway',

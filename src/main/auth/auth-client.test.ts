@@ -58,6 +58,70 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     expect(client.state().phase).toBe('await-credentials')
   })
 
+  it('T8-D1:settings 200 但页面 302 → /onboarding 时不得进入 connected', async () => {
+    // 真实网关的 #verifiedTokenOr401 不检查 onboarding,欠引导改密的会话
+    // GET /login-api/settings 仍返回 200 —— 若直接静默恢复,界面显示「已连接」
+    // 而 webview 停在引导页(onboarding 半边此前在生产中是死状态)
+    const jar = {
+      store: vi.fn(),
+      header: () => 'dsh_auth=needs-onboarding',
+      get: () => ({ name: 'dsh_auth', value: 'needs-onboarding', expiresAt: null, attributes: '' }),
+      clear: vi.fn(),
+      describe: () => []
+    } as unknown as CookieJar
+    const seen: Array<string | null> = []
+    const fetchImpl = fakeFetch((url, init) => {
+      if (url.includes('/login-api/settings')) {
+        return jsonResponse(200, { ok: true, config: { 'dsh-auth-gateway': { otpEnabled: false } } })
+      }
+      seen.push(new Headers(init.headers).get('cookie'))
+      return htmlResponse(302, '', '/dsh/onboarding')
+    })
+
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw.example.com/dsh',
+      jar,
+      fetchImpl
+    })
+    const detection = await client.probeAndRestore()
+
+    expect(seen).toEqual(['dsh_auth=needs-onboarding']) // 页面探测带 Cookie
+    expect(detection.gatewayEvidence).toBe('onboarding')
+    expect(client.state().phase).not.toBe('connected')
+    expect(client.state().needsOnboarding).toBe(true)
+    expect(jar.clear).not.toHaveBeenCalled() // 会话有效,不能清
+  })
+
+  it('T8-D1:settings 200 且页面无门禁时仍正常静默恢复(不误伤)', async () => {
+    const jar = {
+      store: vi.fn(),
+      header: () => 'dsh_auth=good',
+      get: () => ({ name: 'dsh_auth', value: 'good', expiresAt: null, attributes: '' }),
+      clear: vi.fn(),
+      describe: () => []
+    } as unknown as CookieJar
+    const fetchImpl = fakeFetch((url) => {
+      if (url.includes('/login-api/settings')) {
+        return jsonResponse(200, { ok: true, config: { 'dsh-auth-gateway': { otpEnabled: true } } })
+      }
+      // 正常受保护页面:200
+      return new Response('<html></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' }
+      })
+    })
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw.example.com/dsh',
+      jar,
+      fetchImpl
+    })
+    await client.probeAndRestore()
+    expect(client.state().phase).toBe('connected')
+    expect(client.state().otpEnabled).toBe(true)
+  })
+
   it('探测:302 → /login 仍是 await-credentials(证据为 login-page 时不误判)', async () => {
     const client = createAuthClient({
       instanceId: 'i1',
