@@ -29,11 +29,9 @@ async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
     if (error instanceof z.ZodError) {
       return { ok: false, code: 'invalid-input', message: formatZodIssues(error) }
     }
-    return {
-      ok: false,
-      code: 'internal',
-      message: error instanceof Error ? error.message : String(error)
-    }
+    // 内部错误不透传细节(可能含 fs 路径),只记主进程日志
+    console.error('[ipc] 未预期错误：', error)
+    return { ok: false, code: 'internal', message: '内部错误，请查看主进程日志' }
   }
 }
 

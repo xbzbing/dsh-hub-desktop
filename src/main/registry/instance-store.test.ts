@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -128,6 +128,10 @@ describe('createInstanceStore / 基础 CRUD', () => {
       localInput({ unknownField: 1 }),
       sshInput({ host: 'bad host' }),
       sshInput({ username: '  ' }),
+      // host[:port] 形态但端口非法/非数字 —— 显式拒绝,不让整串进 host 字段
+      sshInput({ host: 'server:99999' }),
+      sshInput({ host: 'host:12ab' }),
+      sshInput({ host: '[::1]:99999' }),
       httpInput({ endpointUrl: 'ftp://x' }),
       httpInput({ endpointUrl: 'http://u:p@127.0.0.1:3080' }),
       localInput({ port: 0 }),
@@ -180,6 +184,35 @@ describe('createInstanceStore / 基础 CRUD', () => {
       code: 'invalid-input'
     })
     expect((await store.get(created.id))?.name).toBe('原样')
+  })
+
+  it('评审回归:notes 可用 null 清空(与补丁契约一致)', async () => {
+    const created = await store.create(localInput({ notes: '先记一笔' }))
+    expect((await store.get(created.id))?.notes).toBe('先记一笔')
+
+    const cleared = await store.update(created.id, { notes: null })
+    expect(cleared.notes).toBeNull()
+    expect((await readRegistryFile())).not.toBeNull() // 落盘正常
+    const fresh = tmpRun()
+    expect((await fresh.get(created.id))?.notes).toBeNull() // 重载依旧为空
+  })
+
+  it('评审回归:update 的 host[:port] 拆分与 create 对称(显式 port 并存时拆分优先)', async () => {
+    const ssh = asSsh(await store.create(sshInput({ host: 'server-a', port: 24 })))
+    const updated = asSsh(await store.update(ssh.id, { host: 'server2:2202', port: 24 }))
+    expect(updated.host).toBe('server2')
+    expect(updated.port).toBe(2202)
+
+    // 纯主机名更新不清掉已有显式端口
+    const renamed = asSsh(await store.update(ssh.id, { host: 'server-b' }))
+    expect(renamed.host).toBe('server-b')
+    expect(renamed.port).toBe(2202)
+  })
+
+  it('评审回归:方括号裸 IPv6 归一化为无括号存储', async () => {
+    const v6 = asSsh(await store.create(sshInput({ name: '括号IPv6', host: '[::1]' })))
+    expect(v6.host).toBe('::1')
+    expect(v6.port).toBe(22)
   })
 
   it('update 不存在的 id → not-found', async () => {
@@ -314,5 +347,30 @@ describe('createInstanceStore / 损坏恢复与迁移', () => {
     )
     expect(await tmpRun().list()).toEqual([])
     expect((await tmpRun().stats()).corruptCount).toBe(2)
+  })
+})
+
+describe('createInstanceStore / 写盘失败不产生幻影(评审 R3)', () => {
+  it('目录只读时 create 失败,内存不残留幻影;恢复可写后幻影不会补落盘', async () => {
+    const base = asLocal(await store.create(localInput({ name: '基准' })))
+    expect(await store.list()).toHaveLength(1)
+
+    await chmod(dir, 0o555) // 只读目录:备份写入 / rename 均失败
+    try {
+      await expect(store.create(localInput({ name: '幻影' }))).rejects.toMatchObject({
+        code: 'io-error'
+      })
+      // 失败的写不得进入内存(磁盘先提交语义)
+      expect(await store.list()).toHaveLength(1)
+      const file = (await readRegistryFile()) as { instances: unknown[] }
+      expect(file.instances).toHaveLength(1)
+    } finally {
+      await chmod(dir, 0o755) // 恢复可写
+    }
+
+    // 后续成功 mutation 不应把「幻影」一并落盘
+    const second = asLocal(await store.create(localInput({ name: '第二个' })))
+    const list = await store.list()
+    expect(list.map((record) => record.id).sort()).toEqual([base.id, second.id].sort())
   })
 })

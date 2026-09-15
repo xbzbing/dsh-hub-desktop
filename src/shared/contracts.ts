@@ -28,7 +28,30 @@ export type AuthMode = (typeof AUTH_MODES)[number]
 const PORT_SCHEMA = z.number('端口必须是数字').int('端口必须是整数').min(1, '端口最小 1').max(65535, '端口最大 65535')
 
 /**
- * SSH 主机：主机名 / 别名 / IPv4 / [IPv6] / 以及 `host[:port]`、`[v6]:port` 组合形式
+ * SSH 主机合法性：
+ * - 普通主机名 / 别名 / IPv4：不含冒号即可；
+ * - 裸 IPv6：至少两个冒号且全为十六进制字符；
+ * - `host[:port]` / `[v6][:port]`：端口必须落在 1–65535（非法端口组合显式拒绝，
+ *   而不是把整串存进 host 字段由 T4 当主机名解析）。
+ */
+function isValidSshHost(host: string): boolean {
+  const portOfPlain = /^([A-Za-z0-9._-]+):(\d+)$/.exec(host)
+  if (portOfPlain) return inPortRange(portOfPlain[2])
+  const portOfBracket = /^\[([0-9a-fA-F:.]+)\](?::(\d+))?$/.exec(host)
+  if (portOfBracket) return portOfBracket[2] === undefined || inPortRange(portOfBracket[2])
+  if (host.includes(':')) {
+    return /^[0-9a-fA-F:]+$/.test(host) && (host.match(/:/g)?.length ?? 0) >= 2
+  }
+  return true
+}
+
+function inPortRange(rawPort: string | undefined): boolean {
+  const port = Number(rawPort)
+  return Number.isInteger(port) && port >= 1 && port <= 65535
+}
+
+/**
+ * SSH 主机：主机名 / 别名 / IPv4 / 裸或方括号 [IPv6] / 以及 `host[:port]`、`[v6]:port` 组合形式
  * （组合形式由 instance-store 拆分为独立 host + port 字段）。
  * 不允许空白、`/`、`@`（userinfo 属于 username 字段，不内嵌主机）。
  */
@@ -38,12 +61,14 @@ const SSH_HOST_SCHEMA = z
   .min(1, 'SSH 主机不能为空')
   .max(255, 'SSH 主机最长 255 字符')
   .regex(/^[A-Za-z0-9._\-:[\]]+$/, 'SSH 主机含非法字符（不允许空白 / 斜杠 / @）')
+  .refine(isValidSshHost, 'host[:port] 形态的端口必须在 1–65535，或主机名不含冒号')
 
 const instanceBaseFields = {
   id: z.uuid(),
   name: z.string().trim().min(1, '名称不能为空').max(64, '名称最长 64 字符'),
   authMode: z.enum(AUTH_MODES),
-  notes: z.string().trim().max(2000, '备注最长 2000 字符').optional(),
+  /** 备注可为空：null / 省略均表示无备注（补丁层用 null 显式清空） */
+  notes: z.string().trim().max(2000, '备注最长 2000 字符').nullable().optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime()
 }
@@ -104,7 +129,7 @@ export type InstanceRecord = z.infer<typeof InstanceRecordSchema>
 const createBaseFields = {
   name: z.string().trim().min(1, '名称不能为空').max(64, '名称最长 64 字符'),
   authMode: z.enum(AUTH_MODES).default('auto'),
-  notes: z.string().trim().max(2000).optional()
+  notes: z.string().trim().max(2000).nullable().optional()
 }
 
 export const CreateInstanceInputSchema = z.discriminatedUnion('transport', [
@@ -245,5 +270,8 @@ export function splitSshHostPort(host: string, fallbackPort: number): { host: st
     const port = Number(bracketed[2] ?? '')
     if (port >= 1 && port <= 65535) return { host: bracketed[1] ?? '', port }
   }
+  // 方括号无端口形态 `[::1]`：归一化为无括号形式
+  const bracketedPlain = /^\[([0-9a-fA-F:]+)\]$/.exec(host)
+  if (bracketedPlain) return { host: bracketedPlain[1] ?? '', port: fallbackPort }
   return { host, port: fallbackPort }
 }

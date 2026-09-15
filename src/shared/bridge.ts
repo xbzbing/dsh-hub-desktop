@@ -22,8 +22,6 @@ export const IPC = {
   ping: 'app:ping'
 } as const
 
-export type IpcChannel = (typeof IPC)[keyof typeof IPC]
-
 export interface AppInfo {
   /** package.json 版本（app.getVersion()） */
   appVersion: string

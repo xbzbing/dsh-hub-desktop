@@ -119,7 +119,7 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     lastRecoveryAt = loaded.recoveredAt
     // 恢复 / 迁移后需要立即重写归一化文件（自愈落盘：文件回到 schemaVersion=当前 的合法形态）
     dirty = loaded.recoveredAt !== null || loaded.migrated
-    if (dirty) await save()
+    if (dirty) await persist(instances ?? [])
   }
 
   interface LoadResult {
@@ -159,7 +159,9 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     try {
       parsed = RegistryFileSchema.parse(data)
     } catch (error) {
-      await quarantineCorruptFile(`schema 校验失败：${formatZodMessage(error)}`)
+      const reason =
+        error instanceof z.ZodError ? formatZodIssues(error, 200) : String(error)
+      await quarantineCorruptFile(`schema 校验失败：${reason}`)
       return { instances: [], recoveredAt: Date.now(), migrated: false }
     }
     return { instances: parsed.instances, recoveredAt: null, migrated: from !== REGISTRY_SCHEMA_VERSION }
@@ -177,12 +179,13 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     console.warn(`[registry] 注册表损坏已隔离：${reason} → ${target}`)
   }
 
-  /** 原子写：临时文件 + rename；写前滚动备份旧文件 */
-  async function save(): Promise<void> {
-    const data: RegistryFile = {
-      schemaVersion: REGISTRY_SCHEMA_VERSION,
-      instances: instances ?? []
-    }
+  /**
+   * 磁盘先提交：备份旧文件 → 原子写新文件，全部成功后**才**替换内存缓存。
+   * 写盘失败时内存不被污染（评审 R3：写失败不再产生幻影记录，错误契约可信）。
+   */
+  async function persist(next: InstanceRecord[]): Promise<void> {
+    const data: RegistryFile = { schemaVersion: REGISTRY_SCHEMA_VERSION, instances: next }
+    await rollBackup()
     const tmpPath = join(dir, `${FILE_NAME}.tmp-${process.pid}-${randomUUID().slice(0, 8)}`)
     try {
       await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8')
@@ -195,6 +198,7 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
       }
       throw toStoreError(error)
     }
+    instances = next
     dirty = false
   }
 
@@ -206,10 +210,14 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return // 首次写盘无旧文件
       throw toStoreError(error)
     }
-    await writeFile(
-      join(dir, `${BAK_PREFIX}${Date.now()}-${randomUUID().slice(0, 4)}`),
-      current
-    )
+    try {
+      await writeFile(
+        join(dir, `${BAK_PREFIX}${Date.now()}-${randomUUID().slice(0, 4)}`),
+        current
+      )
+    } catch (error) {
+      throw toStoreError(error)
+    }
     await pruneByPrefix(BAK_PREFIX, bakRetention)
   }
 
@@ -257,8 +265,9 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
   }
 
   function normalizePatch(patch: PatchInstanceParams): PatchInstanceParams {
-    if (patch.host !== undefined && patch.port === undefined) {
-      const { host, port } = splitSshHostPort(patch.host, 22)
+    // 与 create 语义一致：host[:port] 组合形式优先，拆分出独立 host + port
+    if (patch.host !== undefined) {
+      const { host, port } = splitSshHostPort(patch.host, patch.port ?? 22)
       if (host !== patch.host) return { ...patch, host, port }
     }
     if (patch.endpointUrl !== undefined) {
@@ -328,7 +337,9 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     get: (id) =>
       enqueue(async () => {
         await ensureLoaded()
-        return (instances ?? []).find((record) => record.id === id) ?? null
+        const record = (instances ?? []).find((item) => item.id === id)
+        // 返回拷贝,避免调用方污染缓存(评审 Nit)
+        return record ? structuredClone(record) : null
       }),
 
     create: (input) =>
@@ -339,11 +350,9 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
         const record = parseOrThrow(() =>
           stamp({ ...normalizeCreate(parsed), id: randomUUID(), createdAt: now, updatedAt: now })
         )
-        instances?.push(record)
-        dirty = true
-        await rollBackup()
-        await save()
-        return record
+        // 磁盘先提交,成功后才进入内存(评审 R3)
+        await persist([...(instances ?? []), record])
+        return structuredClone(record)
       }),
 
     update: (id, patch) =>
@@ -358,11 +367,8 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
             updatedAt: new Date().toISOString()
           })
         )
-        instances = (instances ?? []).map((item) => (item.id === id ? record : item))
-        dirty = true
-        await rollBackup()
-        await save()
-        return record
+        await persist((instances ?? []).map((item) => (item.id === id ? record : item)))
+        return structuredClone(record)
       }),
 
     remove: (id) =>
@@ -370,10 +376,7 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
         await ensureLoaded()
         const current = instances ?? []
         if (!current.some((record) => record.id === id)) return false
-        instances = current.filter((record) => record.id !== id)
-        dirty = true
-        await rollBackup()
-        await save()
+        await persist(current.filter((record) => record.id !== id))
         return true
       }),
 
@@ -394,12 +397,6 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
         }
       })
   }
-}
-
-function formatZodMessage(error: unknown): string {
-  return error instanceof z.ZodError
-    ? error.issues.map((issue) => issue.message).join('; ')
-    : String(error)
 }
 
 function toStoreError(error: unknown): InstanceStoreError {
