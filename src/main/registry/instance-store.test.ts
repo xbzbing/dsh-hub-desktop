@@ -406,4 +406,32 @@ describe('createInstanceStore / 写盘失败不产生幻影(评审 R3)', () => {
     const list = await store.list()
     expect(list.map((record) => record.id).sort()).toEqual([base.id, second.id].sort())
   })
+
+  it('T11:50+ 实例下 list 走内存缓存,规模化不劣化', async () => {
+    const store = createInstanceStore({ dir })
+    const COUNT = 60
+    for (let index = 0; index < COUNT; index += 1) {
+      await store.create(httpInput({ name: `实例 ${index}`, endpointUrl: `https://h${index}.example.com/` }))
+    }
+    // 首次 list 触发装载;随后应完全命中内存缓存(退化成每次读盘会远超下面的界)
+    expect(await store.list()).toHaveLength(COUNT)
+
+    const started = Date.now()
+    const ROUNDS = 50
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const all = await store.list()
+      expect(all).toHaveLength(COUNT)
+      // 返回值必须是拷贝:调用方改动不得污染缓存(设计约束)
+      const first = all[0]
+      if (first) first.name = '被污染'
+    }
+    const elapsed = Date.now() - started
+    // 3000 次记录投影耗时上限:绝对阈值取得很宽(避免负载抖动导致假失败),
+    // 但足以抓住「list 每次重新读盘/重新解析」这类规模化退化。
+    expect(elapsed).toBeLessThan(3_000)
+
+    // 拷贝语义:缓存未被前一轮的写入污染
+    const after = await store.list()
+    expect(after[0]?.name).toBe('实例 0')
+  })
 })
