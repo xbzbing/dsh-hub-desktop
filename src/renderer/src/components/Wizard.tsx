@@ -109,16 +109,12 @@ export default function Wizard(): ReactNode {
     setWizardOpen(false)
     toast('ok', `「${result.value.name}」已创建`)
     void refreshList()
-    if (transport === 'local' || transport === 'ssh') {
-      // 「创建→启动→健康→开窗」:运行事件到达时自动打开视图(store.applyStatus 处理)
-      setPendingOpen(result.value.id)
-      const started = await bridge.runtime.start(result.value.id)
-      if (!started.ok) {
-        toast('err', '启动失败', started.message)
-        // 失败事件会在 applyStatus 里把该 id 移出待开集合
-      }
-    } else {
-      toast('info', 'HTTP 直连传输在后续里程碑提供（T6），暂时无法启动')
+    // 三种传输都走同一状态链「创建→启动(探测)→就绪→开窗」;状态推进与传输无关
+    setPendingOpen(result.value.id)
+    const started = await bridge.runtime.start(result.value.id)
+    if (!started.ok) {
+      toast('err', '启动失败', started.message)
+      // 失败事件会在 applyStatus 里把该 id 移出待开集合
     }
   }
 
@@ -358,7 +354,7 @@ export default function Wizard(): ReactNode {
                 ? '本机实例创建完成后会自动安装 dsh 并启动，就绪后直接打开工作区。'
                 : transport === 'ssh'
                   ? '首次连接需要核对服务器指纹，确认后才会建立加密通道（后续里程碑）。'
-                  : '创建后会自动探测登录方式（后续里程碑）。'}
+                  : '粘贴网址后已在第二步实时探测登录方式。'}
             </span>
           </div>
         </div>

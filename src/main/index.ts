@@ -266,7 +266,7 @@ void app.whenReady().then(() => {
 
 app.on('before-quit', (event) => {
   // 退出前回收全部实例进程树与 SSH 隧道（设计 §4.1/§4.2：不留孤儿进程）
-  if (quitting || (!runtime && !tunnels)) return
+  if (quitting || (!runtime && !tunnels && !httpEndpoints)) return
   quitting = true
   event.preventDefault()
   const recycling: Array<Promise<void>> = []

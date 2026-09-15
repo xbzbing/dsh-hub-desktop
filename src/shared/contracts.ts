@@ -311,7 +311,7 @@ export const HTTP_IPC = {
 
 export type DetectedAuthMode = 'gateway' | 'none' | 'browser-auth' | 'unreachable' | 'unknown'
 
-export type GatewayEvidence = 'login-page' | 'api-401' | 'onboarding'
+export type GatewayEvidence = 'login-page' | 'api-401' | 'onboarding' | 'otp-page'
 
 export interface HttpAuthDetection {
   mode: DetectedAuthMode

@@ -33,11 +33,8 @@ export interface ResponseObservation {
 /** 从 URL 取 pathname（失败则原样返回小写串） */
 function pathnameOf(location: string | null | undefined): string {
   if (!location) return ''
-  try {
-    return new URL(location, 'http://placeholder.invalid').pathname.toLowerCase()
-  } catch {
-    return location.toLowerCase()
-  }
+  // new URL 对任何非空字符串都能解析(相对路径按 base 归一化),无需 catch
+  return new URL(location, 'http://placeholder.invalid').pathname.toLowerCase()
 }
 
 /** 是否 JSON 响应 */
@@ -68,6 +65,15 @@ export function classifyAuthResponse(observation: ResponseObservation): AuthDete
         at
       }
     }
+    if (location.endsWith('/otp/verify') || location.endsWith('/otp')) {
+      return {
+        mode: 'gateway',
+        gatewayEvidence: 'otp-page',
+        evidence: `${status} → ${location}（网关要求二因素验证）`,
+        status,
+        at
+      }
+    }
     if (location.endsWith('/onboarding')) {
       return {
         mode: 'gateway',
@@ -87,8 +93,10 @@ export function classifyAuthResponse(observation: ResponseObservation): AuthDete
   }
 
   if (status === 401) {
-    // dsh 内置 BrowserAuth:browser auth 场景由 webview 自认证
-    if (body.includes(BROWSER_AUTH_MARKER)) {
+    // dsh 内置 BrowserAuth:必须同时满足「text/plain」+ 完整特征串(与 JSON 分支对称,
+    // 否则任何含 'dsh' 的 401 体会被误判;评审 T6 Required-4)
+    const isPlainText = (contentType ?? '').toLowerCase().includes('text/plain')
+    if (isPlainText && body.includes(BROWSER_AUTH_MARKER)) {
       return {
         mode: 'browser-auth',
         gatewayEvidence: null,
@@ -105,11 +113,10 @@ export function classifyAuthResponse(observation: ResponseObservation): AuthDete
       } catch {
         /* 非 JSON 体也按 API 401 处理 */
       }
-      const evidence =
-        error === 'onboarding-required' ? 'onboarding' : 'api-401'
+      const evidence = error === 'onboarding-required' ? 'onboarding' : 'api-401'
       return {
         mode: 'gateway',
-        gatewayEvidence: evidence === 'onboarding' ? 'onboarding' : 'api-401',
+        gatewayEvidence: evidence,
         evidence: `401 JSON${error ? ` error=${error}` : ''}（网关 API 直探）`,
         status,
         at

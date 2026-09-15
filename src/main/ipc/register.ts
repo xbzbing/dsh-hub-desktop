@@ -7,6 +7,7 @@
  */
 import { app, ipcMain } from 'electron'
 import { z } from 'zod'
+import { EndpointParseError } from '@shared/endpoint'
 import { IPC, type AppInfo, type PingResult } from '@shared/bridge'
 import {
   CreateInstanceInputSchema,
@@ -53,6 +54,10 @@ async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
     }
     if (error instanceof z.ZodError) {
       return { ok: false, code: 'invalid-input', message: formatZodIssues(error) }
+    }
+    // 端点解析失败属输入问题(不是内部错误):与 instances:create 的 tryParseEndpoint 口径一致
+    if (error instanceof EndpointParseError) {
+      return { ok: false, code: 'invalid-input', message: error.message }
     }
     // 内部错误不透传细节(可能含 fs 路径),只记主进程日志
     console.error('[ipc] 未预期错误：', error)

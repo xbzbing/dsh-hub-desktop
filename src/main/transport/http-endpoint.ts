@@ -36,6 +36,8 @@ interface Entry {
   url: string
   detection: AuthDetection | null
   stopping: boolean
+  /** 本条目是否仍是 entries 中的当前条目(防陈旧 start 收尾时误删新条目;评审 T6 Nit-h) */
+  current: () => boolean
 }
 
 export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndpointManager {
@@ -49,7 +51,10 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
   const entries = new Map<string, Entry>()
   const statuses = new Map<string, InstanceStatusEvent>()
   const listeners = new Set<(event: InstanceStatusEvent) => void>()
-  const startingIds = new Set<string>()
+  /** 同 id 启动串行链:并发 start 依次执行,保证 stop→start 的「重启」语义生效 */
+  const startChains = new Map<string, Promise<void>>()
+  /** 取消代号:stop() 递增;启动任务记录自己发起时的代号,若期间被 stop 则作废 */
+  const cancelGen = new Map<string, number>()
 
   function emit(id: string, status: InstanceRuntimeStatus, extra: Partial<InstanceStatusEvent> = {}): void {
     const event: InstanceStatusEvent = { id, status, at: new Date(now()).toISOString(), ...extra }
@@ -77,6 +82,74 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
     }
   }
 
+  /** 单次启动流程(端点校验 → §4.3 健康探测 → §2.3 认证探测 → running) */
+  async function runStart(instance: HttpInstance, myGen: number): Promise<void> {
+    const id = instance.id
+    let entry: Entry | null = null
+    const cancelled = (): boolean => (cancelGen.get(id) ?? 0) !== myGen
+    try {
+      const url = httpDirectEndpoint(instance)
+      const created: Entry = {
+        id,
+        url,
+        detection: null,
+        stopping: false,
+        current: () => entries.get(id) === created
+      }
+      entry = created
+      entries.set(id, created)
+      emit(id, 'starting', { detail: `校验端点 ${url}` })
+
+      let healthy = false
+      for (let attempt = 1; attempt <= healthProbeRetries; attempt++) {
+        if (cancelled() || created.stopping || !created.current()) return
+        healthy = await probe(url, healthTimeoutMs)
+        if (healthy) break
+        if (attempt < healthProbeRetries) await sleep(healthProbeRetryMs)
+      }
+      if (cancelled() || created.stopping || !created.current()) return
+      if (!healthy) {
+        entries.delete(id)
+        emit(id, 'error', { detail: `端点不可达：${url}（连接被拒或超时）`, url })
+        return
+      }
+
+      let detection: AuthDetection | null = null
+      if (instance.authMode === 'auto') {
+        emit(id, 'starting', { url, detail: '探测认证模式' })
+        detection = await detect(url)
+        if (cancelled() || created.stopping || !created.current()) return
+        created.detection = detection
+      }
+      if (cancelled() || created.stopping || !created.current()) return
+      emit(id, 'running', {
+        url,
+        detail:
+          instance.authMode === 'auto' && detection
+            ? detectionDetail(detection)
+            : instance.authMode === 'none'
+              ? '按配置跳过登录认证'
+              : '按配置使用网关登录（T7 接入）'
+      })
+    } catch (error) {
+      // 校验/探测失败:未被取消、且没有更新的条目时才报错(避免陈旧 start 误报)
+      if (cancelled()) return
+      if (entry === null) {
+        // 端点校验在创建条目前抛错(非法 URL):仍应让用户看到原因
+        emit(id, 'error', {
+          detail: error instanceof Error ? error.message : String(error)
+        })
+        return
+      }
+      if (entry.current()) {
+        entries.delete(id)
+        emit(id, 'error', {
+          detail: error instanceof Error ? error.message : String(error)
+        })
+      }
+    }
+  }
+
   return {
     onStatus(listener) {
       listeners.add(listener)
@@ -93,64 +166,38 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
 
     async start(instance) {
       const id = instance.id
-      if (entries.has(id) || startingIds.has(id)) {
-        const existing = entries.get(id)
-        emit(id, 'running', {
-          ...(existing ? { url: existing.url, detail: '实例已在运行，忽略重复启动' } : { detail: '实例正在启动，忽略重复启动' })
-        })
+      const existing = entries.get(id)
+      if (existing) {
+        emit(id, 'running', { url: existing.url, detail: '实例已在运行，忽略重复启动' })
         return
       }
-      startingIds.add(id)
-      try {
-        // 端点校验（复用 shared/endpoint.ts；不合法直接报错,不进入探测）
-        const url = httpDirectEndpoint(instance)
-        const entry: Entry = { id, url, detection: null, stopping: false }
-        entries.set(id, entry)
-        emit(id, 'starting', { detail: `校验端点 ${url}` })
-
-        // §4.3 健康探测:任意 HTTP 响应即传输就绪
-        let healthy = false
-        for (let attempt = 1; attempt <= healthProbeRetries; attempt++) {
-          if (entry.stopping) return
-          healthy = await probe(url, healthTimeoutMs)
-          if (healthy) break
-          if (attempt < healthProbeRetries) await sleep(healthProbeRetryMs)
-        }
-        if (entry.stopping) return
-        if (!healthy) {
-          entries.delete(id)
-          emit(id, 'error', { detail: `端点不可达：${url}（连接被拒或超时）`, url })
+      // 串行化同 id 启动:排队期间若被 stop,则本次排队作废(重启意图由后续 start 承担)
+      const myGen = cancelGen.get(id) ?? 0
+      const previous = startChains.get(id) ?? Promise.resolve()
+      const next = previous.then(async () => {
+        // 期间发生过 stop → 本次启动作废(stop 之后的 start 有自己的代号,不受影响)
+        if ((cancelGen.get(id) ?? 0) !== myGen || entries.get(id)?.stopping === true) return
+        if (entries.has(id)) {
+          const current = entries.get(id)
+          emit(id, 'running', {
+            ...(current ? { url: current.url } : {}),
+            detail: '实例已在运行，忽略重复启动'
+          })
           return
         }
-
-        // §2.3 认证模式探测（用户显式指定时跳过）
-        let detection: AuthDetection | null = null
-        if (instance.authMode === 'auto') {
-          emit(id, 'starting', { url, detail: '探测认证模式' })
-          detection = await detect(url)
-          entry.detection = detection
-        }
-        if (entry.stopping) return
-        emit(id, 'running', {
-          url,
-          detail:
-            instance.authMode === 'auto' && detection
-              ? detectionDetail(detection)
-              : instance.authMode === 'none'
-                ? '按配置跳过登录认证'
-                : '按配置使用网关登录（T7 接入）'
+        await runStart(instance, myGen)
+      })
+      startChains.set(
+        id,
+        next.catch(() => undefined).finally(() => {
+          if (startChains.get(id) === next) startChains.delete(id)
         })
-      } catch (error) {
-        entries.delete(id)
-        emit(id, 'error', {
-          detail: error instanceof Error ? error.message : String(error)
-        })
-      } finally {
-        startingIds.delete(id)
-      }
+      )
+      return next
     },
 
     async stop(id) {
+      cancelGen.set(id, (cancelGen.get(id) ?? 0) + 1)
       const entry = entries.get(id)
       if (!entry) {
         emit(id, 'stopped', { detail: '实例未在运行' })

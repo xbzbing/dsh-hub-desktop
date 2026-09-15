@@ -164,6 +164,37 @@ describe('registerIpc', () => {
     }
   })
 
+  it('T6-R2/R3:http:detect 非法 URL → invalid-input(而非 internal)', async () => {
+    for (const bad of ['ftp://x', 'http://user:pw@h/', 'not a url', '']) {
+      const result = (await invoke('http:detect', bad)) as { ok: boolean; code?: string }
+      expect(result.ok, `URL=${JSON.stringify(bad)} 应被拒绝`).toBe(false)
+      if (!result.ok) {
+        expect(result.code, `URL=${JSON.stringify(bad)} 的错误码`).toBe('invalid-input')
+      }
+    }
+  })
+
+  it('T6:http:detect 合法 URL 调通(本地 200 服务 → none)', async () => {
+    const { createServer } = await import('node:http')
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end('<html>ok</html>')
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const address = server.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+    try {
+      const result = (await invoke('http:detect', `http://127.0.0.1:${port}`)) as {
+        ok: boolean
+        value?: { mode: string }
+      }
+      expect(result.ok).toBe(true)
+      expect(result.value?.mode).toBe('none')
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
   it('R3 回归:host 以 - 开头被拒(argv 选项注入面)', async () => {
     for (const host of ['-p2222', '-lroot', '-Fevil', '-oProxyCommand=evil']) {
       const result = (await invoke('instances:create', {

@@ -64,10 +64,16 @@ async function main() {
   dshProc.unref()
 
   // 2) 模拟网关(302 → /login + 401 JSON)与纯静态端点
+  // 模拟网关:页面 → 302 /login;API(`/api/*`)→ 401 JSON unauthenticated(与真实网关一致)
   await listen((req, res) => {
     if (req.url === '/login') {
       res.writeHead(200, { 'content-type': 'text/html' })
       res.end('<html>login</html>')
+      return
+    }
+    if ((req.url ?? '').startsWith('/api/')) {
+      res.writeHead(401, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: 'unauthenticated' }))
       return
     }
     res.writeHead(302, { location: '/login' })
@@ -135,6 +141,11 @@ async function main() {
   const real = await createAndStart('验收 · 真实 dsh', `http://127.0.0.1:${DSH_PORT}/`)
   if (!real.detail.includes('浏览器认证')) throw new Error(`真实 dsh 探测结论异常:${real.detail}`)
   console.log(`[ok] 真实 dsh 探测:${real.detail}`)
+
+  // C2) 网关 API 401 JSON 路径 → 判为 gateway(api-401)
+  const api401 = await createAndStart('验收 · 网关 API', `http://127.0.0.1:${GATEWAY_PORT}/api/remote.mux`)
+  if (!api401.detail.includes('检测到登录认证')) throw new Error(`401 JSON 探测结论异常:${api401.detail}`)
+  console.log(`[ok] 网关 API 401 JSON:${api401.detail}`)
 
   // D) openView 应能开窗(T6 起 http 状态走 http 管理器)
   const openResult = await hub.evaluate((id) => window.dshHub.runtime.openView(id), gateway.id)

@@ -111,3 +111,45 @@ describe('detectAuthMode（真实 HTTP 往返,含 redirect:manual）', () => {
     expect(result.status).toBeNull()
   })
 })
+
+describe('T6 评审回归防线', () => {
+  it('R4:401 体含 dsh 但非 text/plain → 不判 browser-auth(与 JSON 分支对称)', () => {
+    const result = classifyAuthResponse({
+      status: 401,
+      contentType: 'application/json',
+      body: '{"ok":false,"error":"some-dsh-error"}'
+    })
+    expect(result.mode).not.toBe('browser-auth')
+  })
+
+  it('R4:401 体含 dsh 的 HTML → 不判 browser-auth', () => {
+    const result = classifyAuthResponse({
+      status: 401,
+      contentType: 'text/html',
+      body: '<html><body>dsh web authentication required; reopen the URL</body></html>'
+    })
+    expect(result.mode).not.toBe('browser-auth')
+  })
+
+  it('R4:特征串必须完整(仅含 dsh 的 text/plain 401 不判 browser-auth)', () => {
+    expect(
+      classifyAuthResponse({ status: 401, contentType: 'text/plain', body: 'dsh: something else' }).mode
+    ).not.toBe('browser-auth')
+  })
+
+  it('不安全方向:未识别路径的 302 不得判为 gateway', () => {
+    const result = classifyAuthResponse({ status: 302, location: '/somewhere/else' })
+    expect(result.mode).toBe('unknown')
+    expect(result.mode).not.toBe('gateway')
+  })
+
+  it('302 → /otp/verify 判为 gateway(要求二因素)', () => {
+    const result = classifyAuthResponse({ status: 302, location: '/otp/verify' })
+    expect(result.mode).toBe('gateway')
+    expect(result.gatewayEvidence).toBe('otp-page')
+  })
+
+  it('basePath 下的重定向仍能识别(/dsh/login)', () => {
+    expect(classifyAuthResponse({ status: 302, location: '/dsh/login' }).mode).toBe('gateway')
+  })
+})

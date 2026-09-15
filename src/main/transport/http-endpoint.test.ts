@@ -116,3 +116,49 @@ describe('createHttpEndpoints（T6 HTTP 直连传输）', () => {
     expect(manager.statusOf(instance.id)?.detail).toContain('dns 失败')
   })
 })
+
+describe('T6 评审回归:端点校验与陈旧 start', () => {
+  it('R3:detectDraftEndpoint 拒绝非法 URL(ftp / 内嵌凭据 / 空)', async () => {
+    const { detectDraftEndpoint } = await import('./http-endpoint')
+    await expect(detectDraftEndpoint('ftp://x')).rejects.toThrow()
+    await expect(detectDraftEndpoint('http://user:pw@h/')).rejects.toThrow()
+    await expect(detectDraftEndpoint('')).rejects.toThrow()
+  })
+
+  it('R3:合法 URL 归一化后探测(用本地 200 服务)', async () => {
+    const { createServer } = await import('node:http')
+    const { detectDraftEndpoint } = await import('./http-endpoint')
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end('<html>ok</html>')
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const address = server.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+    try {
+      const detection = await detectDraftEndpoint(`127.0.0.1:${port}`)
+      expect(detection.mode).toBe('none')
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it('陈旧 start:探测期间 stop 后立即重启,旧 start 不得删掉新条目', async () => {
+    let release!: () => void
+    const gate = new Promise<boolean>((resolve) => {
+      release = () => resolve(true)
+    })
+    const probe = vi.fn(() => gate)
+    const manager = createHttpEndpoints({ probe: probe as never, healthProbeRetries: 1 })
+    const instance = httpInstance()
+    const firstStart = manager.start(instance)
+    await vi.waitFor(() => expect(probe).toHaveBeenCalled())
+    // 探测挂起期间 stop(条目被清理)→ 立即重新 start(新条目)
+    await manager.stop(instance.id)
+    const secondStart = manager.start(instance)
+    release()
+    await Promise.all([firstStart, secondStart])
+    // 新条目必须仍然存在(旧 start 的收尾不得删除它)
+    expect(manager.runningIds()).toContain(instance.id)
+  })
+})
