@@ -707,5 +707,125 @@ describe('createLocalRuntime', () => {
     expect(portProbe2).toHaveBeenCalledWith(30123)
     expect(portProbe2).toHaveBeenCalledWith(30124)
     expect(args2).toEqual(expect.arrayContaining(['--port', '30124']))
+
+    // 场景三:用户端口超出默认区间(如 dsh 默认 52300)→ 仍先尝试该端口,被占则向 65535 递增
+    const portProbe3 = vi.fn(async (port: number) => port >= 52301)
+    let args3: string[] = []
+    const child3 = new EventEmitter() as unknown as FakeChild
+    child3.stdout = new PassThrough()
+    child3.stderr = new PassThrough()
+    child3.pid = 999660
+    child3.killCall = []
+    child3.kill = vi.fn(() => true) as never
+    const spawnImpl3 = vi.fn((invocation: SpawnInvocation) => {
+      args3 = invocation.args
+      return child3 as unknown as SpawnedProcess
+    })
+    const manager3 = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl3 as never,
+      portProbe: portProbe3 as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000
+    })
+    const inst3 = localInstance({ id: randomUUID(), port: 52300 })
+    const starting3 = manager3.start(inst3)
+    child3.stdout.write(readyLine(52301))
+    await starting3
+    await waitForStatus(manager3, inst3.id, 'running')
+    expect(portProbe3).toHaveBeenCalledWith(52300) // 用户端口本身先被尝试
+    expect(portProbe3).toHaveBeenCalledWith(52301) // 被占后递增,而非静默丢弃
+    expect(args3).toEqual(expect.arrayContaining(['--port', '52301']))
+  })
+
+  it('在途 handleReady 的陈旧续体不误删新条目(就绪后崩溃场景)', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999650 - children.length
+      child.killCall = []
+      child.kill = vi.fn((signal?: NodeJS.Signals) => {
+        child.killCall.push(signal ?? 'SIGTERM')
+        return true
+      }) as never
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    // 旧条目 A 的端口(31234)探测恒失败;B(31235)恒成功
+    const probe = vi.fn(async (url: string) => url.includes(':31235'))
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe,
+      readyTimeoutMs: 5000,
+      healthProbeRetries: 3,
+      healthProbeRetryMs: 10
+    })
+    const instance = localInstance()
+    // 第一代进程:打印就绪行后在探测窗口内崩溃(「就绪后即崩」是缺失 --expose-internals 的实测模式)
+    const first = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
+    children[0]?.stdout.write(readyLine(31234))
+    children[0]?.emit('exit', 1, null)
+    await first
+    await waitForStatus(manager, instance.id, 'error') // 进程意外退出
+    // 队列已放行,第二代进程拉起并就绪
+    const second = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(2))
+    children[1]?.stdout.write(readyLine(31235))
+    await second
+    await waitForStatus(manager, instance.id, 'running')
+    // 等陈旧 handleReady(A) 的重试耗尽(3 次 × 10ms),再断言其失败终局不得误删第二代条目
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(manager.runningIds()).toEqual([instance.id])
+    expect(manager.statusOf(instance.id)?.url).toBe('http://127.0.0.1:31235/?token=test-token')
+    expect(children[0]?.killCall).toEqual([]) // 第一代已退出,无需补杀
+  })
+
+  it('stop:子进程永不退出(僵尸/D 态)→ 仍放行启动队列,排队任务完成而非永久卡死', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999640 - children.length
+      child.killCall = []
+      child.kill = vi.fn((signal?: NodeJS.Signals) => {
+        child.killCall.push(signal ?? 'SIGTERM')
+        return true // 永不触发 exit(模拟 SIGKILL 免疫的 D 态)
+      }) as never
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      stopGraceMs: 30
+    })
+    const instance = localInstance()
+    const s1 = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
+    children[0]?.stdout.write(readyLine())
+    await s1
+    await waitForStatus(manager, instance.id, 'running')
+    // 第二个 start 排队在第一个的 settle 之后;stop 杀不掉永不退出的进程
+    const s2 = manager.start(instance)
+    await manager.stop(instance.id)
+    // stop 必须自行 settle 队列,否则 s2 永久悬空、后续所有实例的 start 全被卡死
+    const outcome = await Promise.race([
+      s2.then(() => 'settled' as const),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 3000))
+    ])
+    expect(outcome).toBe('settled')
+    expect(spawnImpl).toHaveBeenCalledTimes(1) // 排队中的 s2 不得复活实例
+    expect(manager.runningIds()).toEqual([])
+    expect(manager.statusOf(instance.id)?.status).toBe('stopped')
   })
 })
