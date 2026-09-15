@@ -152,4 +152,39 @@ describe('T6 评审回归防线', () => {
   it('basePath 下的重定向仍能识别(/dsh/login)', () => {
     expect(classifyAuthResponse({ status: 302, location: '/dsh/login' }).mode).toBe('gateway')
   })
+
+  it('探测带会话 Cookie(D1:不带就只能看到第一道门禁 302→/login)', async () => {
+    const seen: Array<{ url: string; cookie: string | null }> = []
+    const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers)
+      seen.push({ url: String(input), cookie: headers.get('cookie') })
+      // 有会话且 OTP 未验:网关给 302 → /otp/verify
+      return new Response('', {
+        status: 302,
+        headers: {
+          location: '/dsh/otp/verify',
+          ...(headers.get('cookie') ? {} : { location: '/dsh/login' })
+        }
+      })
+    }) as unknown as typeof fetch
+
+    const detection = await detectAuthMode('https://gw.example.com/dsh/', {
+      fetchImpl,
+      cookie: 'dsh_auth=half-authenticated'
+    })
+    expect(seen).toEqual([{ url: 'https://gw.example.com/dsh/', cookie: 'dsh_auth=half-authenticated' }])
+    expect(detection.gatewayEvidence).toBe('otp-page')
+  })
+
+  it('无 cookie 时不发送 Cookie 头(匿名探测保持原样)', async () => {
+    const seen: Array<string | null> = []
+    const fetchImpl = (async (_input: string | URL, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get('cookie'))
+      return new Response('', { status: 302, headers: { location: '/dsh/login' } })
+    }) as unknown as typeof fetch
+
+    const detection = await detectAuthMode('https://gw.example.com/dsh/', { fetchImpl })
+    expect(seen).toEqual([null])
+    expect(detection.gatewayEvidence).toBe('login-page')
+  })
 })

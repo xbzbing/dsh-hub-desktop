@@ -95,15 +95,15 @@ describe('session-restore（T9/T10 重启静默复用登录态）', () => {
     errorSpy.mockRestore()
   })
 
-  it('Set-Cookie 头沿用网关属性(Path=/; HttpOnly; SameSite=Strict,无 Secure)', () => {
+  it('Set-Cookie 头沿用网关属性(Path=/; HttpOnly; SameSite=Strict)', () => {
     const header = sessionCookieHeader({ ...SESSION, expiresAt: null })
     expect(header).toBe('dsh_auth=sess-token; Path=/; HttpOnly; SameSite=Strict')
-    expect(header).not.toContain('Secure')
+  })
 
-    const withMaxAge = sessionCookieHeader({
-      ...SESSION,
-      expiresAt: Date.now() + 3600_000
-    })
-    expect(withMaxAge).toContain('Max-Age=')
+  it('Max-Age 用注入时钟计算(与过期判断同一时间源)', () => {
+    // 注意:网关在 HTTPS 客户端请求下会追加 `; Secure`;这里刻意不写死「无 Secure」,
+    // 因为 StoredSession 不携带属性,Secure 在恢复时确实会丢失(已知取舍,见本文件注释)
+    const header = sessionCookieHeader({ ...SESSION, expiresAt: NOW + 3600_000 }, () => NOW)
+    expect(header).toContain('Max-Age=3600')
   })
 })

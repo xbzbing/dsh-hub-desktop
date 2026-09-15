@@ -70,6 +70,68 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     expect(client.state().needsOnboarding).toBe(false)
   })
 
+  it('D1:探测带上已有会话 Cookie —— 半认证会话能看到 otp/onboarding 两种状态', async () => {
+    const probes: Array<string | null> = []
+    const jar = {
+      store: vi.fn(),
+      header: () => 'dsh_auth=half-authenticated',
+      get: () => ({ name: 'dsh_auth', value: 'half-authenticated', expiresAt: null, attributes: '' }),
+      clear: vi.fn(),
+      describe: () => []
+    } as unknown as CookieJar
+    const fetchImpl = fakeFetch((url, init) => {
+      if (url.includes('/login-api/settings')) {
+        // 会话有效但 OTP 未验:settings 返回 401 otp-required
+        return jsonResponse(401, { ok: false, error: 'otp-required' })
+      }
+      const cookie = new Headers(init.headers).get('cookie')
+      probes.push(cookie)
+      return cookie
+        ? htmlResponse(302, '', '/dsh/otp/verify')
+        : htmlResponse(302, '', '/dsh/login')
+    })
+
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw.example.com/dsh',
+      jar,
+      fetchImpl
+    })
+    const detection = await client.probeAndRestore()
+
+    // 关键:页面探测必须带会话头,否则网关第一道门禁永远返回 302→/login
+    expect(probes).toEqual(['dsh_auth=half-authenticated'])
+    expect(detection.gatewayEvidence).toBe('otp-page')
+    expect(client.state().phase).toBe('await-otp')
+    // D2:otp-required 说明会话有效(只完成一半认证),绝不能清罐
+    expect(jar.clear).not.toHaveBeenCalled()
+    expect(client.hasSession()).toBe(true)
+  })
+
+  it('D2:settings 401 为 unauthenticated 时才清罐', async () => {
+    const jar = {
+      store: vi.fn(),
+      header: () => 'dsh_auth=stale',
+      get: () => ({ name: 'dsh_auth', value: 'stale', expiresAt: null, attributes: '' }),
+      clear: vi.fn(),
+      describe: () => []
+    } as unknown as CookieJar
+    const fetchImpl = fakeFetch((url) =>
+      url.includes('/login-api/settings')
+        ? jsonResponse(401, { ok: false, error: 'unauthenticated' })
+        : htmlResponse(302, '', '/dsh/login')
+    )
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw.example.com/dsh',
+      jar,
+      fetchImpl
+    })
+    await client.probeAndRestore()
+    expect(jar.clear).toHaveBeenCalledTimes(1)
+    expect(client.state().phase).toBe('await-credentials')
+  })
+
   it('静默恢复:已存 Cookie 打 settings=200 → connected,不打扰用户', async () => {
     const jar = { store: vi.fn(), header: () => 'dsh_auth=abc', get: () => ({ name: 'dsh_auth', value: 'abc', expiresAt: null, attributes: 'HttpOnly' }), clear: vi.fn(), describe: () => [] } as unknown as CookieJar
     const fetchImpl = fakeFetch((url) =>

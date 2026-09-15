@@ -30,6 +30,13 @@ export default function DetailView(): ReactNode {
     return () => clearInterval(timer)
   }, [status?.status, nowTick])
 
+  /** T9-3:登出 = 主进程丢弃客户端 + 清该实例分区会话 Cookie(§5.4) */
+  const logout = async (): Promise<void> => {
+    if (!record) return
+    const result = await window.dshHub?.auth.logout(record.id)
+    if (result?.ok) toast('ok', '已登出', '该实例的分区会话已清除')
+  }
+
   if (!selection) return null
   if (!record) {
     return (
@@ -159,12 +166,23 @@ export default function DetailView(): ReactNode {
             <button className="btn btn-secondary btn-sm" onClick={() => void copyAddress()}>
               <Icon name="copy" /> 复制地址
             </button>
+            {/* T9-3:登出此前只有 IPC 通道、没有渲染层入口 ——
+                导致「登出即清分区会话」这条链路在产品里根本走不到 */}
+            {record.transport !== 'local' && record.authMode !== 'none' && (
+              <button
+                className="btn btn-secondary btn-sm"
+                data-testid="logout-btn"
+                onClick={() => void logout()}
+              >
+                <Icon name="close" /> 登出
+              </button>
+            )}
           </div>
         </div>
 
         {/* T10 §7.2:凭据存储策略(显式勾选才持久化;降级必须在 UI 告警) */}
         {record.transport !== 'local' && record.authMode !== 'none' && (
-          <VaultCard instanceId={record.id} />
+          <VaultCard key={record.id} instanceId={record.id} />
         )}
 
         <div className="card">

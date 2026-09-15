@@ -72,6 +72,11 @@ export interface IpcDeps {
   /** T11 应用设置(非敏感偏好) */
   settings: SettingsStore
   /**
+   * T11 设置变更后的原生副作用(开机自启 / 托盘 / 通知偏好)。
+   * 缺省不执行(单测);落盘由本模块负责,副作用交给装配层。
+   */
+  onSettingsChanged?: (settings: Settings) => void
+  /**
    * T10 审计(§7.5)。只接收白名单字段(见 `audit/audit-log.ts`),缺省不审计(单测)。
    * 审计写入本身异步且失败隔离,不阻塞业务。
    */
@@ -284,10 +289,17 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   /** vault 状态快照(渲染层据此显示降级告警与「已记住」标记) */
   function vaultSnapshot(): VaultStatusSnapshot {
     const status = deps.vault.status()
+    const remembered = deps.vault.rememberedIds()
+    const policies: Record<string, VaultPolicy> = {}
+    for (const id of remembered) {
+      const policy = deps.vault.getPolicy(id)
+      if (policy.rememberPassword || policy.rememberSession) policies[id] = policy
+    }
     return {
       available: status.available,
       degraded: status.degraded,
-      rememberedInstances: deps.vault.rememberedIds()
+      rememberedInstances: remembered,
+      policies
     }
   }
 
@@ -407,7 +419,10 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         for (const key of known) {
           if (key in raw) provided[key] = raw[key] as never
         }
-        return deps.settings.update(provided)
+        const next = await deps.settings.update(provided)
+        // 副作用失败不能回滚设置(偏好已落盘);由装配层自行隔离错误
+        deps.onSettingsChanged?.(next)
+        return next
       })
   )
 

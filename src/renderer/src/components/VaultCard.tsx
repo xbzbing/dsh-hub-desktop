@@ -18,7 +18,6 @@ const BRIDGE = window.dshHub
  */
 export default function VaultCard({ instanceId }: { instanceId: string }): ReactNode {
   const [status, setStatus] = useState<VaultStatusSnapshot | null>(null)
-  const [policy, setPolicy] = useState<VaultPolicy | null>(null)
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -34,8 +33,7 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
     if (!BRIDGE || busy) return
     setBusy(true)
     try {
-      const result = await BRIDGE.vault.setPolicy(instanceId, next)
-      if (result.ok) setPolicy(result.value)
+      await BRIDGE.vault.setPolicy(instanceId, next)
       await refresh()
     } finally {
       setBusy(false)
@@ -48,7 +46,6 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
     try {
       const result = await BRIDGE.vault.clear()
       if (result.ok) setStatus(result.value)
-      setPolicy({ rememberPassword: false, rememberSession: false })
     } finally {
       setBusy(false)
     }
@@ -57,7 +54,16 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
   /** 该实例当前是否记住了任何东西 */
   const rememberedHere = status?.rememberedInstances.includes(instanceId) ?? false
   const degraded = status?.degraded ?? false
-  const effective: VaultPolicy = policy ?? { rememberPassword: false, rememberSession: false }
+  /**
+   * 勾选态**必须来自主进程的策略快照**,不能只用本地 state:
+   * 本地初始化为「都不勾」会让用户看到错误的未勾选状态,随后切换另一个开关时
+   * 提交过时的策略对 —— 而 `setPolicy` 对「取消勾选」的语义是真的忘掉,
+   * 于是会静默删除已存密码(评审 T10-1 Critical)。
+   */
+  const effective: VaultPolicy = status?.policies[instanceId] ?? {
+    rememberPassword: false,
+    rememberSession: false
+  }
 
   return (
     <div className="card" data-testid="vault-card">
@@ -72,8 +78,8 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
         <div className="note n-warn mt12" data-testid="vault-degraded">
           <Icon name="alert" />
           <span>
-            系统钥匙串不可用，凭据**不会**写入磁盘，只在本次运行期间保留在内存中；
-            重启应用后需要重新登录。
+            系统钥匙串不可用：勾选**不会**生效，保险库中的凭据只在本次运行期间保留在内存中，
+            重启后需要重新登录。
           </span>
         </div>
       )}

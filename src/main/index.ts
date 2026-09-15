@@ -1,4 +1,13 @@
-import { app, BrowserWindow, net, protocol, safeStorage, session, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  net,
+  Notification,
+  protocol,
+  safeStorage,
+  session,
+  shell
+} from 'electron'
 import { join, normalize, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type {
@@ -32,8 +41,15 @@ import { createInstanceStore } from './registry/instance-store'
 import { createVault } from './vault/vault'
 import { createAuditLog } from './audit/audit-log'
 import { createSettingsStore } from './settings/settings-store'
+import type { SettingsStore } from './settings/settings-store'
+import {
+  loginItemSettings,
+  shouldMinimizeToTrayOnClose,
+  shouldNotifyStatus
+} from './shell/native-decisions'
 import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
 import type { Vault } from './vault/vault'
+import type { Settings } from '@shared/settings'
 import type { AuditLog } from './audit/audit-log'
 import { closeInstanceWindow, openInstanceWindow } from './window-host'
 
@@ -100,6 +116,12 @@ let hubWindow: BrowserWindow | null = null
 /** T10 数据面:凭据保险库与审计日志(在 whenReady 内装配) */
 let vault: Vault | null = null
 let audit: AuditLog | null = null
+
+/**
+ * T11 偏好。挂到模块级是因为 **窗口的 close 处理器需要读当前偏好**
+ * (「关闭时最小化到托盘」),而窗口创建早于/独立于装配顺序。
+ */
+let settingsRef: SettingsStore | null = null
 
 /**
  * 上一个「已广播」的状态,用于把迁移翻译成审计事件(§7.5)。
@@ -186,6 +208,14 @@ function createWindow(): BrowserWindow {
 
   if (isDev && rendererDevUrl) void win.loadURL(rendererDevUrl)
   else void win.loadURL(`${RENDERER_ORIGIN}/index.html`)
+
+  // T11:偏好「关闭窗口时最小化到托盘」——此时关闭不销毁窗口,而是隐藏
+  win.on('close', (event) => {
+    const current = settingsRef?.read()
+    if (!current || !shouldMinimizeToTrayOnClose(current)) return
+    event.preventDefault()
+    win.hide()
+  })
 
   win.on('closed', () => {
     if (hubWindow === win) hubWindow = null
@@ -290,6 +320,20 @@ void app.whenReady().then(() => {
   })
   // T11 偏好(非敏感):语言/主题/托盘/自启/通知
   const settings = createSettingsStore({ dir: dataRoot })
+  settingsRef = settings
+
+  /**
+   * 把偏好施加到原生层(开机自启)。失败只记日志:
+   * 偏好已落盘,系统层面设置失败不该让设置页报错。
+   */
+  const applyNativeSettings = (current: Settings): void => {
+    try {
+      app.setLoginItemSettings(loginItemSettings(current))
+    } catch (error) {
+      console.error('[main] 应用开机自启设置失败：', error)
+    }
+  }
+  applyNativeSettings(settings.read())
   // T10 §7.5:审计 JSONL(按日历日轮转,保留 90 天,不含任何凭据)
   audit = createAuditLog({ dir: join(dataRoot, 'audit') })
   if (!safeStorageAvailable) {
@@ -340,6 +384,21 @@ void app.whenReady().then(() => {
     )) {
       auditWrite(entry)
     }
+    // T11:按偏好弹系统通知(首次观测/状态未变化/停止与启动中都不打扰)
+    const notifyPrevious = previousStatus
+    if (shouldNotifyStatus(event, notifyPrevious, settings.read())) {
+      try {
+        if (Notification.isSupported()) {
+          const label = event.status === 'running' ? '已连接' : '出错'
+          new Notification({
+            title: `DSH Hub · ${label}`,
+            body: event.detail ?? event.id
+          }).show()
+        }
+      } catch (error) {
+        console.error('[main] 发送系统通知失败：', error)
+      }
+    }
     lastRuntimeState.set(event.id, event.status)
     if (event.status === 'running' && (event.port !== undefined || event.version !== undefined)) {
       void instanceStore
@@ -372,7 +431,12 @@ void app.whenReady().then(() => {
       const record = await instanceStore.get(instanceId)
       if (!record) return null
       // 认证探测端点与「开窗/探测」同源(§2.4):ssh 走隧道本地口,隧道未就绪则为 null
-      const tunnelPort = record.transport === 'ssh' ? tunnels?.statusOf(instanceId)?.port : undefined
+      // ssh:优先取隧道实时端口;隧道已停(如删除实例时先停隧道再清 Cookie)则回落到
+      // 注册表持久化的 localPort —— 否则清理会静默 no-op(评审 D4)
+      const tunnelPort =
+        record.transport === 'ssh'
+          ? (tunnels?.statusOf(instanceId)?.port ?? record.localPort ?? undefined)
+          : undefined
       return authEndpointOf(record, tunnelPort)
     },
     onState: (instanceId, state) => {
@@ -410,6 +474,7 @@ void app.whenReady().then(() => {
     vault: vault as Vault,
     settings,
     audit: auditWrite,
+    onSettingsChanged: applyNativeSettings,
     // T9:登出时清该实例分区内的会话 Cookie(origin 取自实例记录)
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
@@ -418,7 +483,9 @@ void app.whenReady().then(() => {
       // 清理必须命中同一个 URL,否则两侧参数不再对称(网关 Cookie 的 Path 恰为 '/',故当前无害)
       const endpoint = authEndpointOf(
         record,
-        record.transport === 'ssh' ? tunnels?.statusOf(instanceId)?.port : undefined
+        record.transport === 'ssh'
+          ? (tunnels?.statusOf(instanceId)?.port ?? record.localPort ?? undefined)
+          : undefined
       )
       if (!endpoint) return
       const origin = originOf(endpoint)
@@ -460,11 +527,16 @@ void app.whenReady().then(() => {
             const targetSession = win.webContents.session
             if (!shouldInstallIntercept(targetSession)) return
             targetSession.webRequest.onHeadersReceived((details, callback) => {
-              const signal = classifyAuthSignal({
-                statusCode: details.statusCode,
-                headers: details.responseHeaders ?? {},
-                resourceType: details.resourceType
-              })
+              const signal = classifyAuthSignal(
+                {
+                  statusCode: details.statusCode,
+                  headers: details.responseHeaders ?? {},
+                  resourceType: details.resourceType
+                },
+                // T9-1:必须带上 basePath —— 网关 302 到的是 `<basePath>/login`,
+                // 默认 '/' 只能匹配根路径实例,带路径的实例(如 /dsh)永不产生信号
+                basePath
+              )
               if (signal) {
                 // T9:会话失效 → 先静默重探(带已存 Cookie 自动恢复);仍失败才由 auth-panel 接手
                 if (signal === 'session-expired' && auth && !reprobeInFlight.has(instance.id)) {

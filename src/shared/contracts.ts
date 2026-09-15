@@ -368,6 +368,14 @@ export interface VaultStatusSnapshot {
   degraded: boolean
   /** 已记住凭据的实例 id */
   rememberedInstances: string[]
+  /**
+   * 每个实例的勾选策略(仅含已设置的实例)。
+   *
+   * **必须暴露**:UI 若拿不到当前策略就只能把复选框渲染成未勾选,用户随后
+   * 切换另一个开关时会提交一份过时的策略对 —— 而 `setPolicy` 对「取消勾选」
+   * 的语义是**真的忘掉**,于是会静默删掉已存密码(评审 T10-1 Critical)。
+   */
+  policies: Record<string, VaultPolicy>
 }
 
 /**

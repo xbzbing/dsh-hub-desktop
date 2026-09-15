@@ -12,7 +12,12 @@
  * - 凭据纪律:密码/验证码只在内存中停留,不落盘、不写日志。
  */
 import { createBackoff, type BackoffController } from './backoff'
-import { createGatewayClient, type GatewayClient, type GatewayResult } from './gateway-client'
+import {
+  createGatewayClient,
+  type GatewayClient,
+  type GatewayFailure,
+  type GatewayResult
+} from './gateway-client'
 import { createCookieJar, type CookieJar } from './cookie-jar'
 import { canSubmit, eventFromFailure, initialState, type AuthState, transition } from './gateway-state'
 import type { HttpAuthDetection } from '@shared/contracts'
@@ -114,13 +119,16 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
             at: new Date().toISOString()
           }
         }
-        if (!settings.ok && settings.status === 401) {
-          // 会话失效:继续探测是否需要登录
+        if (!settings.ok && settings.status === 401 && settingsUnauthenticated(settings)) {
+          // 会话**真的**失效才清罐。评审 D2:401 也可能是 `otp-required` /
+          // `onboarding-required` —— 那说明会话有效但只完成了一半认证(网关
+          // `#verifiedTokenOr401`),清掉会把「已过密码关」的半成品会话丢掉,
+          // 连分区 Cookie 注入也会跟着失效。
           gateway.jar.clear()
         }
       }
-      // 2) 探测端点:302→/login 或 401 unauthenticated = 网关
-      const detection = await detectEndpoint(options.endpointUrl, options)
+      // 2) 探测端点(带已有会话头,否则只能观察到 302→/login 这一种状态)
+      const detection = await detectEndpoint(options.endpointUrl, options, gateway.jar.header())
       switch (detection.mode) {
         case 'gateway':
           apply({ type: 'probe-gateway' })
@@ -169,14 +177,34 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   }
 }
 
-/** 探测封装(§2.3 判定复用 T6 的 detect,避免两套判定漂移) */
+/**
+ * settings 的 401 是否表示「会话本身无效」。
+ *
+ * 网关对 `/api*` 的 401 用 `error` 字段区分:`unauthenticated` / `otp-required` /
+ * `onboarding-required`。只有第一种意味着会话无效;后两者是「会话有效但只完成了一半
+ * 认证」(网关 `#verifiedTokenOr401`),清罐会丢掉半成品会话并连带让分区 Cookie 注入失效。
+ * 错误码缺失时保守按「无效」处理(与修复前行为一致,不会更糟)。
+ */
+function settingsUnauthenticated(settings: GatewayFailure): boolean {
+  return settings.code === 'unauthenticated'
+}
+
+/**
+ * 探测封装(§2.3 判定复用 T6 的 detect,避免两套判定漂移)。
+ *
+ * `cookie` 是**本函数存在的理由**:网关判定是有序门禁,匿名探测只能看到第一道门
+ * (`302 <base>/login`),`onboarding` / `otp/verify` 两种状态永远观察不到
+ * (评审 D1,已对真实网关复现)。因此必须把已有会话头带进探测。
+ */
 async function detectEndpoint(
   endpointUrl: string,
-  options: AuthClientOptions
+  options: AuthClientOptions,
+  cookie: string | null
 ): Promise<AuthDetection> {
   return detectAuthMode(`${endpointUrl.replace(/\/+$/, '')}/`, {
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl })
+    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    cookie
   })
 }
 

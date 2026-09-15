@@ -609,12 +609,27 @@ describe('registerIpc', () => {
   it('T10 vault:status 返回降级与已记住实例', async () => {
     vaultFake['status']!.mockReturnValueOnce({ available: false, degraded: true, instanceCount: 2 })
     vaultFake['rememberedIds']!.mockReturnValueOnce(['a', 'b'])
+    vaultFake['getPolicy']!.mockReturnValue({ rememberPassword: true, rememberSession: false })
     const result = (await invoke('vault:status')) as {
       ok: boolean
-      value: { available: boolean; degraded: boolean; rememberedInstances: string[] }
+      value: {
+        available: boolean
+        degraded: boolean
+        rememberedInstances: string[]
+        policies: Record<string, unknown>
+      }
     }
     expect(result.ok).toBe(true)
-    expect(result.value).toEqual({ available: false, degraded: true, rememberedInstances: ['a', 'b'] })
+    // T10-1:策略必须随快照下发,否则 UI 只能渲染成「未勾选」并可能静默删除已存密码
+    expect(result.value).toEqual({
+      available: false,
+      degraded: true,
+      rememberedInstances: ['a', 'b'],
+      policies: {
+        a: { rememberPassword: true, rememberSession: false },
+        b: { rememberPassword: true, rememberSession: false }
+      }
+    })
   })
 
   it('T10 vault:setPolicy 经 zod 边界校验后落库', async () => {

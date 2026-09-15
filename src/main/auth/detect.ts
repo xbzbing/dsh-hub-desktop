@@ -156,6 +156,15 @@ export interface DetectOptions {
   now?: () => number
   /** 端点 scheme（http 明文 / https） */
   scheme?: EndpointScheme
+  /**
+   * 已有会话的 Cookie 头（`dsh_auth=...`）。
+   *
+   * **必须带**:网关 `Gateway#route` 的判定是**有序门禁** —— 先 `!isValid(token)` → `302 <base>/login`,
+   * 之后才轮到 `isNeedsOnboarding` → `302 /onboarding`、`isOTPVerified` → `302 /otp/verify`
+   * (`dsh-auth-gateway/lib/gateway.js:346-384`)。匿名探测永远撞在第一道门上,
+   * 于是后两种状态**根本观察不到** → `needs-otp`/`needs-onboarding` 恒退化。
+   */
+  cookie?: string | null
 }
 
 /**
@@ -168,9 +177,12 @@ export async function detectAuthMode(endpointUrl: string, options: DetectOptions
   const now = options.now ?? (() => Date.now())
   const at = new Date(now()).toISOString()
   try {
+    const cookie = options.cookie
     const response = await fetchImpl(endpointUrl, {
       method: 'GET',
       redirect: 'manual', // 必须看到重定向本身
+      // 带会话 Cookie 才能越过网关的第一道门禁,观察到 onboarding / otp 两种状态
+      ...(cookie ? { headers: { cookie } } : {}),
       signal: AbortSignal.timeout(timeoutMs)
     })
     let body = ''

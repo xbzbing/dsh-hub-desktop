@@ -27,10 +27,11 @@ export interface SessionRestoreDeps {
  * Cookie 属性与注入侧保持一致:网关的 `dsh_auth` 是 `Path=/; HttpOnly; SameSite=Strict`
  * (无 Secure —— 纯 HTTP/LAN 场景),这里刻意沿用,避免两条路径属性分叉。
  */
-export function sessionCookieHeader(session: StoredSession): string {
+export function sessionCookieHeader(session: StoredSession, now: () => number = () => Date.now()): string {
   const parts = [`${session.name}=${session.value}`, 'Path=/', 'HttpOnly', 'SameSite=Strict']
   if (session.expiresAt !== null) {
-    const maxAgeSeconds = Math.floor((session.expiresAt - Date.now()) / 1000)
+    // 与过期判断用同一个时钟(评审 T9-6):否则注入假时钟时两者会算出不同的结论
+    const maxAgeSeconds = Math.floor((session.expiresAt - now()) / 1000)
     if (maxAgeSeconds > 0) parts.push(`Max-Age=${maxAgeSeconds}`)
   }
   return parts.join('; ')
@@ -60,7 +61,7 @@ export async function restoreSessionFromVault(
     // 内存态比落盘态新:已有同名 Cookie 就不覆盖
     if (client.jar.get(stored.name) !== null) return true
 
-    client.jar.store([sessionCookieHeader(stored)])
+    client.jar.store([sessionCookieHeader(stored, now)])
     return client.jar.get(stored.name) !== null
   } catch (error) {
     console.error('[session-restore] 复用已记住的登录态失败：', error)

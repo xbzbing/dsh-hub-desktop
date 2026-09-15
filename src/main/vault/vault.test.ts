@@ -52,7 +52,9 @@ describe('vault（§7.2 凭据存储策略）', () => {
   it('默认不存任何东西,且默认策略是「都不记住」', async () => {
     const vault = createVault({ filePath, crypto: fakeCrypto() })
     expect(vault.status()).toEqual({ available: true, degraded: false, instanceCount: 0 })
-    expect(vault.getPolicy('i1')).toEqual(DEFAULT_VAULT_POLICY)
+    // 字面量断言(而非与 DEFAULT 自比):默认值本身是安全相关常量,必须被钉住
+    expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: false, rememberSession: false })
     expect(vault.getPassword('i1')).toBeNull()
     expect(vault.getSession('i1')).toBeNull()
     expect(vault.rememberedIds()).toEqual([])
@@ -129,7 +131,9 @@ describe('vault（§7.2 凭据存储策略）', () => {
 
     await vault.setPolicy('i1', { rememberPassword: false, rememberSession: false })
     expect(vault.getSession('i1')).toBeNull()
-    expect(vault.getPolicy('i1')).toEqual(DEFAULT_VAULT_POLICY)
+    // 字面量断言(而非与 DEFAULT 自比):默认值本身是安全相关常量,必须被钉住
+    expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: false, rememberSession: false })
     expect(vault.rememberedIds()).toEqual([])
 
     // 落盘文件里也不再有密文
@@ -220,7 +224,9 @@ describe('vault（§7.2 凭据存储策略）', () => {
     await vault.forgetInstance('i1')
     expect(vault.getPassword('i1')).toBeNull()
     expect(vault.getSession('i1')).toBeNull()
-    expect(vault.getPolicy('i1')).toEqual(DEFAULT_VAULT_POLICY)
+    // 字面量断言(而非与 DEFAULT 自比):默认值本身是安全相关常量,必须被钉住
+    expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: false, rememberSession: false })
     expect(vault.getPassword('i2')).toBe('p2')
     expect(vault.getPolicy('i2')).toEqual(BOTH)
 

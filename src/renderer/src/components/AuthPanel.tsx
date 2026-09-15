@@ -181,7 +181,7 @@ export default function AuthPanel(): ReactNode {
           <span className="meta">
             {locked
               ? `失败次数过多，请等待 ${lockedSeconds}s`
-              : '凭据仅用于本次登录，不会写入磁盘'}
+              : '凭据仅用于本次登录；未勾选「记住」时不会存入保险库'}
           </span>
           <div className="right">
             <button className="btn btn-secondary" onClick={close}>
@@ -191,7 +191,9 @@ export default function AuthPanel(): ReactNode {
               className="btn btn-primary"
               data-testid="auth-submit"
               onClick={() => void submit()}
-              disabled={busy || locked || (phase === 'await-otp' ? otp === '' : password === '')}
+              // D5:await-otp 阶段验证码与密码都要有 —— register 侧要求密码 min(1),
+              // 只禁用验证码会提交出 invalid-input 而不是给出「按钮不可用」的提示
+              disabled={busy || locked || (phase === 'await-otp' ? otp === '' || password === '' : password === '')}
               title={phase === 'await-otp' && password === '' ? '需要复用本次登录的密码' : undefined}
             >
               {busy ? '提交中…' : locked ? `锁定 ${lockedSeconds}s` : '登录'}
