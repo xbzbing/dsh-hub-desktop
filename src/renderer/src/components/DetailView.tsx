@@ -5,6 +5,7 @@ import { STATUS_INFO, TYPE_INFO, addressOf, fmtDuration, toDisplayStatus } from 
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
 import VaultCard from './VaultCard'
+import { showAuthActions } from '../lib/auth-actions'
 
 /** 实例详情(设计稿 view-detail 基础卡片版;认证/审计/日志随 T7/T6 扩展) */
 export default function DetailView(): ReactNode {
@@ -149,7 +150,7 @@ export default function DetailView(): ReactNode {
             </div>
           )}
           <div className="row mt12">
-            {record.transport !== 'local' && record.authMode !== 'none' && (
+            {showAuthActions(record) && (
               <button
                 className="btn btn-primary btn-sm"
                 data-testid="login-btn"
@@ -169,7 +170,7 @@ export default function DetailView(): ReactNode {
             </button>
             {/* T9-3:登出此前只有 IPC 通道、没有渲染层入口 ——
                 导致「登出即清分区会话」这条链路在产品里根本走不到 */}
-            {record.transport !== 'local' && record.authMode !== 'none' && (
+            {showAuthActions(record) && (
               <button
                 className="btn btn-secondary btn-sm"
                 data-testid="logout-btn"
@@ -182,7 +183,7 @@ export default function DetailView(): ReactNode {
         </div>
 
         {/* T10 §7.2:凭据存储策略(显式勾选才持久化;降级必须在 UI 告警) */}
-        {record.transport !== 'local' && record.authMode !== 'none' && (
+        {showAuthActions(record) && (
           <VaultCard key={record.id} instanceId={record.id} />
         )}
 
