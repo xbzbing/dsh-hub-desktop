@@ -243,6 +243,33 @@ describe('vault（§7.2 凭据存储策略）', () => {
     await expect(vault.rememberPassword('i2', 'p2')).rejects.toThrow()
   })
 
+  it('会话载荷不是合法 JSON 时:丢弃且**不把解密后的内容**交给 onError', async () => {
+    // 默认 onError 会 console.error(error),而 JSON.parse 的报错消息内嵌输入 ——
+    // 即解密后的会话 Cookie。凭据纪律:日志只记事件,不记内容。
+    const encryption = fakeCrypto()
+    const vault = createVault({ filePath, crypto: encryption })
+    await vault.setPolicy('i1', BOTH)
+    // 直接写一个「能解密但不是 JSON」的会话载荷
+    await vault.rememberSession('i1', { ...SESSION, value: 'x' })
+    const parsed = JSON.parse(await readFile(filePath, 'utf8')) as {
+      items: Record<string, { session: string }>
+    }
+    parsed.items['i1']!.session = encryption.encrypt('sess-secret-not-json')
+    await writeFile(filePath, JSON.stringify(parsed))
+
+    const errors: unknown[] = []
+    const reopened = createVault({
+      filePath,
+      crypto: encryption,
+      onError: (error) => errors.push(error)
+    })
+    expect(reopened.getSession('i1')).toBeNull()
+    expect(errors).toHaveLength(1)
+    // 关键断言:错误对象里不得出现解密后的内容
+    const serialized = String(errors[0]) + JSON.stringify(errors[0], Object.getOwnPropertyNames(errors[0]))
+    expect(serialized).not.toContain('sess-secret-not-json')
+  })
+
   it('hasPassword/hasSession 不触发解密(损坏条目的存在性判断不受影响)', async () => {
     const vault = await optIn()
     await vault.rememberPassword('i1', 'p1')

@@ -32,4 +32,9 @@ describe('session-cookie（T9 登出清理）', () => {
     expect(originOf('http://127.0.0.1:3080/dsh/')).toBe('http://127.0.0.1:3080')
     expect(originOf('not a url')).toBeNull()
   })
+
+  it('默认会话 Cookie 名与网关一致(改名会静默破坏登出清理)', () => {
+    // 字面量断言:这个常量是「登出/删除实例能否清掉会话」的关键,必须被钉住
+    expect(DEFAULT_SESSION_COOKIE).toBe('dsh_auth')
+  })
 })

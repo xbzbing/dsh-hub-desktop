@@ -317,8 +317,12 @@ export function createVault(options: VaultOptions): Vault {
           value: parsed.value,
           expiresAt: typeof parsed.expiresAt === 'number' ? parsed.expiresAt : null
         }
-      } catch (error) {
-        onError(error)
+      } catch {
+        // **不要**把原始错误交给 onError:Node 的 JSON.parse 报错会把输入内容
+        // 嵌进 message(`Unexpected token 's', "sess-secret..." is not valid JSON`),
+        // 而这里的输入是**解密后的会话 Cookie** —— 默认 onError 会把它打到控制台。
+        // 凭据纪律:日志只记事件,不记内容。
+        onError(new Error('vault 会话载荷不是合法 JSON,已丢弃'))
         return null
       }
     },
