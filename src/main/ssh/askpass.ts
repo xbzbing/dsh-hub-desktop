@@ -9,7 +9,7 @@
  *
  * **口令/密钥口令只存在于内存与这条 socket 上，绝不落盘、绝不进日志。**
  */
-import { chmod, mkdir, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
 import { dirname, join } from 'node:path'
 
@@ -165,21 +165,39 @@ export function startAskpassServer(options: AskpassServerOptions): Promise<Askpa
     })
   })
 
-  return new Promise<AskpassServer>((resolve, reject) => {
-    server.on('error', reject)
-    server.listen(options.socketPath, () => {
-      void chmod(options.socketPath, socketMode).catch(() => undefined)
-      resolve({
-        socketPath: options.socketPath,
-        close: () =>
-          new Promise<void>((done) => {
-            for (const socket of sockets) socket.destroy()
-            sockets.clear()
-            server.close(() => done())
+  // 陈旧 socket 文件必须先清理:进程被强杀/崩溃后 unix socket 文件会残留,
+  // 直接 listen 会 EADDRINUSE,而该失败又会被上层 catch 吞掉 → askpass 永久静默失效
+  // (T5 评审 R1 实测复现)
+  return rm(options.socketPath, { force: true })
+    .catch(() => undefined)
+    .then(
+      () =>
+        new Promise<AskpassServer>((resolve, reject) => {
+          server.on('error', reject)
+          // chmod 必须在 resolve 之前 await:否则调用方拿到的 socket 权限可能是默认 0755
+          // (T4 复审 Required-1:fire-and-forget 与权限断言竞态,导致门禁低频偶发失败)
+          server.listen(options.socketPath, () => {
+            void chmod(options.socketPath, socketMode)
+              .catch(() => undefined)
+              .then(() =>
+                resolve({
+                  socketPath: options.socketPath,
+                  close: () =>
+                    new Promise<void>((done) => {
+                      for (const socket of sockets) socket.destroy()
+                      sockets.clear()
+                      server.close(() => {
+                        // 关闭后一并 unlink,不留残骸(下次 listen 前也会再清一次)
+                        void rm(options.socketPath, { force: true })
+                          .catch(() => undefined)
+                          .then(() => done())
+                      })
+                    })
+                })
+              )
           })
-      })
-    })
-  })
+        })
+    )
 }
 
 /** 生成某实例的 askpass socket 路径（调用方保证目录短，避免 unix socket 104 字节上限） */

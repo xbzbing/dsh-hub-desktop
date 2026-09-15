@@ -216,7 +216,8 @@ ssh -N -L <localPort>:127.0.0.1:<remotePort> \
     -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
     -o ConnectTimeout=10 \
     -o ControlMaster=auto -o ControlPath=<hub>/ssh/inst-<id>.sock \
-    -o StrictHostKeyChecking=accept-new \
+    -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile=<hub>/ssh/known_hosts \
     <host|alias>
 ```
 
@@ -226,7 +227,7 @@ ssh -N -L <localPort>:127.0.0.1:<remotePort> \
 | `ExitOnForwardFailure=yes` | 端口绑定失败立即退出,便于看门狗归因(而不是挂起) |
 | `ServerAliveInterval/CountMax` | 15s 心跳、3 次失联判死——比 TCP 超时快得多 |
 | `ControlMaster=auto` | 同一实例的并发连接(探测、webview)复用一条 SSH 连接 |
-| `StrictHostKeyChecking=accept-new` | 首次连接自动信任;**known_hosts 指纹在 UI 上展示**,用户确认后才写入(TOFU 策略,§7.3) |
+| `StrictHostKeyChecking=yes` + `UserKnownHostsFile=<hub>/ssh/known_hosts` | **TOFU(T5 起)**:先 `ssh-keyscan` 预取指纹 → UI 展示确认 → 写入 hub 私有 known_hosts 才放行;指纹变化拒绝并告警(§7.3)。绝不写入用户 `~/.ssh` |
 | 密钥 | 优先 ssh-agent;无 agent 时用 `-i` 指定密钥;需要口令时经 **askpass 钩子**弹 UI 输入(瞬时,不落盘) |
 
 **别名模式**:`host` 字段也可以是 `~/.ssh/config` 别名(dsh-sev 用户习惯),此时联动参数全不填。
@@ -428,7 +429,7 @@ if (statusCode === 401 && JSON.error ∈ {unauthenticated, otp-required, onboard
 
 ### 7.3 SSH 主机密钥(TOFU)
 
-- `StrictHostKeyChecking=accept-new` + 首次连接时在 UI 展示主机指纹,**用户确认后才让连接真正建立**(先 `ssh-keyscan` 预取指纹展示,再放行);
+- `StrictHostKeyChecking=yes`（T5 起：TOFU 前置完成后再放行） + 首次连接时在 UI 展示主机指纹,**用户确认后才让连接真正建立**(先 `ssh-keyscan` 预取指纹展示,再放行);
 - known_hosts 使用 hub 私有文件(`hub-data/ssh/known_hosts`),不污染系统文件;
 - 指纹变更一律拒绝连接并告警(不自动清理)。
 

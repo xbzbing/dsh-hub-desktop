@@ -10,6 +10,7 @@ import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import { createSshTunnels } from './transport/ssh-tunnel'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
 import { createPromptBroker } from './ssh/prompt-broker'
+import type { PromptBroker } from './ssh/prompt-broker'
 import { createInstanceStore } from './registry/instance-store'
 import { closeInstanceWindow, openInstanceWindow } from './window-host'
 
@@ -169,6 +170,8 @@ function registerCsp(): void {
 /** 运行中的本地实例 / SSH 隧道管理器（退出前需回收进程树，故提到模块级） */
 let runtime: LocalRuntimeManager | null = null
 let tunnels: SshTunnelManager | null = null
+/** T5 提示代理:窗口关闭/退出时收敛所有待答请求(否则指纹/口令请求会挂满超时) */
+let prompts: PromptBroker | null = null
 let quitting = false
 
 void app.whenReady().then(() => {
@@ -189,7 +192,7 @@ void app.whenReady().then(() => {
   runtime = createLocalRuntime({ installer, dataRoot })
 
   // T5 用户提示代理：指纹确认 / 口令输入 → 广播到 hub 渲染窗口 → 等待回答
-  const prompts = createPromptBroker({
+  prompts = createPromptBroker({
     send: (channel, payload) => {
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) win.webContents.send(channel, payload)
@@ -198,8 +201,8 @@ void app.whenReady().then(() => {
   })
   tunnels = createSshTunnels({
     dataRoot,
-    confirmHostKey: (request) => prompts.requestHostKey(request),
-    askpass: (request) => prompts.requestAskpass(request)
+    confirmHostKey: (request) => prompts?.requestHostKey(request) ?? Promise.resolve('reject'),
+    askpass: (request) => prompts?.requestAskpass(request) ?? Promise.resolve(null)
   })
 
   // 状态推进（local + ssh 共用同一通道）→ 广播到所有窗口；把实际端口/版本回写注册表
@@ -231,7 +234,7 @@ void app.whenReady().then(() => {
   registerIpc(instanceStore, {
     runtime,
     tunnels,
-    prompts,
+    prompts: prompts as PromptBroker,
     openInstanceView: (instance, url) =>
       openInstanceWindow({ instanceId: instance.id, title: instance.name, url })
   })
@@ -241,6 +244,15 @@ void app.whenReady().then(() => {
   app.on('activate', () => {
     // macOS 惯例：点击 Dock 图标且无窗口时重建窗口
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+
+  // T5:窗口关闭即收敛未答的指纹/口令请求(否则最长挂 5-10 分钟,期间隧道启动被卡住)
+  app.on('browser-window-created', (_event, win) => {
+    win.on('closed', () => {
+      if (BrowserWindow.getAllWindows().filter((other) => !other.isDestroyed()).length === 0) {
+        prompts?.cancelAll()
+      }
+    })
   })
 })
 
@@ -262,6 +274,8 @@ app.on('before-quit', (event) => {
 })
 
 app.on('window-all-closed', () => {
+  // 全部窗口关闭:先收敛待答请求(macOS 进程可能驻留,请求不能悬着)
+  prompts?.cancelAll()
   // macOS 之外：全部窗口关闭即退出；macOS 保留进程（托盘能力在 T10 引入）
   if (process.platform !== 'darwin') app.quit()
 })

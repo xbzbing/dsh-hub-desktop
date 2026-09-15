@@ -210,7 +210,13 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     (_event, requestId: unknown, secret: unknown): Promise<IpcResult<null>> =>
       wrap(() => {
         const id = z.uuid().parse(requestId)
-        const value = z.string().max(4096).nullable().parse(secret)
+        // 空串不是有效口令(UI 已 disabled,IPC 边界同样拒绝)
+        const value = z
+          .string()
+          .max(4096)
+          .nullable()
+          .refine((v) => v === null || v.trim() !== '', '口令不能为空串')
+          .parse(secret)
         deps.prompts.replyAskpass(id, value)
         return null
       })

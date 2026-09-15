@@ -10,6 +10,7 @@ export type SshExitKind =
   | 'connect' // 连接层失败（拒绝/重置/不可达）
   | 'timeout' // 连接超时
   | 'forward' // 端口转发失败（本地绑定冲突 / 远端拒绝监听）
+  | 'host-key' // 服务器指纹未确认或被更改（需用户重新确认，不应触发换端口）
   | 'closed' // 对端主动/正常关闭（连接被关闭、远端不可达判死）
   | 'unknown'
 
@@ -56,10 +57,14 @@ const FEATURES: Array<{ kind: SshExitKind; patterns: RegExp[]; label: string }> 
       /cannot listen to port/i,
       // 本地 -L 绑定失败的典型串(本机端口被占)
       /could not request local forwarding/i,
-      /address already in use/i,
-      /bind.*address already in use/i
+      /address already in use/i
     ],
     label: '端口转发失败（本地端口被占或远端拒绝监听）'
+  },
+  {
+    kind: 'host-key',
+    patterns: [/host key verification failed/i, /remote host identification has changed/i],
+    label: '服务器指纹未确认或被更改（请在实例详情重新确认指纹）'
   },
   {
     kind: 'closed',

@@ -454,9 +454,17 @@ describe('T4 评审回归防线', () => {
     expect(spawnImpl.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
-  it('R2b:看门狗链路断掉(无子进程、无待重连)时,再次 start 能自愈', async () => {
+  it('R2b:子进程启动失败留下「有条目无子进程」状态时,再次 start 能自愈重排', async () => {
+    // 评审 T4 Required-2 修正版:必须让条目留在 entries 且 child===null(而不是 stop() 删掉条目),
+    // 否则第二次 start 走全新条目路径,自愈分支永不被覆盖(旧用例是空转测试)
     const children: FakeChild[] = []
-    const spawnImpl = vi.fn(() => {
+    let firstAttempt = true
+    const spawnImpl = vi.fn((invocation: { args: string[] }) => {
+      void invocation
+      if (firstAttempt) {
+        firstAttempt = false
+        throw new Error('spawn 失败（模拟 ENOENT/资源不足）')
+      }
       const child = makeFakeChild()
       children.push(child)
       return child as unknown as SpawnedProcess
@@ -465,21 +473,127 @@ describe('T4 评审回归防线', () => {
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
       probe: async () => true,
-      readyTimeoutMs: 500,
-      backoffBaseMs: 5_000, // 重连排得很远,便于观察自愈路径
-      stopGraceMs: 20
+      readyTimeoutMs: 2000,
+      stopGraceMs: 20,
+      portProbe: (async () => true) as never
     })
     const instance = sshInstance()
+    // 第一次:spawn 同步抛错 → start 的 catch 兜住,条目留在 entries 且 child===null
     await manager.start(instance)
-    await waitForStatus(manager, instance.id, 'running')
-    // 模拟「entry 在、子进程没了、也没有待重连」的断链状态
-    children[0]?.emit('exit', 255, null)
     await waitForStatus(manager, instance.id, 'error')
-    await manager.stop(instance.id)
-    // 断开后重新启动:应当真的重新 spawn(而非被幂等短路)
+    expect(spawnImpl).toHaveBeenCalledTimes(1)
+
+    // 第二次 start:必须进入自愈分支重新排程并真的 spawn(变异:删掉自愈分支 -> 本断言失败)
     await manager.start(instance)
     await vi.waitFor(() => expect(spawnImpl.mock.calls.length).toBeGreaterThanOrEqual(2), {
-      timeout: 2000
+      timeout: 3000
     })
+    // 自愈后应能真正就绪
+    await waitForStatus(manager, instance.id, 'running', 5000)
+  })
+})
+
+describe('T5 评审回归防线', () => {
+  it('T5-R3:指纹变化经用户确认后「替换」旧公钥(replace 语义),append 会让 TOFU 失效', async () => {
+    const { mkdtemp, readFile } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dataRoot = await mkdtemp(join(tmpdir(), 'hub-t5-replace-'))
+    const knownHostsPath = join(dataRoot, 'ssh', 'known_hosts')
+    const OLD_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIL/GqayzeH4ALFQzq7BrQ4lodGaiDICVgULWk7rQZ4iw'
+    const NEW_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    const hostField = '[dsh.internal]:2222'
+    // 预置一条「已被取代」的旧公钥
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    await mkdir(join(dataRoot, 'ssh'), { recursive: true })
+    await writeFile(knownHostsPath, `${hostField} ssh-ed25519 ${OLD_KEY}\n`, { mode: 0o600 })
+
+    const confirmHostKey = vi.fn(async (request: { verdict: string }) => {
+      void request
+      return 'trust' as const
+    })
+    const child = makeFakeChild()
+    const manager = createSshTunnels({
+      dataRoot,
+      spawnImpl: (() => child) as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      confirmHostKey,
+      portProbe: (async () => true) as never,
+      // 服务端现在出示新公钥(与已信任的不同 → changed)
+      hostTrustProbe: () => ({
+        scan: async () => [{ type: 'ssh-ed25519', blob: NEW_KEY }],
+        readTrusted: async () => [{ type: 'ssh-ed25519', blob: OLD_KEY }]
+      })
+    })
+    const instance = sshInstance({ host: 'dsh.internal', port: 2222 })
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'running')
+
+    expect(confirmHostKey).toHaveBeenCalledTimes(1)
+    expect(confirmHostKey.mock.calls[0]?.[0]).toMatchObject({ verdict: 'changed' })
+    const content = await readFile(knownHostsPath, 'utf8')
+    // replace 语义:旧行必须被删除(append 会留下旧行 → 旧公钥再现时被判 trusted,TOFU 失效)
+    expect(content).toContain(NEW_KEY)
+    expect(content).not.toContain(OLD_KEY)
+  })
+
+  it('T5-R3b:首次连接确认后追加写入(unaffected 行保留)', async () => {
+    const { mkdtemp, readFile, mkdir, writeFile } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dataRoot = await mkdtemp(join(tmpdir(), 'hub-t5-append-'))
+    const knownHostsPath = join(dataRoot, 'ssh', 'known_hosts')
+    const OTHER_HOST_LINE = 'other.host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOTHER'
+    await mkdir(join(dataRoot, 'ssh'), { recursive: true })
+    await writeFile(knownHostsPath, `${OTHER_HOST_LINE}\n`, { mode: 0o600 })
+
+    const NEW_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    const child = makeFakeChild()
+    const manager = createSshTunnels({
+      dataRoot,
+      spawnImpl: (() => child) as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      confirmHostKey: async () => 'trust' as const,
+      portProbe: (async () => true) as never,
+      hostTrustProbe: () => ({
+        scan: async () => [{ type: 'ssh-ed25519', blob: NEW_KEY }],
+        readTrusted: async () => []
+      })
+    })
+    const instance = sshInstance({ host: 'dsh.internal', port: 2222 })
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'running')
+    const content = await readFile(knownHostsPath, 'utf8')
+    expect(content).toContain(NEW_KEY)
+    expect(content).toContain(OTHER_HOST_LINE) // 其他主机条目不受影响
+  })
+
+  it('T5-R3c:用户拒绝确认 → 隧道不建立且不写 known_hosts', async () => {
+    const { mkdtemp, readFile } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dataRoot = await mkdtemp(join(tmpdir(), 'hub-t5-reject-'))
+    const knownHostsPath = join(dataRoot, 'ssh', 'known_hosts')
+    const spawnImpl = vi.fn(() => makeFakeChild() as unknown as SpawnedProcess)
+    const manager = createSshTunnels({
+      dataRoot,
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      confirmHostKey: async () => 'reject' as const,
+      portProbe: (async () => true) as never,
+      hostTrustProbe: () => ({
+        scan: async () => [{ type: 'ssh-ed25519', blob: 'AAAAC3NzaC1lZDI1NTE5AAAAINEWNEWNEW' }],
+        readTrusted: async () => []
+      })
+    })
+    const instance = sshInstance({ host: 'dsh.internal', port: 2222 })
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'error')
+    expect(manager.statusOf(instance.id)?.detail).toContain('指纹')
+    expect(spawnImpl).not.toHaveBeenCalled() // 未确认身份则不 spawn
+    await expect(readFile(knownHostsPath, 'utf8')).rejects.toThrow() // 未写入
   })
 })

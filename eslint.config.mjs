@@ -9,6 +9,34 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // 验收脚本(Node + Playwright 驱动,CommonJS):显式声明 node 全局,允许 require
+    files: ['scripts/**/*.cjs', 'hub-data/**/*.cjs'],
+    languageOptions: {
+      globals: {
+        require: 'readonly',
+        module: 'readonly',
+        process: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        setImmediate: 'readonly',
+        Buffer: 'readonly',
+        __dirname: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        // hub.evaluate() 内的代码在渲染进程上下文执行(Playwright 注入)
+        window: 'readonly',
+        document: 'readonly'
+      }
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-empty': ['error', { allowEmptyCatch: true }]
+    }
+  },
+  {
     files: ['src/renderer/src/**/*.{ts,tsx}'],
     plugins: {
       'react-hooks': reactHooks,

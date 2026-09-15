@@ -1,5 +1,5 @@
 import { connect } from 'node:net'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -104,5 +104,35 @@ describe('askpass（T5 口令通道）', () => {
     const path = askpassSocketPath('/var/folders/x/T/dsh-hub-ssh-12345678', 'f47ac10b58cc')
     expect(path).toBe('/var/folders/x/T/dsh-hub-ssh-12345678/ap-f47ac10b58cc.sock')
     expect(path.length).toBeLessThan(104)
+  })
+})
+
+describe('T5 评审 R1:socket 残留自愈', () => {
+  it('陈旧 socket/普通文件残留在路径上时仍能启动(先清理再 listen)', async () => {
+    const socketPath = join(dir, 'stale.sock')
+    // 模拟进程被强杀后残留的路径占用(普通文件同样会让 listen 报 EADDRINUSE)
+    await writeFile(socketPath, 'stale', { mode: 0o644 })
+    const server = await startAskpassServer({ socketPath, onPrompt: async () => 'ok' })
+    const reply = await askpassRoundTrip(socketPath, 'Password:')
+    expect(JSON.parse(reply)).toEqual({ secret: 'ok' })
+    // 启动后权限已是 0600(class 已 await chmod,不再与断言竞态)
+    expect((await stat(socketPath)).mode & 0o777).toBe(0o600)
+    await server.close()
+  })
+
+  it('close() 会 unlink socket 文件,不留残骸', async () => {
+    const socketPath = join(dir, 'gone.sock')
+    const server = await startAskpassServer({ socketPath, onPrompt: async () => 'x' })
+    await stat(socketPath)
+    await server.close()
+    await expect(stat(socketPath)).rejects.toThrow()
+  })
+
+  it('连续两次启动同一路径(模拟崩溃后重启)不会 EADDRINUSE', async () => {
+    const socketPath = join(dir, 'restart.sock')
+    const first = await startAskpassServer({ socketPath, onPrompt: async () => 'a' })
+    // 模拟崩溃:不调用 close 直接占用 -> 第二次启动前会清理该路径
+    await expect(startAskpassServer({ socketPath, onPrompt: async () => 'b' })).resolves.toBeDefined()
+    await first.close().catch(() => undefined)
   })
 })

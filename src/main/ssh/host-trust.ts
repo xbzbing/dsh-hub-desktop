@@ -31,9 +31,14 @@ export interface HostTrustEvaluation {
   mismatched: HostKeyEntry[]
 }
 
-/** known_hosts 中的主机字段：非 22 端口用 `[host]:port` */
+/** 去掉 IPv6 方括号（OpenSSH 的 known_hosts/keyscan 对 22 端口用裸 `::1`） */
+export function bareHost(host: string): string {
+  return host.replace(/^\[/, '').replace(/\]$/, '')
+}
+
+/** known_hosts 中的主机字段：非 22 端口用 `[host]:port`，22 端口用裸主机（IPv6 亦去括号） */
 export function knownHostsHostField(host: string, port: number): string {
-  const bare = host.startsWith('[') ? host : host
+  const bare = bareHost(host)
   return port === 22 ? bare : `[${bare}]:${port}`
 }
 
@@ -155,7 +160,8 @@ export function createHostTrustProbe(
         // argv 不经 shell；主机名已由契约层限定字符集
         execFile(
           keyscan,
-          ['-p', String(port), '-T', '5', host.startsWith('[') ? host : host],
+          // ssh-keyscan 不接受方括号形式(实测 `getaddrinfo [::1]` 失败),统一传裸主机
+          ['-p', String(port), '-T', '5', bareHost(host)],
           { timeout: timeoutMs, maxBuffer: 1024 * 1024 },
           (error, out) => {
             // keyscan 常以非 0 退出（部分算法不可用）但仍输出可用公钥
