@@ -54,7 +54,7 @@ import {
   notificationPlan,
   shouldMinimizeToTrayOnClose
 } from './shell/native-decisions'
-import { planNativeSettings } from './shell/native-settings'
+import { createNativeSettingsApplier } from './shell/native-settings'
 import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
 import type { Vault } from './vault/vault'
 import type { Settings } from '@shared/settings'
@@ -375,42 +375,33 @@ void app.whenReady().then(() => {
   /**
    * 施加原生设置。
    *
-   * 「该做哪些动作」由纯函数 `planNativeSettings` 决定(可穷举单测,复审指出此前的
-   * 接线在 `app.whenReady()` 内结构上不可测),这里只负责把动作落到 electron API。
+   * 「该做哪些动作」由纯函数 `planNativeSettings` 决定,「动作有没有真的落到
+   * electron」由注入端口的 `createNativeSettingsApplier` 保证 —— 两者都有单测
+   * (复审指出此前效果侧写在 app.whenReady() 内,结构上不可测,M9/M14′/M17 因此存活)。
    */
+  const nativeApplier = createNativeSettingsApplier({
+    trayExists: () => hubTray !== null,
+    createTray: () => {
+      hubTray = createHubTray({
+        iconPath: trayIconPath(),
+        labels: trayLabels(),
+        onShow: showHubWindow,
+        onQuit: quitApp
+      })
+    },
+    destroyTray: () => {
+      hubTray?.destroy()
+      hubTray = null
+    },
+    updateTray: () => {
+      if (hubTray) updateTrayStatus(hubTray, trayLabels(), showHubWindow, quitApp)
+    },
+    setLoginItem: (autoStart) => app.setLoginItemSettings(loginItemSettings({ autoStart })),
+    onError: (error, action) => console.error('[main] 应用原生设置失败：', action, error)
+  })
+
   const applyNativeSettings = (current: Settings, options: { startup?: boolean } = {}): void => {
-    const actions = planNativeSettings({
-      settings: current,
-      trayExists: hubTray !== null,
-      startup: options.startup === true
-    })
-    for (const action of actions) {
-      try {
-        switch (action.kind) {
-          case 'create-tray':
-            hubTray = createHubTray({
-              iconPath: trayIconPath(),
-              labels: trayLabels(),
-              onShow: showHubWindow,
-              onQuit: quitApp
-            })
-            break
-          case 'destroy-tray':
-            hubTray?.destroy()
-            hubTray = null
-            break
-          case 'update-tray':
-            // 复审 R3:语言切换后必须刷新菜单文案
-            if (hubTray) updateTrayStatus(hubTray, trayLabels(), showHubWindow, quitApp)
-            break
-          case 'set-login-item':
-            app.setLoginItemSettings(loginItemSettings({ autoStart: action.autoStart }))
-            break
-        }
-      } catch (error) {
-        console.error('[main] 应用原生设置失败：', action.kind, error)
-      }
-    }
+    nativeApplier.apply(current, options)
   }
 
   /** 当前处于 running 的实例数(托盘状态行) */

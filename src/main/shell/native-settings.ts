@@ -44,3 +44,64 @@ export function planNativeSettings(input: NativePlanInput): NativeAction[] {
 
   return actions
 }
+
+/** 施加原生设置所需的副作用端口(生产由 electron 实现,测试用 spy) */
+export interface NativeSettingsPorts {
+  /** 当前是否已有托盘(每次 apply 时读取真实状态) */
+  trayExists(): boolean
+  createTray(): void
+  destroyTray(): void
+  /** 刷新已存在托盘的文案(语言切换等) */
+  updateTray(): void
+  setLoginItem(autoStart: boolean): void
+  onError(error: unknown, action: NativeAction['kind']): void
+}
+
+/** 施加原生设置真正需要的字段(便于测试传入部分设置) */
+export type NativeSettingsFields = Pick<Settings, 'tray' | 'autoStart'>
+
+export interface NativeSettingsApplier {
+  apply(settings: NativeSettingsFields, options?: { startup?: boolean }): NativeAction[]
+}
+
+/**
+ * 把「动作计划」落到端口上。
+ *
+ * 复审指出:此前的实现把 `app.setLoginItemSettings`/`createHubTray`/`updateTrayStatus`
+ * 直接写在 `index.ts` 的 `app.whenReady()` 内部,于是**效果侧结构上不可测** ——
+ * 计划本身(纯函数)已被单测覆盖,但「到底有没有真的调用」没有任何测试约束,
+ * M9/M14′/M17 等变异因此存活。把副作用注入进来后,这一层可以用 spy 断言。
+ */
+export function createNativeSettingsApplier(ports: NativeSettingsPorts): NativeSettingsApplier {
+  return {
+    apply(settings, options = {}) {
+      const actions = planNativeSettings({
+        settings,
+        trayExists: ports.trayExists(),
+        startup: options.startup === true
+      })
+      for (const action of actions) {
+        try {
+          switch (action.kind) {
+            case 'create-tray':
+              ports.createTray()
+              break
+            case 'destroy-tray':
+              ports.destroyTray()
+              break
+            case 'update-tray':
+              ports.updateTray()
+              break
+            case 'set-login-item':
+              ports.setLoginItem(action.autoStart)
+              break
+          }
+        } catch (error) {
+          // 单个动作失败不影响其余动作(托盘坏了不该连自启也设不上)
+          ports.onError(error, action.kind)
+        }
+      }
+      return actions
+    }
+  }
+}

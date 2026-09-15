@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planNativeSettings } from './native-settings'
+import { createNativeSettingsApplier, planNativeSettings } from './native-settings'
 
 const T = (tray: boolean, autoStart = false) => ({ tray, autoStart })
 
@@ -41,5 +41,86 @@ describe('planNativeSettings（T11 设置 → 原生动作）', () => {
   it('关托盘时不产生创建/刷新动作(不留下无用图标)', () => {
     const actions = planNativeSettings({ settings: T(false), trayExists: false, startup: false })
     expect(actions.some((a) => a.kind === 'create-tray' || a.kind === 'update-tray')).toBe(false)
+  })
+})
+
+describe('createNativeSettingsApplier（效果侧:复审指出此前不可测）', () => {
+  function spyPorts(trayExists: boolean) {
+    return {
+      calls: [] as string[],
+      trayExists: () => trayExists,
+      createTray() {
+        this.calls.push('create')
+      },
+      destroyTray() {
+        this.calls.push('destroy')
+      },
+      updateTray() {
+        this.calls.push('update')
+      },
+      setLoginItem(autoStart: boolean) {
+        this.calls.push(`login:${autoStart}`)
+      },
+      onError() {
+        this.calls.push('error')
+      }
+    }
+  }
+
+  it('托盘不存在且开启 → 真的调用 createTray', () => {
+    const ports = spyPorts(false)
+    createNativeSettingsApplier(ports).apply(
+      { tray: true, autoStart: false },
+      { startup: false }
+    )
+    expect(ports.calls).toContain('create')
+  })
+
+  it('托盘已存在且开启 → 真的调用 updateTray(变异 M9 的锚点)', () => {
+    const ports = spyPorts(true)
+    createNativeSettingsApplier(ports).apply(
+      { tray: true, autoStart: false },
+      { startup: false }
+    )
+    expect(ports.calls).toContain('update')
+  })
+
+  it('开启自启 → 真的把 true 交给登录项(变异 M14′ 的锚点)', () => {
+    const ports = spyPorts(false)
+    createNativeSettingsApplier(ports).apply(
+      { tray: false, autoStart: true },
+      { startup: false }
+    )
+    expect(ports.calls).toContain('login:true')
+  })
+
+  it('启动且未开启自启 → 不触碰登录项', () => {
+    const ports = spyPorts(false)
+    createNativeSettingsApplier(ports).apply(
+      { tray: false, autoStart: false },
+      { startup: true }
+    )
+    expect(ports.calls.some((call) => call.startsWith('login:'))).toBe(false)
+  })
+
+  it('某个动作抛错不影响其余动作(失败经 onError 上报)', () => {
+    const calls: string[] = []
+    const applier = createNativeSettingsApplier({
+      trayExists: () => false,
+      createTray() {
+        throw new Error('托盘不可用')
+      },
+      destroyTray() {},
+      updateTray() {},
+      setLoginItem(autoStart) {
+        calls.push(`login:${autoStart}`)
+      },
+      onError(_error, action) {
+        calls.push(`error:${action}`)
+      }
+    })
+    const actions = applier.apply({ tray: true, autoStart: true }, { startup: false })
+    expect(actions.map((a) => a.kind)).toEqual(['create-tray', 'set-login-item'])
+    expect(calls).toEqual(['error:create-tray', 'login:true'])
   })
 })
