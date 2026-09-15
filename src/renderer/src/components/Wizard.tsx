@@ -8,8 +8,9 @@ import UrlDetect from './UrlDetect'
 import { TYPE_INFO } from '../lib/format'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
+import type { MessageKey } from '@shared/i18n/messages'
 
-const STEP_LABELS = ['连接方式', '配置', '确认']
+const STEP_KEYS: MessageKey[] = ['wizard.stepTransport', 'wizard.stepConfig', 'wizard.stepConfirm']
 
 interface WizardForm {
   name: string
@@ -60,10 +61,10 @@ export default function Wizard(): ReactNode {
   }
 
   const formError = (): string | null => {
-    if (!form.name.trim()) return '请填写实例名称'
+    if (!form.name.trim()) return t('wizard.errName')
     if (transport === 'ssh') {
-      if (!form.host.trim()) return '请填写主机或 SSH 别名'
-      if (!form.username.trim()) return '请填写 SSH 用户名'
+      if (!form.host.trim()) return t('wizard.errHost')
+      if (!form.username.trim()) return t('wizard.errUsername')
     }
     if (transport === 'http') {
       const parsed = tryParseEndpoint(form.endpointUrl)
@@ -108,13 +109,13 @@ export default function Wizard(): ReactNode {
       return
     }
     setWizardOpen(false)
-    toast('ok', `「${result.value.name}」已创建`)
+    toast('ok', t('wizard.created', { name: result.value.name }))
     void refreshList()
     // 三种传输都走同一状态链「创建→启动(探测)→就绪→开窗」;状态推进与传输无关
     setPendingOpen(result.value.id)
     const started = await bridge.runtime.start(result.value.id)
     if (!started.ok) {
-      toast('err', '启动失败', started.message)
+      toast('err', t('wizard.startFailed'), started.message)
       // 失败事件会在 applyStatus 里把该 id 移出待开集合
     }
   }
@@ -123,19 +124,19 @@ export default function Wizard(): ReactNode {
     <Modal
       closeLabel={t('common.close')}
       wide
-      title="新建实例"
-      sub="三步创建一个可连接的 dsh 实例"
+      title={t('wizard.title')}
+      sub={t('wizard.sub')}
       onClose={() => setWizardOpen(false)}
       testId="wizard"
       footer={
         <>
           <span className="meta">
-            {step === 2 && '⌘D 下一步'} {error && <span className="err">{error}</span>}
+            {step === 2 && t('wizard.nextShortcut')} {error && <span className="err">{error}</span>}
           </span>
           <div className="right">
             {step > 1 && (
               <button className="btn btn-secondary" onClick={() => setStep(step - 1)} disabled={busy}>
-                上一步
+               {t('wizard.prev')}
               </button>
             )}
             {step < 3 ? (
@@ -154,7 +155,7 @@ export default function Wizard(): ReactNode {
                 }}
                 disabled={busy}
               >
-                下一步
+               {t('wizard.next')}
               </button>
             ) : (
               <button
@@ -163,7 +164,7 @@ export default function Wizard(): ReactNode {
                 disabled={busy}
                 data-testid="wizard-create"
               >
-                {busy ? '创建中…' : '创建'}
+                {busy ? t('wizard.creating') : t('wizard.create')}
               </button>
             )}
           </div>
@@ -171,14 +172,14 @@ export default function Wizard(): ReactNode {
       }
     >
       <div className="stepper">
-        {STEP_LABELS.map((label, index) => {
+        {STEP_KEYS.map((labelKey, index) => {
           const n = index + 1
           const cls = n === step ? 'on' : n < step ? 'done' : ''
           return (
-            <div key={label} style={{ display: 'contents' }}>
+            <div key={labelKey} style={{ display: 'contents' }}>
               <span className={`step ${cls}`}>
                 <b>{n}</b>
-                {label}
+                {t(labelKey)}
               </span>
               {n < 3 && <span className="step-line" />}
             </div>
@@ -209,38 +210,38 @@ export default function Wizard(): ReactNode {
       {step === 2 && (
         <div data-testid="wizard-step-2">
           <div className="field">
-            <label htmlFor="wizard-name">实例名称</label>
+            <label htmlFor="wizard-name">{t('wizard.nameLabel')}</label>
             <input
               className="input"
               id="wizard-name"
-              placeholder="例如：开发 · 日常"
+              placeholder={t('wizard.namePlaceholder')}
               value={form.name}
               onChange={set('name')}
               data-testid="wizard-name"
             />
-            <span className="hint">只在本机使用，便于在侧边栏区分不同环境。</span>
+            <span className="hint">{t('wizard.nameHint')}</span>
           </div>
 
           {transport === 'local' && (
             <details className="adv mt12">
-              <summary>高级设置（版本 / 端口）</summary>
+              <summary>{t('wizard.advanced')}</summary>
               <div className="grid-2 mt8">
                 <div className="field">
-                  <label htmlFor="wizard-version">dsh 版本</label>
+                  <label htmlFor="wizard-version">{t('wizard.versionLabel')}</label>
                   <input
                     className="input num"
                     id="wizard-version"
-                    placeholder="留空 = 自动选择最新稳定版"
+                    placeholder={t('wizard.versionPlaceholder')}
                     value={form.version}
                     onChange={set('version')}
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="wizard-port">端口</label>
+                  <label htmlFor="wizard-port">{t('wizard.portLabel')}</label>
                   <input
                     className="input num"
                     id="wizard-port"
-                    placeholder="留空 = 自动分配（30000+）"
+                    placeholder={t('wizard.portPlaceholder')}
                     value={form.port}
                     onChange={set('port')}
                   />
@@ -253,18 +254,18 @@ export default function Wizard(): ReactNode {
             <>
               <div className="grid-2 mt12">
                 <div className="field">
-                  <label htmlFor="wizard-host">主机（或 ~/.ssh/config 别名）</label>
+                  <label htmlFor="wizard-host">{t('wizard.hostLabel')}</label>
                   <input
                     className="input"
                     id="wizard-host"
-                    placeholder="build-01.internal 或 build-01"
+                    placeholder={t('wizard.hostPlaceholder')}
                     value={form.host}
                     onChange={set('host')}
                     data-testid="wizard-host"
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="wizard-user">用户名</label>
+                  <label htmlFor="wizard-user">{t('wizard.userLabel')}</label>
                   <input
                     className="input"
                     id="wizard-user"
@@ -275,7 +276,7 @@ export default function Wizard(): ReactNode {
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="wizard-ssh-port">SSH 端口</label>
+                  <label htmlFor="wizard-ssh-port">{t('wizard.sshPortLabel')}</label>
                   <input
                     className="input num"
                     id="wizard-ssh-port"
@@ -284,7 +285,7 @@ export default function Wizard(): ReactNode {
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="wizard-remote-port">远端 dsh 端口</label>
+                  <label htmlFor="wizard-remote-port">{t('wizard.remotePortLabel')}</label>
                   <input
                     className="input num"
                     id="wizard-remote-port"
@@ -299,7 +300,7 @@ export default function Wizard(): ReactNode {
               <div className="hintbar mt12">
                 <Icon name="info" />
                 <span>
-                  复用系统 ssh-agent 与 ~/.ssh/config；密钥内容绝不展示、也不会写入应用存储。
+                  {t('wizard.sshAgentHint')}
                 </span>
               </div>
             </>
@@ -308,7 +309,7 @@ export default function Wizard(): ReactNode {
           {transport === 'http' && (
             <>
               <div className="field mt12">
-                <label htmlFor="wizard-url">实例网址</label>
+                <label htmlFor="wizard-url">{t('wizard.urlLabel')}</label>
                 <input
                   className="input num"
                   id="wizard-url"
@@ -317,7 +318,7 @@ export default function Wizard(): ReactNode {
                   onChange={set('endpointUrl')}
                   data-testid="wizard-url"
                 />
-                <span className="hint">粘贴完整 URL 会自动解析，不支持内嵌凭据。</span>
+                <span className="hint">{t('wizard.urlHint')}</span>
               </div>
               <div className="mt12">
                 <UrlDetect endpointUrl={form.endpointUrl} />
@@ -329,20 +330,20 @@ export default function Wizard(): ReactNode {
 
       {step === 3 && (
         <div data-testid="wizard-step-3">
-          <p className="meta">最后确认一遍，名称与地址之后仍可在实例详情里修改。</p>
+          <p className="meta">{t('wizard.confirmHint')}</p>
           <div className="inset mt12">
             <dl className="kv">
-              <dt>名称</dt>
+              <dt>{t('wizard.dtName')}</dt>
               <dd>{form.name}</dd>
-              <dt>连接方式</dt>
+              <dt>{t('wizard.dtTransport')}</dt>
               <dd>
                 {t(TYPE_INFO[transport].labelKey)}
                 {transport === 'ssh' && form.username ? ` · ${form.username}@${form.host}` : ''}
               </dd>
-              <dt>地址</dt>
+              <dt>{t('wizard.dtAddress')}</dt>
               <dd className="num">
                 {transport === 'local'
-                  ? '127.0.0.1（自动分配端口）'
+                  ? t('wizard.autoPort')
                   : transport === 'ssh'
                     ? `${form.host}:${form.remotePort}`
                     : form.endpointUrl}
@@ -353,10 +354,10 @@ export default function Wizard(): ReactNode {
             <Icon name={transport === 'local' ? 'check' : transport === 'ssh' ? 'shield' : 'info'} />
             <span>
               {transport === 'local'
-                ? '本机实例创建完成后会自动安装 dsh 并启动，就绪后直接打开工作区。'
+                ? t('wizard.noteLocal')
                 : transport === 'ssh'
-                  ? '首次连接需要核对服务器指纹，确认后才会建立加密通道。'
-                  : '粘贴网址后已在第二步实时探测登录方式。'}
+                  ? t('wizard.noteSsh')
+                  : t('wizard.noteHttp')}
             </span>
           </div>
         </div>
@@ -371,10 +372,13 @@ function TypeCard(props: {
   onClick: () => void
 }): ReactNode {
   const t = useAppStore((state) => state.t)
-  const copy: Record<'local' | 'ssh' | 'http', { title: string; desc: string }> = {
-    local: { title: '本机运行的 dsh', desc: '版本按需安装，互不干扰' },
-    ssh: { title: '经 SSH 隧道连接', desc: '复用系统密钥与 ssh-agent' },
-    http: { title: '直连远程网址', desc: 'dsh 网关登录统一管理' }
+  const copy: Record<
+    'local' | 'ssh' | 'http',
+    { titleKey: MessageKey; descKey: MessageKey }
+  > = {
+    local: { titleKey: 'wizard.typeLocal', descKey: 'wizard.typeLocalDesc' },
+    ssh: { titleKey: 'wizard.typeSsh', descKey: 'wizard.typeSshDesc' },
+    http: { titleKey: 'wizard.typeHttp', descKey: 'wizard.typeHttpDesc' }
   }
   return (
     <button
@@ -387,8 +391,8 @@ function TypeCard(props: {
         <Icon name={TYPE_INFO[props.transport].icon} />
       </span>
       <b>{t(TYPE_INFO[props.transport].labelKey)}</b>
-      <span>{copy[props.transport].title}</span>
-      <span>{copy[props.transport].desc}</span>
+      <span>{t(copy[props.transport].titleKey)}</span>
+      <span>{t(copy[props.transport].descKey)}</span>
     </button>
   )
 }
