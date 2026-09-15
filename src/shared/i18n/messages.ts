@@ -178,6 +178,31 @@ export const MESSAGES = {
   'detail.notRunning': { zh: '未运行', en: 'Not running' },
   'detail.instanceDetail': { zh: '实例详情', en: 'Instance details' },
 
+  // —— 网址探测（T11）——
+  'detect.gateway': {
+    zh: '已识别登录认证（密码 + 动态验证码），创建后打开登录面板',
+    en: 'Login gateway detected (password + TOTP); the sign-in panel opens after creation'
+  },
+  'detect.none': { zh: '无需登录认证，可直接访问', en: 'No authentication required; reachable directly' },
+  'detect.browserAuth': {
+    zh: '检测到 dsh 内置浏览器认证，将在实例页面内自认证',
+    en: "dsh's built-in browser auth detected; it self-authenticates inside the instance page"
+  },
+  'detect.unreachable': {
+    zh: '端点当前不可达；仍可创建，连接时会自动重试',
+    en: 'Endpoint is unreachable right now; you can still create it and it will retry on connect'
+  },
+  'detect.unknown': {
+    zh: '未能识别认证模式；连接时再判定',
+    en: 'Could not identify the auth mode; it will be determined on connect'
+  },
+  'detect.failed': { zh: '探测失败', en: 'Detection failed' },
+  'detect.hint': {
+    zh: '粘贴完整网址后自动识别是否需要登录。',
+    en: 'Paste a full URL to detect whether sign-in is required.'
+  },
+  'detect.probing': { zh: '正在探测端点…', en: 'Probing the endpoint…' },
+
   // —— 托盘（T11）——
   'tray.show': { zh: '显示主窗口', en: 'Show window' },
   'tray.quit': { zh: '退出 DSH Hub', en: 'Quit DSH Hub' },

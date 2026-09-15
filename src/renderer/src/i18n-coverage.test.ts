@@ -25,7 +25,8 @@ const MIGRATED = [
   'VaultCard.tsx',
   'EmptyView.tsx',
   'Toasts.tsx',
-  'Modal.tsx'
+  'Modal.tsx',
+  'UrlDetect.tsx'
 ]
 
 /** 尚未迁移:迁完一个就从这里删掉(清单即进度) */
@@ -34,8 +35,7 @@ const PENDING = [
   'Wizard.tsx',
   'HomeView.tsx',
   'SshDialogs.tsx',
-  'KeyPreview.tsx',
-  'UrlDetect.tsx'
+  'KeyPreview.tsx'
 ]
 
 const CJK = /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/
