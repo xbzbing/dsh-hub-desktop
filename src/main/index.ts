@@ -1,10 +1,14 @@
 import { app, BrowserWindow, net, protocol, session, shell } from 'electron'
 import { join, normalize, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import type { InstanceStatusEvent, PatchInstanceInput } from '@shared/contracts'
 import { INSTANCE_STATUS_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
-import { createLocalRuntime, type LocalRuntimeManager } from './local-runtime/local-runtime'
+import { createLocalRuntime } from './local-runtime/local-runtime'
+import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
+import { createSshTunnels } from './transport/ssh-tunnel'
+import type { SshTunnelManager } from './transport/ssh-tunnel'
 import { createInstanceStore } from './registry/instance-store'
 import { closeInstanceWindow, openInstanceWindow } from './window-host'
 
@@ -161,8 +165,9 @@ function registerCsp(): void {
   })
 }
 
-/** 运行中的本地实例管理器（退出前需回收进程树，故提到模块级） */
+/** 运行中的本地实例 / SSH 隧道管理器（退出前需回收进程树，故提到模块级） */
 let runtime: LocalRuntimeManager | null = null
+let tunnels: SshTunnelManager | null = null
 let quitting = false
 
 void app.whenReady().then(() => {
@@ -181,25 +186,37 @@ void app.whenReady().then(() => {
     ...(npmRegistry ? { registry: npmRegistry } : {})
   })
   runtime = createLocalRuntime({ installer, dataRoot })
+  tunnels = createSshTunnels({ dataRoot })
 
-  // 状态推进 → 广播到所有窗口；并把实际端口/版本回写注册表、回收已停止实例的窗口
-  runtime.onStatus((event) => {
+  // 状态推进（local + ssh 共用同一通道）→ 广播到所有窗口；把实际端口/版本回写注册表
+  // （transport 感知：ssh 的「端口」是隧道本地口 localPort，local 的才是监听 port）；
+  // 回收已停止实例的窗口
+  const handleStatusEvent = (event: InstanceStatusEvent): void => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(INSTANCE_STATUS_EVENT, event)
     }
     if (event.status === 'running' && (event.port !== undefined || event.version !== undefined)) {
       void instanceStore
-        .update(event.id, {
-          ...(event.port !== undefined ? { port: event.port } : {}),
-          ...(event.version !== undefined ? { dshVersion: event.version } : {})
+        .get(event.id)
+        .then((record) => {
+          const patch: PatchInstanceInput = {}
+          if (event.port !== undefined) {
+            if (record?.transport === 'ssh') patch.localPort = event.port
+            else patch.port = event.port
+          }
+          if (event.version !== undefined) patch.dshVersion = event.version
+          return instanceStore.update(event.id, patch)
         })
         .catch((error: unknown) => console.error('[main] 回写实例运行信息失败：', error))
     }
     if (event.status === 'stopped') closeInstanceWindow(event.id)
-  })
+  }
+  runtime.onStatus(handleStatusEvent)
+  tunnels.onStatus(handleStatusEvent)
 
   registerIpc(instanceStore, {
     runtime,
+    tunnels,
     openInstanceView: (instance, url) =>
       openInstanceWindow({ instanceId: instance.id, title: instance.name, url })
   })
@@ -213,14 +230,20 @@ void app.whenReady().then(() => {
 })
 
 app.on('before-quit', (event) => {
-  // 退出前回收全部实例进程树（设计 §4.1：不留孤儿进程）
-  if (quitting || !runtime) return
+  // 退出前回收全部实例进程树与 SSH 隧道（设计 §4.1/§4.2：不留孤儿进程）
+  if (quitting || (!runtime && !tunnels)) return
   quitting = true
   event.preventDefault()
-  void runtime
-    .stopAll()
-    .catch((error: unknown) => console.error('[main] 停止实例失败：', error))
-    .finally(() => app.quit())
+  const recycling: Array<Promise<void>> = []
+  if (runtime) {
+    recycling.push(runtime.stopAll().catch((error: unknown) => console.error('[main] 停止实例失败：', error)))
+  }
+  if (tunnels) {
+    recycling.push(
+      tunnels.stopAll().catch((error: unknown) => console.error('[main] 停止隧道失败：', error))
+    )
+  }
+  void Promise.all(recycling).finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

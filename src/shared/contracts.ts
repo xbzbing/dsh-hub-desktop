@@ -125,6 +125,8 @@ export const InstanceRecordSchema = z.discriminatedUnion('transport', [
 ])
 export type InstanceRecord = z.infer<typeof InstanceRecordSchema>
 export type LocalInstance = Extract<InstanceRecord, { transport: 'local' }>
+export type SshInstance = Extract<InstanceRecord, { transport: 'ssh' }>
+export type HttpInstance = Extract<InstanceRecord, { transport: 'http' }>
 
 // ===== 创建输入（IPC 边界，.strict()：未知字段一律拒绝） =====
 

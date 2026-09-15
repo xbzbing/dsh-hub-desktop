@@ -19,11 +19,14 @@ import {
   type IpcResult
 } from '@shared/contracts'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
+import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 
 export interface IpcDeps {
   /** 本地运行时（T3）；SSH / HTTP 传输在各自任务内接入同一状态通道 */
   runtime: LocalRuntimeManager
+  /** SSH 隧道传输（T4）；HTTP 直连在 T6 */
+  tunnels: SshTunnelManager
   /** 打开实例视图窗口（electron 侧实现，便于 register 单测注入假实现） */
   openInstanceView: (instance: InstanceRecord, url: string) => void
 }
@@ -114,31 +117,39 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       wrap(async () => {
         const instanceId = parseId(id)
         // 详情页文案承诺「删除运行中的实例会先停止其进程」:先回收进程树再移除记录,
-        // 否则 dsh 进程继续存活(独占端口与 DSH_HOME),实例窗口也无 stopped 事件可回收
+        // 否则 dsh/ssh 进程继续存活(独占端口与 DSH_HOME),窗口也无 stopped 事件可回收
         const record = await store.get(instanceId)
-        if (record?.transport === 'local') await deps.runtime.stop(instanceId)
+        if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
+        else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
         return { removed: await store.remove(instanceId) }
       })
   )
 
-  // —— 本地运行时控制（T3）：start/stop 立即返回，进展经 `instance:status` 事件回推 ——
+  // —— 实例运行时控制（T3 本地 / T4 SSH）：start/stop 立即返回，进展经 `instance:status` 回推 ——
 
   ipcMain.handle(INSTANCE_RUNTIME_IPC.start, (_event, id: unknown): Promise<IpcResult<null>> =>
     wrap(async () => {
       const instance = await store.get(parseId(id))
       if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
-      if (instance.transport !== 'local') {
-        throw new InstanceStoreError('invalid-input', '本机启动仅适用于 local 传输实例')
+      if (instance.transport === 'local') {
+        // 不 await：安装/启动可能耗时数十秒，进展与失败都走状态事件
+        void deps.runtime.start(instance)
+        return null
       }
-      // 不 await：安装/启动可能耗时数十秒，进展与失败都走状态事件
-      void deps.runtime.start(instance)
-      return null
+      if (instance.transport === 'ssh') {
+        void deps.tunnels.start(instance)
+        return null
+      }
+      throw new InstanceStoreError('invalid-input', 'HTTP 直连传输在后续里程碑提供（T6）')
     })
   )
 
   ipcMain.handle(INSTANCE_RUNTIME_IPC.stop, (_event, id: unknown): Promise<IpcResult<null>> =>
     wrap(async () => {
-      await deps.runtime.stop(parseId(id))
+      const instanceId = parseId(id)
+      const record = await store.get(instanceId)
+      if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
+      else await deps.runtime.stop(instanceId) // local 或不存在:runtime.stop 幂等
       return null
     })
   )

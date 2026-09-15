@@ -12,6 +12,7 @@ vi.mock('electron', () => ({
 import { ipcMain } from 'electron'
 import type { InstanceStatusEvent } from '@shared/contracts'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
+import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { createInstanceStore } from '../registry/instance-store'
 import { registerIpc } from './register'
 
@@ -22,6 +23,14 @@ const TEST_BASE = join(process.cwd(), 'hub-data', 'test-tmp')
 let dir: string
 let handlers: Map<string, Listener>
 let runtimeFake: {
+  onStatus: ReturnType<typeof vi.fn>
+  statusOf: ReturnType<typeof vi.fn>
+  runningIds: ReturnType<typeof vi.fn>
+  start: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
+  stopAll: ReturnType<typeof vi.fn>
+}
+let tunnelsFake: {
   onStatus: ReturnType<typeof vi.fn>
   statusOf: ReturnType<typeof vi.fn>
   runningIds: ReturnType<typeof vi.fn>
@@ -49,9 +58,18 @@ beforeEach(async () => {
     stop: vi.fn(async () => undefined),
     stopAll: vi.fn(async () => undefined)
   }
+  tunnelsFake = {
+    onStatus: vi.fn(() => () => undefined),
+    statusOf: vi.fn(() => null),
+    runningIds: vi.fn(() => []),
+    start: vi.fn(async () => undefined),
+    stop: vi.fn(async () => undefined),
+    stopAll: vi.fn(async () => undefined)
+  }
   openInstanceView = vi.fn()
   registerIpc(createInstanceStore({ dir }), {
     runtime: runtimeFake as unknown as LocalRuntimeManager,
+    tunnels: tunnelsFake as unknown as SshTunnelManager,
     openInstanceView: openInstanceView as never
   })
 })
@@ -240,6 +258,70 @@ describe('registerIpc', () => {
     const result = (await invoke('instances:start', randomUUID())) as { ok: boolean; code: string }
     expect(result.ok).toBe(false)
     expect(result.code).toBe('not-found')
+  })
+
+  it('start:ssh 实例 → 交给 tunnels.start 并立即返回(不碰 local 运行时)', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '隧道',
+      host: 'dsh.internal',
+      username: 'dev'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const result = (await invoke('instances:start', created.value.id)) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(tunnelsFake.start).toHaveBeenCalledTimes(1)
+    const record = tunnelsFake.start.mock.calls[0]?.[0]
+    expect(record).toMatchObject({ id: created.value.id, transport: 'ssh' })
+    expect(runtimeFake.start).not.toHaveBeenCalled()
+  })
+
+  it('stop:ssh 实例 → tunnels.stop;local 实例 → runtime.stop', async () => {
+    const ssh = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '隧道',
+      host: 'dsh.internal',
+      username: 'dev'
+    })) as { ok: boolean; value: { id: string } }
+    if (!ssh.ok) throw new Error('创建失败')
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+
+    const sshStop = (await invoke('instances:stop', ssh.value.id)) as { ok: boolean }
+    expect(sshStop.ok).toBe(true)
+    expect(tunnelsFake.stop).toHaveBeenCalledWith(ssh.value.id)
+    expect(runtimeFake.stop).not.toHaveBeenCalled()
+
+    const localStop = (await invoke('instances:stop', local.value.id)) as { ok: boolean }
+    expect(localStop.ok).toBe(true)
+    expect(runtimeFake.stop).toHaveBeenCalledWith(local.value.id)
+  })
+
+  it('delete:ssh 实例 → 先 tunnels.stop 再移除;http 不触碰传输层', async () => {
+    const ssh = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '隧道',
+      host: 'dsh.internal',
+      username: 'dev'
+    })) as { ok: boolean; value: { id: string } }
+    if (!ssh.ok) throw new Error('创建失败')
+    const result = (await invoke('instances:delete', ssh.value.id)) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(tunnelsFake.stop).toHaveBeenCalledWith(ssh.value.id)
+
+    const http = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!http.ok) throw new Error('创建失败')
+    await invoke('instances:delete', http.value.id)
+    expect(tunnelsFake.stop).not.toHaveBeenCalledWith(http.value.id)
+    expect(runtimeFake.stop).not.toHaveBeenCalledWith(http.value.id)
   })
 
   it('stop 交给 runtime.stop;openView 未运行 → invalid-state', async () => {

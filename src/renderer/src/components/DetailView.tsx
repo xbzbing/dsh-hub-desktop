@@ -164,7 +164,7 @@ export default function DetailView(): ReactNode {
             )}
           </dl>
           <div className="row mt12">
-            {record.transport === 'local' && (
+            {record.transport === 'local' || record.transport === 'ssh' ? (
               <>
                 {display === 'connected' ? (
                   <button
@@ -193,9 +193,8 @@ export default function DetailView(): ReactNode {
                   <Icon name="external" /> 打开视图
                 </button>
               </>
-            )}
-            {record.transport !== 'local' && (
-              <span className="meta">启动与隧道接入在后续里程碑提供</span>
+            ) : (
+              <span className="meta">HTTP 直连传输在后续里程碑提供</span>
             )}
           </div>
         </div>

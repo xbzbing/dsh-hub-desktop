@@ -14,6 +14,9 @@ import type { InstanceRuntimeStatus, InstanceStatusEvent, LocalInstance } from '
 import { DEFAULT_PORT_RANGE_END, DEFAULT_PORT_RANGE_START, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
 import type { RuntimeInstaller } from './runtime-installer'
+import { httpHealthProbe, type HealthProbe } from '../transport/probe'
+
+export type { HealthProbe } // T3 既有导出保持兼容；类型本体已统一到 transport/probe.ts（§4.3）
 
 /** dsh 就绪输出：`dsh web: http://127.0.0.1:52300/?token=...` */
 const READY_PATTERN = /dsh\s+web:\s+(https?:\/\/\S+)/i
@@ -42,8 +45,6 @@ export interface SpawnInvocation {
 }
 
 export type SpawnLike = (invocation: SpawnInvocation) => SpawnedProcess
-
-export type HealthProbe = (url: string, timeoutMs: number) => Promise<boolean>
 
 export interface LocalRuntimeOptions {
   installer: RuntimeInstaller
@@ -103,16 +104,6 @@ const defaultSpawn: SpawnLike = ({ command, args, env, cwd, detached }) =>
     stdio: ['ignore', 'pipe', 'pipe']
   })
 
-const defaultProbe: HealthProbe = async (url, timeoutMs) => {
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
-    // §4.3：任意 HTTP 响应（200/302/401）都表示传输已就绪
-    return response.status >= 100 && response.status < 600
-  } catch {
-    return false
-  }
-}
-
 function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
   // Electron 主进程的 process.execPath 是 Electron 本体：以 ELECTRON_RUN_AS_NODE 退化为纯 Node 执行 dsh。
   // `--expose-internals` 是 dsh web profile 的硬性要求（cordis-plugin-hmr 需要），缺失时就绪后即崩
@@ -122,7 +113,7 @@ function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS
 
 export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeManager {
   const spawnImpl = options.spawnImpl ?? defaultSpawn
-  const probe = options.probe ?? defaultProbe
+  const probe = options.probe ?? httpHealthProbe
   const nodeInvocation = options.nodeInvocation ?? defaultNodeInvocation()
   const profile = options.profile ?? 'web'
   const readyTimeoutMs = options.readyTimeoutMs ?? 60_000

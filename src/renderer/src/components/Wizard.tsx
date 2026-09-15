@@ -107,8 +107,8 @@ export default function Wizard(): ReactNode {
     setWizardOpen(false)
     toast('ok', `「${result.value.name}」已创建`)
     void refreshList()
-    if (transport === 'local') {
-      // 「创建→安装→启动→健康→开窗」:运行事件到达时自动打开视图(store.applyStatus 处理)
+    if (transport === 'local' || transport === 'ssh') {
+      // 「创建→启动→健康→开窗」:运行事件到达时自动打开视图(store.applyStatus 处理)
       setPendingOpen(result.value.id)
       const started = await bridge.runtime.start(result.value.id)
       if (!started.ok) {
@@ -116,7 +116,7 @@ export default function Wizard(): ReactNode {
         // 失败事件会在 applyStatus 里把该 id 移出待开集合
       }
     } else {
-      toast('info', '传输接入在后续里程碑提供，暂时无法启动')
+      toast('info', 'HTTP 直连传输在后续里程碑提供（T6），暂时无法启动')
     }
   }
 
