@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { loginItemSettings, shouldMinimizeToTrayOnClose, shouldNotifyStatus } from './native-decisions'
+import {
+  loginItemSettings,
+  notificationPlan,
+  shouldMinimizeToTrayOnClose,
+  shouldNotifyStatus
+} from './native-decisions'
+import { createTranslator } from '@shared/i18n'
 
 describe('native-decisions（T11 设置 → 原生行为）', () => {
   const on = { notifications: true }
@@ -45,5 +51,31 @@ describe('native-decisions（T11 设置 → 原生行为）', () => {
       openAtLogin: false,
       openAsHidden: false
     })
+  })
+
+  it('通知文案跟随语言(复审 R2:此前硬编码中文)', () => {
+    const event = { id: 'i1', status: 'running' as const, detail: '本地实例已就绪' }
+    expect(notificationPlan(event, 'starting', { notifications: true }, createTranslator('zh'))).toEqual({
+      title: 'DSH Hub · 已连接',
+      body: '本地实例已就绪'
+    })
+    expect(notificationPlan(event, 'starting', { notifications: true }, createTranslator('en'))).toEqual({
+      title: 'DSH Hub · Connected',
+      body: '本地实例已就绪'
+    })
+  })
+
+  it('不值得打扰的情形返回 null(不产生通知)', () => {
+    const t = createTranslator('zh')
+    expect(notificationPlan({ id: 'i1', status: 'running' }, null, { notifications: true }, t)).toBeNull()
+    expect(notificationPlan({ id: 'i1', status: 'running' }, 'running', { notifications: true }, t)).toBeNull()
+    expect(notificationPlan({ id: 'i1', status: 'stopped' }, 'running', { notifications: true }, t)).toBeNull()
+    expect(notificationPlan({ id: 'i1', status: 'running' }, 'starting', { notifications: false }, t)).toBeNull()
+  })
+
+  it('无诊断信息时 body 回落到实例 id(不产生 undefined)', () => {
+    const plan = notificationPlan({ id: 'i9', status: 'error' }, 'running', { notifications: true }, createTranslator('en'))
+    expect(plan?.body).toBe('i9')
+    expect(plan?.title).toContain('Error')
   })
 })

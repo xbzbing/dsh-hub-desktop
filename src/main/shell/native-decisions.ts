@@ -5,6 +5,7 @@
  * 这类判断是纯逻辑,抽出来穷举单测,electron 侧只做接线。
  */
 import type { InstanceRuntimeStatus, InstanceStatusEvent } from '@shared/contracts'
+import type { Translator } from '@shared/i18n'
 import type { Settings } from '@shared/settings'
 
 /** 值得打扰用户的状态(其余变化只更新 UI) */
@@ -55,4 +56,25 @@ export function loginItemSettings(settings: Pick<Settings, 'autoStart'>): {
   openAsHidden: boolean
 } {
   return { openAtLogin: settings.autoStart, openAsHidden: settings.autoStart }
+}
+
+/**
+ * 系统通知的文案计划（T11）。
+ *
+ * 抽成纯函数是为了让「通知文案跟随语言」与「该不该通知」都可测 —— 复审指出
+ * 通知接线（含硬编码中文）在 `index.ts` 里既无测试也无法测。
+ * @returns null 表示不通知
+ */
+export function notificationPlan(
+  event: Pick<InstanceStatusEvent, 'status' | 'detail'> & { id: string },
+  previous: InstanceRuntimeStatus | null,
+  settings: Pick<Settings, 'notifications'>,
+  t: Translator
+): { title: string; body: string } | null {
+  if (!shouldNotifyStatus(event, previous, settings)) return null
+  const label = event.status === 'running' ? t('notify.connected') : t('notify.error')
+  return {
+    title: `${t('app.name')} · ${label}`,
+    body: event.detail ?? event.id
+  }
 }

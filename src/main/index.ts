@@ -51,9 +51,10 @@ import type { Tray } from 'electron'
 import type { SettingsStore } from './settings/settings-store'
 import {
   loginItemSettings,
-  shouldMinimizeToTrayOnClose,
-  shouldNotifyStatus
+  notificationPlan,
+  shouldMinimizeToTrayOnClose
 } from './shell/native-decisions'
+import { planNativeSettings } from './shell/native-settings'
 import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
 import type { Vault } from './vault/vault'
 import type { Settings } from '@shared/settings'
@@ -371,36 +372,44 @@ void app.whenReady().then(() => {
    * 把偏好施加到原生层(开机自启)。失败只记日志:
    * 偏好已落盘,系统层面设置失败不该让设置页报错。
    */
+  /**
+   * 施加原生设置。
+   *
+   * 「该做哪些动作」由纯函数 `planNativeSettings` 决定(可穷举单测,复审指出此前的
+   * 接线在 `app.whenReady()` 内结构上不可测),这里只负责把动作落到 electron API。
+   */
   const applyNativeSettings = (current: Settings, options: { startup?: boolean } = {}): void => {
-    // 启动时只在「需要开启」时写登录项:否则每次启动都对系统写一次「关闭」,
-    // 既无意义(此前也没开),又会在开发/未签名环境下打出一条 Electron 权限错误
-    // (实测:Unable to set login item ... Operation not permitted)。
-    // 运行期切换(含关闭)仍然照实写入,尊重用户显式操作。
-    if (!options.startup || current.autoStart) {
+    const actions = planNativeSettings({
+      settings: current,
+      trayExists: hubTray !== null,
+      startup: options.startup === true
+    })
+    for (const action of actions) {
       try {
-        app.setLoginItemSettings(loginItemSettings(current))
+        switch (action.kind) {
+          case 'create-tray':
+            hubTray = createHubTray({
+              iconPath: trayIconPath(),
+              labels: trayLabels(),
+              onShow: showHubWindow,
+              onQuit: quitApp
+            })
+            break
+          case 'destroy-tray':
+            hubTray?.destroy()
+            hubTray = null
+            break
+          case 'update-tray':
+            // 复审 R3:语言切换后必须刷新菜单文案
+            if (hubTray) updateTrayStatus(hubTray, trayLabels(), showHubWindow, quitApp)
+            break
+          case 'set-login-item':
+            app.setLoginItemSettings(loginItemSettings({ autoStart: action.autoStart }))
+            break
+        }
       } catch (error) {
-        console.error('[main] 应用开机自启设置失败：', error)
+        console.error('[main] 应用原生设置失败：', action.kind, error)
       }
-    }
-    // T11 托盘:偏好开启才有托盘(关闭时销毁,避免留下无用的菜单栏图标)
-    try {
-      if (current.tray && !hubTray) {
-        hubTray = createHubTray({
-          iconPath: trayIconPath(),
-          labels: trayLabels(),
-          onShow: showHubWindow,
-          onQuit: quitApp
-        })
-      } else if (!current.tray && hubTray) {
-        hubTray.destroy()
-        hubTray = null
-      } else if (current.tray && hubTray) {
-        // 复审 R3:托盘已存在时此前什么都不做 —— 切换语言后菜单仍停留在旧语言
-        updateTrayStatus(hubTray, trayLabels(), showHubWindow, quitApp)
-      }
-    } catch (error) {
-      console.error('[main] 应用托盘设置失败：', error)
     }
   }
 
@@ -476,17 +485,12 @@ void app.whenReady().then(() => {
     }
     // T11:按偏好弹系统通知(首次观测/状态未变化/停止与启动中都不打扰)
     const notifyPrevious = previousStatus
-    if (shouldNotifyStatus(event, notifyPrevious, settings.read())) {
+    {
       try {
-        if (Notification.isSupported()) {
-          // 文案跟随当前语言(复审 R2:此前硬编码中文);body 取诊断信息,缺失时回落到实例 id
-          const tr = createTranslator(resolveLanguage(settings.read().language, app.getLocale()))
-          const label =
-            event.status === 'running' ? tr('notify.connected') : tr('notify.error')
-          new Notification({
-            title: `${tr('app.name')} · ${label}`,
-            body: event.detail ?? event.id
-          }).show()
+        const tr = createTranslator(resolveLanguage(settings.read().language, app.getLocale()))
+        const plan = notificationPlan(event, notifyPrevious, settings.read(), tr)
+        if (plan && Notification.isSupported()) {
+          new Notification({ title: plan.title, body: plan.body }).show()
         }
       } catch (error) {
         console.error('[main] 发送系统通知失败：', error)
