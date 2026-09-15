@@ -40,8 +40,12 @@ export interface IpcDeps {
   runtime: LocalRuntimeManager
   /** SSH 隧道传输（T4）；HTTP 直连在 T6 */
   tunnels: SshTunnelManager
-  /** 打开实例视图窗口（electron 侧实现，便于 register 单测注入假实现） */
-  openInstanceView: (instance: InstanceRecord, url: string) => void
+  /**
+   * 打开实例视图窗口（electron 侧实现，便于 register 单测注入假实现）。
+   * 返回 Promise：加载前的分区 Cookie 注入是异步的（§6.2 顺序纪律），
+   * 调用方必须 await —— 否则 IPC 会在视图真正就绪前返回。
+   */
+  openInstanceView: (instance: InstanceRecord, url: string) => Promise<void>
   /** T5 用户提示代理（指纹确认 / 口令输入） */
   prompts: PromptBroker
   /** T6 HTTP 直连传输 */
@@ -205,7 +209,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       if (status?.status !== 'running' || !status.url) {
         throw new InstanceStoreError('invalid-state', '实例尚未运行，无法打开视图')
       }
-      deps.openInstanceView(instance, status.url)
+      await deps.openInstanceView(instance, status.url)
       return null
     })
   )
@@ -256,7 +260,9 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       wrap(async () => {
         const instanceId = parseId(id)
         const pwd = z.string().min(1).max(1024).parse(password)
-        const code = z.string().max(64).nullable().parse(otp ?? null)
+        // 验证码/备份码域:网关 OTP 为 6 位;备份码长度可配(默认 8,范围 6-12)
+        // —— 旧实现只限 max(64),与 UI 文案「6 位动态验证码」不符
+        const code = z.string().trim().min(6).max(12).nullable().parse(otp ?? null)
         return authSnapshot(await deps.auth.login(instanceId, pwd, code ?? undefined))
       })
   )

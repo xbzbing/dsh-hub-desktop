@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AuthStateEvent, AuthStateSnapshot } from '@shared/contracts'
+import type { AuthStateEvent } from '@shared/contracts'
+import {
+  applyAuthSnapshot,
+  applyAuthState,
+  closeAuthPanel,
+  initialAuthPanelModel,
+  lockExpired,
+  openAuthPanel,
+  lockSeconds
+} from '../lib/auth-panel-state'
 import { Icon } from '../lib/icons'
 import { Modal } from './Modal'
 
@@ -17,53 +26,63 @@ const BRIDGE = window.dshHub
  * 凭据只在提交时经 IPC 瞬时传递,不写 localStorage、不进日志。
  */
 export default function AuthPanel(): ReactNode {
-  const [target, setTarget] = useState<{ id: string; name: string } | null>(null)
-  const [state, setState] = useState<AuthStateSnapshot | null>(null)
+  // 面板状态经纯归约函数流转(auth-panel-state.ts):跨实例事件被忽略、锁定用绝对到期时刻
+  const [model, setModel] = useState(initialAuthPanelModel)
   const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
   const [useBackup, setUseBackup] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [tick, setTick] = useState(0)
+  // 每秒 tick 只用于让「按到期时刻派生」的倒计时重算,不承载状态本身
+  const [, setTick] = useState(0)
 
   useEffect(() => {
     if (!BRIDGE) return
     return BRIDGE.auth.onState((event: AuthStateEvent) => {
-      setTarget((current) =>
-        current && current.id === event.instanceId
-          ? current
-          : current ?? { id: event.instanceId, name: event.instanceId.slice(0, 8) }
-      )
-      setState(event.state)
+      setModel((current) => applyAuthState(current, event))
       setError(null)
-      if (event.state.phase === 'connected') setTarget(null)
     })
   }, [])
 
-  // 锁定倒计时每秒刷新
+  // 锁定倒计时:每秒重算剩余时间;到期后重探一次,让按钮与文案恢复
   useEffect(() => {
-    if (!state || state.lockedForMs <= 0) return
-    const timer = setInterval(() => setTick((value) => value + 1), 1000)
+    if (model.lockUntil === null) return
+    const timer = setInterval(() => {
+      setTick((value) => value + 1)
+      if (lockExpired(model)) {
+        clearInterval(timer)
+        const openId = model.target?.id
+        if (!openId) return
+        void BRIDGE?.auth.probe(openId).then((result) => {
+          // 取局部常量:属性收窄不会跨进闭包
+          const value = result?.ok ? result.value : null
+          if (value) setModel((current) => applyAuthSnapshot(current, openId, value))
+        })
+      }
+    }, 1000)
     return () => clearInterval(timer)
-  }, [state, tick])
+  }, [model])
 
   /** 供工作区浮层/详情页调用的入口(通过自定义事件打开) */
   useEffect(() => {
     const open = (event: Event): void => {
       const detail = (event as CustomEvent<{ id: string; name: string }>).detail
-      setTarget(detail)
+      setModel((current) => openAuthPanel(current, detail))
       void BRIDGE?.auth.probe(detail.id).then((result) => {
-        if (result?.ok) setState(result.value)
+        const value = result?.ok ? result.value : null
+        if (value) setModel((current) => applyAuthSnapshot(current, detail.id, value))
       })
     }
     window.addEventListener('dsh-hub:open-auth', open)
     return () => window.removeEventListener('dsh-hub:open-auth', open)
   }, [])
 
+  const target = model.target
+  const state = model.state
   if (!target || !state) return null
 
-  const locked = state.lockedForMs > 0
-  const lockedSeconds = Math.max(1, Math.ceil(state.lockedForMs / 1000))
+  const locked = model.lockUntil !== null
+  const lockedSeconds = lockSeconds(model)
   const phase = state.phase
 
   const submit = async (): Promise<void> => {
@@ -73,7 +92,8 @@ export default function AuthPanel(): ReactNode {
     try {
       // 验证码阶段复用同一次密码经单请求带码提交(设计 §5.2);密码屏只提交密码
       const result = await BRIDGE.auth.login(target.id, password, otp === '' ? undefined : otp)
-      if (result.ok && result.value) setState(result.value)
+      const value = result.ok ? result.value : null
+      if (value) setModel((current) => applyAuthSnapshot(current, target.id, value))
       else if (!result.ok) setError(result.message)
     } finally {
       setBusy(false)
@@ -82,7 +102,7 @@ export default function AuthPanel(): ReactNode {
   }
 
   const close = (): void => {
-    setTarget(null)
+    setModel(closeAuthPanel())
     setPassword('')
     setOtp('')
     setError(null)

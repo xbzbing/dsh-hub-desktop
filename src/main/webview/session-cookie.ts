@@ -5,6 +5,8 @@
  * 访问受保护页面(「已登出却还能看」)。Cookie 的 url 只需 origin(basePath 不影响 path)。
  */
 
+import { cookieUrlFor } from './cookie-import'
+
 export interface SessionCookieRemover {
   remove(url: string, name: string): Promise<void>
   get?(filter: { url?: string; name?: string }): Promise<Array<{ name: string }>>
@@ -18,12 +20,11 @@ export interface ClearSessionCookieOptions {
 
 export const DEFAULT_SESSION_COOKIE = 'dsh_auth'
 
-/** 与注入保持一致的 url 规则(见 cookie-import.cookieUrlFor) */
-export function sessionCookieUrl(origin: string, basePath = '/'): string {
-  const trimmed = origin.replace(/\/+$/, '')
-  const base = basePath === '/' || basePath === '' ? '' : basePath.replace(/\/+$/, '')
-  return `${trimmed}${base}/`
-}
+/**
+ * 与注入共用同一 url 规则(单一实现见 `cookie-import.cookieUrlFor`)
+ * —— 注入与清理必须命中同一个 Cookie,规则分叉会出现「清了但没清掉」。
+ */
+export const sessionCookieUrl = cookieUrlFor
 
 /** 清理分区会话 Cookie;失败不抛(登出流程不因清理失败而中断) */
 export async function clearSessionCookie(

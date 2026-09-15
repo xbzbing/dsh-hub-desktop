@@ -4,6 +4,7 @@ import {
   importSessionCookie,
   prepareInstanceView,
   toCookieRecord,
+  toExpirationDate,
   type CookieSetter
 } from './cookie-import'
 
@@ -54,6 +55,19 @@ describe('cookie-import（§6.2 Cookie 双写）', () => {
     expect(ok).toBe(false)
   })
 
+  it('expirationDate 换算:毫秒输入按 秒 写出;秒级输入不会被写成 1970', () => {
+    // 2026-09 的毫秒时间戳
+    const ms = 1_789_000_000_000
+    expect(toExpirationDate(ms)).toBe(1_789_000_000)
+    // 同一个时刻的秒级输入(误传)应被识别并换算成毫秒,而不是当作 1970 前的值
+    expect(toExpirationDate(1_789_000_000)).toBe(1_789_000_000)
+    const record = toCookieRecord({
+      origin: 'http://127.0.0.1:3080',
+      cookie: { name: 'dsh_auth', value: 'x', expiresAt: 1_789_000_000 }
+    })
+    expect(record.expirationDate).toBe(1_789_000_000)
+  })
+
   it('顺序纪律:先注入 Cookie 再 loadURL', async () => {
     const order: string[] = []
     const setter: CookieSetter = {
@@ -68,21 +82,38 @@ describe('cookie-import（§6.2 Cookie 双写）', () => {
         basePath: '/dsh',
         cookie: { name: 'dsh_auth', value: 'tok', expiresAt: null }
       },
-      (url) => {
-        order.push(`load:${url}`)
+      () => {
+        order.push('load')
       }
     )
-    expect(order).toEqual(['set-cookie', 'load:http://127.0.0.1:3080/dsh/'])
+    expect(order).toEqual(['set-cookie', 'load'])
+  })
+
+  it('加载动作由调用方闭包提供(不重建 URL,保留 ?token=)', async () => {
+    const loaded: string[] = []
+    await prepareInstanceView(
+      { set: vi.fn(async () => undefined) },
+      {
+        origin: 'http://127.0.0.1:3080',
+        cookie: { name: 'dsh_auth', value: 'tok', expiresAt: null }
+      },
+      () => {
+        loaded.push('http://127.0.0.1:3080/?token=abc')
+      }
+    )
+    expect(loaded).toEqual(['http://127.0.0.1:3080/?token=abc'])
   })
 
   it('无会话(空值)时跳过注入但仍 loadURL(browser-auth/无需登录场景)', async () => {
     const setter: CookieSetter = { set: vi.fn(async () => undefined) }
+    const load = vi.fn()
     const injected = await prepareInstanceView(
       setter,
       { origin: 'http://127.0.0.1:3080', cookie: { name: 'dsh_auth', value: '', expiresAt: null } },
-      vi.fn()
+      load
     )
     expect(injected).toBe(false)
     expect(setter.set).not.toHaveBeenCalled()
+    expect(load).toHaveBeenCalledTimes(1)
   })
 })

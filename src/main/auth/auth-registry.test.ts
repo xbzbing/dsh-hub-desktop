@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createAuthRegistry } from './auth-registry'
 import type { AuthClient } from './auth-client'
+import type { AuthState } from './gateway-state'
 import { initialState } from './gateway-state'
 
 function fakeClient(): AuthClient {
@@ -43,17 +44,44 @@ describe('auth-registry（T8 每实例客户端）', () => {
     expect(await registry.client('missing')).toBeNull()
   })
 
-  it('状态变化经 onState 广播(带 instanceId)', async () => {
+  it('客户端状态变化经注册表 onState 广播(带 instanceId)', async () => {
     const seen: Array<[string, string]> = []
+    let emit: ((state: AuthState) => void) | null = null
     const registry = createAuthRegistry({
       resolveEndpoint: async () => 'https://gw/dsh',
-      factory: () => fakeClient(),
+      factory: (clientOptions) => {
+        emit = clientOptions.onState ?? null
+        return fakeClient()
+      },
       onState: (id, state) => seen.push([id, state.phase])
     })
     await registry.client('i1')
-    const client = await registry.client('i1')
-    void client
-    expect(seen).toEqual([]) // 状态推进由客户端内部触发,注册表只透传
+    expect(emit).not.toBeNull()
+    // 客户端内部状态推进会经注册表透传出去(旧断言在建客户端前就断言为空,无判别力)
+    emit!(initialState())
+    expect(seen).toEqual([['i1', initialState().phase]])
+  })
+
+  it('并发闸已接线:maxConcurrentAuth=1 时两个实例的登录串行', async () => {
+    let concurrent = 0
+    let peak = 0
+    const factory = (): AuthClient => ({
+      ...fakeClient(),
+      login: async () => {
+        concurrent += 1
+        peak = Math.max(peak, concurrent)
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        concurrent -= 1
+        return initialState()
+      }
+    })
+    const registry = createAuthRegistry({
+      resolveEndpoint: async () => 'https://gw/dsh',
+      factory,
+      maxConcurrentAuth: 1
+    })
+    await Promise.all([registry.login('i1', 'pw'), registry.login('i2', 'pw')])
+    expect(peak).toBe(1)
   })
 
   it('forget 后重新创建;logout 清除客户端', async () => {

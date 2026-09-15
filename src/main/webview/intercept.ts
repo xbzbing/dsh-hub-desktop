@@ -1,11 +1,21 @@
 /**
  * 302/401 拦截（T8,设计文档 §6.3）—— 判定为纯函数,便于单测;electron 侧只做接线。
  *
- * 只监视**导航与主文档**请求:
- * - `302 → <basePath>/login`            → 会话失效(session-expired)
- * - `401 JSON error=unauthenticated`    → 会话失效
- * - `401 JSON error=otp-required`       → 需要二因素(needs-otp)
- * - `401 JSON error=onboarding-required`→ 需要先改初始密码(needs-onboarding)
+ * 网关(`dsh-auth-gateway` `Gateway#route`)对同一认证状态按**资源类型**给两种响应:
+ * - 页面/导航路径     → `302` 到 `<basePath>/login` | `/onboarding` | `/otp/verify`
+ * - `/api*` 子资源    → `401` JSON(`error` 分别 unauthenticated / onboarding-required / otp-required)
+ *
+ * **本层为什么不解析 401 响应体**:`webRequest.onHeadersReceived` 的 details
+ * (Electron 43 `OnHeadersReceivedListenerDetails`)只有 `statusCode/headers/resourceType/...`,
+ * **不含响应体**;`filterResponseData` 在 Electron 43 不存在,也无其它取体途径。
+ * 因此 401 只按状态码判定为 `session-expired`(不区分三者),
+ * **真实状态由主进程 `auth.probe()` 直连并读体裁决** —— 拦截层只是触发器,不承担状态机职责。
+ * 三种状态的精确区分由页面 302 的 location 完成(下方映射)。
+ *
+ * 不变式(测试锁定):
+ * 1. `302` 只在**主框架导航**上判定 —— 子资源 302 是普通重定向(如登录接口自身);
+ * 2. 判定只依赖状态码 + location,不依赖响应体。
+ *
  * **WebSocket 断开不作为重连判定依据**(网关 README:WS 无限重连是常态)。
  */
 
@@ -15,14 +25,8 @@ export interface NavigationResponse {
   statusCode: number
   /** 响应头(大小写不敏感读取) */
   headers: Record<string, string | string[] | undefined>
-  /** 请求 URL(用于区分导航/子资源) */
-  url?: string
-  /** 请求方法(仅主文档导航才算) */
-  method?: string
-  /** 是否为主框架导航 */
-  isMainFrame?: boolean
-  /** 响应体片段(401 判定 JSON error 用;可能为空) */
-  body?: string | null
+  /** electron `details.resourceType`;302 仅在 `'mainFrame'` 上判定 */
+  resourceType?: string
 }
 
 function headerValue(
@@ -50,7 +54,7 @@ export function locationPathname(location: string | null): string {
 
 /**
  * 判定一次响应是否构成认证信号。
- * @param basePath 实例 basePath(如 '/dsh' 或 '/'),用于确认 /login 归属本实例
+ * @param basePath 实例 basePath(如 '/dsh' 或 '/'),用于确认 location 归属本实例
  */
 export function classifyAuthSignal(
   response: NavigationResponse,
@@ -59,30 +63,26 @@ export function classifyAuthSignal(
   const normalizedBase = basePath === '/' ? '' : basePath.replace(/\/+$/, '').toLowerCase()
 
   if (response.statusCode >= 300 && response.statusCode < 400) {
+    // 不变式 1:只有主框架导航才代表「页面被拦到登录/引导/验证码」
+    if (response.resourceType !== 'mainFrame') return null
     const location = locationPathname(headerValue(response.headers, 'location'))
     if (location === '') return null
-    const expectedLogin = `${normalizedBase}/login`
-    // 允许带查询串/尾斜杠的等价形式
+    // 允许尾斜杠的等价形式
     const normalizedLocation = location.replace(/\/+$/, '')
-    if (normalizedLocation === expectedLogin) return 'session-expired'
+    if (normalizedLocation === `${normalizedBase}/login`) return 'session-expired'
+    if (
+      normalizedLocation === `${normalizedBase}/onboarding` ||
+      normalizedLocation === `${normalizedBase}/onboarding/password`
+    ) {
+      return 'needs-onboarding'
+    }
+    if (normalizedLocation === `${normalizedBase}/otp/verify`) return 'needs-otp'
     return null
   }
 
-  if (response.statusCode === 401) {
-    const body = response.body ?? ''
-    let error = ''
-    try {
-      const parsed = JSON.parse(body) as { error?: unknown }
-      if (typeof parsed.error === 'string') error = parsed.error
-    } catch {
-      // 体不可解析时退化为文本匹配(网关始终返回 JSON,这里是防御)
-      if (body.includes('unauthenticated')) error = 'unauthenticated'
-    }
-    if (error === 'unauthenticated') return 'session-expired'
-    if (error === 'otp-required') return 'needs-otp'
-    if (error === 'onboarding-required') return 'needs-onboarding'
-    return null
-  }
+  // 不变式 2:401 只认状态码。`/api*` 的三个 error 码在无响应体时不可区分,
+  // 统一交给 auth.probe() 读体裁决(见文件头注释)。
+  if (response.statusCode === 401) return 'session-expired'
 
   return null
 }

@@ -13,8 +13,8 @@ import { createHttpEndpoints } from './transport/http-endpoint'
 import type { HttpEndpointManager } from './transport/http-endpoint'
 import { createPromptBroker } from './ssh/prompt-broker'
 import { createAuthRegistry } from './auth/auth-registry'
-import { importSessionCookie } from './webview/cookie-import'
 import { classifyAuthSignal } from './webview/intercept'
+import { openInstanceView as openInstanceViewFlow } from './webview/instance-view'
 import { clearSessionCookie, originOf } from './webview/session-cookie'
 import type { PromptBroker } from './ssh/prompt-broker'
 import type { AuthRegistry } from './auth/auth-registry'
@@ -75,6 +75,12 @@ protocol.registerSchemesAsPrivileged([
 const userDataOverride = process.env['DSH_HUB_DATA_DIR']?.trim()
 if (userDataOverride) app.setPath('userData', userDataOverride)
 
+/**
+ * hub 窗口引用（T8 修正）：`auth:signal` 只发给 hub 窗口 ——
+ * 实例窗口没有 preload，收到也无消费者；`auth:state` 仍广播（详情页可能在任一窗口）。
+ */
+let hubWindow: BrowserWindow | null = null
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1180,
@@ -111,6 +117,10 @@ function createWindow(): BrowserWindow {
   if (isDev && rendererDevUrl) void win.loadURL(rendererDevUrl)
   else void win.loadURL(`${RENDERER_ORIGIN}/index.html`)
 
+  win.on('closed', () => {
+    if (hubWindow === win) hubWindow = null
+  })
+  hubWindow = win
   return win
 }
 
@@ -281,10 +291,10 @@ void app.whenReady().then(() => {
       await clearSessionCookie(target.cookies, { origin })
     },
     prompts: prompts as PromptBroker,
-    openInstanceView: (instance, url) => {
-      const win = openInstanceWindow({ instanceId: instance.id, title: instance.name, url })
-      // T8:把主进程会话 Cookie 写入该实例分区(§6.2),并挂 302/401 拦截(§6.3)
-      const cookie = auth?.sessionCookie(instance.id) ?? null
+    openInstanceView: async (instance, url) => {
+      // T8 修正:先注入 Cookie 再 loadURL(§6.2),顺序由此编排保证 ——
+      // 旧版先 openInstanceWindow(内部立刻加载)、之后才注入,顺序被反转。
+      const origin = originOf(url)
       const parsed = (() => {
         try {
           return new URL(url)
@@ -292,41 +302,52 @@ void app.whenReady().then(() => {
           return null
         }
       })()
-      if (parsed && cookie) {
-        void importSessionCookie(win.webContents.session.cookies, {
-          origin: `${parsed.protocol}//${parsed.host}`,
-          basePath: parsed.pathname.replace(/\/+$/, '') || '/',
-          cookie
-        })
-      }
-      win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-        const signal = classifyAuthSignal({
-          statusCode: details.statusCode,
-          headers: details.responseHeaders ?? {},
-          url: details.url,
-          method: details.method,
-          isMainFrame: details.resourceType === 'mainFrame'
-        })
-        if (signal) {
-          // T9:会话失效 → 先静默重探(带已存 Cookie 自动恢复);仍失败才由 auth-panel 接手
-          if (signal === 'session-expired' && auth) {
-            void auth.probe(instance.id).catch((error: unknown) =>
-              console.error('[main] 静默重探失败：', error)
-            )
-          }
-          for (const target of BrowserWindow.getAllWindows()) {
-            if (!target.isDestroyed()) {
-              target.webContents.send(AUTH_IPC.signal, {
-                instanceId: instance.id,
-                signal,
-                at: new Date().toISOString()
+      const basePath = parsed ? parsed.pathname.replace(/\/+$/, '') || '/' : '/'
+      await openInstanceViewFlow(
+        {
+          // 开窗但**不自动加载**:加载由编排在注入之后执行
+          createWindow: () =>
+            openInstanceWindow({
+              instanceId: instance.id,
+              title: instance.name,
+              url,
+              autoLoad: false
+            }),
+          installIntercept: (win) => {
+            win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+              const signal = classifyAuthSignal({
+                statusCode: details.statusCode,
+                headers: details.responseHeaders ?? {},
+                resourceType: details.resourceType
               })
-            }
+              if (signal) {
+                // T9:会话失效 → 先静默重探(带已存 Cookie 自动恢复);仍失败才由 auth-panel 接手
+                if (signal === 'session-expired' && auth) {
+                  void auth.probe(instance.id).catch((error: unknown) =>
+                    console.error('[main] 静默重探失败：', error)
+                  )
+                }
+                // 只发给 hub 窗口:实例窗口无 preload,收到也无消费者
+                if (hubWindow && !hubWindow.isDestroyed()) {
+                  hubWindow.webContents.send(AUTH_IPC.signal, {
+                    instanceId: instance.id,
+                    signal,
+                    at: new Date().toISOString()
+                  })
+                }
+              }
+              callback({ responseHeaders: details.responseHeaders ?? {} })
+            })
           }
+        },
+        {
+          url,
+          origin: origin ?? '',
+          basePath,
+          // origin 不可解析时不做注入(避免写坏分区 Cookie)
+          cookie: origin ? (auth?.sessionCookie(instance.id) ?? null) : null
         }
-        callback({ responseHeaders: details.responseHeaders ?? {} })
-      })
-      return win
+      )
     }
   })
 

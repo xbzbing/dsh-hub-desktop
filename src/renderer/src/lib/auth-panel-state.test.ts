@@ -1,0 +1,131 @@
+import { describe, expect, it } from 'vitest'
+import type { AuthStateEvent, AuthStateSnapshot } from '@shared/contracts'
+import {
+  applyAuthSnapshot,
+  applyAuthState,
+  closeAuthPanel,
+  initialAuthPanelModel,
+  lockExpired,
+  lockRemaining,
+  lockSeconds,
+  openAuthPanel
+} from './auth-panel-state'
+import type { AuthPanelModel } from './auth-panel-state'
+
+const T0 = 1_700_000_000_000
+
+function snapshot(over: Partial<AuthStateSnapshot> = {}): AuthStateSnapshot {
+  return {
+    phase: 'await-credentials',
+    needsOnboarding: false,
+    otpEnabled: false,
+    lockedForMs: 0,
+    message: null,
+    lastErrorCode: null,
+    ...over
+  }
+}
+
+function event(instanceId: string, state: AuthStateSnapshot): AuthStateEvent {
+  return { instanceId, state, at: new Date(T0).toISOString() }
+}
+
+const openA = (): AuthPanelModel =>
+  openAuthPanel(initialAuthPanelModel, { id: 'inst-a', name: '甲' })
+
+describe('auth-panel-state（T8 评审修正）', () => {
+  it('面板关闭时收到 auth:state 不自动弹面板', () => {
+    const model = applyAuthState(
+      initialAuthPanelModel,
+      event('inst-a', snapshot({ phase: 'needs-auth' })),
+      T0
+    )
+    expect(model).toEqual(initialAuthPanelModel)
+  })
+
+  it('跨实例串台防线:为甲打开时,乙的状态不得覆盖', () => {
+    const opened = applyAuthState(openA(), event('inst-a', snapshot({ phase: 'needs-auth' })), T0)
+    expect(opened.state?.phase).toBe('needs-auth')
+
+    const other = applyAuthState(
+      opened,
+      event('inst-b', snapshot({ phase: 'await-otp', message: '乙的消息' })),
+      T0
+    )
+    expect(other.target?.id).toBe('inst-a')
+    expect(other.state?.phase).toBe('needs-auth')
+    expect(other.state?.message).toBeNull()
+  })
+
+  it('同实例事件正常更新', () => {
+    const opened = applyAuthState(openA(), event('inst-a', snapshot({ phase: 'needs-auth' })), T0)
+    const next = applyAuthState(opened, event('inst-a', snapshot({ phase: 'await-otp' })), T0)
+    expect(next.state?.phase).toBe('await-otp')
+  })
+
+  it('connected 关闭面板', () => {
+    const opened = applyAuthState(openA(), event('inst-a', snapshot({ phase: 'needs-auth' })), T0)
+    const done = applyAuthState(opened, event('inst-a', snapshot({ phase: 'connected' })), T0)
+    expect(done.target).toBeNull()
+    expect(done.state).toBeNull()
+  })
+
+  it('锁定换算为绝对到期时刻,剩余时间随时钟递减(旧实现冻结)', () => {
+    const opened = openAuthPanel(initialAuthPanelModel, { id: 'inst-a', name: '甲' })
+    const locked = applyAuthState(
+      opened,
+      event('inst-a', snapshot({ phase: 'await-credentials', lockedForMs: 30_000 })),
+      T0
+    )
+    expect(locked.lockUntil).toBe(T0 + 30_000)
+    expect(lockRemaining(locked, T0)).toBe(30_000)
+    expect(lockRemaining(locked, T0 + 10_000)).toBe(20_000)
+    expect(lockRemaining(locked, T0 + 30_000)).toBe(0)
+    expect(lockSeconds(locked, T0 + 1)).toBe(30)
+    expect(lockExpired(locked, T0 + 29_999)).toBe(false)
+    expect(lockExpired(locked, T0 + 30_000)).toBe(true)
+  })
+
+  it('未锁定时 lockUntil 为 null 且不残留上次锁定', () => {
+    const opened = openAuthPanel(initialAuthPanelModel, { id: 'inst-a', name: '甲' })
+    const locked = applyAuthState(
+      opened,
+      event('inst-a', snapshot({ lockedForMs: 30_000 })),
+      T0
+    )
+    expect(locked.lockUntil).not.toBeNull()
+    const unlocked = applyAuthState(
+      locked,
+      event('inst-a', snapshot({ lockedForMs: 0 })),
+      T0 + 1000
+    )
+    expect(unlocked.lockUntil).toBeNull()
+    expect(lockExpired(unlocked, T0 + 999_999)).toBe(false)
+  })
+
+  it('登录返回的快照走同一归约(锁定同样换算)', () => {
+    const opened = openAuthPanel(initialAuthPanelModel, { id: 'inst-a', name: '甲' })
+    const model = applyAuthSnapshot(
+      opened,
+      'inst-a',
+      snapshot({ phase: 'await-credentials', lockedForMs: 5_000 }),
+      T0
+    )
+    expect(model.lockUntil).toBe(T0 + 5_000)
+    // 非本实例的快照被忽略
+    expect(applyAuthSnapshot(opened, 'inst-b', snapshot(), T0)).toEqual(opened)
+  })
+
+  it('切换到另一实例时清掉上一实例的状态(不显示错的身份快照)', () => {
+    const opened = applyAuthState(openA(), event('inst-a', snapshot({ phase: 'needs-auth' })), T0)
+    const switched = openAuthPanel(opened, { id: 'inst-b', name: '乙' })
+    expect(switched.target?.id).toBe('inst-b')
+    expect(switched.state).toBeNull()
+  })
+
+  it('关闭面板清空全部状态', () => {
+    const opened = applyAuthState(openA(), event('inst-a', snapshot({ lockedForMs: 1000 })), T0)
+    expect(closeAuthPanel()).toEqual(initialAuthPanelModel)
+    expect(opened.target).not.toBeNull()
+  })
+})

@@ -12,18 +12,27 @@ export interface OpenInstanceViewOptions {
   instanceId: string
   title: string
   url: string
+  /**
+   * 是否在返回前自动 `loadURL`(默认 true)。
+   * 置 false 供 §6.2 顺序纪律使用:调用方需先注入分区 Cookie 再加载,
+   * 编排见 `webview/instance-view.ts`(先注入再加载,避免首帧 302 抖动)。
+   */
+  autoLoad?: boolean
 }
 
 /** 已打开的实例窗口（同一实例复用，避免重复开窗） */
 const windows = new Map<string, BrowserWindow>()
 
 export function openInstanceWindow(options: OpenInstanceViewOptions): BrowserWindow {
+  const autoLoad = options.autoLoad ?? true
   const existing = windows.get(options.instanceId)
   if (existing && !existing.isDestroyed()) {
     existing.setTitle(options.title)
-    existing.loadURL(options.url).catch((error: unknown) => {
-      console.error('[window-host] 重新加载实例窗口失败：', error)
-    })
+    if (autoLoad) {
+      existing.loadURL(options.url).catch((error: unknown) => {
+        console.error('[window-host] 重新加载实例窗口失败：', error)
+      })
+    }
     existing.focus()
     return existing
   }
@@ -57,9 +66,11 @@ export function openInstanceWindow(options: OpenInstanceViewOptions): BrowserWin
   win.on('closed', () => windows.delete(options.instanceId))
   windows.set(options.instanceId, win)
 
-  void win.loadURL(options.url).catch((error: unknown) => {
-    console.error('[window-host] 加载实例窗口失败：', error)
-  })
+  if (autoLoad) {
+    void win.loadURL(options.url).catch((error: unknown) => {
+      console.error('[window-host] 加载实例窗口失败：', error)
+    })
+  }
   return win
 }
 

@@ -38,6 +38,17 @@ export function cookieUrlFor(origin: string, basePath = '/'): string {
   return `${trimmedOrigin}${normalizedBase}/`
 }
 
+/**
+ * 会话 Cookie 过期时间换算:内部一律用**毫秒**(与 `AuthClient` 一致),
+ * electron `expirationDate` 要求**秒**。
+ * 秒级输入(2026 年的秒 ≈ 1.7e9,毫秒 ≈ 1.7e12)会被识别并换算,
+ * 避免静默写出 1970 年的时间戳。
+ */
+export function toExpirationDate(expiresAtMs: number): number {
+  const ms = expiresAtMs < 1e12 ? expiresAtMs * 1000 : expiresAtMs
+  return Math.floor(ms / 1000)
+}
+
 export function toCookieRecord(options: ImportCookieOptions): SessionCookieRecord {
   const { origin, basePath = '/', cookie } = options
   return {
@@ -48,7 +59,7 @@ export function toCookieRecord(options: ImportCookieOptions): SessionCookieRecor
     httpOnly: true,
     secure: false, // 网关 Cookie 刻意不带 Secure(纯 HTTP/LAN 场景)
     sameSite: 'strict',
-    ...(cookie.expiresAt === null ? {} : { expirationDate: Math.floor(cookie.expiresAt / 1000) })
+    ...(cookie.expiresAt === null ? {} : { expirationDate: toExpirationDate(cookie.expiresAt) })
   }
 }
 
@@ -68,15 +79,21 @@ export async function importSessionCookie(
 
 /**
  * 实例视图加载前的编排:先注入 Cookie 再 loadURL(§6.2 顺序纪律)。
- * @returns 是否成功注入(调用方据此决定是否仍要 loadURL —— 失败也加载,交给拦截层)
+ *
+ * 顺序纪律由本函数保证,并被 `instance-view.test.ts` 的调用序列断言锁定
+ * —— 反序会让首个 main-frame 请求先打一次未带 Cookie 的 302 → /login 抖动。
+ *
+ * @param load 真正的加载动作(闭包持有窗口与确切 URL;不要在此重建 URL,
+ *   实例 URL 可能带 `?token=...`,重建会丢参数)
+ * @returns 是否成功注入(失败也加载:交给拦截层触发重登)
  */
 export async function prepareInstanceView(
   setter: CookieSetter,
   options: ImportCookieOptions,
-  loadUrl: (url: string) => Promise<void> | void
+  load: () => Promise<void> | void
 ): Promise<boolean> {
   const injected =
     options.cookie.value === '' ? false : await importSessionCookie(setter, options)
-  await loadUrl(cookieUrlFor(options.origin, options.basePath ?? '/'))
+  await load()
   return injected
 }
