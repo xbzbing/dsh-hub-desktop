@@ -14,7 +14,10 @@ import type { HttpEndpointManager } from './transport/http-endpoint'
 import { createPromptBroker } from './ssh/prompt-broker'
 import { createAuthRegistry } from './auth/auth-registry'
 import { classifyAuthSignal } from './webview/intercept'
-import { openInstanceView as openInstanceViewFlow } from './webview/instance-view'
+import {
+  createOncePerSession,
+  openInstanceView as openInstanceViewFlow
+} from './webview/instance-view'
 import { clearSessionCookie, originOf } from './webview/session-cookie'
 import type { PromptBroker } from './ssh/prompt-broker'
 import type { AuthRegistry } from './auth/auth-registry'
@@ -80,6 +83,12 @@ if (userDataOverride) app.setPath('userData', userDataOverride)
  * 实例窗口没有 preload，收到也无消费者；`auth:state` 仍广播（详情页可能在任一窗口）。
  */
 let hubWindow: BrowserWindow | null = null
+
+/**
+ * 302/401 拦截「每分区会话只装一次」守卫 —— 详见 `webview/instance-view.ts`
+ * (`onHeadersReceived` 为追加语义,重复 openView 会叠加监听器)。
+ */
+const shouldInstallIntercept = createOncePerSession<Electron.Session>()
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -314,7 +323,9 @@ void app.whenReady().then(() => {
               autoLoad: false
             }),
           installIntercept: (win) => {
-            win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+            const targetSession = win.webContents.session
+            if (!shouldInstallIntercept(targetSession)) return
+            targetSession.webRequest.onHeadersReceived((details, callback) => {
               const signal = classifyAuthSignal({
                 statusCode: details.statusCode,
                 headers: details.responseHeaders ?? {},

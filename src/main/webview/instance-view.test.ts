@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { openInstanceView } from './instance-view'
+import { createOncePerSession, openInstanceView } from './instance-view'
 import type { InstanceViewWindow, OpenInstanceViewDeps } from './instance-view'
 
 const COOKIE = { name: 'dsh_auth', value: 'sess-token', expiresAt: null }
@@ -135,5 +135,19 @@ describe('openInstanceView（§6.2 先注入再 loadURL 的顺序纪律）', () 
     }
     await expect(openInstanceView(deps, args)).resolves.toBe(true)
     expect(errors).toHaveLength(1)
+  })
+})
+
+describe('createOncePerSession（拦截「每分区会话只装一次」守卫）', () => {
+  it('同一 session 只在首次返回 true;不同 session 各自首次', () => {
+    const once = createOncePerSession<object>()
+    const a = {}
+    const b = {}
+    expect(once(a)).toBe(true)
+    expect(once(a)).toBe(false)
+    expect(once(a)).toBe(false)
+    expect(once(b)).toBe(true)
+    expect(once(b)).toBe(false)
+    expect(once(a)).toBe(false)
   })
 })

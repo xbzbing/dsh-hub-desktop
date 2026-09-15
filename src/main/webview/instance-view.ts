@@ -15,6 +15,24 @@
 import { prepareInstanceView } from './cookie-import'
 import type { CookieSetter } from './cookie-import'
 
+/**
+ * 生成「每个 session 只安装一次拦截」的守卫。
+ *
+ * electron `webRequest.onHeadersReceived` 是**追加**语义(`.on` 家族),而分区会话
+ * (`persist:inst-<id>`)的生命周期长于窗口 —— 重复 openView(窗口被复用、或关闭后重开)
+ * 会叠加监听器,使同一响应被判定多次 → 重复静默重探与重复广播。
+ *
+ * @returns 传入 session 返回 true 表示「本次应当安装」
+ */
+export function createOncePerSession<S extends object>(): (session: S) => boolean {
+  const seen = new WeakSet<S>()
+  return (session) => {
+    if (seen.has(session)) return false
+    seen.add(session)
+    return true
+  }
+}
+
 /** 打开实例视图所需的最小窗口面(生产实现即 electron `BrowserWindow`) */
 export interface InstanceViewWindow {
   loadURL(url: string): Promise<void>
