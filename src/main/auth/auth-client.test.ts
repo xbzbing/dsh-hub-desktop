@@ -78,9 +78,12 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
   })
 
   it('429 锁定 → 记录退避且 canSubmit 为假(禁止再发)', async () => {
+    // 注入固定时钟:锁定剩余量由 backoff 单一来源派生,真实 Date.now 在并行跑时会漂移
+    const now = 1_000_000
     const client = createAuthClient({
       instanceId: 'i1',
       endpointUrl: 'https://gw/dsh',
+      now: () => now,
       fetchImpl: fakeFetch((url) =>
         url.includes('/login/auth')
           ? jsonResponse(429, { ok: false, error: 'too-many-attempts', retryAfterSeconds: 90 })
@@ -96,6 +99,7 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     void calls
     const again = await client.login('pw')
     expect(again.lockedForMs).toBe(90_000)
+    void now
   })
 
   it('错误密码 → 统一提示「账号或验证码错误」', async () => {

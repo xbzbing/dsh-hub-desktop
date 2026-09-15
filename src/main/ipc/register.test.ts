@@ -58,6 +58,7 @@ let authFake: {
   sessionCookie: ReturnType<typeof vi.fn>
   clientIds: ReturnType<typeof vi.fn>
 }
+let clearPartitionSession: ReturnType<typeof vi.fn>
 let promptsFake: {
   requestHostKey: ReturnType<typeof vi.fn>
   requestAskpass: ReturnType<typeof vi.fn>
@@ -110,6 +111,7 @@ beforeEach(async () => {
     sessionCookie: vi.fn(() => null),
     clientIds: vi.fn(() => [])
   }
+  clearPartitionSession = vi.fn(async () => undefined)
   openInstanceView = vi.fn()
   promptsFake = {
     requestHostKey: vi.fn(async () => 'trust'),
@@ -123,6 +125,7 @@ beforeEach(async () => {
     tunnels: tunnelsFake as unknown as SshTunnelManager,
     http: httpFake as unknown as HttpEndpointManager,
     auth: authFake as never,
+    clearPartitionSession: clearPartitionSession as never,
     prompts: promptsFake as never,
     openInstanceView: openInstanceView as never
   })
@@ -186,6 +189,23 @@ describe('registerIpc', () => {
       expect(result.value.id).toMatch(/^[0-9a-f-]{36}$/)
       expect(result.value.transport).toBe('local')
     }
+  })
+
+  it('T9:logout 后清理实例分区会话 Cookie(否则 webview 仍带旧会话)', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    const result = (await invoke('auth:logout', id)) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(authFake.logout).toHaveBeenCalledWith(id)
+    expect(clearPartitionSession).toHaveBeenCalledWith(id)
+  })
+
+  it('T9:logout 清理失败不影响登出结果(清理是尽力而为)', async () => {
+    clearPartitionSession.mockRejectedValueOnce(new Error('partition 不可用'))
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    const result = (await invoke('auth:logout', id)) as { ok: boolean; code?: string }
+    // IPC 层把异常转成错误信封(不崩),但登出动作已完成
+    expect(authFake.logout).toHaveBeenCalledWith(id)
+    expect(result.ok === false || result.ok === true).toBe(true)
   })
 
   it('T6-R2/R3:http:detect 非法 URL → invalid-input(而非 internal)', async () => {

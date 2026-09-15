@@ -15,6 +15,7 @@ import { createPromptBroker } from './ssh/prompt-broker'
 import { createAuthRegistry } from './auth/auth-registry'
 import { importSessionCookie } from './webview/cookie-import'
 import { classifyAuthSignal } from './webview/intercept'
+import { clearSessionCookie, originOf } from './webview/session-cookie'
 import type { PromptBroker } from './ssh/prompt-broker'
 import type { AuthRegistry } from './auth/auth-registry'
 import { createInstanceStore } from './registry/instance-store'
@@ -269,6 +270,16 @@ void app.whenReady().then(() => {
     tunnels,
     http: httpEndpoints,
     auth,
+    // T9:登出时清该实例分区内的会话 Cookie(origin 取自实例记录)
+    clearPartitionSession: async (instanceId) => {
+      const record = await instanceStore.get(instanceId)
+      if (!record || record.transport === 'local') return
+      const endpoint = record.transport === 'http' ? record.endpointUrl : null
+      const origin = endpoint ? originOf(endpoint) : null
+      if (!origin) return
+      const target = session.fromPartition(`persist:inst-${record.id}`)
+      await clearSessionCookie(target.cookies, { origin })
+    },
     prompts: prompts as PromptBroker,
     openInstanceView: (instance, url) => {
       const win = openInstanceWindow({ instanceId: instance.id, title: instance.name, url })

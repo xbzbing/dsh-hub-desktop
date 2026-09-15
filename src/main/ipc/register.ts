@@ -48,6 +48,8 @@ export interface IpcDeps {
   http: HttpEndpointManager
   /** T8 每实例认证客户端 */
   auth: AuthRegistry
+  /** T9 清理实例分区会话 Cookie(登出/切换账号时;缺省不清理,便于单测) */
+  clearPartitionSession?: (instanceId: string) => Promise<void>
 }
 
 async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
@@ -257,7 +259,13 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   )
 
   ipcMain.handle(AUTH_IPC.logout, (_event, id: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
-    wrap(async () => authSnapshot(await deps.auth.logout(parseId(id))))
+    wrap(async () => {
+      const instanceId = parseId(id)
+      const snapshot = authSnapshot(await deps.auth.logout(instanceId))
+      // T9:登出后必须清分区会话,否则 webview 仍带旧 Cookie 访问受保护页面
+      await deps.clearPartitionSession?.(instanceId)
+      return snapshot
+    })
   )
 
   ipcMain.handle(
