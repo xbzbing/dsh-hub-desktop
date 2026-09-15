@@ -14,6 +14,7 @@ export default function DetailView(): ReactNode {
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
   const toast = useAppStore((state) => state.toast)
+  const userDataPath = useAppStore((state) => state.userDataPath)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [nowTick, setNowTick] = useState(0)
 
@@ -156,7 +157,9 @@ export default function DetailView(): ReactNode {
                 <dt>端口</dt>
                 <dd className="num">{record.port ?? '未分配'}</dd>
                 <dt>数据目录</dt>
-                <dd className="num">hub-data/homes/{record.id}</dd>
+                <dd className="num" title="该实例隔离的 DSH_HOME（评审结论 R7）">
+                  {userDataPath ? `${userDataPath}/homes/${record.id}` : `…/homes/${record.id}`}
+                </dd>
               </>
             )}
           </dl>

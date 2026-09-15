@@ -11,7 +11,8 @@ import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { InstanceRuntimeStatus, InstanceStatusEvent, LocalInstance } from '@shared/contracts'
-import { findFreePort } from './port-allocator'
+import { DEFAULT_PORT_RANGE_START, findFreePort } from './port-allocator'
+import type { PortProbe } from './port-allocator'
 import type { RuntimeInstaller } from './runtime-installer'
 
 /** dsh 就绪输出：`dsh web: http://127.0.0.1:52300/?token=...` */
@@ -49,10 +50,16 @@ export interface LocalRuntimeOptions {
   nodeInvocation?: { command: string; args: string[]; env: NodeJS.ProcessEnv }
   spawnImpl?: SpawnLike
   probe?: HealthProbe
+  /** 端口可绑定探测（注入以便测试端口分配时序；缺省用真实 bind 探测） */
+  portProbe?: PortProbe
   profile?: string
   readyTimeoutMs?: number
   stopGraceMs?: number
   healthTimeoutMs?: number
+  /** §4.3 连接期探测重试次数（就绪 URL 先于端口绑定出现时的兜底；默认 5 次） */
+  healthProbeRetries?: number
+  /** §4.3 连接期探测间隔（默认 500ms） */
+  healthProbeRetryMs?: number
   now?: () => number
 }
 
@@ -73,12 +80,17 @@ interface Entry {
   version: string
   home: string
   log: string[]
+  /** 未以换行结尾的残片：跨 chunk 的就绪行靠它拼接，否则会漏匹配就绪行 */
+  buffer: string
   ready: boolean
   stopping: boolean
   timer: NodeJS.Timeout | null
   /** 队列放行钩子:就绪 / 退出 / 出错 / 超时 任一发生时调用(TOCTOU 防线) */
   settleSpawn?: () => void
 }
+
+/** 串行启动任务的结果：spawned=正常拉起；cancelled=排队期间被取消；duplicate=已被前一个任务拉起 */
+type StartOutcome = 'spawned' | 'cancelled' | 'duplicate'
 
 const defaultSpawn: SpawnLike = ({ command, args, env, cwd, detached }) =>
   spawn(command, args, {
@@ -113,6 +125,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const readyTimeoutMs = options.readyTimeoutMs ?? 60_000
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
+  const healthProbeRetries = options.healthProbeRetries ?? 5
+  const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
+  const portProbe = options.portProbe
   const now = options.now ?? (() => Date.now())
 
   const entries = new Map<string, Entry>()
@@ -147,9 +162,18 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   }
 
   function pushLog(entry: Entry, chunk: unknown): string[] {
-    const lines = String(chunk).split(/\r?\n/).filter((line) => line.trim() !== '')
-    entry.log.push(...lines)
-    if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
+    entry.buffer += String(chunk)
+    const lines: string[] = []
+    let newlineIndex: number
+    while ((newlineIndex = entry.buffer.indexOf('\n')) !== -1) {
+      const line = entry.buffer.slice(0, newlineIndex).replace(/\r$/, '')
+      entry.buffer = entry.buffer.slice(newlineIndex + 1)
+      if (line.trim() !== '') lines.push(line)
+    }
+    if (lines.length > 0) {
+      entry.log.push(...lines)
+      if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
+    }
     return lines
   }
 
@@ -188,10 +212,36 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   }
 
   async function handleReady(id: string, entry: Entry, url: string): Promise<void> {
-    const healthy = await probe(url, healthTimeoutMs)
+    // §4.3:连接期探测频率 500ms —— 兜住「先打印就绪 URL、后绑定端口」的打印先行 TOCTOU
+    let healthy = false
+    for (let attempt = 1; attempt <= healthProbeRetries; attempt++) {
+      if (entry.stopping) return
+      healthy = await probe(url, healthTimeoutMs)
+      if (healthy) break
+      if (attempt < healthProbeRetries) {
+        await new Promise<void>((resolve) => {
+          const delay = setTimeout(resolve, healthProbeRetryMs)
+          delay.unref?.()
+        })
+      }
+    }
     if (entry.stopping) return
     if (!healthy) {
-      emit(id, 'error', { detail: `就绪 URL 无法访问（健康探测失败）：${url}`, url })
+      // 终局路径必须与超时路径对齐:杀进程、清条目、放行队列。
+      // 缺失任一项都会造成 head-of-line 阻塞(下一个实例等到 readyTimer 触发)
+      // 与无人回收的存活进程。
+      emit(id, 'error', {
+        detail: `就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`,
+        url
+      })
+      entry.stopping = true
+      if (entry.timer) {
+        clearTimeout(entry.timer)
+        entry.timer = null
+      }
+      killTree(entry, 'SIGKILL')
+      entries.delete(id)
+      entry.settleSpawn?.()
       return
     }
     if (entry.timer) {
@@ -268,17 +318,34 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
           // 关键:串行段要等到「就绪或退出」才结束 —— 端口探测与 dsh 实际绑定之间存在
           // TOCTOU 窗口(设计文档 §4.1),若只等 spawn 就放行,两个实例会抢同一端口后者崩溃。
-          const spawned = await enqueueStart(async (): Promise<Entry | null> => {
-          if (cancelRequested.delete(id)) return null
-          emit(id, 'starting', {
-            version,
-            detail: `准备 dsh ${version} 运行时（首次需要安装，可能较慢）`
-          })
-          await options.installer.ensureInstalled(version)
-          if (cancelRequested.delete(id)) return null
+          const outcome = await enqueueStart(async (): Promise<StartOutcome> => {
+            // 队列内二次查重:同一 tick 并发 start(双击启动 / 向导自动启动与手动启动竞速)
+            // 时,第一次查重发生在首个 await 之前会双双通过,前一个任务可能已把该实例拉起
+            const already = entries.get(id)
+            if (already) {
+              emit(id, already.ready ? 'running' : 'starting', {
+                version: already.version,
+                ...(already.url ? { url: already.url } : {}),
+                ...(already.port !== null ? { port: already.port } : {}),
+                detail: '实例已在运行，忽略重复启动'
+              })
+              return 'duplicate'
+            }
+            if (cancelRequested.delete(id)) return 'cancelled'
+            emit(id, 'starting', {
+              version,
+              detail: `准备 dsh ${version} 运行时（首次需要安装，可能较慢）`
+            })
+            await options.installer.ensureInstalled(version)
+            if (cancelRequested.delete(id)) return 'cancelled'
 
-          emit(id, 'starting', { version, detail: '分配端口并启动进程' })
-          const preferredPort = await findFreePort().catch(() => 0)
+            emit(id, 'starting', { version, detail: '分配端口并启动进程' })
+            // 优先实例记录里用户选定的端口(向导高级设置);被占则向上递增,启动后仍回写实际端口
+            const preferredPort = await findFreePort(
+              portProbe
+                ? { start: instance.port ?? DEFAULT_PORT_RANGE_START, probe: portProbe }
+                : { start: instance.port ?? DEFAULT_PORT_RANGE_START }
+            ).catch(() => 0)
           const home = join(options.dataRoot, 'homes', id)
           await mkdir(home, { recursive: true })
 
@@ -307,6 +374,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             version,
             home,
             log: [],
+            buffer: '',
             ready: false,
             stopping: false,
             timer: null
@@ -327,6 +395,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           }
 
           entry.timer = setTimeout(() => {
+            // 身份守卫:本 timer 只属于本次尝试,不得误伤替换后的新条目
+            if (entries.get(id) !== entry) return
             if (entry.ready || entry.stopping) return
             emit(id, 'error', {
               detail: `启动超时（${Math.round(readyTimeoutMs / 1000)}s）：未解析到就绪 URL${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`
@@ -339,6 +409,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           entry.timer.unref?.()
 
           child.on('error', (error: Error) => {
+            // 身份守卫:陈旧条目的迟到事件不得删除更晚的同 id 条目
+            if (entries.get(id) !== entry) return
             if (entry.stopping) return
             entry.stopping = true
             emit(id, 'error', { detail: `进程启动失败：${error.message}` })
@@ -347,6 +419,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           })
 
           child.on('exit', (code, signal) => {
+            // 身份守卫:旧子进程的迟到 exit(SIGKILL 无效的僵尸/D 态)会误删新条目,
+            // 让新进程沦为无主、状态错误翻转为 stopped
+            if (entries.get(id) !== entry) return
             if (entry.timer) {
               clearTimeout(entry.timer)
               entry.timer = null
@@ -362,12 +437,27 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             entry.settleSpawn?.()
           })
 
+          // 兜底:stop() 若落在「最后一次取消检查 → entries.set」之间(findFreePort/mkdir
+          // 都是 await),它只登记了取消意图而看不到条目;这里必须补杀,否则子进程成为
+          // 无主孤儿(before-quit 的 stopAll 也扫不到),继续占用端口与 DSH_HOME
+          if (cancelRequested.delete(id)) {
+            entry.stopping = true
+            if (entry.timer) {
+              clearTimeout(entry.timer)
+              entry.timer = null
+            }
+            killTree(entry, 'SIGKILL')
+            entries.delete(id)
+            entry.settleSpawn?.()
+            return 'cancelled'
+          }
+
           // 等到就绪/退出/超时,再放行下一个实例(端口已稳定分配的保证)
           await spawnSettledPromise
-          return entry
+          return 'spawned'
         })
 
-        if (!spawned) {
+        if (outcome === 'cancelled') {
           emit(id, 'stopped', { detail: '已取消启动' })
           return
         }
@@ -380,13 +470,18 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
 
     async stop(id) {
       const entry = entries.get(id)
+      // 无论有无条目都登记取消意图:排队中尚未 spawn 的重复 start 也会被一并取消,
+      // 否则「start→start→stop」序列下,后一个排队任务会在停止后把实例重新拉起
+      cancelRequested.add(id)
       if (!entry) {
-        // 可能仍在启动队列里（安装 / 等待串行）:登记取消意图,轮到它时直接放弃
-        cancelRequested.add(id)
         emit(id, 'stopped', { detail: '实例未在运行' })
         return
       }
       entry.stopping = true
+      if (entry.timer) {
+        clearTimeout(entry.timer)
+        entry.timer = null
+      }
       killTree(entry, 'SIGTERM')
       const exited = await waitForExit(entry, stopGraceMs)
       if (!exited) {

@@ -111,7 +111,14 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   ipcMain.handle(
     INSTANCE_IPC.delete,
     (_event, id: unknown): Promise<IpcResult<{ removed: boolean }>> =>
-      wrap(async () => ({ removed: await store.remove(parseId(id)) }))
+      wrap(async () => {
+        const instanceId = parseId(id)
+        // 详情页文案承诺「删除运行中的实例会先停止其进程」:先回收进程树再移除记录,
+        // 否则 dsh 进程继续存活(独占端口与 DSH_HOME),实例窗口也无 stopped 事件可回收
+        const record = await store.get(instanceId)
+        if (record?.transport === 'local') await deps.runtime.stop(instanceId)
+        return { removed: await store.remove(instanceId) }
+      })
   )
 
   // —— 本地运行时控制（T3）：start/stop 立即返回，进展经 `instance:status` 事件回推 ——

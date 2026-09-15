@@ -29,6 +29,8 @@ interface AppState {
   wizardOpen: boolean
   /** 向导创建后待自动打开的实例集合(多个实例并发启动时各自独立) */
   pendingOpen: string[]
+  /** 主进程 userData 路径(app:info 快照;详情页展示实例数据目录用) */
+  userDataPath: string | null
   toasts: ToastItem[]
 
   load: () => Promise<void>
@@ -67,13 +69,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
   theme: initialTheme(),
   wizardOpen: false,
   pendingOpen: [],
+  userDataPath: null,
   toasts: [],
 
   load: async () => {
     applyTheme(get().theme)
-    // 平台信息(隐藏标题栏布局 / 平台差异化)由主进程快照提供
+    // 平台信息(隐藏标题栏布局 / 平台差异化)与 userData 路径由主进程快照提供
     const info = await window.dshHub?.getInfo()
-    if (info?.ok) document.documentElement.dataset.platform = info.value.platform
+    if (info?.ok) {
+      document.documentElement.dataset.platform = info.value.platform
+      set({ userDataPath: info.value.userDataPath })
+    }
     await get().refreshList()
     set({ loaded: true })
   },

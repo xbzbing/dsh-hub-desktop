@@ -2,10 +2,11 @@
  * 实例窗口宿主（T3 基础版）。
  *
  * 设计依据：实现计划 §6.6 —— 每实例独立 `BrowserWindow`，`partition: 'persist:inst-<id>'`
- * 隔离存储，禁用 nodeIntegration、开启 contextIsolation/sandbox、拦截外跳。
- * Cookie 注入 / 401 拦截 / 遮罩层属 T6 范围，此处只做「开窗 + 加载就绪 URL」。
+ * 隔离存储，禁用 nodeIntegration、开启 contextIsolation/sandbox、拦截外跳（弹窗 + 顶层导航）。
+ * Cookie 注入 / 401 拦截 / 遮罩层属 T6 范围，此处只做「开窗 + 加载就绪 URL + 导航/权限加固」。
  */
 import { BrowserWindow } from 'electron'
+import { isAllowedInstanceNavigation } from './window-host-policy'
 
 export interface OpenInstanceViewOptions {
   instanceId: string
@@ -42,12 +43,23 @@ export function openInstanceWindow(options: OpenInstanceViewOptions): BrowserWin
     }
   })
 
-  // 实例页面内的外跳一律拒绝（需要系统浏览器时由页面自身的链接语义决定，T6 再细化）
+  // 实例页面内的外跳一律拒绝（弹窗；顶层导航由 will-navigate 另行拦截）
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  // 顶层导航只许留在本实例服务（回环 + 同端口）：把实例分区带去外部 origin
+  // 等于给未来的网关 Cookie 开外泄通道（策略细则见 window-host-policy.ts）
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedInstanceNavigation(url, options.url)) event.preventDefault()
+  })
+  // 实例分区内的权限请求（通知 / 地理位置 / 剪贴板等）一律拒绝
+  win.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) =>
+    callback(false)
+  )
   win.on('closed', () => windows.delete(options.instanceId))
   windows.set(options.instanceId, win)
 
-  void win.loadURL(options.url)
+  void win.loadURL(options.url).catch((error: unknown) => {
+    console.error('[window-host] 加载实例窗口失败：', error)
+  })
   return win
 }
 

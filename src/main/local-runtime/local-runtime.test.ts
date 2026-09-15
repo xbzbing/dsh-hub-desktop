@@ -390,4 +390,322 @@ describe('createLocalRuntime', () => {
     await waitForStatus(manager, instance.id, 'error')
     expect(manager.statusOf(instance.id)?.detail).toContain('registry 不可达')
   })
+
+  // —— T3 复审加固(评审 Required 1-4 的回归防线,均已先行复现) ——
+
+  it('健康探测连续失败 → error + SIGKILL + 条目清除 + 队列立即放行(不等到期定时器)', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999750 - children.length
+      child.killCall = []
+      child.kill = vi.fn((signal?: NodeJS.Signals) => {
+        child.killCall.push(signal ?? 'SIGTERM')
+        return true
+      }) as never
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    const probe = vi.fn(async (url: string) => !url.includes(':31234'))
+    // readyTimeoutMs=60s:若失败路径不 settle,队列会被卡到定时器触发,测试会在此超时
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe,
+      readyTimeoutMs: 60_000,
+      healthProbeRetries: 5,
+      healthProbeRetryMs: 10
+    })
+    const a = localInstance({ name: 'A' })
+    const startA = manager.start(a)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
+    children[0]?.stdout.write(readyLine(31234)) // A:该端口探测恒失败
+    await startA
+    await waitForStatus(manager, a.id, 'error')
+    expect(children[0]?.killCall).toContain('SIGKILL')
+    expect(manager.runningIds()).toEqual([])
+    expect(probe).toHaveBeenCalledTimes(5) // §4.3 连接期 500ms 重试
+
+    // 队列未被卡死:B 在 60s 定时器未触达的情况下也能立即 spawn
+    const b = localInstance({ name: 'B' })
+    const startB = manager.start(b)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(2))
+    children[1]?.stdout.write(readyLine(31235)) // B:健康探测通过
+    await startB
+    await waitForStatus(manager, b.id, 'running')
+  })
+
+  it('健康探测先失败后成功(就绪行先于端口绑定)→ running', async () => {
+    let calls = 0
+    const probe = vi.fn(async () => {
+      calls += 1
+      return calls >= 2
+    })
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999740
+    child.killCall = []
+    child.kill = vi.fn((signal?: NodeJS.Signals) => {
+      child.killCall.push(signal ?? 'SIGTERM')
+      return true
+    }) as never
+
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: (() => child) as never,
+      probe,
+      readyTimeoutMs: 2000,
+      healthProbeRetries: 3,
+      healthProbeRetryMs: 10
+    })
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    child.stdout.write(readyLine())
+    await starting
+    await waitForStatus(manager, instance.id, 'running')
+    expect(probe).toHaveBeenCalledTimes(2)
+    expect(child.killCall).toEqual([])
+  })
+
+  it('同一 id 并发 start 两次 → 只 spawn 一个进程(队列内二次查重)', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999730
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000
+    })
+    const instance = localInstance()
+    const s1 = manager.start(instance)
+    const s2 = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
+    child.stdout.write(readyLine())
+    await Promise.all([s1, s2])
+    await waitForStatus(manager, instance.id, 'running')
+    expect(spawnImpl).toHaveBeenCalledTimes(1) // 绝不允许双进程共享同一 DSH_HOME
+    expect(manager.statusOf(instance.id)?.detail).toContain('已在运行')
+  })
+
+  it('stop:先杀运行中的进程,排队中的重复 start 一并取消(不复活)', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999720 - children.length
+      child.killCall = []
+      child.kill = vi.fn((signal?: NodeJS.Signals) => {
+        child.killCall.push(signal ?? 'SIGTERM')
+        if (signal === 'SIGKILL') setImmediate(() => child.emit('exit', 0, 'SIGKILL'))
+        return true
+      }) as never
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      stopGraceMs: 60
+    })
+    const instance = localInstance()
+    const s1 = manager.start(instance)
+    const s2 = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
+    await manager.stop(instance.id) // 停止运行中的第一代进程
+    await s1
+    await s2
+    expect(children[0]?.killCall).toContain('SIGKILL')
+    expect(spawnImpl).toHaveBeenCalledTimes(1) // 排队中的 s2 不得把实例重新拉起
+    expect(manager.runningIds()).toEqual([])
+    expect(manager.statusOf(instance.id)?.status).toBe('stopped')
+  })
+
+  it('stop 落在 spawn 前最后一个 await 窗口(findFreePort)→ 补杀,不留孤儿进程', async () => {
+    let releasePort!: () => void
+    const portGate = new Promise<boolean>((resolve) => {
+      releasePort = () => resolve(true)
+    })
+    const portProbe = vi.fn(() => portGate) as never
+
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999710
+    child.killCall = []
+    child.kill = vi.fn((signal?: NodeJS.Signals) => {
+      child.killCall.push(signal ?? 'SIGTERM')
+      return true
+    }) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      portProbe,
+      readyTimeoutMs: 2000
+    })
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    // 队列任务正挂在 findFreePort 上(被 gate 卡住):此刻 stop 只登记取消意图
+    await vi.waitFor(() => expect(portProbe).toHaveBeenCalled())
+    await manager.stop(instance.id)
+    expect(manager.statusOf(instance.id)?.status).toBe('stopped')
+    releasePort()
+    await starting
+
+    // 子进程确实被拉起过,但随即被补杀:不留孤儿、不占端口、不误报 running
+    expect(spawnImpl).toHaveBeenCalledTimes(1)
+    expect(child.killCall).toContain('SIGKILL')
+    expect(manager.runningIds()).toEqual([])
+    expect(manager.statusOf(instance.id)?.status).toBe('stopped')
+  })
+
+  it('陈旧条目的迟到 exit 不误删新条目(身份守卫)', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999700 - children.length
+      child.killCall = []
+      child.kill = vi.fn((signal?: NodeJS.Signals) => {
+        child.killCall.push(signal ?? 'SIGTERM')
+        return true
+      }) as never
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      stopGraceMs: 40
+    })
+    const instance = localInstance()
+    // 第一代进程:正常就绪
+    const first = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
+    children[0]?.stdout.write(readyLine())
+    await first
+    await waitForStatus(manager, instance.id, 'running')
+    // 停止:SIGTERM/SIGKILL 都不生效(模拟 D 态僵尸)→ stop 自行清理条目
+    await manager.stop(instance.id)
+    expect(manager.runningIds()).toEqual([])
+    // 第二代进程:重新启动并就绪
+    const second = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(2))
+    children[1]?.stdout.write(readyLine())
+    await second
+    await waitForStatus(manager, instance.id, 'running')
+    expect(manager.runningIds()).toEqual([instance.id])
+    // 第一代进程此刻才迟到退出:旧 handler 不得删除第二代条目
+    children[0]?.emit('exit', 0, null)
+    expect(manager.runningIds()).toEqual([instance.id])
+    expect(manager.statusOf(instance.id)?.status).toBe('running')
+  })
+
+  it('就绪行跨 chunk 拆分 → 仍能匹配就绪(running)', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999690
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000
+    })
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalled())
+    child.stdout.write('dsh web: http://127.0.0.1:31') // 半行(无换行)
+    child.stdout.write('234/?token=abc\n') // 另一半 + 换行
+    await starting
+    await waitForStatus(manager, instance.id, 'running')
+    expect(manager.statusOf(instance.id)?.url).toBe('http://127.0.0.1:31234/?token=abc')
+  })
+
+  it('实例自定义端口:优先从该端口起分配(空闲直接用,被占则递增)', async () => {
+    // 场景一:30123 空闲 → 直接用用户选定端口
+    const portProbe = vi.fn(async (port: number) => port === 30123)
+    let args1: string[] = []
+    const child1 = new EventEmitter() as unknown as FakeChild
+    child1.stdout = new PassThrough()
+    child1.stderr = new PassThrough()
+    child1.pid = 999680
+    child1.killCall = []
+    child1.kill = vi.fn(() => true) as never
+    const spawnImpl1 = vi.fn((invocation: SpawnInvocation) => {
+      args1 = invocation.args
+      return child1 as unknown as SpawnedProcess
+    })
+    const manager1 = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl1 as never,
+      portProbe: portProbe as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000
+    })
+    const inst1 = localInstance({ port: 30123 })
+    const starting1 = manager1.start(inst1)
+    child1.stdout.write(readyLine(30123))
+    await starting1
+    await waitForStatus(manager1, inst1.id, 'running')
+    expect(portProbe).toHaveBeenCalledWith(30123)
+    expect(args1).toEqual(expect.arrayContaining(['--port', '30123']))
+
+    // 场景二:30123 被占 → 递增到 30124
+    const portProbe2 = vi.fn(async (port: number) => port === 30124)
+    let args2: string[] = []
+    const child2 = new EventEmitter() as unknown as FakeChild
+    child2.stdout = new PassThrough()
+    child2.stderr = new PassThrough()
+    child2.pid = 999670
+    child2.killCall = []
+    child2.kill = vi.fn(() => true) as never
+    const spawnImpl2 = vi.fn((invocation: SpawnInvocation) => {
+      args2 = invocation.args
+      return child2 as unknown as SpawnedProcess
+    })
+    const manager2 = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl2 as never,
+      portProbe: portProbe2 as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000
+    })
+    const inst2 = localInstance({ id: randomUUID(), port: 30123 })
+    const starting2 = manager2.start(inst2)
+    child2.stdout.write(readyLine(30124))
+    await starting2
+    await waitForStatus(manager2, inst2.id, 'running')
+    expect(portProbe2).toHaveBeenCalledWith(30123)
+    expect(portProbe2).toHaveBeenCalledWith(30124)
+    expect(args2).toEqual(expect.arrayContaining(['--port', '30124']))
+  })
 })

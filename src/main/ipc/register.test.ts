@@ -183,6 +183,32 @@ describe('registerIpc', () => {
     if (again.ok) expect(again.value.removed).toBe(false)
   })
 
+  it('delete:local 实例 → 先 runtime.stop 再移除记录(运行中不留孤儿进程)', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const result = (await invoke('instances:delete', created.value.id)) as {
+      ok: boolean
+      value: { removed: boolean }
+    }
+    expect(runtimeFake.stop).toHaveBeenCalledWith(created.value.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value.removed).toBe(true)
+  })
+
+  it('delete:非 local 实例不触碰运行时', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const result = (await invoke('instances:delete', created.value.id)) as { ok: boolean }
+    expect(runtimeFake.stop).not.toHaveBeenCalled()
+    expect(result.ok).toBe(true)
+  })
+
   // —— T3 运行时控制 ——
 
   it('start:local 实例 → 交给 runtime.start 并立即返回(不阻塞安装/启动)', async () => {
