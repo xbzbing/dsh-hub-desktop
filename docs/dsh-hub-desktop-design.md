@@ -427,6 +427,31 @@ if (statusCode === 401 && JSON.error ∈ {unauthenticated, otp-required, onboard
 
 > 安全默认:"会话态优先、密钥态可选",任何持久化都要用户显式勾选,并在实例详情里可一键清除。
 
+#### 7.2.1 已知限制:Chromium 分区存储会落盘会话 Cookie(T12 走查决策)
+
+**实测事实**(Electron 43.7,未签名开发构建):实例窗口使用 `partition: persist:inst-<id>`
+(§6.1 要求每实例隔离),而 Chromium 会把该分区收到的 Cookie 写进
+`<userData>/Partitions/inst-<id>/Cookies`。对该 SQLite 库的检查显示
+`dsh_auth` 的值**以明文保存**(`length(encrypted_value)=0`),且与用户是否勾选
+「记住登录态」**无关**——也就是说,上表「会话 Cookie:内存」描述的是**本应用的保险库**,
+并不覆盖 Chromium 自己的分区存储。UI 文案因此已改为只承诺「不存入保险库」。
+
+**决策:接受该风险,记录在案(而非默认沉默)**。理由:
+
+1. 暴露面受限——分区按实例隔离;`window-host-policy.ts` 把窗口内导航限制在回环 + 同端口,
+   该分区不会被带到外部 origin;数据落在用户自己的 `userData` 下,与 dsh 自身
+   `$DSH_HOME` 的凭据同级;
+2. `dsh_auth` 是用户自己配置的网关会话令牌,同一台机器上 dsh 与网关本就持有等价材料;
+3. 「不落盘」的强保证已由保险库覆盖(未勾选即拒绝写入、密文 0600、降级绝不落盘)。
+
+**缓解措施**:① UI 文案已限定承诺范围(不再宣称「凭据不会写入磁盘」);
+② 登出/删除实例会清分区会话 Cookie(`clearPartitionSession`),缩短残留窗口。
+
+**后续项(未排期,记录以备评审)**:更彻底的方案是「按勾选决定分区是否持久化」——
+未勾选「记住登录态」时使用**非持久分区**(`inst-<id>`,内存态),勾选时才用
+`persist:inst-<id>`;代价是切换后旧分区目录成为孤儿需要清理,且关闭实例窗口会丢失
+未勾选用户的会话(需重新登录),属于需要真实 UI 验证的 UX 取舍。
+
 ### 7.3 SSH 主机密钥(TOFU)
 
 - `StrictHostKeyChecking=yes`（T5 起：TOFU 前置完成后再放行） + 首次连接时在 UI 展示主机指纹,**用户确认后才让连接真正建立**(先 `ssh-keyscan` 预取指纹展示,再放行);
