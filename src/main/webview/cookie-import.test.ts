@@ -1,0 +1,88 @@
+import { describe, expect, it, vi } from 'vitest'
+import {
+  cookieUrlFor,
+  importSessionCookie,
+  prepareInstanceView,
+  toCookieRecord,
+  type CookieSetter
+} from './cookie-import'
+
+describe('cookie-import（§6.2 Cookie 双写）', () => {
+  it('Cookie 属性与真实网关一致(Path=/; HttpOnly; SameSite=strict; 无 Secure)', () => {
+    const record = toCookieRecord({
+      origin: 'https://gw.example.com',
+      basePath: '/dsh',
+      cookie: { name: 'dsh_auth', value: 'tok', expiresAt: 1_800_000_000_000 }
+    })
+    expect(record).toMatchObject({
+      name: 'dsh_auth',
+      value: 'tok',
+      path: '/',
+      httpOnly: true,
+      secure: false,
+      sameSite: 'strict',
+      expirationDate: 1_800_000_000
+    })
+    // basePath 不改变 Cookie 路径,但 url 落在实例 origin 下
+    expect(record.url).toBe('https://gw.example.com/dsh/')
+  })
+
+  it('无过期时间(会话 Cookie)不带 expirationDate', () => {
+    const record = toCookieRecord({
+      origin: 'http://127.0.0.1:3080',
+      cookie: { name: 'dsh_auth', value: 't', expiresAt: null }
+    })
+    expect(record.expirationDate).toBeUndefined()
+    expect(record.url).toBe('http://127.0.0.1:3080/')
+  })
+
+  it('cookieUrlFor 处理尾斜杠与根 basePath', () => {
+    expect(cookieUrlFor('https://gw/', '/')).toBe('https://gw/')
+    expect(cookieUrlFor('https://gw', '/dsh/')).toBe('https://gw/dsh/')
+  })
+
+  it('注入失败不抛异常(返回 false,交由拦截层重登)', async () => {
+    const setter: CookieSetter = {
+      set: vi.fn(async () => {
+        throw new Error('partition 不可用')
+      })
+    }
+    const ok = await importSessionCookie(setter, {
+      origin: 'http://127.0.0.1:3080',
+      cookie: { name: 'dsh_auth', value: 'x', expiresAt: null }
+    })
+    expect(ok).toBe(false)
+  })
+
+  it('顺序纪律:先注入 Cookie 再 loadURL', async () => {
+    const order: string[] = []
+    const setter: CookieSetter = {
+      set: vi.fn(async () => {
+        order.push('set-cookie')
+      })
+    }
+    await prepareInstanceView(
+      setter,
+      {
+        origin: 'http://127.0.0.1:3080',
+        basePath: '/dsh',
+        cookie: { name: 'dsh_auth', value: 'tok', expiresAt: null }
+      },
+      (url) => {
+        order.push(`load:${url}`)
+      }
+    )
+    expect(order).toEqual(['set-cookie', 'load:http://127.0.0.1:3080/dsh/'])
+  })
+
+  it('无会话(空值)时跳过注入但仍 loadURL(browser-auth/无需登录场景)', async () => {
+    const setter: CookieSetter = { set: vi.fn(async () => undefined) }
+    const injected = await prepareInstanceView(
+      setter,
+      { origin: 'http://127.0.0.1:3080', cookie: { name: 'dsh_auth', value: '', expiresAt: null } },
+      vi.fn()
+    )
+    expect(injected).toBe(false)
+    expect(setter.set).not.toHaveBeenCalled()
+  })
+})
