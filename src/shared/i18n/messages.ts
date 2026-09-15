@@ -178,6 +178,24 @@ export const MESSAGES = {
   'detail.notRunning': { zh: '未运行', en: 'Not running' },
   'detail.instanceDetail': { zh: '实例详情', en: 'Instance details' },
 
+  // —— SSH 密钥预览（T11）——
+  'keyPreview.failed': { zh: '密钥解析失败', en: 'Key resolution failed' },
+  'keyPreview.hint': {
+    zh: '填写主机后会自动展示将使用哪个密钥。',
+    en: 'Fill in the host and the key to be used is shown automatically.'
+  },
+  'keyPreview.resolving': { zh: '正在解析将使用的密钥…', en: 'Resolving the key to use…' },
+  'keyPreview.none': {
+    zh: '未检测到可用密钥（agent {agent}，也没有解析到默认私钥）。请启动 ssh-agent 并加载密钥，或改用密码认证。',
+    en: 'No usable key found (agent {agent}, and no default private key resolved). Start ssh-agent and load a key, or switch to password authentication.'
+  },
+  'keyPreview.agentUnavailable': { zh: '未运行', en: 'not running' },
+  'keyPreview.agentEmpty': { zh: '为空', en: 'empty' },
+  'keyPreview.using': { zh: '将使用密钥：', en: 'Using key: ' },
+  'keyPreview.defaultKey': { zh: '默认私钥', en: 'default private key' },
+  'keyPreview.alternates': { zh: '备用 {n} 把', en: '{n} more available' },
+  'keyPreview.explicit': { zh: '实例已指定私钥', en: 'instance pins a private key' },
+
   // —— 网址探测（T11）——
   'detect.gateway': {
     zh: '已识别登录认证（密码 + 动态验证码），创建后打开登录面板',

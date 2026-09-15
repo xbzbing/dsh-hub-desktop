@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { SshKeyPreviewResult } from '@shared/contracts'
+import { useAppStore } from '../store'
 import { Icon } from '../lib/icons'
+import type { MessageKey } from '@shared/i18n/messages'
 
 const BRIDGE = window.dshHub
 
@@ -19,8 +21,11 @@ export default function KeyPreview(props: {
   username: string
   sshPort: string
 }): ReactNode {
+  const t = useAppStore((state) => state.t)
   const [preview, setPreview] = useState<SshKeyPreviewResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 本地兜底文案走 key(effect 因此不依赖 t);主进程返回的运行期文案照旧直显
+  const [errorKey, setErrorKey] = useState<MessageKey | null>(null)
   const host = props.host.trim()
   const username = props.username.trim()
   const port = Number(props.sshPort) || 22
@@ -41,13 +46,14 @@ export default function KeyPreview(props: {
           if (result.ok) {
             setPreview(result.value)
             setError(null)
+            setErrorKey(null)
           } else {
             setPreview(null)
             setError(result.message)
           }
         })
         .catch(() => {
-          if (!cancelled) setError('密钥解析失败')
+          if (!cancelled) setErrorKey('keyPreview.failed')
         })
     }, 350)
     return () => {
@@ -60,7 +66,7 @@ export default function KeyPreview(props: {
     return (
       <div className="hintbar" data-testid="key-preview-hint">
         <Icon name="key" />
-        <span>填写主机后会自动展示将使用哪个密钥。</span>
+        <span>{t('keyPreview.hint')}</span>
       </div>
     )
   }
@@ -69,7 +75,7 @@ export default function KeyPreview(props: {
     return (
       <div className="note n-warn" data-testid="key-preview-error">
         <Icon name="alert" />
-        <span>{error}</span>
+        <span>{error ?? (errorKey === null ? '' : t(errorKey))}</span>
       </div>
     )
   }
@@ -78,7 +84,7 @@ export default function KeyPreview(props: {
     return (
       <div className="hintbar" data-testid="key-preview-loading">
         <Icon name="key" />
-        <span>正在解析将使用的密钥…</span>
+        <span>{t('keyPreview.resolving')}</span>
       </div>
     )
   }
@@ -93,8 +99,12 @@ export default function KeyPreview(props: {
       <div className="note n-warn" data-testid="key-preview-empty">
         <Icon name="alert" />
         <span>
-          未检测到可用密钥（agent {preview.agent.status === 'unavailable' ? '未运行' : '为空'}，
-          也没有解析到默认私钥）。请启动 ssh-agent 并加载密钥，或改用密码认证。
+          {t('keyPreview.none', {
+            agent:
+              preview.agent.status === 'unavailable'
+                ? t('keyPreview.agentUnavailable')
+                : t('keyPreview.agentEmpty')
+          })}
         </span>
       </div>
     )
@@ -104,16 +114,18 @@ export default function KeyPreview(props: {
     <div className="note n-ok" data-testid="key-preview-ok">
       <Icon name="key" />
       <span>
-        将使用密钥：
+        {t('keyPreview.using')}
         <span className="num">
           {agentReady && agentKey
             ? `${agentKey.typeLabel} (ssh-agent${agentKey.comment ? ` · ${agentKey.comment}` : ''})`
-            : (firstIdentity ?? '默认私钥')}
+            : (firstIdentity ?? t('keyPreview.defaultKey'))}
         </span>
         {preview.identityFiles.length > 1 && (
-          <span className="meta"> · 备用 {preview.identityFiles.length - 1} 把</span>
+          <span className="meta"> · {t('keyPreview.alternates', { n: preview.identityFiles.length - 1 })}</span>
         )}
-        {preview.explicitIdentityFile && <span className="meta"> · 实例已指定私钥</span>}
+        {preview.explicitIdentityFile && (
+          <span className="meta"> · {t('keyPreview.explicit')}</span>
+        )}
       </span>
     </div>
   )
