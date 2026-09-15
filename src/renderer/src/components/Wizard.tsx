@@ -121,6 +121,7 @@ export default function Wizard(): ReactNode {
 
   return (
     <Modal
+      closeLabel={t('common.close')}
       wide
       title="新建实例"
       sub="三步创建一个可连接的 dsh 实例"

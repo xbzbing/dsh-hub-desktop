@@ -9,6 +9,8 @@ export function Modal(props: {
   footer?: ReactNode
   children: ReactNode
   testId?: string
+  /** 关闭按钮的无障碍标签(由调用方经 t('common.close') 传入,保持本组件无 i18n 依赖) */
+  closeLabel?: string
 }): ReactNode {
   return (
     <div className="overlay" onClick={props.onClose}>
@@ -25,7 +27,7 @@ export function Modal(props: {
             <h2>{props.title}</h2>
             {props.sub && <p className="sub">{props.sub}</p>}
           </div>
-          <button className="x-btn" aria-label="关闭" onClick={props.onClose}>
+          <button className="x-btn" aria-label={props.closeLabel ?? 'Close'} onClick={props.onClose}>
             ✕
           </button>
         </div>

@@ -7,6 +7,7 @@ import type {
 } from '@shared/contracts'
 import { Icon } from '../lib/icons'
 import { Modal } from './Modal'
+import { useAppStore } from '../store'
 
 const BRIDGE = window.dshHub
 
@@ -17,6 +18,7 @@ const BRIDGE = window.dshHub
  * 两者都由主进程事件驱动，答完即销毁。
  */
 export default function SshDialogs(): ReactNode {
+  const t = useAppStore((state) => state.t)
   const [hostKey, setHostKey] = useState<HostKeyPromptPayload | null>(null)
   const [askpass, setAskpass] = useState<AskpassPromptPayload | null>(null)
   const [secret, setSecret] = useState('')
@@ -51,6 +53,7 @@ export default function SshDialogs(): ReactNode {
     const changed = hostKey.verdict === 'changed'
     return (
       <Modal
+        closeLabel={t('common.close')}
         title={changed ? '服务器指纹已变化' : '连接安全确认'}
         sub={`${hostKey.target} · ${changed ? '与此前信任的不一致' : '首次连接前需核对身份'}`}
         onClose={() => replyHostKey('reject')}
@@ -125,6 +128,7 @@ export default function SshDialogs(): ReactNode {
   if (askpass) {
     return (
       <Modal
+        closeLabel={t('common.close')}
         title="需要输入 SSH 口令"
         sub={askpass.prompt}
         onClose={() => replyAskpass(null)}

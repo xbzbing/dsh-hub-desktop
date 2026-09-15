@@ -280,6 +280,7 @@ export default function DetailView(): ReactNode {
 
       {confirmDelete && (
         <Modal
+      closeLabel={t('common.close')}
           title="删除实例"
           onClose={() => setConfirmDelete(false)}
           testId="confirm-delete"

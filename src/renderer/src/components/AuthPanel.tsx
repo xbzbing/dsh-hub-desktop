@@ -178,6 +178,7 @@ export default function AuthPanel(): ReactNode {
 
   return (
     <Modal
+      closeLabel={t('common.close')}
       title={title}
       sub={`${target.name} · ${phase}`}
       onClose={close}
