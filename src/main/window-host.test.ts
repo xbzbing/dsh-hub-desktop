@@ -132,5 +132,10 @@ describe('openInstanceWindow（实例窗口接线,§6.6 拦截外跳）', () => 
 
     const w3 = openInstanceWindow({ instanceId: id, title: 't3', url: ORIGIN }) as unknown as TestWin
     expect(w3).not.toBe(w1)
+
+    // 'closed' 事件回调同样负责清理 Map:触发后再开同 id → 又得新窗口
+    w3.closedListener?.()
+    const w4 = openInstanceWindow({ instanceId: id, title: 't4', url: ORIGIN }) as unknown as TestWin
+    expect(w4).not.toBe(w3)
   })
 })

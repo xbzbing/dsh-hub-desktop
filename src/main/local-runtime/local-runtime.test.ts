@@ -779,14 +779,20 @@ describe('createLocalRuntime', () => {
     children[1]?.stdout.write(readyLine(31235))
     await second
     await waitForStatus(manager, instance.id, 'running')
-    // 等陈旧 handleReady(A) 的重试耗尽(3 次 × 10ms),再断言其失败终局不得误删第二代条目
+    // 等陈旧 handleReady(A) 的重试耗尽(3 次 × 10ms),再断言其失败终局不得误删第二代条目。
+    // 注:本用例锁定的是「换代场景整体」(身份守卫 + exit 置 stopping 的合效果);
+    // 单回退身份检查仍会绿 —— 每条换代路径都隐含旧条目 stopping=true,身份检查属于
+    // 防御纵深,无法被单测独立锁定(复审结论 L1)
     await new Promise((resolve) => setTimeout(resolve, 60))
     expect(manager.runningIds()).toEqual([instance.id])
     expect(manager.statusOf(instance.id)?.url).toBe('http://127.0.0.1:31235/?token=test-token')
     expect(children[0]?.killCall).toEqual([]) // 第一代已退出,无需补杀
   })
 
-  it('stop:子进程永不退出(僵尸/D 态)→ 仍放行启动队列,排队任务完成而非永久卡死', async () => {
+  it('stop:子进程永不退出(僵尸/D 态)→ 放行启动队列,排在后面的实例正常启动', async () => {
+    // 锁测试(复审修正版):id2 的 start 排在「已 spawn、未就绪、永不退出」的 id1 之后,
+    // stop(id1) 必须自行 settle 队列,id2 才能开始;readyTimeoutMs 放大到 60s,
+    // 防止 ready-timer 兜底触发 settle 而掩盖「缺失的 stop-settle」
     const children: FakeChild[] = []
     const spawnImpl = vi.fn(() => {
       const child = new EventEmitter() as unknown as FakeChild
@@ -806,26 +812,26 @@ describe('createLocalRuntime', () => {
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
       probe: async () => true,
-      readyTimeoutMs: 2000,
+      readyTimeoutMs: 60_000,
       stopGraceMs: 30
     })
-    const instance = localInstance()
-    const s1 = manager.start(instance)
+    const inst1 = localInstance({ name: 'A' })
+    const inst2 = localInstance({ name: 'B' })
+    void manager.start(inst1) // id1:挂住队列头(未就绪、永不退出)
     await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
-    children[0]?.stdout.write(readyLine())
-    await s1
-    await waitForStatus(manager, instance.id, 'running')
-    // 第二个 start 排队在第一个的 settle 之后;stop 杀不掉永不退出的进程
-    const s2 = manager.start(instance)
-    await manager.stop(instance.id)
-    // stop 必须自行 settle 队列,否则 s2 永久悬空、后续所有实例的 start 全被卡死
+    // id1 已 spawn 但未写就绪行也不退出:串行任务卡在队列头,id2 排在后面
+    const s2 = manager.start(inst2)
+    await manager.stop(inst1.id) // kill 无效、永不 exit → 只能靠 stop() 自己放行
+    // 修复后的放行必须发生:否则 s2 永远轮不到 spawn(无修复时此处 waitFor 超时失败)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(2), { timeout: 2000 })
+    children[1]?.stdout.write(readyLine())
     const outcome = await Promise.race([
       s2.then(() => 'settled' as const),
       new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 3000))
     ])
     expect(outcome).toBe('settled')
-    expect(spawnImpl).toHaveBeenCalledTimes(1) // 排队中的 s2 不得复活实例
-    expect(manager.runningIds()).toEqual([])
-    expect(manager.statusOf(instance.id)?.status).toBe('stopped')
+    await waitForStatus(manager, inst2.id, 'running')
+    expect(manager.runningIds()).toEqual([inst2.id])
+    expect(manager.statusOf(inst1.id)?.status).toBe('stopped')
   })
 })
