@@ -209,10 +209,43 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(renamed.port).toBe(2202)
   })
 
-  it('评审回归:方括号裸 IPv6 归一化为无括号存储', async () => {
-    const v6 = asSsh(await store.create(sshInput({ name: '括号IPv6', host: '[::1]' })))
-    expect(v6.host).toBe('::1')
-    expect(v6.port).toBe(22)
+  it('评审回归:方括号点分/IPv4-mapped 形态同样拆分端口(与 schema 字符集对齐)', async () => {
+    const v4 = asSsh(await store.create(sshInput({ name: '括号点分', host: '[192.0.2.1]:2222' })))
+    expect(v4.host).toBe('192.0.2.1')
+    expect(v4.port).toBe(2222)
+
+    const mapped = asSsh(
+      await store.create(sshInput({ name: 'IPv4-mapped', host: '[::ffff:192.168.1.5]:3080' }))
+    )
+    expect(mapped.host).toBe('::ffff:192.168.1.5')
+    expect(mapped.port).toBe(3080)
+  })
+
+  it('评审回归:update 裸方括号 IPv6 不得注入默认端口(与无括号写法对称)', async () => {
+    const withPort = asSsh(await store.create(sshInput({ name: '保持端口', port: 2222 })))
+    const stripped = asSsh(await store.update(withPort.id, { host: '[::1]' }))
+    expect(stripped.host).toBe('::1')
+    expect(stripped.port).toBe(2222) // 端口保持不变(修复前被静默改成 22)
+
+    const bare = asSsh(await store.update(withPort.id, { host: '::1' }))
+    expect(bare.host).toBe('::1')
+    expect(bare.port).toBe(2222)
+
+    // 显式 port 与括号剥离并存:保留显式值
+    const both = asSsh(await store.update(withPort.id, { host: '[::1]', port: 3333 }))
+    expect(both.host).toBe('::1')
+    expect(both.port).toBe(3333)
+  })
+
+  it('评审回归:list/get 返回拷贝,外部改动不污染缓存', async () => {
+    const created = await store.create(localInput({ name: '原始名' }))
+    const list = await store.list()
+    const first = list[0]
+    if (first) first.name = 'HACK-l'
+    const detail = await store.get(created.id)
+    if (detail) detail.name = 'HACK-g'
+    expect((await store.get(created.id))?.name).toBe('原始名')
+    expect((await store.list())[0]?.name).toBe('原始名')
   })
 
   it('update 不存在的 id → not-found', async () => {

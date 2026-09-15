@@ -253,9 +253,13 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
 
   function normalizeCreate(input: CreateInstanceParams): CreateInstanceParams {
     if (input.transport === 'ssh') {
-      const { host, port } = splitSshHostPort(input.host, input.port ?? 22)
-      if (host === input.host && port === (input.port ?? 22)) return input
-      return { ...input, host, port }
+      const split = splitSshHostPort(input.host, input.port ?? 22)
+      if (split.host === input.host && !split.portEmbedded) return input
+      // host:port 组合形式 → 拆分出的端口优先（文档化约定）；
+      // 纯方括号剥离 → 只归一化主机形态，端口交给显式 port / 记录默认值
+      return split.portEmbedded
+        ? { ...input, host: split.host, port: split.port }
+        : { ...input, host: split.host }
     }
     if (input.transport === 'http') {
       // 存归一化 baseUrl（去尾斜杠等），判重语义与 isSameEndpoint 一致
@@ -265,10 +269,15 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
   }
 
   function normalizePatch(patch: PatchInstanceParams): PatchInstanceParams {
-    // 与 create 语义一致：host[:port] 组合形式优先，拆分出独立 host + port
+    // 与 create 语义一致：仅当 host 内真正带 `:port` 时才采用其端口；
+    // 方括号剥离只改主机形态，绝不注入默认端口（否则会静默改掉记录里的端口）
     if (patch.host !== undefined) {
-      const { host, port } = splitSshHostPort(patch.host, patch.port ?? 22)
-      if (host !== patch.host) return { ...patch, host, port }
+      const split = splitSshHostPort(patch.host, patch.port ?? 22)
+      if (split.host !== patch.host) {
+        return split.portEmbedded
+          ? { ...patch, host: split.host, port: split.port }
+          : { ...patch, host: split.host }
+      }
     }
     if (patch.endpointUrl !== undefined) {
       const parsed = parseEndpointUrl(patch.endpointUrl)
@@ -331,7 +340,8 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     list: () =>
       enqueue(async () => {
         await ensureLoaded()
-        return [...(instances ?? [])]
+        // 返回拷贝，调用方（未来主进程消费者）无法污染缓存
+        return (instances ?? []).map((record) => structuredClone(record))
       }),
 
     get: (id) =>

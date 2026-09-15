@@ -40,7 +40,8 @@ function isValidSshHost(host: string): boolean {
   const portOfBracket = /^\[([0-9a-fA-F:.]+)\](?::(\d+))?$/.exec(host)
   if (portOfBracket) return portOfBracket[2] === undefined || inPortRange(portOfBracket[2])
   if (host.includes(':')) {
-    return /^[0-9a-fA-F:]+$/.test(host) && (host.match(/:/g)?.length ?? 0) >= 2
+    // 裸 IPv6（含 IPv4-mapped 点分尾巴 `::ffff:192.168.1.5`）：至少两个冒号且字符集合法
+    return /^[0-9a-fA-F:.]+$/.test(host) && (host.match(/:/g)?.length ?? 0) >= 2
   }
   return true
 }
@@ -255,23 +256,37 @@ export function formatZodIssues(error: z.ZodError, cap = 300): string {
   return joined.length > cap ? `${joined.slice(0, cap)}…` : joined
 }
 
+export interface SshHostPortSplit {
+  host: string
+  port: number
+  /** 端口是否来自 host 内的 `:port` 组合形式；false 表示取 fallbackPort（调用方不应据此覆盖已有端口） */
+  portEmbedded: boolean
+}
+
 /**
- * SSH `host[:port]` / `[v6]:port` 组合形式拆分。
- * 纯主机名 / 别名 / 裸 IPv6（含冒号但非 host:port 形态）原样返回，端口取 fallbackPort。
+ * SSH `host[:port]` / `[v6][:port]` 组合形式拆分。
+ * - 纯主机名 / 别名 / 裸 IPv6（含冒号但非 host:port 形态）原样返回，端口取 fallbackPort；
+ * - 方括号形态一律剥离方括号（`[::1]` → `::1`、`[::1]:2222` → `::1` + 2222）；
+ * - 字符类含 `.`，与 SSH_HOST_SCHEMA 的方括号分支保持一致（`[::ffff:192.168.1.1]`、
+ *   `[192.0.2.1]:2222` 等点分形态也必须能拆分，否则端口会静默回退）。
  */
-export function splitSshHostPort(host: string, fallbackPort: number): { host: string; port: number } {
+export function splitSshHostPort(host: string, fallbackPort: number): SshHostPortSplit {
   const plain = /^([A-Za-z0-9._-]+):(\d{1,5})$/.exec(host)
   if (plain) {
     const port = Number(plain[2] ?? '')
-    if (port >= 1 && port <= 65535) return { host: plain[1] ?? '', port }
+    if (port >= 1 && port <= 65535) return { host: plain[1] ?? '', port, portEmbedded: true }
   }
-  const bracketed = /^\[([0-9a-fA-F:]+)\]:(\d{1,5})$/.exec(host)
-  if (bracketed) {
-    const port = Number(bracketed[2] ?? '')
-    if (port >= 1 && port <= 65535) return { host: bracketed[1] ?? '', port }
+  const bracketedWithPort = /^\[([0-9a-fA-F:.]+)\]:(\d{1,5})$/.exec(host)
+  if (bracketedWithPort) {
+    const port = Number(bracketedWithPort[2] ?? '')
+    if (port >= 1 && port <= 65535) {
+      return { host: bracketedWithPort[1] ?? '', port, portEmbedded: true }
+    }
   }
-  // 方括号无端口形态 `[::1]`：归一化为无括号形式
-  const bracketedPlain = /^\[([0-9a-fA-F:]+)\]$/.exec(host)
-  if (bracketedPlain) return { host: bracketedPlain[1] ?? '', port: fallbackPort }
-  return { host, port: fallbackPort }
+  // 方括号无端口形态 `[::1]`：只归一化主机形态，端口由调用方决定
+  const bracketedPlain = /^\[([0-9a-fA-F:.]+)\]$/.exec(host)
+  if (bracketedPlain) {
+    return { host: bracketedPlain[1] ?? '', port: fallbackPort, portEmbedded: false }
+  }
+  return { host, port: fallbackPort, portEmbedded: false }
 }
