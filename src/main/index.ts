@@ -172,9 +172,13 @@ void app.whenReady().then(() => {
   const dataRoot = app.getPath('userData')
   // 注册表落盘位置：<userData>/registry/instances.json（+ 滚动备份 + 损坏隔离）
   const instanceStore = createInstanceStore({ dir: join(dataRoot, 'registry') })
+  // npm registry 可经环境变量覆盖：默认跟随系统 npm 配置；
+  // 内网/海外网络慢时可指到镜像，如 DSH_HUB_NPM_REGISTRY=https://registry.npmmirror.com
+  const npmRegistry = process.env['DSH_HUB_NPM_REGISTRY']?.trim() || undefined
   const installer = createRuntimeInstaller({
     runtimesDir: join(dataRoot, 'runtimes'),
-    cacheDir: join(dataRoot, 'npm-cache')
+    cacheDir: join(dataRoot, 'npm-cache'),
+    ...(npmRegistry ? { registry: npmRegistry } : {})
   })
   runtime = createLocalRuntime({ installer, dataRoot })
 

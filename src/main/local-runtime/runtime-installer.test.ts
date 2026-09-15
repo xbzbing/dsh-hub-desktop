@@ -47,7 +47,8 @@ describe('createRuntimeInstaller', () => {
     expect(versions).toEqual(['0.1.2-rc.1', '0.1.5-rc.1', '0.1.5-rc.2'])
     expect(run).toHaveBeenCalledWith(
       'npm',
-      expect.arrayContaining(['view', '@deepseek-ai/dsh', 'versions', '--json'])
+      expect.arrayContaining(['view', '@deepseek-ai/dsh', 'versions', '--json']),
+      expect.anything()
     )
   })
 
@@ -117,6 +118,32 @@ describe('createRuntimeInstaller', () => {
     await expect(installer.isInstalled('../x')).rejects.toThrow(/非法版本号/)
     expect(() => runtimeDirFor(tmpDir(), 'a/b')).toThrow(/非法版本号/)
     expect(() => runtimeEntryFor(tmpDir(), 'a\\b')).toThrow(/非法版本号/)
+  })
+
+  it('ensureInstalled 并发只安装一次(多实例同时首启复用同一份运行时)', async () => {
+    const runtimesDir = tmpDir()
+    const version = '0.1.5-rc.1'
+    let installCalls = 0
+    const installer = createRuntimeInstaller({
+      runtimesDir,
+      cacheDir: tmpDir(),
+      run: async (_command: string, args: string[]) => {
+        if (args.includes('install')) {
+          installCalls += 1
+          await fakeInstallArtifacts(runtimesDir, version)
+          return okRun('')
+        }
+        return okRun('[]')
+      }
+    })
+
+    const [first, second] = await Promise.all([
+      installer.ensureInstalled(version),
+      installer.ensureInstalled(version)
+    ])
+    expect(installCalls).toBe(1)
+    expect(first.entry).toBe(second.entry)
+    expect(await installer.isInstalled(version)).toBe(true)
   })
 
   it('listInstalled 跳过未完成安装与无关目录名', async () => {

@@ -39,23 +39,34 @@ interface FakeChild extends SpawnedProcess {
 
 function makeFakeInstaller(overrides: Partial<RuntimeInstaller> = {}): RuntimeInstaller & {
   install: ReturnType<typeof vi.fn>
+  ensureInstalled: ReturnType<typeof vi.fn>
 } {
+  const installed = (): {
+    version: string
+    dir: string
+    entry: string
+    installedAt: string
+  } => ({
+    version: '0.1.5-rc.1',
+    dir: '/tmp/runtimes/dsh-0.1.5-rc.1',
+    entry: '/tmp/runtimes/dsh-0.1.5-rc.1/node_modules/@deepseek-ai/dsh/lib/bin.js',
+    installedAt: ISO
+  })
   const base: RuntimeInstaller = {
     listAvailableVersions: async () => ['0.1.5-rc.1'],
     resolveDefaultVersion: async () => '0.1.5-rc.1',
     listInstalled: async () => [],
     isInstalled: async (version) => version === '0.1.5-rc.1',
-    install: vi.fn(async () => ({
-      version: '0.1.5-rc.1',
-      dir: '/tmp/runtimes/dsh-0.1.5-rc.1',
-      entry: '/tmp/runtimes/dsh-0.1.5-rc.1/node_modules/@deepseek-ai/dsh/lib/bin.js',
-      installedAt: ISO
-    })),
+    install: vi.fn(async () => installed()),
+    ensureInstalled: vi.fn(async () => installed()),
     resolveEntry: (version) => `/tmp/runtimes/dsh-${version}/lib/bin.js`,
     hasIncompleteInstall: async () => false,
     ...overrides
   }
-  return base as RuntimeInstaller & { install: ReturnType<typeof vi.fn> }
+  return base as RuntimeInstaller & {
+    install: ReturnType<typeof vi.fn>
+    ensureInstalled: ReturnType<typeof vi.fn>
+  }
 }
 
 /** 等待某状态出现(轮询,默认 2s 上限) */
@@ -91,6 +102,7 @@ describe('createLocalRuntime', () => {
 
     const spawnImpl = vi.fn((invocation: SpawnInvocation) => {
       expect(invocation.args).toContain('--no-open')
+      expect(invocation.args).toContain('--expose-internals')
       expect(invocation.env['DSH_HOME']).toContain('homes')
       expect(invocation.detached).toBe(true)
       return child as unknown as SpawnedProcess
@@ -109,8 +121,10 @@ describe('createLocalRuntime', () => {
     manager.onStatus((event) => events.push(event))
 
     const instance = localInstance()
-    await manager.start(instance)
+    // start() 现在会等到「就绪或退出」才返回(TOCTOU 防线):先注入就绪行再 await
+    const starting = manager.start(instance)
     child.stdout.write('dsh web: http://127.0.0.1:31234/?token=abc\n')
+    await starting
     await waitForStatus(manager, instance.id, 'running')
 
     const status = manager.statusOf(instance.id)
@@ -118,7 +132,12 @@ describe('createLocalRuntime', () => {
     expect(status?.port).toBe(31234)
     expect(status?.version).toBe('0.1.5-rc.1')
     expect(probe).toHaveBeenCalledWith('http://127.0.0.1:31234/?token=abc', expect.any(Number))
-    expect(events.map((event) => event.status)).toEqual(['starting', 'starting', 'running'])
+    expect(events.map((event) => event.status)).toEqual([
+      'starting',
+      'starting',
+      'starting',
+      'running'
+    ])
   })
 
   it('启动超时未出就绪行 → error + 杀进程', async () => {
@@ -157,17 +176,21 @@ describe('createLocalRuntime', () => {
       child.killCall.push(signal ?? 'SIGTERM')
       return true
     }) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
 
     const manager = createLocalRuntime({
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
-      spawnImpl: (() => child) as never,
+      spawnImpl: spawnImpl as never,
       readyTimeoutMs: 5000
     })
     const instance = localInstance()
-    await manager.start(instance)
+    const starting = manager.start(instance)
+    // 等 spawn 与监听器挂好(同一同步块),再注入退出事件,避免事件丢失
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalled())
     child.stderr.write('Error: port already in use\n')
     child.emit('exit', 1, null)
+    await starting
     await waitForStatus(manager, instance.id, 'error')
 
     expect(manager.statusOf(instance.id)?.detail).toContain('code=1')
@@ -196,8 +219,9 @@ describe('createLocalRuntime', () => {
       stopGraceMs: 60
     })
     const instance = localInstance()
-    await manager.start(instance)
+    const starting = manager.start(instance)
     child.stdout.write(readyLine())
+    await starting
     await waitForStatus(manager, instance.id, 'running')
 
     await manager.stop(instance.id)
@@ -234,8 +258,9 @@ describe('createLocalRuntime', () => {
       readyTimeoutMs: 2000
     })
     const instance = localInstance()
-    await manager.start(instance)
+    const starting = manager.start(instance)
     child.stdout.write(readyLine())
+    await starting
     await waitForStatus(manager, instance.id, 'running')
 
     await manager.start(instance)
@@ -243,16 +268,14 @@ describe('createLocalRuntime', () => {
     expect(manager.statusOf(instance.id)?.detail).toContain('已在运行')
   })
 
-  it('未安装版本时先 install 再 spawn;已指定版本则直接用', async () => {
+  it('启动前经 ensureInstalled 准备运行时(指定版本直接用)', async () => {
     const child = new EventEmitter() as unknown as FakeChild
     child.stdout = new PassThrough()
     child.stderr = new PassThrough()
     child.pid = 999996
     child.kill = vi.fn(() => true) as never
 
-    const installer = makeFakeInstaller({
-      isInstalled: async () => false
-    })
+    const installer = makeFakeInstaller()
     const manager = createLocalRuntime({
       installer,
       dataRoot: '/tmp/hub-data',
@@ -260,10 +283,12 @@ describe('createLocalRuntime', () => {
       readyTimeoutMs: 2000
     })
     const instance = localInstance()
-    await manager.start(instance)
-    expect(installer.install).toHaveBeenCalledWith('0.1.5-rc.1')
+    const starting = manager.start(instance)
+    child.stdout.write(readyLine())
+    await starting
+    await vi.waitFor(() => expect(installer.ensureInstalled).toHaveBeenCalledWith('0.1.5-rc.1'))
 
-    // 指定版本的实例:不查 latest,直接校验
+    // 指定版本的实例:直接把该版本交给 ensureInstalled
     const pinned = makeFakeInstaller()
     const manager2 = createLocalRuntime({
       installer: pinned,
@@ -271,9 +296,84 @@ describe('createLocalRuntime', () => {
       spawnImpl: (() => child) as never,
       readyTimeoutMs: 2000
     })
-    await manager2.start(localInstance({ dshVersion: '0.1.4-rc.1', id: randomUUID() }))
-    // isInstalled(0.1.4-rc.1) 在假安装器里返回 false → 触发 install(0.1.4-rc.1)
-    expect(pinned.install).toHaveBeenCalledWith('0.1.4-rc.1')
+    const startingPinned = manager2.start(
+      localInstance({ dshVersion: '0.1.4-rc.1', id: randomUUID() })
+    )
+    child.stdout.write(readyLine())
+    await startingPinned
+    await vi.waitFor(() => expect(pinned.ensureInstalled).toHaveBeenCalledWith('0.1.4-rc.1'))
+  })
+
+  it('并发启动串行化:A 就绪后才拉起 B(TOCTOU 防线)', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999997 - children.length
+      child.killCall = []
+      child.kill = vi.fn(() => true) as never
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    const manager = createLocalRuntime({
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000
+    })
+    const a = localInstance({ name: 'A' })
+    const b = localInstance({ name: 'B' })
+    void manager.start(a)
+    void manager.start(b)
+
+    // A 先被拉起;未就绪时 B 不允许 spawn(否则两个实例会抢同一端口)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
+    children[0]?.stdout.write(readyLine())
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(2))
+    children[1]?.stdout.write(readyLine())
+
+    await waitForStatus(manager, a.id, 'running')
+    await waitForStatus(manager, b.id, 'running')
+    expect(manager.runningIds().sort()).toEqual([a.id, b.id].sort())
+  })
+
+  it('排队期间 stop:取消启动,不再 spawn', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999998
+    child.kill = vi.fn(() => true) as never
+
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+    const blocker = makeFakeInstaller({
+      ensureInstalled: vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60)) // 占住串行队列
+        return {
+          version: '0.1.5-rc.1',
+          dir: '/tmp/runtimes/dsh-0.1.5-rc.1',
+          entry: '/tmp/bin.js',
+          installedAt: ISO
+        }
+      })
+    })
+    const manager = createLocalRuntime({
+      installer: blocker,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      readyTimeoutMs: 2000
+    })
+    const a = localInstance({ name: 'A' })
+    const b = localInstance({ name: 'B' })
+    const startA = manager.start(a)
+    const startB = manager.start(b)
+    await manager.stop(b.id) // b 尚在排队
+    await startA
+    await startB
+
+    expect(spawnImpl).toHaveBeenCalledTimes(1) // 只有 a 被拉起
+    expect(manager.statusOf(b.id)?.status).toBe('stopped')
   })
 
   it('抛错路径(安装失败) → error 事件而非未处理拒绝', async () => {

@@ -83,6 +83,11 @@ export interface RuntimeInstaller {
   listInstalled(): Promise<InstalledRuntime[]>
   isInstalled(version: string): Promise<boolean>
   install(version: string): Promise<InstalledRuntime>
+  /**
+   * 原子「检查并安装」：同一版本只会安装一次 —— 并发调用（多实例同时首次启动）
+   * 会在队列里串行，后来者直接复用已完成的安装结果。
+   */
+  ensureInstalled(version: string): Promise<InstalledRuntime>
   resolveEntry(version: string): string
   /** 安装中断标记（installing.json）是否残留 */
   hasIncompleteInstall(version: string): Promise<boolean>
@@ -109,32 +114,55 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
   const run = options.run ?? runCommand
   const registryArgs = options.registry ? ['--registry', options.registry] : []
 
+  // 同名目录的安装/检查必须串行(双实例并发启动会撞同一 runtimes/dsh-<v> 目录)
+  let installChain: Promise<unknown> = Promise.resolve()
+  function enqueueSerial<T>(task: () => Promise<T>): Promise<T> {
+    const next = installChain.then(task, task)
+    installChain = next.catch(() => undefined)
+    return next
+  }
+
   async function npmView(args: string[]): Promise<CommandResult> {
-    return run('npm', ['view', DSH_PACKAGE_NAME, ...args, ...registryArgs])
+    // 所有 npm 调用统一走应用私有 cache：用户级 ~/.npm 可能有权限问题(如 root 残留)，
+    // 且避免污染用户缓存；调用本身经串行队列(见 enqueueSerial),避免并发 npm 争抢 cacache 锁
+    return run(
+      'npm',
+      ['view', DSH_PACKAGE_NAME, ...args, '--cache', options.cacheDir, ...registryArgs],
+      { env: { npm_config_cache: options.cacheDir } }
+    )
+  }
+
+  /** 内部实现(不入队):供已持有队列的任务调用,避免嵌套自锁 */
+  async function unsafeListAvailableVersions(): Promise<string[]> {
+    const result = await npmView(['versions', '--json'])
+    if (result.code !== 0) {
+      throw new Error(`读取可用版本失败：${result.stderr.trim() || `exit ${result.code}`}`)
+    }
+    const parsed: unknown = JSON.parse(result.stdout || '[]')
+    const list = Array.isArray(parsed) ? parsed : []
+    return list.filter((item): item is string => typeof item === 'string').filter((v) => !v.includes('/'))
+  }
+
+  async function unsafeResolveDefaultVersion(): Promise<string> {
+    const result = await npmView(['dist-tags', '--json'])
+    if (result.code === 0) {
+      const tags: unknown = JSON.parse(result.stdout || '{}')
+      const latest =
+        tags && typeof tags === 'object' ? (tags as Record<string, unknown>)['latest'] : undefined
+      if (typeof latest === 'string' && VERSION_PATTERN.test(latest)) return latest
+    }
+    const versions = await unsafeListAvailableVersions()
+    if (versions.length === 0) throw new Error('registry 中没有可用的 dsh 版本')
+    return versions[versions.length - 1] as string
   }
 
   return {
-    async listAvailableVersions(): Promise<string[]> {
-      const result = await npmView(['versions', '--json'])
-      if (result.code !== 0) {
-        throw new Error(`读取可用版本失败：${result.stderr.trim() || `exit ${result.code}`}`)
-      }
-      const parsed: unknown = JSON.parse(result.stdout || '[]')
-      const list = Array.isArray(parsed) ? parsed : []
-      return list.filter((item): item is string => typeof item === 'string').filter((v) => !v.includes('/'))
+    listAvailableVersions(): Promise<string[]> {
+      return enqueueSerial(() => unsafeListAvailableVersions())
     },
 
-    async resolveDefaultVersion(): Promise<string> {
-      const result = await npmView(['dist-tags', '--json'])
-      if (result.code === 0) {
-        const tags: unknown = JSON.parse(result.stdout || '{}')
-        const latest =
-          tags && typeof tags === 'object' ? (tags as Record<string, unknown>)['latest'] : undefined
-        if (typeof latest === 'string' && VERSION_PATTERN.test(latest)) return latest
-      }
-      const versions = await this.listAvailableVersions()
-      if (versions.length === 0) throw new Error('registry 中没有可用的 dsh 版本')
-      return versions[versions.length - 1] as string
+    resolveDefaultVersion(): Promise<string> {
+      return enqueueSerial(() => unsafeResolveDefaultVersion())
     },
 
     async listInstalled(): Promise<InstalledRuntime[]> {
@@ -161,78 +189,106 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       return installed.sort((a, b) => a.version.localeCompare(b.version))
     },
 
-    async isInstalled(version: string): Promise<boolean> {
-      assertVersion(version)
-      if (await this.hasIncompleteInstall(version)) return false
-      try {
-        await stat(runtimeEntryFor(options.runtimesDir, version))
-        return true
-      } catch {
-        return false
-      }
+    isInstalled(version: string): Promise<boolean> {
+      // 走同一串行队列:等待可能在飞的安装结束,避免误判「未安装」而重复安装
+      return enqueueSerial(() => unsafeIsInstalled(version))
     },
 
     resolveEntry(version: string): string {
       return runtimeEntryFor(options.runtimesDir, version)
     },
 
-    async hasIncompleteInstall(version: string): Promise<boolean> {
+    hasIncompleteInstall(version: string): Promise<boolean> {
       assertVersion(version)
-      try {
-        await stat(join(runtimeDirFor(options.runtimesDir, version), INSTALLING_MARKER))
-        return true
-      } catch {
-        return false
-      }
+      return hasIncompleteInstallMarker(version)
     },
 
-    async install(version: string): Promise<InstalledRuntime> {
-      assertVersion(version)
-      const dir = runtimeDirFor(options.runtimesDir, version)
-      const markerPath = join(dir, INSTALLING_MARKER)
+    install(version: string): Promise<InstalledRuntime> {
+      return enqueueSerial(() => doInstall(version))
+    },
 
-      await mkdir(options.runtimesDir, { recursive: true })
-      await mkdir(dir, { recursive: true })
-      await writeFile(
-        markerPath,
-        JSON.stringify({ version, startedAt: new Date().toISOString(), pid: process.pid }, null, 2),
-        'utf8'
-      )
-      options.onProgress?.({ phase: 'installing', version, detail: `安装 ${DSH_PACKAGE_NAME}@${version}` })
-
-      try {
-        const result = await run(
-          'npm',
-          [
-            'install',
-            '--prefix',
-            dir,
-            '--no-audit',
-            '--no-fund',
-            '--loglevel',
-            'error',
-            '--cache',
-            options.cacheDir,
-            `${DSH_PACKAGE_NAME}@${version}`,
-            ...registryArgs
-          ],
-          { env: { npm_config_cache: options.cacheDir } }
-        )
-        if (result.code !== 0) {
-          throw new Error(
-            `安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${result.stderr.trim() || '无 stderr'}`
-          )
-        }
-        const entry = runtimeEntryFor(options.runtimesDir, version)
-        await stat(entry) // 入口不存在视为安装失败
-        await rm(markerPath, { force: true })
+    ensureInstalled(version: string): Promise<InstalledRuntime> {
+      return enqueueSerial(async () => {
+        assertVersion(version)
+        if (!(await unsafeIsInstalled(version))) return doInstall(version)
+        const dir = runtimeDirFor(options.runtimesDir, version)
         const stats = await stat(dir)
-        return { version, dir, entry, installedAt: stats.mtime.toISOString() }
-      } catch (error) {
-        // 失败时保留 marker，下次可识别为「未完成安装」
-        throw error instanceof Error ? error : new Error(String(error))
-      }
+        return {
+          version,
+          dir,
+          entry: runtimeEntryFor(options.runtimesDir, version),
+          installedAt: stats.mtime.toISOString()
+        }
+      })
     }
+  }
+
+  async function unsafeIsInstalled(version: string): Promise<boolean> {
+    assertVersion(version)
+    if (await hasIncompleteInstallMarker(version)) return false
+    try {
+      await stat(runtimeEntryFor(options.runtimesDir, version))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function hasIncompleteInstallMarker(version: string): Promise<boolean> {
+    try {
+      await stat(join(runtimeDirFor(options.runtimesDir, version), INSTALLING_MARKER))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function doInstall(version: string): Promise<InstalledRuntime> {
+    assertVersion(version)
+    const dir = runtimeDirFor(options.runtimesDir, version)
+    const markerPath = join(dir, INSTALLING_MARKER)
+
+    await mkdir(options.runtimesDir, { recursive: true })
+    await mkdir(dir, { recursive: true })
+    await writeFile(
+      markerPath,
+      JSON.stringify({ version, startedAt: new Date().toISOString(), pid: process.pid }, null, 2),
+      'utf8'
+    )
+    options.onProgress?.({
+      phase: 'installing',
+      version,
+      detail: `安装 ${DSH_PACKAGE_NAME}@${version}`
+    })
+
+    const result = await run(
+      'npm',
+      [
+        'install',
+        '--prefix',
+        dir,
+        '--no-audit',
+        '--no-fund',
+        '--loglevel',
+        'error',
+        '--cache',
+        options.cacheDir,
+        `${DSH_PACKAGE_NAME}@${version}`,
+        ...registryArgs
+      ],
+      { env: { npm_config_cache: options.cacheDir } }
+    )
+    if (result.code !== 0) {
+      // 失败时保留 installing.json：下次可识别为「未完成安装」(断点恢复依据)
+      throw new Error(
+        `安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${result.stderr.trim() || '无 stderr'}`
+      )
+    }
+    const entry = runtimeEntryFor(options.runtimesDir, version)
+    await stat(entry) // 入口不存在视为安装失败
+    await rm(markerPath, { force: true })
+    const stats = await stat(dir)
+    return { version, dir, entry, installedAt: stats.mtime.toISOString() }
   }
 }
 

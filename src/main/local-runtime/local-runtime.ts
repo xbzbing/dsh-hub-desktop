@@ -76,6 +76,8 @@ interface Entry {
   ready: boolean
   stopping: boolean
   timer: NodeJS.Timeout | null
+  /** 队列放行钩子:就绪 / 退出 / 出错 / 超时 任一发生时调用(TOCTOU 防线) */
+  settleSpawn?: () => void
 }
 
 const defaultSpawn: SpawnLike = ({ command, args, env, cwd, detached }) =>
@@ -97,8 +99,10 @@ const defaultProbe: HealthProbe = async (url, timeoutMs) => {
 }
 
 function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
-  // Electron 主进程的 process.execPath 是 Electron 本体：以 ELECTRON_RUN_AS_NODE 退化为纯 Node 执行 dsh
-  return { command: process.execPath, args: [], env: { ELECTRON_RUN_AS_NODE: '1' } }
+  // Electron 主进程的 process.execPath 是 Electron 本体：以 ELECTRON_RUN_AS_NODE 退化为纯 Node 执行 dsh。
+  // `--expose-internals` 是 dsh web profile 的硬性要求（cordis-plugin-hmr 需要），缺失时就绪后即崩
+  // （实测:node 与 electron-as-node 均需该标志才能稳定存活）。
+  return { command: process.execPath, args: ['--expose-internals'], env: { ELECTRON_RUN_AS_NODE: '1' } }
 }
 
 export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeManager {
@@ -114,6 +118,16 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const entries = new Map<string, Entry>()
   const statuses = new Map<string, InstanceStatusEvent>()
   const listeners = new Set<(event: InstanceStatusEvent) => void>()
+  /** 启动阶段串行队列：同一时刻只让一个实例走完「安装 → 分配端口 → spawn → 就绪」 */
+  let startChain: Promise<unknown> = Promise.resolve()
+  /** 在排队期间被 stop 的实例：轮到它启动时直接放弃 */
+  const cancelRequested = new Set<string>()
+
+  function enqueueStart<T>(task: () => Promise<T>): Promise<T> {
+    const next = startChain.then(task, task)
+    startChain = next.catch(() => undefined)
+    return next
+  }
 
   function emit(id: string, status: InstanceRuntimeStatus, extra: Partial<InstanceStatusEvent> = {}): void {
     const event: InstanceStatusEvent = {
@@ -194,6 +208,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       ...(entry.port !== null ? { port: entry.port } : {}),
       detail: `已在 ${entry.home} 启动（dsh web）`
     })
+    entry.settleSpawn?.() // 排他地放行下一个实例的启动
   }
 
   function watchStdout(id: string, entry: Entry): void {
@@ -241,84 +256,121 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         return
       }
 
+      cancelRequested.delete(id) // 显式重启优先于此前排队期间的取消意图
       try {
         emit(id, 'starting', { detail: '解析运行时版本' })
         const version = instance.dshVersion ?? (await options.installer.resolveDefaultVersion())
-
-        if (!(await options.installer.isInstalled(version))) {
-          emit(id, 'starting', { version, detail: `安装 dsh ${version}（首次较慢）` })
-          await options.installer.install(version)
+        if (cancelRequested.delete(id)) {
+          emit(id, 'stopped', { detail: '已取消启动' })
+          return
         }
 
-        emit(id, 'starting', { version, detail: '分配端口并启动进程' })
-        const preferredPort = await findFreePort().catch(() => 0)
-        const home = join(options.dataRoot, 'homes', id)
-        await mkdir(home, { recursive: true })
+        // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
+          // 关键:串行段要等到「就绪或退出」才结束 —— 端口探测与 dsh 实际绑定之间存在
+          // TOCTOU 窗口(设计文档 §4.1),若只等 spawn 就放行,两个实例会抢同一端口后者崩溃。
+          const spawned = await enqueueStart(async (): Promise<Entry | null> => {
+          if (cancelRequested.delete(id)) return null
+          emit(id, 'starting', {
+            version,
+            detail: `准备 dsh ${version} 运行时（首次需要安装，可能较慢）`
+          })
+          await options.installer.ensureInstalled(version)
+          if (cancelRequested.delete(id)) return null
 
-        const child = spawnImpl({
-          command: nodeInvocation.command,
-          args: [
-            ...nodeInvocation.args,
-            options.installer.resolveEntry(version),
-            '--profile',
-            profile,
-            '--host',
-            '127.0.0.1',
-            '--port',
-            String(preferredPort),
-            '--no-open'
-          ],
-          env: { ...process.env, ...nodeInvocation.env, DSH_HOME: home },
-          cwd: home,
-          detached: true
+          emit(id, 'starting', { version, detail: '分配端口并启动进程' })
+          const preferredPort = await findFreePort().catch(() => 0)
+          const home = join(options.dataRoot, 'homes', id)
+          await mkdir(home, { recursive: true })
+
+          const child = spawnImpl({
+            command: nodeInvocation.command,
+            args: [
+              ...nodeInvocation.args,
+              options.installer.resolveEntry(version),
+              '--profile',
+              profile,
+              '--host',
+              '127.0.0.1',
+              '--port',
+              String(preferredPort),
+              '--no-open'
+            ],
+            env: { ...process.env, ...nodeInvocation.env, DSH_HOME: home },
+            cwd: home,
+            detached: true
+          })
+
+          const entry: Entry = {
+            child,
+            url: null,
+            port: null,
+            version,
+            home,
+            log: [],
+            ready: false,
+            stopping: false,
+            timer: null
+          }
+          entries.set(id, entry)
+          watchStdout(id, entry)
+
+          // 队列放行信号:就绪 / 退出 / 出错 / 超时 任一发生即 settle
+          let settleSpawned: (() => void) | null = null
+          const spawnSettledPromise = new Promise<void>((resolve) => {
+            settleSpawned = resolve
+          })
+          let settled = false
+          entry.settleSpawn = () => {
+            if (settled) return
+            settled = true
+            settleSpawned?.()
+          }
+
+          entry.timer = setTimeout(() => {
+            if (entry.ready || entry.stopping) return
+            emit(id, 'error', {
+              detail: `启动超时（${Math.round(readyTimeoutMs / 1000)}s）：未解析到就绪 URL${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`
+            })
+            entry.stopping = true
+            killTree(entry, 'SIGKILL')
+            entries.delete(id)
+            entry.settleSpawn?.()
+          }, readyTimeoutMs)
+          entry.timer.unref?.()
+
+          child.on('error', (error: Error) => {
+            if (entry.stopping) return
+            entry.stopping = true
+            emit(id, 'error', { detail: `进程启动失败：${error.message}` })
+            entries.delete(id)
+            entry.settleSpawn?.()
+          })
+
+          child.on('exit', (code, signal) => {
+            if (entry.timer) {
+              clearTimeout(entry.timer)
+              entry.timer = null
+            }
+            entries.delete(id)
+            if (entry.stopping) {
+              emit(id, 'stopped', { detail: '已停止' })
+            } else {
+              emit(id, 'error', {
+                detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`
+              })
+            }
+            entry.settleSpawn?.()
+          })
+
+          // 等到就绪/退出/超时,再放行下一个实例(端口已稳定分配的保证)
+          await spawnSettledPromise
+          return entry
         })
 
-        const entry: Entry = {
-          child,
-          url: null,
-          port: null,
-          version,
-          home,
-          log: [],
-          ready: false,
-          stopping: false,
-          timer: null
+        if (!spawned) {
+          emit(id, 'stopped', { detail: '已取消启动' })
+          return
         }
-        entries.set(id, entry)
-        watchStdout(id, entry)
-
-        entry.timer = setTimeout(() => {
-          if (entry.ready || entry.stopping) return
-          emit(id, 'error', {
-            detail: `启动超时（${Math.round(readyTimeoutMs / 1000)}s）：未解析到就绪 URL${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`
-          })
-          entry.stopping = true
-          killTree(entry, 'SIGKILL')
-          entries.delete(id)
-        }, readyTimeoutMs)
-        entry.timer.unref?.()
-
-        child.on('error', (error: Error) => {
-          if (entry.stopping) return
-          entry.stopping = true
-          emit(id, 'error', { detail: `进程启动失败：${error.message}` })
-          entries.delete(id)
-        })
-
-        child.on('exit', (code, signal) => {
-          if (entry.timer) {
-            clearTimeout(entry.timer)
-            entry.timer = null
-          }
-          entries.delete(id)
-          if (entry.stopping) {
-            emit(id, 'stopped', { detail: '已停止' })
-            return
-          }
-          emit(id, 'error', {
-            detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`
-          })
-        })
       } catch (error) {
         emit(id, 'error', {
           detail: error instanceof Error ? error.message : String(error)
@@ -329,6 +381,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     async stop(id) {
       const entry = entries.get(id)
       if (!entry) {
+        // 可能仍在启动队列里（安装 / 等待串行）:登记取消意图,轮到它时直接放弃
+        cancelRequested.add(id)
         emit(id, 'stopped', { detail: '实例未在运行' })
         return
       }
