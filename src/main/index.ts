@@ -2,7 +2,6 @@ import {
   app,
   BrowserWindow,
   net,
-  Notification,
   protocol,
   safeStorage,
   session,
@@ -49,12 +48,14 @@ import { createTranslator } from '@shared/i18n'
 import { resolveLanguage } from '@shared/settings'
 import type { Tray } from 'electron'
 import type { SettingsStore } from './settings/settings-store'
-import {
-  loginItemSettings,
-  notificationPlan,
-  shouldMinimizeToTrayOnClose
-} from './shell/native-decisions'
 import { createNativeSettingsApplier } from './shell/native-settings'
+// T11 三审 Finding 2:效果侧接线抽到可单测的模块(此前写在 whenReady 内,结构上不可测)
+import { createHubNativePorts } from './shell/native-ports'
+import type { HubNativePorts } from './shell/native-ports'
+import { handleWindowClose } from './shell/close-to-tray'
+import { createStatusNotifier } from './shell/status-notifier'
+// T11 三审 Finding 1:打开数据目录(通道不接受任何路径参数)
+import { createDataDirOpener } from './shell/open-data-dir'
 import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
 import type { Vault } from './vault/vault'
 import type { Settings } from '@shared/settings'
@@ -131,8 +132,14 @@ let audit: AuditLog | null = null
  */
 let settingsRef: SettingsStore | null = null
 
-/** T11 托盘(仅在偏好开启时存在;close-to-tray 依赖它存在才允许隐藏) */
-let hubTray: Tray | null = null
+/**
+ * T11 托盘端口(装配时创建;托盘**仅在偏好开启时**存在)。
+ *
+ * 存在性判断与托盘引用由 `createHubNativePorts` 单点持有(T11 三审 Finding 2):
+ * 此前 `hubTray` 变量散落在 whenReady 里,`trayExists`/`updateTray`/`setLoginItem`
+ * 的实现都在不可测的闭包中,三个变异因此能存活全部三关。
+ */
+let nativePorts: HubNativePorts<Tray> | null = null
 
 /**
  * 托盘图标路径。
@@ -254,13 +261,17 @@ function createWindow(): BrowserWindow {
   if (isDev && rendererDevUrl) void win.loadURL(rendererDevUrl)
   else void win.loadURL(`${RENDERER_ORIGIN}/index.html`)
 
-  // T11:偏好「关闭窗口时最小化到托盘」——此时关闭不销毁窗口,而是隐藏
+  // T11:偏好「关闭窗口时最小化到托盘」——此时关闭不销毁窗口,而是隐藏。
+  // 判定与拦截动作在 `shell/close-to-tray.ts`(三审 Finding 2):
+  // 「托盘是否存在」必须**实时查询**真实端口,不能写死 —— 硬编码 `true` 会让
+  // 没有托盘时也隐藏窗口,应用从此叫不回来(只剩 macOS Dock)。
   win.on('close', (event) => {
-    const current = settingsRef?.read()
-    // 托盘不存在时绝不隐藏:否则窗口关掉后应用无法召回(只剩 macOS Dock)
-    if (!current || !shouldMinimizeToTrayOnClose(current, hubTray !== null)) return
-    event.preventDefault()
-    win.hide()
+    handleWindowClose(event, {
+      settings: () => settingsRef?.read() ?? null,
+      // 「托盘是否存在」由端口自己回答(存在性的唯一真理源),这里不做二次判断
+      trayAvailable: () => nativePorts?.trayExists() === true,
+      hideWindow: () => win.hide()
+    })
   })
 
   win.on('closed', () => {
@@ -379,30 +390,39 @@ void app.whenReady().then(() => {
    * electron」由注入端口的 `createNativeSettingsApplier` 保证 —— 两者都有单测
    * (复审指出此前效果侧写在 app.whenReady() 内,结构上不可测,M9/M14′/M17 因此存活)。
    */
-  const nativeApplier = createNativeSettingsApplier({
-    trayExists: () => hubTray !== null,
-    createTray: () => {
-      hubTray = createHubTray({
-        iconPath: trayIconPath(),
-        labels: trayLabels(),
-        onShow: showHubWindow,
-        onQuit: quitApp
-      })
-    },
-    destroyTray: () => {
-      hubTray?.destroy()
-      hubTray = null
-    },
-    updateTray: () => {
-      if (hubTray) updateTrayStatus(hubTray, trayLabels(), showHubWindow, quitApp)
-    },
-    setLoginItem: (autoStart) => app.setLoginItemSettings(loginItemSettings({ autoStart })),
+  const ports = createHubNativePorts<Tray>({
+    // 图标/文案都是**动态取值**:语言或运行中实例数变了,刷新时必须重新求值
+    iconPath: trayIconPath,
+    labels: trayLabels,
+    createTray: (options) => createHubTray(options),
+    refreshTrayMenu: (tray, labels, onShow, onQuit) =>
+      updateTrayStatus(tray, labels, onShow, onQuit),
+    applyLoginItem: (value) => app.setLoginItemSettings(value),
+    onShow: showHubWindow,
+    onQuit: quitApp,
     onError: (error, action) => console.error('[main] 应用原生设置失败：', action, error)
   })
+  nativePorts = ports
+  const nativeApplier = createNativeSettingsApplier(ports)
 
   const applyNativeSettings = (current: Settings, options: { startup?: boolean } = {}): void => {
     nativeApplier.apply(current, options)
   }
+
+  // T11 系统通知:发送本身在 `shell/status-notifier.ts`(单测直接断言 Notification.show()),
+  // 这里只注入「偏好/语言」两个取值端口(三审 Finding 2)
+  const notifier = createStatusNotifier({
+    readSettings: () => settings.read(),
+    locale: () => app.getLocale(),
+    onError: (error) => console.error('[main] 发送系统通知失败：', error)
+  })
+
+  // T11 三审 Finding 1:打开数据目录。通道不接受任何路径参数 ——
+  // 目录在此解析(`DSH_HUB_DATA_DIR` 覆盖已在文件顶部生效,故 userData 即权威值)。
+  const dataDirOpener = createDataDirOpener({
+    dataDir: () => app.getPath('userData'),
+    openPath: (path) => shell.openPath(path)
+  })
 
   /** 当前处于 running 的实例数(托盘状态行) */
   function runningInstanceCount(): number {
@@ -474,24 +494,16 @@ void app.whenReady().then(() => {
     )) {
       auditWrite(entry)
     }
-    // T11:按偏好弹系统通知(首次观测/状态未变化/停止与启动中都不打扰)
-    const notifyPrevious = previousStatus
-    {
-      try {
-        const tr = createTranslator(resolveLanguage(settings.read().language, app.getLocale()))
-        const plan = notificationPlan(event, notifyPrevious, settings.read(), tr)
-        if (plan && Notification.isSupported()) {
-          new Notification({ title: plan.title, body: plan.body }).show()
-        }
-      } catch (error) {
-        console.error('[main] 发送系统通知失败：', error)
-      }
-    }
+    // T11:按偏好弹系统通知(首次观测/状态未变化/停止与启动中都不打扰)。
+    // 判定+发送都在 `shell/status-notifier.ts`(三审 Finding 2:此前 `new Notification().show()`
+    // 写在不可测的闭包里,删掉后三关全绿);失败已在内部收敛为日志,绝不打断状态流。
+    notifier.notify(event, previousStatus)
     lastRuntimeState.set(event.id, event.status)
-    // 托盘菜单的状态行跟随实例变化刷新(托盘存在时)
-    if (hubTray) {
+    // 托盘菜单的状态行跟随实例变化刷新(只有托盘**确实存在**时才刷新)
+    const tray = nativePorts?.currentTray()
+    if (tray && nativePorts) {
       try {
-        updateTrayStatus(hubTray, trayLabels(), showHubWindow, quitApp)
+        nativePorts.updateTray()
       } catch (error) {
         console.error('[main] 刷新托盘菜单失败：', error)
       }
@@ -570,6 +582,9 @@ void app.whenReady().then(() => {
     settings,
     audit: auditWrite,
     onSettingsChanged: applyNativeSettings,
+    // T11 三审 Finding 1:设置页「打开」按钮。**不接收入参** ——
+    // 目录由本进程解析,渲染层无从指定路径(见 shell/open-data-dir.ts)
+    openDataDir: () => dataDirOpener.open(),
     // T9:登出时清该实例分区内的会话 Cookie(origin 取自实例记录)
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)

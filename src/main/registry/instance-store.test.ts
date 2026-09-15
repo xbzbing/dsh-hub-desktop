@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -58,6 +58,11 @@ function httpInput(overrides: object = {}): CreateInstanceInput {
 
 async function readRegistryFile(): Promise<unknown> {
   return JSON.parse(await readFile(join(dir, 'instances.json'), 'utf8'))
+}
+
+/** 取文件权限位（掩掉文件类型位）；仅在文件已存在时调用，避免首次运行 ENOENT 抖动 */
+async function modeOf(path: string): Promise<number> {
+  return (await stat(path)).mode & 0o777
 }
 
 beforeEach(async () => {
@@ -433,5 +438,48 @@ describe('createInstanceStore / 写盘失败不产生幻影(评审 R3)', () => {
     // 拷贝语义:缓存未被前一轮的写入污染
     const after = await store.list()
     expect(after[0]?.name).toBe('实例 0')
+  })
+})
+
+describe('createInstanceStore / 落盘权限 0600（安全评审 Finding 2）', () => {
+  it('新建的注册表主文件为 0600', async () => {
+    await store.create(localInput())
+    expect(await modeOf(join(dir, 'instances.json'))).toBe(0o600)
+  })
+
+  it('滚动备份 .bak-* 为 0600', async () => {
+    const created = await store.create(localInput())
+    await store.update(created.id, { name: '触发备份' })
+    const baks = (await readdir(dir)).filter((name) => name.startsWith('instances.json.bak-'))
+    expect(baks.length).toBeGreaterThan(0)
+    for (const name of baks) expect(await modeOf(join(dir, name)), name).toBe(0o600)
+  })
+
+  it('隔离副本 .corrupt-* 为 0600（源文件曾是 0644 也必须收紧）', async () => {
+    await store.create(localInput())
+    const file = join(dir, 'instances.json')
+    await chmod(file, 0o644) // 模拟旧版本遗留 / 手工改宽的权限
+    await writeFile(file, '{{{ 不是 JSON', 'utf8') // 覆盖写不改动既有 mode
+    expect(await modeOf(file)).toBe(0o644)
+
+    expect(await tmpRun().list()).toEqual([]) // 触发一次损坏隔离
+    const corrupts = (await readdir(dir)).filter((name) => name.startsWith('instances.json.corrupt-'))
+    expect(corrupts.length).toBe(1)
+    const quarantined = corrupts[0]
+    if (!quarantined) throw new Error('期望存在隔离副本')
+    expect(await modeOf(join(dir, quarantined))).toBe(0o600)
+  })
+
+  it('既有 0644 注册表在一次成功写入后归一化为 0600', async () => {
+    const created = await store.create(localInput())
+    const file = join(dir, 'instances.json')
+    await chmod(file, 0o644)
+    expect(await modeOf(file)).toBe(0o644)
+
+    await store.update(created.id, { name: '归一化' })
+    expect(await modeOf(file)).toBe(0o600)
+    // 权限收紧不得影响写入本身
+    const written = (await readRegistryFile()) as { instances: Array<{ name: string }> }
+    expect(written.instances[0]?.name).toBe('归一化')
   })
 })

@@ -163,6 +163,12 @@ export const MESSAGES = {
   'settings.autoStart': { zh: '开机自启', en: 'Launch at login' },
   'settings.notifications': { zh: '实例状态通知', en: 'Instance status notifications' },
   'settings.dataDir': { zh: '数据目录', en: 'Data directory' },
+  // 三审 Finding 1:数据目录新增「打开」控件(设计稿 data-act="open-dir";PRD §292)
+  'settings.openDataDir': { zh: '打开', en: 'Open' },
+  'settings.openDataDirFailed': {
+    zh: '打开数据目录失败',
+    en: 'Failed to open the data directory'
+  },
   'settings.clearCredentials': {
     zh: '清除所有已记住的凭据',
     en: 'Clear all remembered credentials'
@@ -216,6 +222,11 @@ export const MESSAGES = {
   'wizard.noteLocal': { zh: '本机实例创建完成后会自动安装 dsh 并启动，就绪后直接打开工作区。', en: 'A local instance installs dsh and starts automatically, then opens the workspace.' },
   'wizard.noteSsh': { zh: '首次连接需要核对服务器指纹，确认后才会建立加密通道。', en: 'The first connection verifies the server fingerprint before the encrypted channel is established.' },
   'wizard.noteHttp': { zh: '粘贴网址后已在第二步实时探测登录方式。', en: 'The sign-in mode was probed live in step two.' },
+  // 设计 §7.1「直连 HTTP 远程实例默认警告『数据面明文』」——保存**之前**就要让用户看到
+  'wizard.cleartextWarning': {
+    zh: '该地址是 http://，数据面为明文：密码、动态验证码与会话 Cookie 都会以明文经过网络。请改用 HTTPS 端点，或通过 SSH 隧道连接。',
+    en: 'This address is http://, so its data plane is cleartext: the password, verification code and session cookie all travel over the network in cleartext. Use an HTTPS endpoint, or connect through an SSH tunnel.'
+  },
   'wizard.typeLocal': { zh: '本机运行的 dsh', en: 'dsh running locally' },
   'wizard.typeLocalDesc': { zh: '版本按需安装，互不干扰', en: 'Versions installed on demand, isolated' },
   'wizard.typeSsh': { zh: '经 SSH 隧道连接', en: 'Over an SSH tunnel' },
@@ -274,6 +285,11 @@ export const MESSAGES = {
     zh: '本机回环连接未加密。仅本机可访问，不会经过网络；实例页面由 dsh 自带的浏览器令牌保护（browser-auth）。',
     en: 'The loopback connection is unencrypted. Only this machine can reach it and no traffic leaves the host; the instance page is protected by dsh\u2019s built-in browser token (browser-auth).'
   },
+  // 设计 §7.1 威胁表「S 冒认(远程)」:直连 HTTP 远程实例默认警告「数据面明文」(PRD §6.2 警告级别,常驻)
+  'detail.cleartextWarning': {
+    zh: '未加密连接：直连 http:// 端点的数据面为明文，密码、动态验证码与会话 Cookie 都会以明文经过网络。请改用 HTTPS 端点，或通过 SSH 隧道连接。',
+    en: 'Unencrypted connection: a direct http:// endpoint has a cleartext data plane, so the password, verification code and session cookie all travel over the network in cleartext. Use an HTTPS endpoint, or connect through an SSH tunnel.'
+  },
   'detail.deleteBody': {
     zh: '删除后本地保存的登录信息与连接记录会一并移除，远端 dsh 本身不受影响。',
     en: 'Local sign-in data and connection history are removed too; the remote dsh itself is unaffected.'
@@ -286,16 +302,16 @@ export const MESSAGES = {
   'ssh.hostKeyChangedSub': { zh: '与此前信任的不一致', en: 'differs from what was trusted before' },
   'ssh.hostKeyNewSub': { zh: '首次连接前需核对身份', en: 'verify the identity before first connecting' },
   'ssh.hostKeyChangedHint': {
-    zh: '仅在你已与服务管理员核对过指纹后再继续',
-    en: 'Continue only after verifying the fingerprint with the server administrator'
+    zh: '连接已被拒绝：本应用不会在连接时覆盖已信任的指纹。请先与服务管理员核对；确属服务器重新生成密钥时，用「忘记该主机指纹」重新确认。',
+    en: 'Connection refused: this app never overwrites a trusted fingerprint during a connection. Verify with the server administrator first; if the server really was re-keyed, use "Forget this host key" to verify it again.'
   },
   'ssh.hostKeyNewHint': {
     zh: '确认后会写入本机私有 known_hosts',
     en: 'Confirming writes it to the app-private known_hosts'
   },
   'ssh.hostKeyMismatch': {
-    zh: '这台服务器出示的指纹与已信任的不一致。',
-    en: 'The fingerprint this server presents differs from the trusted one.'
+    zh: '这台服务器出示的指纹与已信任的不一致，连接已被拒绝。',
+    en: 'The fingerprint this server presents differs from the trusted one. The connection was refused.'
   },
   'ssh.askpassTitle': { zh: '需要输入 SSH 口令', en: 'SSH passphrase required' },
   'ssh.askpassTransient': {
@@ -303,12 +319,29 @@ export const MESSAGES = {
     en: 'The passphrase is used for this connection only and is never written to disk or logs'
   },
   'ssh.askpassLabel': { zh: '口令 / 私钥口令', en: 'Passphrase / key passphrase' },
-  'ssh.confirmAdvanced': { zh: '我已确认（高级）', en: 'I have verified it (advanced)' },
   'ssh.trustAndConnect': { zh: '这是我的服务器，信任并连接', en: 'This is my server — trust and connect' },
   'ssh.changedWarning': {
-    zh: '可能是服务器重装或密钥轮换，也可能是中间人攻击。请先与服务管理员核对，再决定是否继续。',
-    en: 'This can be a reinstall or key rotation, but it can also be a man-in-the-middle attack. Verify with the server administrator before continuing.'
+    zh: '可能是服务器重装或密钥轮换，也可能是中间人攻击。为避免误信任，本应用不会在连接时覆盖已信任的指纹；确认服务器端确实换了密钥后，用「忘记该主机指纹」重新走首次确认。',
+    en: 'This can be a reinstall or key rotation, but it can also be a man-in-the-middle attack. To avoid trusting the wrong key, this app never overwrites a trusted fingerprint during a connection; once you have confirmed the server really was re-keyed, use "Forget this host key" to verify it as a first-time host.'
   },
+  // 显式、破坏性的恢复动作（设计 §7.3）：连接时指纹变化一律拒绝且不自动清理，
+  // 只有在**独立**的确认框里主动「忘记该主机指纹」，下一次连接才重新走首次 TOFU。
+  'ssh.forgetHostKey': { zh: '忘记该主机指纹', en: 'Forget this host key' },
+  'ssh.forgetTitle': { zh: '忘记该主机指纹', en: 'Forget this host key' },
+  'ssh.forgetIrreversible': {
+    zh: '不可撤销：只删本机记录，不影响服务器',
+    en: 'Irreversible: it only clears the local record; the server is unaffected'
+  },
+  'ssh.forgetConfirm': { zh: '确认忘记', en: 'Forget it' },
+  'ssh.forgetBody': {
+    zh: '这会删除本机为此主机保存的已信任指纹。下次连接会重新按「首次连接」核对新指纹 —— 只有在你已确认新指纹确实来自该服务器时才应这样做。',
+    en: 'This deletes the trusted fingerprint stored on this machine for that host. The next connection verifies the new fingerprint as a first-time host — do this only once you have confirmed that the new fingerprint really belongs to that server.'
+  },
+  'ssh.forgetDone': {
+    zh: '已忘记该主机指纹，下次连接将重新核对',
+    en: 'Host key forgotten; the next connection will verify it again'
+  },
+  'ssh.forgetFailed': { zh: '忘记主机指纹失败', en: 'Could not forget the host key' },
   'ssh.untrustedHint': {
     zh: '「{target}」还没有被信任过，请核对下面的指纹是否与服务端一致。',
     en: '"{target}" has not been trusted yet. Check that the fingerprint below matches the server.'

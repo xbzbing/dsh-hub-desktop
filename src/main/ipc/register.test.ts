@@ -38,6 +38,7 @@ let tunnelsFake: {
   start: ReturnType<typeof vi.fn>
   stop: ReturnType<typeof vi.fn>
   stopAll: ReturnType<typeof vi.fn>
+  forgetHostKey: ReturnType<typeof vi.fn>
 }
 let openInstanceView: ReturnType<typeof vi.fn>
 let httpFake: {
@@ -94,7 +95,8 @@ beforeEach(async () => {
     runningIds: vi.fn(() => []),
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
-    stopAll: vi.fn(async () => undefined)
+    stopAll: vi.fn(async () => undefined),
+    forgetHostKey: vi.fn(async () => undefined)
   }
   httpFake = {
     onStatus: vi.fn(() => () => undefined),
@@ -200,6 +202,7 @@ describe('registerIpc', () => {
       'instances:openView',
       'ssh:keyPreview',
       'ssh:hostKeyReply',
+      'ssh:hostKeyForget',
       'ssh:askpassReply',
       'http:detect',
       'auth:probe',
@@ -210,9 +213,58 @@ describe('registerIpc', () => {
       'vault:forget',
       'vault:clear',
       'settings:get',
+      'settings:openDataDir',
       'settings:update'
     ]
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
+  })
+
+  it('ssh:hostKeyForget:入参走 zod 边界,只有 ssh 实例才转交 tunnels.forgetHostKey', async () => {
+    // 设计 §7.3 的显式恢复动作。入参非法 → invalid-input;实例不存在 → not-found;
+    // 非 ssh 实例没有主机指纹 → invalid-input。三种情况都不许触碰隧道管理器。
+    const invalid = (await invoke('ssh:hostKeyForget', { instanceId: 'not-a-uuid' })) as {
+      ok: boolean
+      code?: string
+    }
+    expect(invalid.ok).toBe(false)
+    expect(invalid.code).toBe('invalid-input')
+
+    const missing = (await invoke('ssh:hostKeyForget', { instanceId: randomUUID() })) as {
+      ok: boolean
+      code?: string
+    }
+    expect(missing.ok).toBe(false)
+    expect(missing.code).toBe('not-found')
+
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    const wrongTransport = (await invoke('ssh:hostKeyForget', {
+      instanceId: local.value.id
+    })) as { ok: boolean; code?: string }
+    expect(wrongTransport.ok).toBe(false)
+    expect(wrongTransport.code).toBe('invalid-input')
+    expect(tunnelsFake.forgetHostKey).not.toHaveBeenCalled()
+
+    // ssh 实例 → 转交显式恢复动作,成功返回 null 信封
+    const ssh = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '隧道',
+      host: 'dsh.internal',
+      username: 'dev'
+    })) as { ok: boolean; value: { id: string } }
+    if (!ssh.ok) throw new Error('创建失败')
+    const done = (await invoke('ssh:hostKeyForget', { instanceId: ssh.value.id })) as {
+      ok: boolean
+      value: null
+    }
+    expect(done.ok).toBe(true)
+    expect(done.value).toBeNull()
+    expect(tunnelsFake.forgetHostKey).toHaveBeenCalledWith(
+      expect.objectContaining({ id: ssh.value.id, transport: 'ssh' })
+    )
   })
 
   it('app:info 返回版本快照', async () => {

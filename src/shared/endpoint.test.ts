@@ -4,7 +4,8 @@ import {
   isLoopbackHost,
   isSameEndpoint,
   parseEndpointUrl,
-  tryParseEndpoint
+  tryParseEndpoint,
+  type EndpointErrorCode
 } from './endpoint'
 
 /** 取失败原因码；成功则让测试失败并给出可读原因 */
@@ -16,6 +17,32 @@ function codeOf(input: string): string {
     throw error
   }
   throw new Error(`期望解析失败，但 ${JSON.stringify(input)} 解析成功了`)
+}
+
+/** 取解析失败的错误对象；成功则让测试失败并给出可读原因 */
+function parseErrorOf(input: string): EndpointParseError {
+  try {
+    parseEndpointUrl(input)
+  } catch (error) {
+    if (error instanceof EndpointParseError) return error
+    throw error
+  }
+  throw new Error(`期望解析失败，但 ${JSON.stringify(input)} 解析成功了`)
+}
+
+/**
+ * 触发每一类解析失败的输入（安全评审 Finding 1 的穷尽枚举）。
+ * 类型是 `Record<EndpointErrorCode, string>`：新增错误码而不补样例会直接编译失败。
+ */
+const BRANCH_INPUTS: Record<EndpointErrorCode, string> = {
+  empty: '   ',
+  'unsupported-scheme': 'ftp://user:s3cr3t@dsh.example.com',
+  'missing-host': 'http:///user:s3cr3t@',
+  malformed: 'http://user:s3cr3t@',
+  'credentials-not-allowed': 'http://user:s3cr3t@127.0.0.1:3080',
+  'query-not-supported': 'http://127.0.0.1:3080/?token=s3cr3t',
+  'hash-not-supported': 'http://127.0.0.1:3080/#s3cr3t',
+  'invalid-port': 'http://127.0.0.1:0'
 }
 
 describe('parseEndpointUrl / 正常输入', () => {
@@ -146,6 +173,62 @@ describe('parseEndpointUrl / 非法输入', () => {
       expect(parseError.code).toBe('unsupported-scheme')
       expect(parseError.input).toBe('ftp://dsh.example.com')
       expect(parseError.name).toBe('EndpointParseError')
+    }
+  })
+})
+
+describe('parseEndpointUrl / 错误消息不回显输入（安全评审 Finding 1）', () => {
+  it('内嵌凭据的地址不会把用户名/密码带进 message', () => {
+    const hostile = [
+      'http://user:s3cr3t@',
+      'http://user:s3cr3t@/',
+      'http:///user:s3cr3t@',
+      'http://user:s3cr3t@127.0.0.1:3080'
+    ]
+    for (const input of hostile) {
+      const error = parseErrorOf(input)
+      expect(error.message, input).not.toContain('s3cr3t')
+      expect(error.message, input).not.toContain('user:')
+      expect(error.message, input).not.toContain(input.trim())
+      // 结构化字段保留（内部排查用），只有 message 停止回显
+      expect(error.input, input).toBe(input.trim())
+    }
+    // 稳定的 code 不因「不回显」而改变
+    expect(parseErrorOf('http://user:s3cr3t@').code).toBe('malformed')
+    expect(parseErrorOf('http://user:s3cr3t@/').code).toBe('malformed')
+    expect(parseErrorOf('http:///user:s3cr3t@').code).toBe('missing-host')
+    expect(parseErrorOf('http://user:s3cr3t@127.0.0.1:3080').code).toBe('credentials-not-allowed')
+  })
+
+  it('穷尽枚举：每一个解析失败分支的 message 都不含该分支的输入', () => {
+    for (const [code, input] of Object.entries(BRANCH_INPUTS)) {
+      const error = parseErrorOf(input)
+      expect(error.code, input).toBe(code)
+      expect(error.input, input).toBe(input.trim())
+      expect(error.message, input).not.toContain('s3cr3t')
+      const trimmed = input.trim()
+      // 空输入的 trim 是 ''（includes('') 恒真），无片段可回显，跳过该断言
+      if (trimmed !== '') expect(error.message, input).not.toContain(trimmed)
+    }
+  })
+
+  it('同一错误码的 message 与输入无关（静态文案）', () => {
+    // malformed：正常畸形输入与内嵌凭据输入给出同一句静态文案
+    expect(parseErrorOf('http://user:s3cr3t@').message).toBe(parseErrorOf('http://[::1').message)
+    // missing-host：同上（`http:///…` 与 `http://`）
+    expect(parseErrorOf('http:///s3cr3t@').message).toBe(parseErrorOf('http://').message)
+    // unsupported-scheme：协议位上的任意 token（可能恰是用户口令）同样不进 message
+    expect(parseErrorOf('ftp://a').message).toBe(parseErrorOf('mysecret:x').message)
+    expect(parseErrorOf('mysecret:x').message).not.toContain('mysecret')
+  })
+
+  it('tryParseEndpoint（Wizard 表单直接展示 message）同样不回显输入', () => {
+    const result = tryParseEndpoint('http://user:s3cr3t@')
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('malformed')
+      expect(result.message).not.toContain('s3cr3t')
+      expect(result.message).not.toContain('user:')
     }
   })
 })

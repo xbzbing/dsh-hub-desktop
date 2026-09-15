@@ -15,7 +15,7 @@ const BRIDGE = window.dshHub
  * - 语言:切换即时生效(文案来自 store 的翻译器,无刷新);
  * - 主题:system/light/dark,即时生效;
  * - 托盘 / 自启 / 通知:写偏好,主进程据此行为(托盘见 tray.ts);
- * - 数据目录:只读展示 + 打开;
+ * - 数据目录:展示 + 用系统文件管理器打开(设计稿 data-act="open-dir";PRD §292);
  * - 凭据:一键清除(与详情页的 VaultCard 同一通道,含降级告警)。
  */
 export default function SettingsView(): ReactNode {
@@ -46,6 +46,18 @@ export default function SettingsView(): ReactNode {
         setVault(result.value)
         toast('ok', t('settings.cleared'))
       }
+    })
+  }
+
+  /**
+   * 打开数据目录(T11 三审 Finding 1)。
+   *
+   * 渲染层**不传路径**:主进程自己解析数据目录(DSH_HUB_DATA_DIR / userData),
+   * 所以这条通道不可能被用作任意文件打开。失败必须可见(信封 → 错误提示)。
+   */
+  const openDataDir = (): void => {
+    void BRIDGE?.settings.openDataDir().then((result) => {
+      if (result && !result.ok) toast('err', t('settings.openDataDirFailed'), result.message)
     })
   }
 
@@ -126,9 +138,25 @@ export default function SettingsView(): ReactNode {
         <div className="card-head">
           <h3>{t('settings.dataDir')}</h3>
         </div>
-        <p className="meta mt12" data-testid="settings-data-dir">
-          {userDataPath ?? '—'}
-        </p>
+        {/* 设计稿 data-act="open-dir":展示路径 + 「打开」按钮(与行内其它按钮同规格) */}
+        <div className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+          {/* 路径可能很长:允许在任意位置换行,不把「打开」按钮挤出卡片 */}
+          <span
+            className="meta num"
+            style={{ minWidth: 0, overflowWrap: 'anywhere' }}
+            data-testid="settings-data-dir"
+          >
+            {userDataPath ?? '—'}
+          </span>
+          <button
+            className="btn btn-secondary btn-sm"
+            data-act="open-dir"
+            data-testid="settings-open-data-dir"
+            onClick={openDataDir}
+          >
+            {t('settings.openDataDir')}
+          </button>
+        </div>
       </div>
 
       <div className="card mt12" data-testid="settings-vault">

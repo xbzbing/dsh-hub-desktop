@@ -39,6 +39,7 @@ import type { AuthRegistry } from '../auth/auth-registry'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
+import { DataDirOpenError } from '../shell/open-data-dir'
 import type { Vault } from '../vault/vault'
 import type { SettingsStore } from '../settings/settings-store'
 import { SettingsSchema } from '@shared/settings'
@@ -77,6 +78,14 @@ export interface IpcDeps {
    */
   onSettingsChanged?: (settings: Settings) => void
   /**
+   * T11 三审 Finding 1:打开应用数据目录(设置页「打开」按钮)。
+   *
+   * **签名上没有路径参数**——目录由装配层自行解析(`DSH_HUB_DATA_DIR` /
+   * `app.getPath('userData')`),渲染层无从指定,故不可能成为任意文件打开原语。
+   * 缺省时该通道返回 internal 错误信封(单测不装配)。
+   */
+  openDataDir?: () => Promise<void>
+  /**
    * T10 审计(§7.5)。只接收白名单字段(见 `audit/audit-log.ts`),缺省不审计(单测)。
    * 审计写入本身异步且失败隔离,不阻塞业务。
    */
@@ -96,6 +105,11 @@ async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
     // 端点解析失败属输入问题(不是内部错误):与 instances:create 的 tryParseEndpoint 口径一致
     if (error instanceof EndpointParseError) {
       return { ok: false, code: 'invalid-input', message: error.message }
+    }
+    // 打开数据目录失败:带稳定错误码(io-error/internal)显式回报,
+    // 不让「打不开」被吞成成功或未处理 rejection(T11 三审 Finding 1)
+    if (error instanceof DataDirOpenError) {
+      return { ok: false, code: error.code, message: error.message }
     }
     // 内部错误不透传细节(可能含 fs 路径),只记主进程日志
     console.error('[ipc] 未预期错误：', error)
@@ -268,6 +282,25 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       })
   )
 
+  ipcMain.handle(
+    SSH_IPC.hostKeyForget,
+    (_event, input: unknown): Promise<IpcResult<null>> =>
+      wrap(async () => {
+        // 显式、破坏性的恢复动作(设计 §7.3):连接时指纹变化一律拒绝且不自动清理,
+        // 只有用户主动「忘记该主机指纹」后,下一次连接才会重新走首次 TOFU 确认。
+        const parsed = z.object({ instanceId: z.uuid() }).parse(input)
+        const instance = await store.get(parsed.instanceId)
+        if (!instance) {
+          throw new InstanceStoreError('not-found', `实例不存在：${parsed.instanceId}`)
+        }
+        if (instance.transport !== 'ssh') {
+          throw new InstanceStoreError('invalid-input', '只有 SSH 隧道实例才有主机指纹')
+        }
+        await deps.tunnels.forgetHostKey(instance)
+        return null
+      })
+  )
+
   // —— 认证（T8）：状态流 + 登录提交（凭据只在主进程内存中流转） ——
 
   const authSnapshot = (
@@ -424,6 +457,20 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         // 副作用失败不能回滚设置(偏好已落盘);由装配层自行隔离错误
         deps.onSettingsChanged?.(next)
         return next
+      })
+  )
+
+  // T11 三审 Finding 1:打开应用数据目录。
+  // **签名上没有路径参数**,并用空元组 schema 把「多传参数」判为非法调用 ——
+  // 目录只能由主进程自行解析,渲染层无法指定路径(见 `shell/open-data-dir.ts`)。
+  ipcMain.handle(
+    SETTINGS_IPC.openDataDir,
+    (_event, ...args: unknown[]): Promise<IpcResult<null>> =>
+      wrap(async () => {
+        z.tuple([]).parse(args)
+        if (!deps.openDataDir) throw new DataDirOpenError('internal', '打开数据目录不可用')
+        await deps.openDataDir()
+        return null
       })
   )
 

@@ -19,6 +19,7 @@ import {
   type HttpAuthDetection,
   type InstanceStatusEvent,
   type IpcResult,
+  type SshHostKeyForgetInput,
   type SshKeyPreviewInput,
   type SshKeyPreviewResult,
   type VaultPolicy,
@@ -65,6 +66,9 @@ const bridge: DshHubBridge = {
     },
     replyHostKey: (requestId: string, decision: HostKeyDecision) =>
       ipcRenderer.invoke(SSH_IPC.hostKeyReply, requestId, decision),
+    // 显式、破坏性的恢复动作(设计 §7.3):删除本机为该主机保存的指纹,下次连接重新 TOFU
+    forgetHostKey: (input: SshHostKeyForgetInput) =>
+      ipcRenderer.invoke(SSH_IPC.hostKeyForget, input) as Promise<IpcResult<null>>,
     onAskpassRequest: (listener) => {
       const handler = (_event: unknown, payload: AskpassPromptPayload): void => listener(payload)
       ipcRenderer.on(SSH_IPC.askpassRequest, handler)
@@ -107,7 +111,9 @@ const bridge: DshHubBridge = {
   settings: {
     get: () => ipcRenderer.invoke(SETTINGS_IPC.get) as Promise<IpcResult<Settings>>,
     update: (patch) =>
-      ipcRenderer.invoke(SETTINGS_IPC.update, patch) as Promise<IpcResult<Settings>>
+      ipcRenderer.invoke(SETTINGS_IPC.update, patch) as Promise<IpcResult<Settings>>,
+    // 打开数据目录:白名单里**不带任何参数**(路径由主进程解析),渲染层传不了路径
+    openDataDir: () => ipcRenderer.invoke(SETTINGS_IPC.openDataDir) as Promise<IpcResult<null>>
   },
   // T10 凭据保险库(§7.2):只暴露「状态/勾选/忘记/清空」——没有「读出凭据」的通道,
   // 渲染进程永远拿不到已存密码或会话值(凭据只在主进程内使用)。

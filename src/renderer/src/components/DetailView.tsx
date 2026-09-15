@@ -1,11 +1,25 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { tryParseEndpoint } from '@shared/endpoint'
 import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, addressOf, fmtDuration, toDisplayStatus } from '../lib/format'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
 import VaultCard from './VaultCard'
 import { showAuthActions } from '../lib/auth-actions'
+
+/**
+ * 设计 §7.1 威胁表「S 冒认(远程)」:直连 HTTP 远程实例默认警告「数据面明文」。
+ *
+ * 协议判定复用 @shared/endpoint 的权威实现(与主进程 endpoint-resolver 同一份):
+ * 省略协议的地址会按 http:// 补全,故同样落入告警;不在此处做 `startsWith('http://')`
+ * 这类 ad-hoc 字符串判断。解析失败(记录不该出现)按不告警处理,避免误报。
+ * 与 Wizard.tsx 内同名判定保持一致(两处都只在 http 方案下提示)。
+ */
+function isCleartextEndpoint(endpointUrl: string): boolean {
+  const parsed = tryParseEndpoint(endpointUrl)
+  return parsed.ok && parsed.endpoint.scheme === 'http'
+}
 
 /** 实例详情(设计稿 view-detail 基础卡片版;认证/审计/日志随 T7/T6 扩展) */
 export default function DetailView(): ReactNode {
@@ -151,6 +165,13 @@ export default function DetailView(): ReactNode {
               <span>
                 {t('detail.loopbackWarning')}
               </span>
+            </div>
+          )}
+          {/* 设计 §7.1:直连 http:// 远程实例的数据面为明文 —— 常驻警告(https 不告警) */}
+          {record.transport === 'http' && isCleartextEndpoint(record.endpointUrl) && (
+            <div className="note n-warn mt12" data-testid="cleartext-warning">
+              <Icon name="alert" />
+              <span>{t('detail.cleartextWarning')}</span>
             </div>
           )}
           <div className="row mt12">

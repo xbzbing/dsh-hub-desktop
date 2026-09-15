@@ -665,6 +665,11 @@ h3,
   font-size: 11.5px;
   color: var(--muted);
   white-space: nowrap;
+  /* 三审:分段控件在窄侧栏 + 长英文文案("By transport")下会溢出 ——
+     允许收缩并省略号化(元素自身的 box-shadow 不受 overflow 影响) */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .seg button:hover {
   color: var(--fg);
@@ -933,6 +938,11 @@ h3,
   font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
+  /* 三审:nowrap 在长英文文案(如 "Instance details")下会顶破顶栏 ——
+     允许收缩并省略号化;父级 .tb-left 已有 min-width:0,空间充足时视觉无变化 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tb-sub {
   font-size: 11.5px;

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { InstanceStatusEvent, SshInstance } from '@shared/contracts'
+import { parseKnownHosts } from '../ssh/host-trust'
 import { controlSlug, createSshTunnels, socketsDirFor, type SshTunnelManager } from './ssh-tunnel'
 import type { SpawnedProcess } from './spawn'
 
@@ -381,6 +382,37 @@ describe('createSshTunnels（T4 隧道管理器 + 看门狗）', () => {
     expect(spawnImpl).not.toHaveBeenCalled() // 端口分配后检查取消意图并放弃
   })
 
+  it('stop 落在 ControlPath 清理的 await 窗口内 → 不 spawn 孤儿 ssh,条目/端口全部回滚', async () => {
+    // 安全评审 HIGH:start() 在 `await rm(entry.controlPath)` 处让出事件循环,期间 stop()
+    // 会把条目从 entries 摘除并标记 stopping;旧代码在这里没有重新检查,于是照样 spawn 出一个
+    // stop()/stopAll() 再也找不到的 ssh 进程(一直占着转发端口),而 UI 已显示「隧道已停止」。
+    const child = makeFakeChild()
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+    const manager = createSshTunnels({
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      portProbe: (async () => true) as never
+    })
+    const instance = sshInstance()
+    let stopScheduled = false
+    manager.onStatus((event) => {
+      if (event.id !== instance.id || stopScheduled) return
+      // 「建立 SSH 隧道」这条 starting 紧跟在 entries.set 之后,下一条语句就是
+      // `await rm(entry.controlPath)`:用微任务把 stop() 排到 rm 的 I/O 回调之前,
+      // 它就确定性地落在那个 await 窗口内(不靠 sleep 抢跑)。
+      if (event.status !== 'starting' || event.detail?.includes('建立 SSH 隧道') !== true) return
+      stopScheduled = true
+      queueMicrotask(() => void manager.stop(instance.id))
+    })
+    await manager.start(instance)
+    // 变异:删掉 spawnSsh 前的 stopping 守卫 → 这里会变成 spawnCalls=1(孤儿进程)
+    expect(spawnImpl).not.toHaveBeenCalled()
+    expect(manager.runningIds()).toEqual([]) // 条目已从 entries 回滚,无残留跟踪
+    expect(manager.statusOf(instance.id)?.status).toBe('stopped') // 终端状态准确,绝不报 running
+  })
+
   it('同 id 重复 start 幂等:已在运行则不再 spawn', async () => {
     const child = makeFakeChild()
     const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
@@ -494,48 +526,80 @@ describe('T4 评审回归防线', () => {
 })
 
 describe('T5 评审回归防线', () => {
-  it('T5-R3:指纹变化经用户确认后「替换」旧公钥(replace 语义),append 会让 TOFU 失效', async () => {
-    const { mkdtemp, readFile } = await import('node:fs/promises')
+  it('T5-R3:指纹变化一律拒绝连接且不改动旧公钥;显式「忘记该主机指纹」后才重新 TOFU', async () => {
+    // 设计 §7.3「指纹变更一律拒绝连接并告警(不自动清理)」。旧实现允许 connect 期间一键
+    // 「覆盖」旧公钥,等于把这条要求作废;本用例把新契约钉死:
+    //   变化 → 拒绝(即使渲染层回答 trust,旧公钥也一个字节都不改)
+    //   → 显式 forgetHostKey → 下一次连接重新走首次 TOFU,确认后才放行。
+    const { mkdtemp, readFile, mkdir, writeFile } = await import('node:fs/promises')
     const { tmpdir } = await import('node:os')
     const { join } = await import('node:path')
-    const dataRoot = await mkdtemp(join(tmpdir(), 'hub-t5-replace-'))
+    const dataRoot = await mkdtemp(join(tmpdir(), 'hub-t5-forget-'))
     const knownHostsPath = join(dataRoot, 'ssh', 'known_hosts')
     const OLD_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIL/GqayzeH4ALFQzq7BrQ4lodGaiDICVgULWk7rQZ4iw'
     const NEW_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
     const hostField = '[dsh.internal]:2222'
     // 预置一条「已被取代」的旧公钥
-    const { mkdir, writeFile } = await import('node:fs/promises')
     await mkdir(join(dataRoot, 'ssh'), { recursive: true })
     await writeFile(knownHostsPath, `${hostField} ssh-ed25519 ${OLD_KEY}\n`, { mode: 0o600 })
 
+    // 故意回答 trust:模拟旧版渲染层仍走「高级确认」路径 —— 主进程必须照样拒绝
     const confirmHostKey = vi.fn(async (request: { verdict: string }) => {
       void request
       return 'trust' as const
     })
-    const child = makeFakeChild()
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = makeFakeChild()
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
     const manager = createSshTunnels({
       dataRoot,
-      spawnImpl: (() => child) as never,
+      spawnImpl: spawnImpl as never,
       probe: async () => true,
       readyTimeoutMs: 2000,
       confirmHostKey,
       portProbe: (async () => true) as never,
-      // 服务端现在出示新公钥(与已信任的不同 → changed)
+      // 服务端现在出示新公钥(与已信任的不同 → changed);已信任集合从磁盘真实读取,
+      // 「忘记」才有可观测效果
       hostTrustProbe: () => ({
         scan: async () => [{ type: 'ssh-ed25519', blob: NEW_KEY }],
-        readTrusted: async () => [{ type: 'ssh-ed25519', blob: OLD_KEY }]
+        readTrusted: async () => {
+          const content = await readFile(knownHostsPath, 'utf8').catch(() => '')
+          return parseKnownHosts(content, hostField)
+        }
       })
     })
     const instance = sshInstance({ host: 'dsh.internal', port: 2222 })
-    await manager.start(instance)
-    await waitForStatus(manager, instance.id, 'running')
 
+    // ① 指纹变化 → 拒绝连接:不 spawn、不 running、旧公钥不被覆盖
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'error')
+    expect(manager.statusOf(instance.id)?.detail).toContain('拒绝连接')
     expect(confirmHostKey).toHaveBeenCalledTimes(1)
     expect(confirmHostKey.mock.calls[0]?.[0]).toMatchObject({ verdict: 'changed' })
-    const content = await readFile(knownHostsPath, 'utf8')
-    // replace 语义:旧行必须被删除(append 会留下旧行 → 旧公钥再现时被判 trusted,TOFU 失效)
-    expect(content).toContain(NEW_KEY)
-    expect(content).not.toContain(OLD_KEY)
+    expect(spawnImpl).not.toHaveBeenCalled()
+    expect(manager.runningIds()).toEqual([])
+    const afterRefusal = await readFile(knownHostsPath, 'utf8')
+    expect(afterRefusal).toContain(OLD_KEY) // 旧公钥仍在
+    expect(afterRefusal).not.toContain(NEW_KEY) // 新公钥未被写入
+
+    // ② 显式恢复动作(不属于连接确认流程):忘记该主机指纹
+    await manager.forgetHostKey(instance)
+    const afterForget = await readFile(knownHostsPath, 'utf8')
+    expect(afterForget).not.toContain(OLD_KEY)
+    expect(afterForget).not.toContain(NEW_KEY)
+
+    // ③ 忘记之后重新连接 = 首次 TOFU:必须再确认一次,确认后才放行
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'running')
+    expect(confirmHostKey).toHaveBeenCalledTimes(2)
+    expect(confirmHostKey.mock.calls[1]?.[0]).toMatchObject({ verdict: 'unknown' })
+    expect(spawnImpl).toHaveBeenCalledTimes(1)
+    const afterTrust = await readFile(knownHostsPath, 'utf8')
+    expect(afterTrust).toContain(NEW_KEY)
+    expect(children[0]?.pid).toBeDefined()
   })
 
   it('T5-R3b:首次连接确认后追加写入(unaffected 行保留)', async () => {

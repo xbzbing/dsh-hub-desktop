@@ -34,6 +34,18 @@ const EMPTY_FORM: WizardForm = {
   endpointUrl: ''
 }
 
+/**
+ * 设计 §7.1「直连 HTTP 远程实例默认警告『数据面明文』」:保存**之前**就要提示。
+ *
+ * 方案判定复用 @shared/endpoint 的权威解析(与表单校验、主进程同一份实现):
+ * 省略协议按 http:// 补全 → 同样告警;https:// 不告警。未输入/解析失败时不告警。
+ * 与 DetailView.tsx 内同名判定保持一致(两处都只在 http 方案下提示)。
+ */
+function isCleartextEndpoint(endpointUrl: string): boolean {
+  const parsed = tryParseEndpoint(endpointUrl)
+  return parsed.ok && parsed.endpoint.scheme === 'http'
+}
+
 /** 创建向导(设计稿 wizard):三步 —— 类型 → 表单 → 确认;本期本地分支创建后自动启动并开窗 */
 export default function Wizard(): ReactNode {
   const t = useAppStore((state) => state.t)
@@ -320,6 +332,13 @@ export default function Wizard(): ReactNode {
                 />
                 <span className="hint">{t('wizard.urlHint')}</span>
               </div>
+              {/* 设计 §7.1:http:// 直连的数据面是明文,创建前先提示(https 不提示) */}
+              {isCleartextEndpoint(form.endpointUrl) && (
+                <div className="note n-warn mt12" data-testid="wizard-cleartext-warning">
+                  <Icon name="alert" />
+                  <span>{t('wizard.cleartextWarning')}</span>
+                </div>
+              )}
               <div className="mt12">
                 <UrlDetect endpointUrl={form.endpointUrl} />
               </div>

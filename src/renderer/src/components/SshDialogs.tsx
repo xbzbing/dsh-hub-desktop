@@ -13,15 +13,23 @@ const BRIDGE = window.dshHub
 
 /**
  * SSH 安全确认浮层（T5）：
- * - 主机指纹（TOFU）：首次连接 = 常规确认；指纹变化 = 红色警示 + 默认拒绝（危险按钮才放行）；
+ * - 主机指纹（TOFU）：首次连接 = 常规确认；指纹**变化** = 红色警示且连接一律被拒绝
+ *   （设计 §7.3「指纹变更一律拒绝连接并告警（不自动清理）」）——连接流程里没有任何
+ *   「覆盖旧公钥」的一键放行路径，恢复只能走**独立**的破坏性动作「忘记该主机指纹」，
+ *   忘记之后的下一次连接重新走首次 TOFU 确认；
  * - 口令输入（askpass）：私钥口令 / 密码，输入后仅经 IPC 瞬时回传，不写入任何存储。
  * 两者都由主进程事件驱动，答完即销毁。
  */
 export default function SshDialogs(): ReactNode {
   const t = useAppStore((state) => state.t)
+  const toast = useAppStore((state) => state.toast)
   const [hostKey, setHostKey] = useState<HostKeyPromptPayload | null>(null)
   const [askpass, setAskpass] = useState<AskpassPromptPayload | null>(null)
   const [secret, setSecret] = useState('')
+  /** 「忘记该主机指纹」的二次确认（独立于连接确认流程的破坏性恢复动作） */
+  const [forgetFor, setForgetFor] = useState<{ instanceId: string; target: string } | null>(null)
+  /** 恢复动作的桥接面：缺失时不渲染按钮（绝不出现点了没反应的死按钮） */
+  const canForgetHostKey = typeof BRIDGE?.ssh.forgetHostKey === 'function'
 
   useEffect(() => {
     if (!BRIDGE) return
@@ -49,6 +57,63 @@ export default function SshDialogs(): ReactNode {
     setSecret('')
   }
 
+  /**
+   * 指纹变化的恢复入口：先明确**拒绝**本次连接（变化一律拒绝，绝不在连接流程里覆盖已信任
+   * 指纹），再弹独立的破坏性确认框；忘记之后的下一次连接会重新走一遍首次 TOFU 确认。
+   */
+  const requestForgetHostKey = (): void => {
+    if (!hostKey) return
+    const { instanceId, target } = hostKey
+    replyHostKey('reject')
+    setForgetFor({ instanceId, target })
+  }
+
+  const confirmForgetHostKey = async (): Promise<void> => {
+    if (!forgetFor || !BRIDGE) return
+    const result = await BRIDGE.ssh.forgetHostKey({ instanceId: forgetFor.instanceId })
+    if (!result.ok) {
+      toast('err', t('ssh.forgetFailed'), result.message)
+      return
+    }
+    toast('ok', t('ssh.forgetDone'))
+    setForgetFor(null)
+  }
+
+  // 破坏性恢复动作的独立确认框：与连接确认分开，只删本机已信任指纹，不信任当前出示的公钥
+  if (forgetFor) {
+    return (
+      <Modal
+        closeLabel={t('common.close')}
+        title={t('ssh.forgetTitle')}
+        sub={forgetFor.target}
+        onClose={() => setForgetFor(null)}
+        testId="forget-host-key-dialog"
+        footer={
+          <>
+            <span className="meta">{t('ssh.forgetIrreversible')}</span>
+            <div className="right">
+              <button className="btn btn-secondary" onClick={() => setForgetFor(null)}>
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn btn-danger"
+                data-testid="forget-host-key-confirm"
+                onClick={() => void confirmForgetHostKey()}
+              >
+                {t('ssh.forgetConfirm')}
+              </button>
+            </div>
+          </>
+        }
+      >
+        <div className="note n-err" data-testid="forget-host-key-warning">
+          <Icon name="alert" />
+          <span>{t('ssh.forgetBody')}</span>
+        </div>
+      </Modal>
+    )
+  }
+
   if (hostKey) {
     const changed = hostKey.verdict === 'changed'
     return (
@@ -65,25 +130,29 @@ export default function SshDialogs(): ReactNode {
             </span>
             <div className="right">
               <button className="btn btn-secondary" onClick={() => replyHostKey('reject')}>
-               {t('common.cancel')}
+                {changed ? t('common.close') : t('common.cancel')}
               </button>
-              {changed ? (
-                <button
-                  className="btn btn-danger"
-                  data-testid="fingerprint-accept"
-                  onClick={() => replyHostKey('trust')}
-                >
-                  {t('ssh.confirmAdvanced')}
-                </button>
-              ) : (
-                <button
-                  className="btn btn-primary"
-                  data-testid="fingerprint-accept"
-                  onClick={() => replyHostKey('trust')}
-                >
-                  {t('ssh.trustAndConnect')}
-                </button>
-              )}
+              {changed
+                ? canForgetHostKey && (
+                    // 指纹变化**没有**一键放行路径（主进程一律拒绝）。这里只提供显式、破坏性的
+                    // 恢复动作：忘记本机已信任指纹后，下一次连接重新走首次确认。
+                    <button
+                      className="btn btn-danger"
+                      data-testid="fingerprint-forget"
+                      onClick={requestForgetHostKey}
+                    >
+                      {t('ssh.forgetHostKey')}
+                    </button>
+                  )
+                : (
+                  <button
+                    className="btn btn-primary"
+                    data-testid="fingerprint-accept"
+                    onClick={() => replyHostKey('trust')}
+                  >
+                    {t('ssh.trustAndConnect')}
+                  </button>
+                )}
             </div>
           </>
         }

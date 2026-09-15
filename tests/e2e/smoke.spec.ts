@@ -42,7 +42,8 @@ test('窗口打开并渲染出应用外壳', async () => {
 test('preload 白名单桥接形状正确(无多余暴露)', async () => {
   const api = await win.evaluate(() => (window.dshHub ? Object.keys(window.dshHub).sort() : null))
   // T5 起新增 ssh 组;T10 起新增 vault 组;T11 起新增 settings 组;
-  // 任何额外暴露都会让本用例失败
+  // **T12 评审修复**新增 `ssh.forgetHostKey`(显式遗忘主机指纹)与
+  // `settings.openDataDir`(打开数据目录);任何额外暴露都会让本用例失败
   expect(api).toEqual(
     [
       'auth',
@@ -66,7 +67,11 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
       'onAskpassRequest',
       'onHostKeyDecision',
       'replyAskpass',
-      'replyHostKey'
+      'replyHostKey',
+      // 设计 §7.3「指纹变更一律拒绝连接(不自动清理)」的**唯一**恢复入口:
+      // 用户显式遗忘本机为该主机保存的指纹,下次连接重新 TOFU。
+      // 这是破坏性动作,但没有它就无法从「主机合法换钥」中恢复。
+      'forgetHostKey'
     ].sort()
   )
   const httpKeys = await win.evaluate(() =>
@@ -82,11 +87,12 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
     window.dshHub?.vault ? Object.keys(window.dshHub.vault).sort() : null
   )
   expect(vaultKeys).toEqual(['clear', 'forget', 'setPolicy', 'status'])
-  // T11 应用设置:只暴露 get/update
+  // T11 应用设置:只暴露 get/update;T12 增补 openDataDir —— **签名不带任何参数**,
+  // 目录由主进程自行解析,渲染层无法指定路径(见 shell/open-data-dir.ts)
   const settingsKeys = await win.evaluate(() =>
     window.dshHub?.settings ? Object.keys(window.dshHub.settings).sort() : null
   )
-  expect(settingsKeys).toEqual(['get', 'update'])
+  expect(settingsKeys).toEqual(['get', 'openDataDir', 'update'])
 })
 
 test('空数据目录展示空态(真实注册表后端)', async () => {

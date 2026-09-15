@@ -9,7 +9,7 @@
  * 所有变更经内部串行队列执行，避免并发交错落盘。
  */
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import {
@@ -37,6 +37,14 @@ import { parseEndpointUrl } from '@shared/endpoint'
 const FILE_NAME = 'instances.json'
 const BAK_PREFIX = `${FILE_NAME}.bak-`
 const CORRUPT_PREFIX = `${FILE_NAME}.corrupt-`
+
+/**
+ * 注册表落盘权限（安全评审 Finding 2）。
+ * 注册表含用户实例清单（名称 / 主机 / 用户名 / 远端 URL / 备注），
+ * 与审计日志（`audit-log.ts`）、设置（`settings-store.ts`）一致按 0600 落盘，
+ * 共享机器上不对同机其他用户可读。三处写盘 + 隔离副本统一走此常量。
+ */
+const FILE_MODE = 0o600
 
 export type StoreErrorCode = 'invalid-input' | 'not-found' | 'invalid-state' | 'io-error'
 
@@ -172,6 +180,9 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     const target = join(dir, `${CORRUPT_PREFIX}${Date.now()}-${randomUUID().slice(0, 8)}`)
     try {
       await rename(filePath, target)
+      // rename 保留**源文件**的权限位：既有 0644 的旧注册表被隔离后仍是 0644，
+      // 必须显式收紧（Finding 2），否则隔离副本会把清单继续暴露给同机其他用户
+      await chmod(target, FILE_MODE)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw toStoreError(error)
     }
@@ -188,8 +199,12 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     await rollBackup()
     const tmpPath = join(dir, `${FILE_NAME}.tmp-${process.pid}-${randomUUID().slice(0, 8)}`)
     try {
-      await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8')
+      // 显式 0600（同 settings-store / audit-log 的写法）；不依赖 umask 的默认 0644
+      await writeFile(tmpPath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: FILE_MODE })
       await rename(tmpPath, filePath)
+      // rename 落地的是新 inode（tmp 已是 0600），但**既有**的 0644 注册表若被
+      // 别的路径覆盖/复制保留，仍可能留下宽权限；显式 chmod 把目标归一化到 0600
+      await chmod(filePath, FILE_MODE)
     } catch (error) {
       try {
         await rm(tmpPath, { force: true })
@@ -213,7 +228,9 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     try {
       await writeFile(
         join(dir, `${BAK_PREFIX}${Date.now()}-${randomUUID().slice(0, 4)}`),
-        current
+        current,
+        // 备份仍是完整实例清单，同样按 0600 落盘（Finding 2）
+        { mode: FILE_MODE }
       )
     } catch (error) {
       throw toStoreError(error)

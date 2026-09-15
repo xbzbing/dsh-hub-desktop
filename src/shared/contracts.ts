@@ -221,6 +221,8 @@ export type PatchInstanceParams = z.output<typeof PatchInstanceSchema>
  * T5 通道：
  * - `keyPreview`：向导/详情页只读展示「将使用哪个密钥」与 agent 状态（绝不含私钥内容）；
  * - `hostKeyDecision`(主→渲染) + `hostKeyReply`(渲染→主)：TOFU 指纹确认（首次/变化双变体）；
+ * - `hostKeyForget`(渲染→主)：**显式、破坏性**的恢复动作「忘记该主机指纹」。连接时指纹变化
+ *   一律拒绝且不自动清理（设计 §7.3），只有走完本动作后下一次连接才重新走首次 TOFU；
  * - `askpassRequest`(主→渲染) + `askpassReply`(渲染→主)：SSH 口令/密钥口令弹窗，
  *   口令只经 IPC 瞬时传递，不落盘、不入日志、不进审计。
  */
@@ -228,6 +230,7 @@ export const SSH_IPC = {
   keyPreview: 'ssh:keyPreview',
   hostKeyDecision: 'ssh:hostKeyDecision',
   hostKeyReply: 'ssh:hostKeyReply',
+  hostKeyForget: 'ssh:hostKeyForget',
   askpassRequest: 'ssh:askpassRequest',
   askpassReply: 'ssh:askpassReply'
 } as const
@@ -284,6 +287,17 @@ export type HostKeyDecision = 'trust' | 'reject'
 export interface HostKeyReplyPayload {
   requestId: string
   decision: HostKeyDecision
+}
+
+/**
+ * 「忘记该主机指纹」输入（渲染 → 主，设计 §7.3）。
+ *
+ * 显式、破坏性的恢复动作：删除该实例主机在 hub 私有 known_hosts 中的全部条目，
+ * 于是下一次连接重新按「首次连接」核对新指纹。**不属于连接确认流程** —— 连接时
+ * 指纹变化一律拒绝连接且不自动清理，本动作只能由用户单独发起。
+ */
+export interface SshHostKeyForgetInput {
+  instanceId: string
 }
 
 /** askpass 口令请求（主 → 渲染）；secret 只经 IPC 瞬时传递 */
@@ -383,7 +397,15 @@ export interface VaultStatusSnapshot {
  */
 export const SETTINGS_IPC = {
   get: 'settings:get',
-  update: 'settings:update'
+  update: 'settings:update',
+  /**
+   * 用系统文件管理器打开**应用数据目录**(设置页「打开」按钮)。
+   *
+   * 安全设计:本通道**不接受任何入参** —— 目录由主进程自行解析
+   * (`DSH_HUB_DATA_DIR` 覆盖 / `app.getPath('userData')`),渲染层给不出路径,
+   * 因此结构上不可能被用作「任意文件/目录打开」原语(T11 三审 Finding 1)。
+   */
+  openDataDir: 'settings:openDataDir'
 } as const
 
 export type AuthPhase =

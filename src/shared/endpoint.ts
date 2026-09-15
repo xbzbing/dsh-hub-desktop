@@ -26,6 +26,12 @@ export class EndpointParseError extends Error {
   readonly code: EndpointErrorCode
   readonly input: string
 
+  /**
+   * `message` 一律为**静态文案**，绝不回显 `input`（安全评审 Finding 1）：
+   * 消息会经 IPC 错误信封 / 表单校验进入渲染层，可被展示、复制或写进日志；
+   * 而用户可能把 `http://user:s3cr3t@` 这类内嵌凭据的地址粘进来。
+   * 原始输入只保留在结构化字段 `input`（内部排查用），原因由稳定 `code` 表达。
+   */
   constructor(code: EndpointErrorCode, input: string, message: string) {
     super(message)
     this.name = 'EndpointParseError'
@@ -96,7 +102,8 @@ export function parseEndpointUrl(raw: string): Endpoint {
   // 而 `http:///p` 会被它悄悄解析成主机 `p`。这里统一判为缺主机，更可预测。
   const authority = /^([^/?#]*)/.exec(rest)?.[1] ?? ''
   if (authority === '') {
-    throw new EndpointParseError('missing-host', input, `端点地址缺少主机名：${input}`)
+    // 不回显 input：`http:///user:s3cr3t@` 会把整个凭据片段带进消息（安全评审 Finding 1）
+    throw new EndpointParseError('missing-host', input, '端点地址缺少主机名')
   }
 
   // ---- 3) 交给 WHATWG URL 做最终解析与归一 ----
@@ -104,7 +111,8 @@ export function parseEndpointUrl(raw: string): Endpoint {
   try {
     url = new URL(`${scheme}://${rest}`)
   } catch {
-    throw new EndpointParseError('malformed', input, `无法解析端点地址：${input}`)
+    // 同上：`http://user:s3cr3t@` 会走这里，绝不能回显 input（安全评审 Finding 1）
+    throw new EndpointParseError('malformed', input, '无法解析端点地址')
   }
 
   if (url.username !== '' || url.password !== '') {
@@ -126,7 +134,8 @@ export function parseEndpointUrl(raw: string): Endpoint {
   const defaultPort = DEFAULT_PORT[scheme]
   const port = url.port === '' ? defaultPort : Number(url.port)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new EndpointParseError('invalid-port', input, `端口不合法：${url.port}`)
+    // 同理不回显：`url.port` 虽是纯数字，仍属用户输入的一部分，统一按静态文案处理
+    throw new EndpointParseError('invalid-port', input, '端口不合法')
   }
 
   const shownHost = bracketed ? `[${host}]` : host
@@ -148,7 +157,9 @@ export function parseEndpointUrl(raw: string): Endpoint {
 function normalizeScheme(input: string, raw: string): EndpointScheme {
   const scheme = raw.toLowerCase()
   if (scheme === 'http' || scheme === 'https') return scheme
-  throw new EndpointParseError('unsupported-scheme', input, `仅支持 http / https，收到 ${scheme}:`)
+  // `raw` 是用户在协议位写下的任意 token（如 `mysecret:` 会被当协议），
+  // 因此消息不回显它，只给静态文案（安全评审 Finding 1）
+  throw new EndpointParseError('unsupported-scheme', input, '仅支持 http / https 协议')
 }
 
 export type ParseEndpointResult =

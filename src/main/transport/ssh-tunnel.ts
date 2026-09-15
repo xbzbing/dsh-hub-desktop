@@ -95,6 +95,12 @@ export interface SshTunnelManager {
   start(instance: SshInstance): Promise<void>
   stop(id: string): Promise<void>
   stopAll(): Promise<void>
+  /**
+   * T5 恢复动作(设计 §7.3):忘记某实例主机的已信任公钥 —— 删除 hub 私有 known_hosts 中
+   * 该目标的全部条目。这是**显式、独立、破坏性**的操作,不属于连接确认流程:连接时指纹
+   * 变化一律拒绝且不自动清理;只有用户主动调用本方法后,下一次连接才会重新走首次 TOFU。
+   */
+  forgetHostKey(instance: SshInstance): Promise<void>
 }
 
 interface TunnelEntry {
@@ -205,7 +211,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
   }
 
-  /** T5 TOFU:连接前校验服务器指纹(未见过 → 询问;变化 → 告警/拒绝) */
+  /** T5 TOFU:连接前校验服务器指纹(未见过 → 询问;变化 → 告警并一律拒绝,设计 §7.3) */
   async function ensureTrust(instance: SshInstance, emitWaiting: (detail: string) => void): Promise<boolean> {
     const knownHostsPath = join(dataRoot, 'ssh', 'known_hosts')
     const hostField = knownHostsHostField(instance.host, instance.port)
@@ -221,24 +227,33 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (scanned.length === 0) return true
     const evaluation = evaluateHostTrust(trusted, scanned)
     if (evaluation.verdict === 'trusted') return true
+    if (evaluation.verdict === 'changed') {
+      // 设计 §7.3「指纹变更一律拒绝连接并告警（不自动清理）」:变化不是「再确认一次就能过」,
+      // 这里仍然把新旧指纹如实投给 UI 供人工核对(告警),但**任何回答都不放行**,旧公钥
+      // 一个字节都不改。想恢复只能在隧道外显式执行遗忘（forgetHostKey），下次连接重新 TOFU。
+      emitWaiting('服务器指纹已变化，已拒绝连接')
+      if (confirmHostKey) {
+        await confirmHostKey({
+          instanceId: instance.id,
+          target: hostTargetLabel(instance.host, instance.port),
+          verdict: 'changed',
+          fingerprints: toFingerprints(scanned),
+          previousFingerprints: toFingerprints(evaluation.mismatched)
+        })
+      }
+      return false
+    }
     if (!confirmHostKey) return true // 未接线(单测)则直接放行
-    emitWaiting(
-      evaluation.verdict === 'changed' ? '等待确认服务器指纹（已变化）' : '等待确认服务器指纹'
-    )
+    emitWaiting('等待确认服务器指纹')
     const decision = await confirmHostKey({
       instanceId: instance.id,
       target: hostTargetLabel(instance.host, instance.port),
-      verdict: evaluation.verdict,
+      verdict: 'unknown',
       fingerprints: toFingerprints(scanned),
-      previousFingerprints: toFingerprints(evaluation.mismatched)
+      previousFingerprints: []
     })
     if (decision !== 'trust') return false
-    await recordHostTrust(
-      knownHostsPath,
-      hostField,
-      scanned,
-      evaluation.verdict === 'changed' ? 'replace' : 'append'
-    )
+    await recordHostTrust(knownHostsPath, hostField, scanned, 'append')
     return true
   }
 
@@ -605,6 +620,20 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         })
         // spawn 前清除可能残留的 ControlPath（重启场景）
         await rm(entry.controlPath, { force: true }).catch(() => undefined)
+        // stop()/stopAll()/实例删除可能正好落在上面这个 await 窗口内:条目已被 stop 从
+        // entries 摘除并标记 stopping,spawn 却还没发生。此时若照常 spawn,这个 ssh 子进程
+        // 就成了 stop() 再也找不到的孤儿（一直占着转发端口），而 UI 早已显示「隧道已停止」。
+        // 与 reconnectInner 同款守卫；放弃时必须把本次已获取的资源按 stop() 的做法全部回滚。
+        const cancelPending = cancelRequested.delete(id)
+        if (entry.stopping || cancelPending) {
+          entries.delete(id)
+          reservedPorts.delete(entry.localPort)
+          void rm(entry.controlPath, { force: true })
+          if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
+          entry.askpassServer = null
+          emit(id, 'stopped', { detail: '已取消启动' })
+          return
+        }
         const child = spawnSsh(entry, instance)
         entry.child = child
         await waitForReady(entry)
@@ -647,6 +676,21 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     async stopAll() {
       const ids = [...entries.keys()]
       await Promise.all(ids.map((id) => this.stop(id)))
+    },
+
+    /**
+     * T5 显式恢复:忘记该主机在 hub 私有 known_hosts 里的全部条目。
+     * 复用 recordHostTrust 的 `replace` 语义(先删该目标的旧行);keys 传空数组 = 只删不写,
+     * 于是下一次连接读不到已信任公钥 → 重新走一遍首次 TOFU 确认。
+     * 主进程侧唯一的调用方是显式的「忘记该主机指纹」动作,连接流程绝不调用它。
+     */
+    async forgetHostKey(instance) {
+      await recordHostTrust(
+        join(dataRoot, 'ssh', 'known_hosts'),
+        knownHostsHostField(instance.host, instance.port),
+        [],
+        'replace'
+      )
     }
   }
 }

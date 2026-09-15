@@ -4,7 +4,9 @@
  * 存在的**正确性理由**(不只是功能):偏好「关闭窗口时最小化到托盘」会让
  * `win.close()` 被 `preventDefault` + `hide()` 拦下。若此时**没有托盘**,
  * 应用就再也叫不回来了(只剩 macOS Dock)。因此:
- * 1. 只有托盘**确实存在**时才允许隐藏到托盘(`shouldHideOnClose` 由 index 传入托盘状态);
+ * 1. 只有托盘**确实存在**时才允许隐藏到托盘 —— 判定在 `shell/native-decisions.ts` 的
+ *    `shouldMinimizeToTrayOnClose(settings, trayAvailable)`,并由 `shell/close-to-tray.ts`
+ *    在 close 处理器里消费(index 传入的是托盘可用性探测,而非判定本身);
  * 2. 偏好从开变关时销毁托盘;从关变开时创建托盘;
  * 3. 托盘菜单至少提供「显示主窗口」与「退出」,保证任何状态下都有出路。
  */
@@ -27,11 +29,16 @@ export interface CreateHubTrayOptions {
   onQuit: () => void
 }
 
-/** 生成托盘图标(macOS 用模板图;其它平台回落到同一张图) */
+/**
+ * 从磁盘路径加载托盘图标。
+ *
+ * **不做平台分支**（此前的注释声称「macOS 用模板图、其它平台回落」,与实现不符 —— 已改正):
+ * macOS 的模板图语义由**文件名**决定(`trayTemplate.png` / `trayTemplate@2x.png`),
+ * 系统据此自动按明暗反色,无需在此处判断平台。加载失败时返回空图,
+ * 由 Electron 渲染为占位(调用方不额外兜底,避免掩盖资源缺失)。
+ */
 export function trayIconFrom(iconPath: string): NativeImage {
-  const image = nativeImage.createFromPath(iconPath)
-  if (image.isEmpty()) return image
-  return image
+  return nativeImage.createFromPath(iconPath)
 }
 
 export function createHubTray(options: CreateHubTrayOptions): Tray {
@@ -51,7 +58,12 @@ export function createHubTray(options: CreateHubTrayOptions): Tray {
   return tray
 }
 
-/** 更新托盘菜单的状态行(实例数变化时调用) */
+/**
+ * 重建托盘菜单与 tooltip。
+ *
+ * 调用时机不限于「实例数变化」:实例状态/数量变化后、以及**语言切换**后都要重建
+ * (菜单文案与状态行都要跟随语言),见 `index.ts` 的两处调用点。
+ */
 export function updateTrayStatus(tray: Tray, labels: HubTrayLabels, onShow: () => void, onQuit: () => void): void {
   tray.setToolTip(labels.tooltip)
   tray.setContextMenu(

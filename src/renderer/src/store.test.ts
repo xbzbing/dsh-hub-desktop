@@ -26,6 +26,9 @@ let updateResult: SettingsResult | null
 let updateCalls: Array<Partial<Settings>>
 let updateImpl: ((patch: Partial<Settings>) => SettingsResult | Promise<SettingsResult>) | null
 let themeListeners: Array<() => void>
+/** 订阅/退订**调用次数**(只看存活监听器数量抓不到「读了取消函数却没调用」的泄漏) */
+let themeAdds: number
+let themeRemoves: number
 let matchDark: boolean
 let storedTheme: string | null
 
@@ -35,15 +38,19 @@ function installGlobals(): void {
   updateCalls = []
   updateImpl = null
   themeListeners = []
+  themeAdds = 0
+  themeRemoves = 0
   matchDark = false
   storedTheme = null
 
   const media = {
     matches: false,
     addEventListener: (_: string, listener: () => void) => {
+      themeAdds += 1
       themeListeners.push(listener)
     },
     removeEventListener: (_: string, listener: () => void) => {
+      themeRemoves += 1
       themeListeners = themeListeners.filter((entry) => entry !== listener)
     }
   }
@@ -149,5 +156,53 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
     matchDark = false
     themeListeners.forEach((listener) => listener())
     expect(useAppStore.getState().theme).toBe('light')
+  })
+
+  it('load() 重复调用不泄漏系统主题监听(三审 Finding 3:变异「只读取消函数却不调用」)', async () => {
+    const useAppStore = await freshStore()
+
+    await useAppStore.getState().load()
+    // App.tsx 会调用 load();React.StrictMode 在开发下**双调用** effect ——
+    // 第二次必须先把上一次的订阅退掉,否则每挂载一次就多一个存活监听器
+    await useAppStore.getState().load()
+
+    // 取消了 1 次(第二次 load 才会遇到「上一次的订阅」),且任一时刻最多一个存活监听器。
+    // 变异「void systemThemeUnsubscribe」会让 themeRemoves 停在 0、themeListeners 变 2。
+    expect(themeAdds).toBe(2)
+    expect(themeRemoves).toBe(1)
+    expect(themeListeners.length).toBe(1)
+    // 净订阅数必须等于存活监听器数:多出来的就是泄漏
+    expect(themeAdds - themeRemoves).toBe(themeListeners.length)
+
+    // 幸存的必须是**新**订阅(退订后又订阅回来了),仍在跟随系统
+    matchDark = true
+    themeListeners.forEach((listener) => listener())
+    expect(useAppStore.getState().theme).toBe('dark')
+  })
+
+  it('toggleTheme 落盘失败必须提示 settings.saveFailed(三审 Finding 4:删掉整段 .catch 也全绿)', async () => {
+    const useAppStore = await freshStore()
+    await useAppStore.getState().hydrateSettings()
+    const failureTitle = useAppStore.getState().t('settings.saveFailed')
+
+    // 成功路径:落盘成功 → 不得出现失败提示
+    useAppStore.getState().toggleTheme()
+    await vi.waitFor(() => {
+      expect(updateCalls).toEqual([{ theme: 'dark' }])
+    })
+    expect(useAppStore.getState().toasts.some((item) => item.title === failureTitle)).toBe(false)
+
+    // 失败路径:updateSettings 真的抛(rejected)→ 必须以错误提示暴露,不能静默
+    updateImpl = () => {
+      throw new Error('磁盘满')
+    }
+    useAppStore.getState().toggleTheme()
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().toasts.some((item) => item.title === failureTitle)).toBe(true)
+    })
+    const failureToast = useAppStore.getState().toasts.find((item) => item.title === failureTitle)
+    expect(failureToast?.kind).toBe('err')
+    // 失败不得把本地主题改掉(落盘没成功,界面就不该显示已生效)
+    expect(useAppStore.getState().theme).toBe('dark')
   })
 })

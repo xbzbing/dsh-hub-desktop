@@ -24,6 +24,7 @@ import type {
   VaultStatusSnapshot,
   IpcResult,
   PatchInstanceInput,
+  SshHostKeyForgetInput,
   SshKeyPreviewInput,
   SshKeyPreviewResult
 } from './contracts'
@@ -84,6 +85,12 @@ export interface DshHubBridge {
     onHostKeyDecision: (listener: (payload: HostKeyPromptPayload) => void) => () => void
     /** 回复指纹确认；decision=trust 才会写入 hub 私有 known_hosts */
     replyHostKey: (requestId: string, decision: HostKeyDecision) => Promise<IpcResult<null>>
+    /**
+     * 忘记该实例主机的已信任公钥（设计 §7.3）——**显式、破坏性**的恢复动作，
+     * 不属于连接确认流程：连接时指纹变化一律拒绝且不改动旧公钥；只有走完本动作后，
+     * 下一次连接才会重新走首次 TOFU 确认。
+     */
+    forgetHostKey: (input: SshHostKeyForgetInput) => Promise<IpcResult<null>>
     /** 订阅口令输入请求（ssh 索要私钥口令/密码）；口令不落盘 */
     onAskpassRequest: (listener: (payload: AskpassPromptPayload) => void) => () => void
     /** 回复口令；secret=null 表示取消 */
@@ -109,6 +116,11 @@ export interface DshHubBridge {
   settings: {
     get: () => Promise<IpcResult<Settings>>
     update: (patch: Partial<Settings>) => Promise<IpcResult<Settings>>
+    /**
+     * 打开应用数据目录(T11 三审 Finding 1)。
+     * **没有参数**:目录由主进程自行解析,渲染层无法指定路径。
+     */
+    openDataDir: () => Promise<IpcResult<null>>
   }
   /** T10 凭据保险库（设计 §7.2）：默认不存，显式勾选后才落盘 */
   vault: {
