@@ -181,8 +181,16 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     try {
       await rename(filePath, target)
       // rename 保留**源文件**的权限位：既有 0644 的旧注册表被隔离后仍是 0644，
-      // 必须显式收紧（Finding 2），否则隔离副本会把清单继续暴露给同机其他用户
-      await chmod(target, FILE_MODE)
+      // 故需显式收紧（Finding 2），否则隔离副本会把清单继续暴露给同机其他用户。
+      //
+      // 但收紧必须**尽力而为**（评审 T12-2 指出）：这里文件已经被移走，若 chmod 失败
+      // 仍向上抛，load() 会整体失败、注册表直接不可用 —— 为「锦上添花的权限收紧」
+      // 赔上可用性是不划算的。失败只告警，隔离本身视为成功。
+      try {
+        await chmod(target, FILE_MODE)
+      } catch (error) {
+        console.warn(`[registry] 隔离副本权限收紧失败（不影响隔离本身）：${target}`, error)
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw toStoreError(error)
     }
@@ -201,10 +209,14 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     try {
       // 显式 0600（同 settings-store / audit-log 的写法）；不依赖 umask 的默认 0644
       await writeFile(tmpPath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: FILE_MODE })
+      // 权限收紧必须落在 **rename 之前**（评审 T12-2）：
+      // 若在 rename 之后 chmod，一旦 chmod 失败，就变成「磁盘已是新内容、内存仍是旧内容」
+      // 且调用方收到 io-error —— 直接推翻本模块自己的 R3 不变量（写失败不得产生幻影记录）。
+      // 放在 tmp 上则失败时直接走 catch 清理 tmp、主文件一个字节没动。
+      // 另外 rename 装的是**新 inode**（tmp 已是 0600），故目标文件权限天然归一化，
+      // 不需要、也不应该再对最终路径补一次 chmod。
+      await chmod(tmpPath, FILE_MODE)
       await rename(tmpPath, filePath)
-      // rename 落地的是新 inode（tmp 已是 0600），但**既有**的 0644 注册表若被
-      // 别的路径覆盖/复制保留，仍可能留下宽权限；显式 chmod 把目标归一化到 0600
-      await chmod(filePath, FILE_MODE)
     } catch (error) {
       try {
         await rm(tmpPath, { force: true })

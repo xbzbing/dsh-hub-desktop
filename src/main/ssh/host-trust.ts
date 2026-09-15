@@ -207,8 +207,16 @@ export type HostKeyPrompt = Omit<HostKeyPromptPayload, 'requestId'>
 
 /**
  * 把确认信任的公钥写入 hub 私有 known_hosts。
- * - verdict=unknown:追加（去重）；
- * - verdict=changed 且用户高级确认:先删除该目标的旧行再写入（密钥轮换）。
+ * - `mode='append'`：追加（去重）。**仅用于 verdict=`unknown` 的首次 TOFU 确认**；
+ * - `mode='replace'`：先删除该目标的旧行再写入。
+ *
+ * ⚠️ **`replace` 不再用于「指纹变更」**（评审 T12-1 High / T12-2 复核）：
+ * 设计 §7.3 要求「指纹变更**一律拒绝**连接(不自动清理)」。`changed` 分支对**任何**用户回答
+ * 都不放行、旧公钥一个字节都不改；唯一恢复途径是用户**显式**执行 `forgetHostKey`
+ * （先删该主机旧行、keys 传空数组 = 只删不写），下次连接重新走首次 TOFU。
+ *
+ * 因此**不要**再按「changed + 高级确认 → 调用本函数 replace」去"修复"调用方 ——
+ * 那等于把已经修掉的漏洞重新引入（此前的 JSDoc 就是这么写的，已更正）。
  */
 export async function recordHostTrust(
   knownHostsPath: string,
