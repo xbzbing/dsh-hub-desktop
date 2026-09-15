@@ -71,6 +71,7 @@ tests/e2e/          smoke(壳链路)+ registry(注册表端到端)
 - 沙箱限制写 `~/Library`:`pnpm install/add` 需追加 `--store-dir=/tmp/pnpm-store --cache-dir=/tmp/pnpm-cache`;`npm view` 用 `--cache /tmp/npm-probe-cache`。
 - Electron 二进制缓存 `ELECTRON_CACHE=/tmp/electron-cache`;若 install 后 `node_modules/electron/dist` 缺失,执行 `node node_modules/electron/install.js`(pnpm 偶发跳过 postinstall)。
 - 受限环境跑 E2E:`DSH_HUB_E2E_ARGS="--no-sandbox --disable-gpu" pnpm test:e2e`(CI 自动带 `--no-sandbox` + xvfb);E2E 数据自动隔离到 `hub-data/e2e*`,不污染真实 userData。
+- npm 装 dsh 运行时走内网 registry 极慢时,启动应用/验收脚本前设 `DSH_HUB_NPM_REGISTRY=https://registry.npmmirror.com`(实测 15s vs 8min+);dsh web 需要 `--expose-internals`(应用已内置,勿删)。
 - 后台 bash 任务的工作目录落点在 `$HOME`(环境限制):后台命令请用 `cd <工作区> && ...` 或 `pnpm --dir <工作区>`。
 
 ## 工作流(用户已确认)
