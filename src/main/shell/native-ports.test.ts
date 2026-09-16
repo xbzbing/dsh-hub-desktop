@@ -4,9 +4,7 @@ import { createHubNativePorts } from './native-ports'
 import { createNativeSettingsApplier } from './native-settings'
 
 /**
- * 端口实现单测（T11 三审 Finding 2）。
  *
- * 复审确认这三个变异能存活全部三关,本文件是它们的**唯一**锚点:
  * - `updateTray: () => {}`(托盘菜单永不刷新);
  * - `setLoginItem` 不落到 OS;
  * - `trayExists: () => false`。
@@ -54,7 +52,7 @@ function makeHarness() {
 }
 
 describe('createHubNativePorts（效果侧:托盘 / 登录项真的落到 electron）', () => {
-  it('托盘存在性来自真实引用(变异「trayExists 恒 false」的锚点)', () => {
+  it('托盘存在性来自真实引用(「trayExists 恒 false」的锚点)', () => {
     const { deps, tray } = makeHarness()
     const ports = createHubNativePorts<FakeTray>(deps)
 
@@ -85,7 +83,7 @@ describe('createHubNativePorts（效果侧:托盘 / 登录项真的落到 electr
     })
   })
 
-  it('updateTray 真的刷新菜单,并携带**重新求值**的文案(变异「updateTray 空实现」的锚点)', () => {
+  it('updateTray 真的刷新菜单,并携带**重新求值**的文案(「updateTray 空实现」的锚点)', () => {
     const { deps, tray, labelsSeen } = makeHarness()
     const ports = createHubNativePorts<FakeTray>(deps)
     ports.createTray()
@@ -111,7 +109,7 @@ describe('createHubNativePorts（效果侧:托盘 / 登录项真的落到 electr
     expect(deps.labels).not.toHaveBeenCalled()
   })
 
-  it('setLoginItem 真的把登录项写进 OS(变异「不再落到 OS」的锚点)', () => {
+  it('setLoginItem 真的把登录项写进 OS(「不再落到 OS」的锚点)', () => {
     const { deps } = makeHarness()
     const ports = createHubNativePorts<FakeTray>(deps)
 

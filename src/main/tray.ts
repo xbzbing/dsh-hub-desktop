@@ -1,5 +1,4 @@
 /**
- * 托盘（T11 —— 设计稿 tray-menu）—— 唯一 import electron 的托盘装配点。
  *
  * 存在的**正确性理由**(不只是功能):偏好「关闭窗口时最小化到托盘」会让
  * `win.close()` 被 `preventDefault` + `hide()` 拦下。若此时**没有托盘**,
@@ -32,7 +31,6 @@ export interface CreateHubTrayOptions {
 /**
  * 从磁盘路径加载托盘图标。
  *
- * **不做平台分支**（此前的注释声称「macOS 用模板图、其它平台回落」,与实现不符 —— 已改正):
  * macOS 的模板图语义由**文件名**决定(`trayTemplate.png` / `trayTemplate@2x.png`),
  * 系统据此自动按明暗反色,无需在此处判断平台。加载失败时返回空图,
  * 由 Electron 渲染为占位(调用方不额外兜底,避免掩盖资源缺失)。

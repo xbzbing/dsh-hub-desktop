@@ -1,7 +1,6 @@
-/* T4 手工验收:自建 sshd(次选端口 + 临时密钥对)→ 真实隧道 → 健康探测 → 杀隧道进程
-   验证看门狗自动重连 → 停止回收 → 退出无孤儿 ssh。
-   用法:cd <repo> && node ./scripts/acceptance/verify-ssh.cjs (仓库内保留,作为可复核的验收证据)
-   前置:pnpm build(本脚本驱动真实打包产物)。 */
+/* SSH 隧道验证：临时 sshd、连通性检查、自动重连、停止回收和退出清理。
+   用法：cd <repo> && node ./scripts/acceptance/verify-ssh.cjs
+   前置：pnpm build。 */
 const { _electron: electron } = require('@playwright/test')
 const { mkdir, rm, writeFile, chmod, readFile } = require('node:fs/promises')
 const { join, resolve } = require('node:path')
@@ -45,7 +44,7 @@ async function setupSshd() {
     'PrintMotd no'
   ].join('\n')
   await writeFile(join(ACC, 'sshd_config'), `${config}\n`)
-  // 端口已被占用(遗留 sshd)时快速失败,避免「nc 通但其实是别人的 sshd」的假绿(评审 N8)
+  // 若端口已被占用则快速失败，避免连接到其他 sshd。
   try {
     sh(`nc -z -w1 127.0.0.1 ${SSH_PORT}`)
     throw new Error(`端口 ${SSH_PORT} 已被占用(可能是遗留 sshd),请先清理`)
@@ -140,7 +139,7 @@ async function main() {
   await hub.evaluate(() => {
     window.__sshEvents = []
     window.dshHub.onInstanceStatus((event) => window.__sshEvents.push(event))
-    // T5 起隧道启动前会弹指纹确认:本验收自动信任(T5 双变体/拒绝路径由 verify-ssh-t5.cjs 覆盖)
+  // 首次连接时自动信任测试主机指纹。
     window.__fingerprints = []
     window.dshHub.ssh.onHostKeyDecision((payload) => {
       window.__fingerprints.push(payload)
@@ -149,7 +148,7 @@ async function main() {
     return true
   })
 
-  // 直接走 IPC 创建 ssh 实例(带 identityFile,绕开向导;向导字段 T5 补齐)
+  // 通过 IPC 创建带 identityFile 的 SSH 实例。
   const created = await hub.evaluate(
     ([host, port, user, remotePort, identityFile]) =>
       window.dshHub.instances.create({
@@ -190,7 +189,7 @@ async function main() {
   }
   console.log(`[ok] localPort ${running.port} 已持久化到注册表`)
 
-  // openView:ssh 实例 running 后必须能开窗(评审缺陷 A 的验收防线)
+  // SSH 实例运行后必须能打开视图窗口。
   const openResult = await hub.evaluate((id) => window.dshHub.runtime.openView(id), instanceId)
   if (!openResult.ok) throw new Error(`ssh openView 失败:${JSON.stringify(openResult)}`)
   const deadlineWin = Date.now() + 10000
@@ -263,7 +262,7 @@ async function main() {
     process.exitCode = 1
   }
   console.log('[ok] 退出后无孤儿 ssh 进程')
-  console.log('[DONE] T4 真实验收通过:隧道启停 / 健康探测 / 归因 / 看门狗重连 / 退出回收')
+  console.log('[DONE] 隧道启停、健康检查、自动重连和退出回收验证通过')
 }
 
 async function run() {

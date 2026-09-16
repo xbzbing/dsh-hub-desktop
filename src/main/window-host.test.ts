@@ -67,7 +67,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('openInstanceWindow（实例窗口接线,§6.6 拦截外跳）', () => {
+describe('openInstanceWindow（实例窗口接线, 拦截外跳）', () => {
   it('会注册 will-navigate 守卫:同源回环放行,外部/跨端口跳转 preventDefault', () => {
     const win = openInstanceWindow({ instanceId: `n-${++seq}`, title: 't', url: ORIGIN }) as unknown as TestWin
     const navigate = win.webContents.handlers.get('will-navigate')
@@ -121,7 +121,7 @@ describe('openInstanceWindow（实例窗口接线,§6.6 拦截外跳）', () => 
     await vi.waitFor(() => expect(errSpy).toHaveBeenCalled())
   })
 
-  it('autoLoad:false 时不自动加载(§6.2 顺序纪律的前提)', () => {
+  it('autoLoad:false 时不自动加载( 顺序纪律的前提)', () => {
     const id = `nl-${++seq}`
     const win = openInstanceWindow({
       instanceId: id,
@@ -130,7 +130,6 @@ describe('openInstanceWindow（实例窗口接线,§6.6 拦截外跳）', () => 
       autoLoad: false
     }) as unknown as TestWin
     // 顺序纪律(先注入 Cookie 再 loadURL)完全依赖这里不加载:
-    // 评审变异 g 曾证明「把 autoLoad 强制为 true」不会被任何测试发现
     expect(win.loadURL).not.toHaveBeenCalled()
     expect(win.webContents.loadURL).not.toHaveBeenCalled()
   })

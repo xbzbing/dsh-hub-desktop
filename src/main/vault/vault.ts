@@ -1,8 +1,6 @@
 /**
- * 凭据保险库（T10,设计文档 §7.2）—— 不 import electron:加密后端由调用方注入
  * (生产为 electron `safeStorage`,测试为可控假实现)。
  *
- * 策略(§7.2「会话态优先、密钥态可选」):
  *
  *  | 存储项 | 默认 | 可选 |
  *  |---|---|---|
@@ -22,7 +20,6 @@
  * 5. 凭据永不进日志/审计 —— 本模块不 import 任何日志设施,只经 `onError`
  *    上报错误对象(调用方负责不把密文/明文写进日志)。
  *
- * 关于**勾选策略**(§7.2 的「记住密码 / 记住登录态」):
  * 它与「记住了什么」共享同一生命周期 —— 一键清除必须同时停止「继续记住」,
  * 否则清空后下一次登录又会把凭据写回来。因此策略与条目放在同一文件(顶层
  * `policy` 段,明文、非敏感),`clearAll`/`forgetInstance` 一并清掉。
@@ -85,7 +82,6 @@ export interface Vault {
 
   /** 清掉某实例的全部条目(删除实例时调用) */
   forgetInstance(instanceId: string): Promise<void>
-  /** 一键清空(设计 §7.2「可一键清除」) */
   clearAll(): Promise<void>
   /** 已记住条目的实例 id(自检/测试) */
   rememberedIds(): string[]
@@ -94,12 +90,10 @@ export interface Vault {
    *
    * 与 `rememberedIds` 刻意分开:用户可能先勾选「记住密码」、下一次登录才真正写入凭据,
    * 此期间策略已设但条目为空。UI 若按「有条目」下发策略,复选框会显示未勾选,
-   * 用户再动另一个开关就会把刚设的策略覆盖掉(复审 F1/F2)。
    */
   policyIds(): string[]
 }
 
-/** 用户显式勾选的记住策略(§7.2;非敏感,明文存) */
 export interface VaultPolicy {
   /** 记住网关密码(勾选后才写入钥匙串) */
   rememberPassword: boolean
@@ -186,7 +180,6 @@ export function createVault(options: VaultOptions): Vault {
   }
 
   /**
-   * 实测修复(用户实机日志):credentials.json 被截断/拼接损坏后,旧实现每次读
    * (`status`/`getPolicy` 都会触发 load)都重复 JSON.parse 报错,且 vault 永远起不来。
    * 现在解析失败 → 把坏文件**隔离改名**(corrupt-<时间戳>),内存从空开始,
    * 下一次显式写入(persist)会写出干净文件 —— 与 registry 的「损坏自愈」同一口径。
@@ -206,7 +199,6 @@ export function createVault(options: VaultOptions): Vault {
   }
 
   /**
-   * 实测修复(用户实机日志):旧实现所有 persist 并发共用同一个 `.tmp` 路径,
    * 「登录态写入」与「策略写入/密码写入」并发时 write→rename 交错,
    * 第二个 rename 拿不到已被别人挪走的 .tmp → ENOENT;更糟的交错会把半份内容
    * rename 成正式文件 → JSON.parse 损坏。现在:
@@ -253,7 +245,6 @@ export function createVault(options: VaultOptions): Vault {
   }
 
   /**
-   * 显式勾选才允许落盘(§7.2「默认不存、显式勾选」)。
    * 在模块内强制而非依赖调用方约定 —— 少一处调用方疏漏就少一条凭据落盘路径。
    */
   function requireOptIn(instanceId: string, field: keyof VaultPolicy): void {
@@ -280,8 +271,6 @@ export function createVault(options: VaultOptions): Vault {
   /**
    * 解密单个字段;失败即丢弃该字段(钥匙串变更/文件被篡改)。
    *
-   * **读路径不写盘**:丢弃只发生在内存里,由下一次显式写入(persist 的调用方)落地。
-   * 旧实现在这里发起了 fire-and-forget 的 `persist()`,让一次「读」产生磁盘写 ——
    * 那是并发不可控的副作用(单测在并行负载下会偶发失败),而且读操作本就不该有写副作用。
    */
   function readField(instanceId: string, payload: string): string | null {

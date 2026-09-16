@@ -1,5 +1,4 @@
 /**
- * 重启后静默复用已记住的登录态（T9 待交付① + T10 §7.2「记住登录态」）—— 不 import electron。
  *
  * 流程:应用启动 → 实例的 AuthClient 被惰性创建 → 若该实例勾选了「记住登录态」
  * 且 vault 里有未过期的会话 Cookie,就把它**按 `Set-Cookie` 形态**喂给 Cookie 罐
@@ -30,7 +29,6 @@ export interface SessionRestoreDeps {
 export function sessionCookieHeader(session: StoredSession, now: () => number = () => Date.now()): string {
   const parts = [`${session.name}=${session.value}`, 'Path=/', 'HttpOnly', 'SameSite=Strict']
   if (session.expiresAt !== null) {
-    // 与过期判断用同一个时钟(评审 T9-6):否则注入假时钟时两者会算出不同的结论
     const maxAgeSeconds = Math.floor((session.expiresAt - now()) / 1000)
     if (maxAgeSeconds > 0) parts.push(`Max-Age=${maxAgeSeconds}`)
   }

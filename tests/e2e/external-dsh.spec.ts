@@ -6,9 +6,9 @@ import { mkdir, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 /**
- * 实机反馈(2026-09-16)E2E 验证:
- * - #1 非本地实例(http)不必先「启动」就能打开视图(启动的意义就是开窗)
- * - #2 本机已在运行的 dsh web 能被探测到、并被「接管」后直接开窗
+ * 外部 dsh web 的 E2E 验证：
+ * - HTTP 实例无需启动即可打开视图
+ * - 可探测并接管本机已运行的 dsh web，然后直接开窗
  *
  * 假 dsh web:用 `node -e` 起一个**监听端口的进程**,并让它的命令行包含
  * `dsh web --patch <file>`(探测器按命令行识别,不依赖真实 dsh 安装)。
@@ -102,7 +102,7 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
   }
 })
 
-test('实机 #1:http 实例未启动也能直接打开视图', async () => {
+test('HTTP 实例未启动也能直接打开视图', async () => {
   const created = await win.evaluate(async () => {
     const r = await window.dshHub.instances.create({
       transport: 'http',
@@ -124,9 +124,8 @@ test('实机 #1:http 实例未启动也能直接打开视图', async () => {
   await win.screenshot({ path: join(SHOT_DIR, 'http-open-without-start.png'), animations: 'disabled' })
 })
 
-test('实机 #2:探测到已在运行的 dsh web → 一键接管 → 可直接开窗', async () => {
-  // 实机缺陷回归:接管事件的补丁曾算成空对象 → store 抛「补丁不能为空」→
-  // 主进程日志刷「回写实例运行信息失败」。整条接管链路都不允许出现该错误。
+test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
+  // 接管和断开都不应产生运行信息回写错误。
   const mainErrors: string[] = []
   app.process().stderr?.on('data', (chunk: Buffer) => mainErrors.push(String(chunk)))
   app.process().stdout?.on('data', (chunk: Buffer) => mainErrors.push(String(chunk)))
@@ -164,7 +163,7 @@ test('实机 #2:探测到已在运行的 dsh web → 一键接管 → 可直接�
   await expect(win.getByTestId('external-dsh-card')).toBeVisible({ timeout: 10_000 })
   expect(fakeDsh?.killed).toBe(false)
 
-  // 空补丁回归:接管/断开两条路径都不得产生「回写实例运行信息失败」
+  // 接管和断开都不应产生运行信息回写错误。
   await win.waitForTimeout(300)
   const log = mainErrors.join('')
   expect(log).not.toContain('回写实例运行信息失败')

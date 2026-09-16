@@ -1,7 +1,6 @@
-/* T6 手工验收:HTTP 直连 —— 对真实 dsh / 模拟网关 / 纯静态端点分别启动实例,
-   校验 §2.3 认证模式探测结论、openView 开窗、退出无残留。
-   用法:cd <repo> && node ./scripts/acceptance/verify-http.cjs
-   前置:pnpm build;需已安装 dsh 运行时(hub-data/verify-real/runtimes 或指定 DSH_RUNTIME_ENTRY) */
+/* HTTP 直连验证：分别连接 dsh、网关和静态端点，检查认证模式、开窗和退出清理。
+   用法：cd <repo> && node ./scripts/acceptance/verify-http.cjs
+   前置：pnpm build；需要已安装的 dsh 运行时（hub-data/verify-real/runtimes 或 DSH_RUNTIME_ENTRY）。 */
 const { _electron: electron } = require('@playwright/test')
 const { mkdir, rm } = require('node:fs/promises')
 const { resolve } = require('node:path')
@@ -24,7 +23,7 @@ function sh(cmd) {
 function resolveDshEntry() {
   if (process.env.DSH_RUNTIME_ENTRY) return process.env.DSH_RUNTIME_ENTRY
   const found = globSync('hub-data/*/runtimes/dsh-*/node_modules/@deepseek-ai/dsh/lib/bin.js')
-  if (found.length === 0) throw new Error('未找到已安装的 dsh 运行时;请先跑 T3 验收或设置 DSH_RUNTIME_ENTRY')
+  if (found.length === 0) throw new Error('未找到已安装的 dsh 运行时；请设置 DSH_RUNTIME_ENTRY')
   return resolve(found[0])
 }
 
@@ -128,26 +127,26 @@ async function main() {
   }
 
   // A) 模拟网关 → 应识别为「检测到登录认证」
-  const gateway = await createAndStart('验收 · 模拟网关', `http://127.0.0.1:${GATEWAY_PORT}/`)
+  const gateway = await createAndStart('验证 · 模拟网关', `http://127.0.0.1:${GATEWAY_PORT}/`)
   if (!gateway.detail.includes('检测到登录认证')) throw new Error(`网关探测结论异常:${gateway.detail}`)
   console.log(`[ok] 模拟网关探测:${gateway.detail}`)
 
   // B) 纯静态端点 → 无需登录
-  const plain = await createAndStart('验收 · 静态端点', `http://127.0.0.1:${PLAIN_PORT}/`)
+  const plain = await createAndStart('验证 · 静态端点', `http://127.0.0.1:${PLAIN_PORT}/`)
   if (!plain.detail.includes('无需登录')) throw new Error(`静态端点探测结论异常:${plain.detail}`)
   console.log(`[ok] 静态端点探测:${plain.detail}`)
 
   // C) 真实 dsh(无 token)→ 应识别为 dsh 内置浏览器认证
-  const real = await createAndStart('验收 · 真实 dsh', `http://127.0.0.1:${DSH_PORT}/`)
+  const real = await createAndStart('验证 · dsh', `http://127.0.0.1:${DSH_PORT}/`)
   if (!real.detail.includes('浏览器认证')) throw new Error(`真实 dsh 探测结论异常:${real.detail}`)
   console.log(`[ok] 真实 dsh 探测:${real.detail}`)
 
   // C2) 网关 API 401 JSON 路径 → 判为 gateway(api-401)
-  const api401 = await createAndStart('验收 · 网关 API', `http://127.0.0.1:${GATEWAY_PORT}/api/remote.mux`)
+  const api401 = await createAndStart('验证 · 网关 API', `http://127.0.0.1:${GATEWAY_PORT}/api/remote.mux`)
   if (!api401.detail.includes('401 JSON')) throw new Error(`401 JSON 探测结论异常:${api401.detail}`)
   console.log(`[ok] 网关 API 401 JSON:${api401.detail}`)
 
-  // D) openView 应能开窗(T6 起 http 状态走 http 管理器)
+  // 打开 HTTP 实例视图。
   const openResult = await hub.evaluate((id) => window.dshHub.runtime.openView(id), gateway.id)
   if (!openResult.ok) throw new Error(`http openView 失败:${JSON.stringify(openResult)}`)
   const winUrl = await waitFor(
@@ -160,7 +159,7 @@ async function main() {
 
   // E) 不可达端点 → error
   const created = await hub.evaluate(() =>
-    window.dshHub.instances.create({ transport: 'http', name: '验收 · 不可达', endpointUrl: 'http://127.0.0.1:1/' })
+    window.dshHub.instances.create({ transport: 'http', name: '验证 · 不可达', endpointUrl: 'http://127.0.0.1:1/' })
   )
   await hub.evaluate((id) => window.dshHub.runtime.start(id), created.value.id)
   const failed = await waitFor(
@@ -173,7 +172,7 @@ async function main() {
   console.log(`[ok] 不可达端点:${failed.detail}`)
 
   await app.close()
-  console.log('[DONE] T6 真实验收通过:网关/静态/真实 dsh 三态探测 + openView + 不可达归因')
+  console.log('[DONE] 网关、静态端点、dsh 探测、开窗和不可达端点验证通过')
 }
 
 run()

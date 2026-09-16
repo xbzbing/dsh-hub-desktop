@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createCookieJar, parseSetCookie } from './cookie-jar'
 
-describe('cookie-jar（手写 Cookie 罐,不落地）', () => {
+describe('cookie-jar（内存 Cookie 罐）', () => {
   it('解析真实网关的 Set-Cookie(Path=/; HttpOnly; SameSite=Strict; Max-Age)', () => {
     const record = parseSetCookie('dsh_auth=abc123; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000', 0)
     expect(record?.name).toBe('dsh_auth')

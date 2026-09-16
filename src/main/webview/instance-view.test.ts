@@ -6,7 +6,6 @@ const COOKIE = { name: 'dsh_auth', value: 'sess-token', expiresAt: null }
 
 /**
  * 录制开窗顺序的假窗口。
- * 顺序纪律(§6.2):createWindow → installIntercept → cookies.set → loadURL。
  */
 function harness(): {
   deps: OpenInstanceViewDeps<InstanceViewWindow>
@@ -56,7 +55,7 @@ const args = {
   cookie: COOKIE
 }
 
-describe('openInstanceView（§6.2 先注入再 loadURL 的顺序纪律）', () => {
+describe('openInstanceView（ 先注入再 loadURL 的顺序纪律）', () => {
   it('调用顺序必须是 开窗 → 装拦截 → 写 Cookie → loadURL', async () => {
     const h = harness()
     const injected = await openInstanceView(h.deps, args)

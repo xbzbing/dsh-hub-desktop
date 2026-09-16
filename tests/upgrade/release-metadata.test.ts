@@ -12,7 +12,7 @@ import {
 } from '../../scripts/release/lib.mjs'
 
 /**
- * T14 发布演练的**离线护栏**。
+ * 发布元数据的**离线验证**。
  *
  * 发布相关的东西错在哪都很难发现:版本号漏改、发布说明与产物对不上、更新元数据里的
  * sha512 与实际字节不符 —— 这些在本地「看起来都正常」,只有用户更新失败时才会暴露。
@@ -35,7 +35,7 @@ function readText(relative: string): string {
   return readFileSync(join(ROOT, relative), 'utf8')
 }
 
-describe('T14 / 版本与发布说明一致性', () => {
+describe('版本与发布说明一致性', () => {
   it('package.json 版本是合法 semver', () => {
     expect(version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
   })
@@ -76,7 +76,7 @@ describe('T14 / 版本与发布说明一致性', () => {
   })
 })
 
-describe('T14 / 打包与发布配置', () => {
+describe('打包与发布配置', () => {
   const yml = readText('electron-builder.yml')
 
   it('更新元数据 provider 为 github 且只创建草稿', () => {
@@ -105,12 +105,12 @@ describe('T14 / 打包与发布配置', () => {
     expect(yml).not.toMatch(/-\s*docs\/\*\*/)
   })
 
-  it('零运行时依赖(T13/T14 打包前置结论)', () => {
+  it('零运行时依赖', () => {
     expect(Object.keys(pkg.dependencies ?? {})).toEqual([])
   })
 })
 
-describe('T14 / 更新元数据解析与校验(纯逻辑)', () => {
+describe('更新元数据解析与校验', () => {
   /** 与 electron-builder 实际产出同形态:注意 url 里的空格已被换成连字符 */
   const sampleYaml = [
     'version: 0.1.0',
@@ -212,7 +212,7 @@ describe('T14 / 更新元数据解析与校验(纯逻辑)', () => {
   })
 })
 
-describe('T14 / 已构建产物与更新元数据端到端自洽(有产物时才跑)', () => {
+describe('已构建产物与更新元数据端到端自洽', () => {
   const distDir = join(ROOT, 'dist')
   const metadataPath = join(distDir, 'latest-mac.yml')
   const hasMetadata = existsSync(metadataPath)
@@ -239,7 +239,7 @@ describe('T14 / 已构建产物与更新元数据端到端自洽(有产物时才
   })
 })
 
-describe('T13/T14 评审 F4/M1:checksums 清单只收分发产物', () => {
+describe('checksums 清单只收分发产物', () => {
   it('点文件与 builder 调试输出不入清单(手工下载者的校验和只引用会上传的文件)', async () => {
     const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')

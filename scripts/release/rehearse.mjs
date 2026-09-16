@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * T14 发布演练（可执行版）。
+ * 可执行的发布验证。
  *
  * 把「发布」拆成两类步骤：
  * - **能离线演练的**：版本/发布说明/打包配置一致性、更新元数据与产物的字节级自洽、
@@ -288,10 +288,10 @@ if (absentAssets.length > 0) {
   for (const name of absentAssets) console.log(`      · ${name}`)
 }
 
-console.log('\n--- 本机无法演练的项（诚实清单，记账于本地发布演练文档）---')
+console.log('\n--- 当前环境无法验证的项目 ---')
 console.log('  · 代码签名与公证：无 Apple Developer 证书，产物未签名（只宜自用）')
 console.log('  · Windows NSIS 产物：需 Windows 或 wine 环境')
-console.log('  · 自动更新端到端：需真实远端 + 已安装的旧版本，本机无法闭环')
+console.log('  · 自动更新端到端：需真实远端和已安装的先前版本，本机无法验证')
 console.log('  · dmg 产物：本机网络对 dmg 附加依赖不稳，当前只产出 zip')
 
 if (failed.length > 0) {

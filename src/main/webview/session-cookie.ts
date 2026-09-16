@@ -1,5 +1,4 @@
 /**
- * 分区会话 Cookie 清理（T9,设计文档 §5.4）—— 纯逻辑 + 注入式 session,不 import electron。
  *
  * 登出/实例删除/切换账号时必须清掉分区内的 `dsh_auth`,否则 webview 仍带着旧会话
  * 访问受保护页面(「已登出却还能看」)。Cookie 的 url 只需 origin(basePath 不影响 path)。

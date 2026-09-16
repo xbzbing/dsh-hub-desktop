@@ -1,16 +1,9 @@
-/**
- * 原生设置的「动作计划」（T11）—— 纯函数,不 import electron。
- *
- * 复审反馈:托盘/自启/通知的接线全部写在 `index.ts` 的 `app.whenReady()` 内部,
- * **结构上不可测**,于是「托盘菜单不随语言刷新」「autoStart 从不落到 OS」这类缺陷
- * 可以在测试全绿的情况下存活。这里把「设置 → 该做哪些原生动作」抽成可穷举单测的计划。
- */
+
 import type { Settings } from '@shared/settings'
 
 export type NativeAction =
   | { kind: 'create-tray' }
   | { kind: 'destroy-tray' }
-  /** 托盘已存在但文案需要刷新(如切换语言)—— 复审 R3 的缺口 */
   | { kind: 'update-tray' }
   | { kind: 'set-login-item'; autoStart: boolean }
 
@@ -80,10 +73,8 @@ export interface NativeSettingsApplier {
 /**
  * 把「动作计划」落到端口上。
  *
- * 复审指出:此前的实现把 `app.setLoginItemSettings`/`createHubTray`/`updateTrayStatus`
  * 直接写在 `index.ts` 的 `app.whenReady()` 内部,于是**效果侧结构上不可测** ——
  * 计划本身(纯函数)已被单测覆盖,但「到底有没有真的调用」没有任何测试约束,
- * M9/M14′/M17 等变异因此存活。把副作用注入进来后,这一层可以用 spy 断言。
  */
 export function createNativeSettingsApplier(ports: NativeSettingsPorts): NativeSettingsApplier {
   return {

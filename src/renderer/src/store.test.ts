@@ -3,13 +3,7 @@ import type { Settings } from '@shared/settings'
 import { toStatusInfo } from './lib/format'
 
 /**
- * store.ts 的测试（T11 复审遗留）。
- *
- * 复审指出仓库**没有任何 store 测试**，而 `store.ts` 在模块作用域就访问
- * `localStorage`/`window.matchMedia`/`navigator`/`window.dshHub`，
- * 且 vitest 跑在 `environment: 'node'` 下 —— 于是「切换语言后翻译器不刷新」
- * 「hydrateSettings 不应用语言」这类缺陷在测试全绿时存活。
- * 这里先桩好浏览器全局对象，再**动态导入** store（模块作用域求值前完成打桩）。
+ * store.ts tests run in Node, so browser globals are stubbed before dynamically importing the store.
  */
 
 const DEFAULTS: Settings = {
@@ -91,23 +85,23 @@ async function freshStore(): Promise<typeof import('./store').useAppStore> {
   return module.useAppStore
 }
 
-describe('store 设置切片（T11 复审遗留：此前无任何 store 测试）', () => {
+describe('store settings', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('hydrateSettings 应用偏好语言并刷新翻译器(变异 M8)', async () => {
+  it('hydrateSettings 应用偏好语言并刷新翻译器', async () => {
     const useAppStore = await freshStore()
     settingsValue = { ...DEFAULTS, language: 'en' }
     await useAppStore.getState().hydrateSettings()
     const state = useAppStore.getState()
     expect(state.settings.language).toBe('en')
     expect(state.language).toBe('en')
-    // 只改 settings 而不换翻译器，界面仍会是中文
+    // 刷新翻译器后界面显示英文。
     expect(state.t('nav.settings')).toBe('Settings')
   })
 
-  it('updateSettings 落盘后刷新翻译器与主题(变异 M6)', async () => {
+  it('updateSettings 持久化后刷新翻译器与主题', async () => {
     const useAppStore = await freshStore()
     await useAppStore.getState().updateSettings({ language: 'en', theme: 'dark' })
     const state = useAppStore.getState()
@@ -118,7 +112,7 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
     expect((document.documentElement.dataset as Record<string, string>)['theme']).toBe('dark')
   })
 
-  it('toggleTheme 经 updateSettings 落盘(R4:此前只改本地,重启被覆盖)', async () => {
+  it('toggleTheme 通过 updateSettings 持久化', async () => {
     const useAppStore = await freshStore()
     await useAppStore.getState().hydrateSettings()
     useAppStore.getState().toggleTheme()
@@ -128,7 +122,7 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
     })
   })
 
-  it('updateSettings 失败必须抛出(R5:此前静默,界面仍提示「已保存」)', async () => {
+  it('updateSettings 失败时抛出错误', async () => {
     const useAppStore = await freshStore()
     updateResult = { ok: false, message: '磁盘满' }
     await expect(useAppStore.getState().updateSettings({ language: 'en' })).rejects.toThrow('磁盘满')
@@ -136,7 +130,7 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
     expect(useAppStore.getState().settings.language).toBe('zh')
   })
 
-  it('subscribeSystemTheme 仅在偏好为 system 时跟随系统变化(R7)', async () => {
+  it('subscribeSystemTheme 仅在偏好为 system 时跟随系统变化', async () => {
     const useAppStore = await freshStore()
     settingsValue = { ...DEFAULTS, theme: 'dark' }
     await useAppStore.getState().hydrateSettings()
@@ -159,41 +153,39 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
     expect(useAppStore.getState().theme).toBe('light')
   })
 
-  it('load() 重复调用不泄漏系统主题监听(三审 Finding 3:变异「只读取消函数却不调用」)', async () => {
+  it('load() 重复调用时只保留一个系统主题监听', async () => {
     const useAppStore = await freshStore()
 
     await useAppStore.getState().load()
-    // App.tsx 会调用 load();React.StrictMode 在开发下**双调用** effect ——
-    // 第二次必须先把上一次的订阅退掉,否则每挂载一次就多一个存活监听器
+    // 第二次加载前取消先前的订阅。
     await useAppStore.getState().load()
 
-    // 取消了 1 次(第二次 load 才会遇到「上一次的订阅」),且任一时刻最多一个存活监听器。
-    // 变异「void systemThemeUnsubscribe」会让 themeRemoves 停在 0、themeListeners 变 2。
+    // 保留一个监听器，并在下一次加载前取消前一个监听器。
     expect(themeAdds).toBe(2)
     expect(themeRemoves).toBe(1)
     expect(themeListeners.length).toBe(1)
-    // 净订阅数必须等于存活监听器数:多出来的就是泄漏
+    // 订阅和退订的差值等于当前存活的监听器数量。
     expect(themeAdds - themeRemoves).toBe(themeListeners.length)
 
-    // 幸存的必须是**新**订阅(退订后又订阅回来了),仍在跟随系统
+    // 新订阅仍会跟随系统主题。
     matchDark = true
     themeListeners.forEach((listener) => listener())
     expect(useAppStore.getState().theme).toBe('dark')
   })
 
-  it('toggleTheme 落盘失败必须提示 settings.saveFailed(三审 Finding 4:删掉整段 .catch 也全绿)', async () => {
+  it('toggleTheme 持久化失败时显示 settings.saveFailed', async () => {
     const useAppStore = await freshStore()
     await useAppStore.getState().hydrateSettings()
     const failureTitle = useAppStore.getState().t('settings.saveFailed')
 
-    // 成功路径:落盘成功 → 不得出现失败提示
+    // 成功时不显示失败提示。
     useAppStore.getState().toggleTheme()
     await vi.waitFor(() => {
       expect(updateCalls).toEqual([{ theme: 'dark' }])
     })
     expect(useAppStore.getState().toasts.some((item) => item.title === failureTitle)).toBe(false)
 
-    // 失败路径:updateSettings 真的抛(rejected)→ 必须以错误提示暴露,不能静默
+    // 失败时显示错误提示。
     updateImpl = () => {
       throw new Error('磁盘满')
     }
@@ -203,17 +195,12 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
     })
     const failureToast = useAppStore.getState().toasts.find((item) => item.title === failureTitle)
     expect(failureToast?.kind).toBe('err')
-    // 失败不得把本地主题改掉(落盘没成功,界面就不该显示已生效)
+    // 失败不改变已应用的本地主题。
     expect(useAppStore.getState().theme).toBe('dark')
   })
 
   /**
-   * 用户反馈 #7:总览列表的状态原点恒为灰色。
-   *
-   * 缺陷本体是 HomeView 的圆点写死了类名(见 lib/format.test.ts 的源码护栏),
-   * 但「圆点必须**实时**更新」还有一半在 store:选择器订阅的是 `statuses` 这个对象,
-   * zustand 用 Object.is 比较选择器结果 —— 若 applyStatus **原地改**这个对象,
-   * 订阅者收不到通知,列表就只在挂载/换行时定格。这里把「每次事件换引用」钉住。
+   * applyStatus 创建新的状态对象，使 Zustand 订阅者接收到状态更新。
    */
   it('选中实例或回到总览都会退出设置页（设置页不能困住导航）', async () => {
     const useAppStore = await freshStore()
@@ -254,7 +241,7 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
     expect(running).not.toBe(starting)
     expect(toStatusInfo(running['i1']?.status).dotClass).toBe('s-connected')
 
-    // 状态是**逐实例**的:另一个实例出错不得把 i1 的圆点带成红色
+    // 状态按实例隔离。
     useAppStore.getState().applyStatus({
       id: 'i2',
       status: 'error',
@@ -280,7 +267,7 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
       at: '2026-09-16T00:00:02.000Z'
     })
     const stopped = useAppStore.getState().statuses
-    // 既有语义(不改变):stopped 即移出切片 → 未知状态 → 灰点 idle
+    // stopped 时移除状态记录，展示回到 idle。
     expect(stopped['i1']).toBeUndefined()
     expect(toStatusInfo(stopped['i1']?.status).dotClass).toBe('')
   })

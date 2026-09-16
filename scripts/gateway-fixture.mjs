@@ -1,15 +1,6 @@
 /**
- * 契约测试栅栏:启动**真实** dsh-auth-gateway(本机源码,见 DSH_AUTH_GATEWAY_SRC)
- * 对着一个假 upstream,供 `pnpm test:contract` 做协议契约验证。
- *
- * 用法(Node ESM):
- *   const fixture = await startGatewayFixture({ password, otpRequired, basePath, lockMinutes })
- *   fixture.baseUrl / fixture.stop()
- *
- * 说明:设计计划的 `scripts/gateway-fixture.mjs` 原方案是「临时 profile 安装真实 dsh +
- * auth-gateway」;实测更稳的做法是直接用网关源码导出的 `LoginGateway` 起独立实例
- * (网关自带测试正是这么做的),无需安装 dsh、无需网络,契约面完全一致(同一 lib/gateway.js)。
- * dsh 本体侧的 BrowserAuth 契约已由 T6 的真实 dsh 探测验收覆盖。
+ * Starts a local dsh-auth-gateway instance with a local upstream server.
+ * Used by pnpm test:contract.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'

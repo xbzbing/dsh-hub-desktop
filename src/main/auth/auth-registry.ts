@@ -1,8 +1,6 @@
 /**
- * 每实例 AuthClient 注册表（T8）—— 不 import electron。
  *
  * 职责:按实例 id 持有 AuthClient(内存),提供探针/登录/验证码/登出/状态快照,
- * 并把状态变化广播给 UI(T8 的 auth-panel 与工作区浮层)。
  * 凭据只在内存中流转:密码/验证码不落盘、不进日志、不进审计。
  */
 import type { HttpAuthDetection } from '@shared/contracts'
@@ -20,7 +18,6 @@ export interface AuthRegistryOptions {
   maxConcurrentAuth?: number
   onState?: (instanceId: string, state: AuthState) => void
   /**
-   * 客户端创建后的恢复钩子(T9/T10):用于把 vault 里已记住的登录态灌进 Cookie 罐,
    * 使随后的 `probeAndRestore` 走静默恢复分支。**在返回客户端之前 await** ——
    * 否则首次探测可能先于恢复执行,重启复用就失效了。
    */
@@ -49,7 +46,6 @@ export interface AuthRegistry {
 export function createAuthRegistry(options: AuthRegistryOptions): AuthRegistry {
   const clients = new Map<string, AuthClient>()
   const factory = options.factory ?? createAuthClient
-  // R4:全局并发认证闸(设计 §5.2「多实例并行登录时全局节流,默认上限 2」)——
   // 所有会打网关的调用统一经过它,避免多实例同时压认证端点
   const gate = createConcurrencyGate(options.maxConcurrentAuth ?? 2)
 

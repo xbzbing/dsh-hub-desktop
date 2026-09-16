@@ -13,33 +13,13 @@ import { describe, expect, it } from 'vitest'
 import { MESSAGES, MESSAGE_KEYS } from '@shared/i18n/messages'
 
 /**
- * i18n 走查护栏（T11）—— 第四轮加固：把「默认受约束」写死成规则。
+ * i18n 覆盖检查。
  *
- * 1. **扫描范围 = 整个 `src/` 树的目录遍历结果，不是人工登记的清单**。扩展名表为
- *    `.ts/.tsx/.css/.html`，从 `src/` 根递归（含嵌套子目录、CSS 伪元素文案、`src/renderer/index.html`
- *    的 `<title>`）。新加一个文件/目录即自动受约束 —— 没人“记得登记”也不会漏（复审 E3）。
- *    **四审 R-a 修复**:此前只扫 `src/renderer` + `src/main`，`src/shared/**`（端点错误文案、
- *    zod 校验文案**今天就经 setError / formatZodIssues 上屏**）与 `index.html` 完全在范围外。
- *    唯一的排除面是 `SOURCE_EXCLUSIONS`（被钉住的字面量清单）:文案目录
- *    `src/shared/i18n/messages.ts` 是**迁移的落点**，把它当硬编码文案登记等于让护栏自指。
- * 2. **判定单位是行**：注释（`//`、块注释、JSX 注释）不参与判定；剥离注释是**词法级**的 ——
- *    字符串、模板字面量、**正则字面量**里的 `//` 都不是注释，且**行号与真实文件一致**（E4/E10）。
- *    四审 R-b:此前的剥离器把正则里的 `\/\/` 当行注释起点，`/https?:\/\//; const X='打开网关登录页'`
- *    能整行蒙混过关（G3）。模板的 `${...}` 现在按**代码**处理，嵌套模板也正确（见 stripComments）。
- *    推论:模板字面量里的内容是**文案**(模板内容不剥离),哪怕它长得像注释 —— 例如
- *    `ASKPASS_HELPER_SOURCE` 里那行只写着「落到取消分支」的块注释是生成脚本的注释,在外层 TS
- *    里它只是字符串内容,所以必须被登记为债务,而不是靠“更聪明的注释剥离”抹掉(见下方用例)。
- * 3. **两种写法都算中文**：字面字符，以及 `\uXXXX` / `\u{XXXX}` 转义（E6）。
- * 4. **豁免只有三条出口，且全部被钉住**：① 语言选择器那一行；② 非渲染层 `console.*` 的实参
- *    （只进日志，不是用户可见文案，理由写在 NON_RENDERER_EXEMPTIONS 里）；③ 已登记的债务行。
- *    任何清单/钉值的增删都必须**有意修改本文件**，否则测试失败（E5：PENDING 曾被随意扩大；
- *    四审 R-c：`MIGRATED_PIN` 曾是 `[...MIGRATED]` 的派生副本，恒真）。
- *    注意 ③ 是「对**扫描全集**做集合比对」而不是「扫描时过滤掉已登记的行」:后者会让
- *    “有没有新增 / 有没有过期”两个方向同时失效(见 scanSources 的注释)。
- * 5. 纯扫描核心与文件系统解耦（scanSources 吃 `{path,text}[]`），所以“这些绕过方式必须被抓住”
- *    的用例全部用合成源码验证，不写真实目录。
- * 6. 非渲染层债务分两档登记:**(a) 用户可见、待做 code→文案迁移**（本护栏存在的理由）、
- *    **(b) 内部诊断、逐条写明为何不经过界面**。两档并集必须等于扫描到的集合（用例强制）。
+ * - 扫描整个 `src/` 树中的 `.ts`、`.tsx`、`.css` 与 `.html` 文件；文案目录是唯一排除项。
+ * - 按行检查硬编码中日韩文案，保留字符串、模板、正则和 JSX/HTML 文本节点，并保持原始行号。
+ * - 识别字面字符和 Unicode 转义；语言选择器、日志实参和已登记的非渲染层文案按规则处理。
+ * - 扫描核心接受 `{ path, text }[]`，以便用合成源码验证边界情况。
+ * - 非渲染层文案分为用户可见和内部诊断两类，清单必须与扫描结果一致。
  */
 
 // ───────────────────────── 纯扫描核心（与文件系统无关，可直接单测） ─────────────────────────
@@ -71,11 +51,8 @@ export interface ScanOptions {
 const charAt = (text: string, index: number): string => text[index] ?? ''
 
 /**
- * 前一个「有意义 token」的类别:决定 `/` 是除号还是正则字面量起点。
- * - `value`:**值之后** → `/` 是除号(`a / b`、`(a + b) / 2`、`arr[i] / 2`、`{ a: 1 } / 2`、`x++ / 2`);
- * - `operator` / `statement`:这里可以开始一个表达式或一条新语句 → `/` 是**正则**字面量起点。
- *   两者对 `/` 的判定相同,分开只是让「控制语句的 `)` 之后」「块语句的 `}` 之后」在代码里自解释
- *   (五审 R-b:把 `)`/`}` 一律当「值之后」正是 E1–E3 整行被吞的根因)。
+ * 前一个有意义 token 的类别，用于区分除号与正则字面量起点。
+ * `value` 后的 `/` 是除号；`operator` 和 `statement` 允许正则字面量开始。
  */
 type TokenContext = 'value' | 'operator' | 'statement'
 
@@ -106,14 +83,8 @@ const KEYWORDS_BEFORE_EXPRESSION = new Set([
 const CONTROL_PAREN_KEYWORDS = new Set(['catch', 'for', 'if', 'switch', 'while', 'with'])
 
 /**
- * 六审 R6-1:`for await (…)` 的 `(` 前面一个词是 `await`,`for` 被它挡住 —— 只按
- * `CONTROL_PAREN_KEYWORDS.has(lastWord)` 判定会把该括号登记为**普通**括号,于是 `)` 把
- * 上下文置回 `value`(`:561`),`/` 被判成除号,正则体里的 `\/` 与收尾 `/` 在上下文判定
- * **之前**先命中 `//` 分行注释 → 整行剩余部分(含中文文案)被抹成空格(GREEN 漏报)。
- *
- * 此处向前回扫:`(` → 空白 → `await` → 空白 → 若为 `for` 则确认为控制括号。
- * 刻意**只认 `for await`** 这一形态:裸 `await (` 仍是普通括号,`/` 是除号
- * (反向对照 `await-paren-div.ts` 钉住,防止过度修复把真除号改判成正则)。
+ * `for await (...)` 的括号属于控制语句括号。
+ * 裸 `await (...)` 仍按普通括号处理，后续 `/` 应视为除号。
  */
 const isForAwaitParen = (source: string, parenIndex: number): boolean => {
   let cursor = parenIndex - 1
@@ -135,10 +106,8 @@ const isForAwaitParen = (source: string, parenIndex: number): boolean => {
 const EXPRESSION_BRACE_AFTER_PUNCT = new Set(['=', '(', '[', ',', ':', '?'])
 
 /**
- * `{` 前面是这些**关键字**时同理(`return { a: 1 }`、`export default { … }`)。
- * 刻意**不含** `void` / `typeof`:它们既能引出表达式,又能出现在**类型**位置 ——
- * `function f(): void {}` 的 `{` 是**函数体(块语句)**,把它当对象字面量会让其后的 `/re/` 退回除号,
- * 于是 E2 家族在「带返回值类型注解的函数」上重新漏报(实测)。
+ * `{` 前的这些关键字表示对象字面量或解构模式。
+ * `void` 和 `typeof` 不在此列，以避免把带返回类型的函数体误判为对象字面量。
  */
 const EXPRESSION_BRACE_AFTER_WORD = new Set([
   'await',
@@ -158,9 +127,7 @@ const isIdentPart = (char: string): boolean =>
 const isTagChar = (char: string): boolean => /[A-Za-z0-9_$.:-]/.test(char)
 
 /**
- * 源码的语法模式 —— 决定要不要处理**文本节点**(五审 J1/J2/J3/J5):
- * `jsx` 认 `.tsx` 的 JSX 文本,`html` 认标签之间的 HTML 文本,`code` 是其余(.ts/.css)的纯代码扫描。
- * 文本节点是**真渲染出来的界面文案**,不是 TS 代码,所以必须保留(不能当注释抹掉)。
+ * 按扩展名确定扫描模式：`.tsx` 保留 JSX 文本节点，`.html` 保留标签间文本，其他文件按代码扫描。
  */
 export type StripMode = 'code' | 'jsx' | 'html'
 
@@ -172,53 +139,18 @@ export const modeForPath = (path: string): StripMode => {
 }
 
 /**
- * 去掉注释，且**词法级地区分注释 / 字符串 / 模板字面量 / 正则字面量 / JSX-HTML 文本节点**：
- * - 行注释与块注释替换成等长空格（块注释保留其中的换行），因此**行号与列号都不变**；
- * - 字符串 / 模板 / 正则字面量原样搬运 —— 里面的 `//` 或 `/*` 不是注释（复审 E4；四审 G3）；
- * - 模板字面量的 `${...}` 表达式按**代码**递归处理，所以嵌套模板与其中的注释都能被正确识别；
- * - `.tsx` 的 JSX **文本节点**与 `.html` 标签之间的文本按**文本**保留：它们是真渲染出来的界面文案，
- *   不是 TS 代码 —— `<p>//中文</p>`、`<p>` 里以 `/*` 开头的中文、`<p>https://例子.中国</p>` 都必须被检出
- *   (五审 J1/J2/J3/J5;此前 `//` `/*` 一律当注释起点,这些整行被抹成空格 → 漏报)。
- *
- * **为什么不用 `ts.createScanner`（四审建议的方案）**：独立 scanner **没有解析器上下文**，
- * 它把 `/` 一律当除号 —— 正则识别是解析器在「需要表达式」时调 `reScanSlashToken` 才发生的。
- * 实测（`ts.createScanner(ScriptTarget.Latest, false, Standard, text)` 抽样 token）：
- * `const R = /https?:\/\//; const X = '打开网关登录页'` 得到的唯一注释 token 是
- * `//; const X = '打开网关登录页'` —— 与四审 G3 的绕过**一模一样**，等于没修。
- * 五审复核同一结论：把 scanner 换进来既救不了「`if (ok) /re/`」这类**语句位置的正则**，
- * 也完全看不见 JSX 文本节点(那是 parser 的产物)。所以这里用手写词法器 + token 上下文状态机。
- *
- * **已按 token 上下文处理的位置**(`/` 何时是除号):
- *   标识符 / 数字 / 字符串 / 模板 / 正则 / **普通括号的 `)`** / `]` /
- *   **对象字面量的 `}`** / `++` / `--` 之后 → 除号;
- *   其余位置(`return` `case` `=` `,` `(` `[` `{` `;` `:` `?` 各类运算符 /
- *   **控制语句 `if|while|for|switch|catch|with` 的 `)`** / **块语句的 `}`** / 行首) → 正则。
- *   块语句还是对象字面量由 `{` 的前一个 token 判定(`=`/`(`/`[`/`,`/`:`/`?` 或 `return` 等关键字 → 对象)。
- *   行首(上一行以值结尾)按 ASI 语义当**正则**:这里 JS 语义本身有歧义,取保守侧(`/` 当正则只“跳过”,
- *   `//` 不会因此被抹掉),代价是极少见的「除号换行延续」会多报。
- *
- * **仍是启发式 —— 而且两侧的出错方向不对称,所以这里逐条说清,不笼统声称「只会多报」**:
- * - `/` 判成正则而实为除号 → 只是**跳过**一段字符(注释分支优先,且「跳过」只原样搬运、不抹空格)→ **多报**;
- *   反过来把真正则判成除号,正则体内的 `\/` 可能与后一个 `/` 凑成 `//` → **漏报**。
- *   所以默认值是「正则」,只有明确处在「值之后」才判除号(见上面的位置清单)。
- * - JSX 起始判定 = `<` 后跟标识符/`>` 且处在「表达式可开始」的位置。泛型实参 `<T,>` 这类会被**误判成**
- *   JSX → 该区域按文本保留、其中的注释不再剥离 → **多报**;反过来,若某个真 JSX 文本节点没被判成 JSX,
- *   文本里的 `//` 仍会被抹掉 —— **这一侧是漏报**。兜底:JSX 只会出现在表达式位置,而那里 `context !== 'value'`。
- * - `.html`:`<!-- -->` 按 `-->` **等长抹成空格**(未闭合则不猜、保留为文本);
- *   `<script>`/`<style>` 正文按 HTML 规范在第一个 `</script`/`</style>` 处截断后**按代码**处理(注释照常剥离);
- *   标签之间的文本**原样保留**(那是真上屏文案,保留即正确)。`.html` 已知的多报面只有「未闭合的 `<!--`」
- *   (不猜 → 保留为文本);当前 `src/renderer/index.html` 没有任何 HTML 注释。
- * - 上一行以标识符结尾且真正的正则体内含 `\/`(如 `a\n/a\//`)这类跨行歧义已按上面「行首取正则」收口,
- *   但词法边界仍靠上下文推断,没有完整解析器;`.ts` 的 `<` 一律当泛型/比较,不认 JSX。
- * **任何分支都必须让 index 前进**(本文件曾因不推进的循环把整个测试套件挂死)。
+ * 词法级移除注释，同时保留字符串、模板、正则和 JSX/HTML 文本节点。
+ * 注释替换为等长空格以保持行号和列号；模板表达式递归按代码扫描。
+ * `/` 的分类依赖 token 上下文：值后为除号，表达式或语句起点为正则。
+ * 该分类是启发式的，优先把不确定的 `/` 视为正则，避免把后续内容当作注释移除。
  */
 export function stripComments(source: string, mode: StripMode = 'code'): string {
-  // 等长替换而不是拼接:注释位置换成空格、换行原样保留 —— 行号/列号与真实文件一致(E10)
+  // 注释替换为等长空格，保留换行以维持原始位置。
   const chars = source.split('')
-  // **可变**:`.html` 的 `<script>`/`<style>` 正文按 HTML 规范截断后临时收窄扫描窗口(见 scanRawElement)
+  // `.html` 的 `<script>` 和 `<style>` 正文在闭合标签前按代码扫描。
   let length = chars.length
   let index = 0
-  /** 只对 `.tsx` 开 JSX 文本态:`.ts` 里 `<` 是泛型/比较,绝不能当标签(那会把代码当文本、漏剥注释) */
+  /** 仅 `.tsx` 处理 JSX 文本节点；`.ts` 中的 `<` 表示泛型或比较。 */
   const jsx = mode === 'jsx'
 
   const blank = (from: number, to: number): void => {
@@ -307,7 +239,7 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
         index += 2
         return false
       }
-      // 属性之间的注释是**真注释**(JSX 允许,`AuthPanel.tsx` 的 `// D5:…` 就写在这里) —— 必须剥离
+      // JSX 属性之间的注释应移除。
       if (char === '/' && next === '/') {
         let end = index
         while (end < length && charAt(source, end) !== '\n') end += 1
@@ -340,10 +272,7 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
     }
   }
 
-  /**
-   * 扫过 JSX 子节点:文本节点**原样保留**(界面文案就在这里 —— 五审 J1/J2/J3),
-   * 嵌套标签递归,`{…}` 当代码。遇到本元素的结束标签即返回。
-   */
+  /** 扫描 JSX 子节点：保留文本节点，递归扫描嵌套标签，并将 `{…}` 作为代码处理。 */
   const scanJsxChildren = (): void => {
     for (;;) {
       if (index >= length) return
@@ -424,10 +353,7 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
     index = closeAt
   }
 
-  /**
-   * `.html`:标签之外的文本**原样保留**(`<title>数据目录控制台</title>` 这类界面文案就在这里 ——
-   * 五审 J5)。标签、`<!doctype>`、HTML 注释按各自规则处理。
-   */
+  /** `.html` 保留标签外文本，并分别处理标签、doctype 和 HTML 注释。 */
   const scanHtml = (): void => {
     while (index < length) {
       const char = charAt(source, index)
@@ -538,8 +464,7 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
         index += 1
         continue
       }
-      // —— JSX 标签(仅 .tsx):`<` 处在「表达式可开始」的位置且后跟标签名 ——
-      //    五审 J1–J3:`<p>//中文</p>` 里的 `//` 此前被当行注释,整行文案被抹掉
+      // JSX 标签仅在表达式可开始的位置识别。
       if (jsx && char === '<' && (isIdentStart(next) || next === '>') && context !== 'value') {
         scanJsxElement()
         context = 'value'
@@ -571,8 +496,8 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
         continue
       }
       if (char === '(') {
-        // `if (`/`while (`/`for (`/`switch (`/`catch (`/`with (` 的 `)` 之后是一条新语句
-        // 六审 R6-1:`for await (` 的 `(` 紧随 `await` 而非 `for`,须由 isForAwaitParen 补判
+        // 控制语句括号后的 `/` 可以开始正则；普通括号后的 `/` 是除号。
+        // `for await (` 需要额外识别，因为前一个单词是 `await`。
         parenStack.push(CONTROL_PAREN_KEYWORDS.has(lastWord) || isForAwaitParen(source, index))
         index += 1
         context = 'operator'
@@ -582,8 +507,7 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
         continue
       }
       if (char === ')') {
-        // 五审 E1:控制语句的 `)` 之后是**新语句**,`/` 在那里是正则(`if (ok) /re/.test(s)`);
-        // 普通括号的 `)` 之后是值,`/` 仍是除号(`(a + b) / 2`)
+        // 控制语句的 `)` 之后可以开始正则；普通括号的 `)` 之后仍为值。
         const control = parenStack.pop() ?? false
         index += 1
         context = control ? 'statement' : 'value'
@@ -609,7 +533,7 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
         continue
       }
       if (char === '{') {
-        // 五审 E2:`}` 之后是「新语句」还是「值之后」,取决于这个 `{` 是块语句还是对象字面量
+        // `}` 后的上下文取决于对应 `{` 是块语句还是对象字面量。
         const isObject =
           EXPRESSION_BRACE_AFTER_PUNCT.has(lastPunct) || EXPRESSION_BRACE_AFTER_WORD.has(lastWord)
         braceDepth += 1
@@ -655,7 +579,7 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
   return chars.join('')
 }
 
-/** 把 `\uXXXX` / `\u{XXXX}` 还原成字符：转义写法的中文也必须被抓住（复审 E6） */
+/** 将 `\uXXXX` / `\u{XXXX}` 还原为字符，使转义写法的中文参与检查。 */
 export function decodeUnicodeEscapes(text: string): string {
   return text.replace(
     /\\u\{([0-9a-fA-F]+)\}|\\u([0-9a-fA-F]{4})/g,
@@ -680,11 +604,7 @@ export function cjkColumns(line: string): number[] {
 }
 
 /** `console.*` 实参的字符区间 `[start, end)`：落在区间内的中文只进日志，不是用户可见文案 */
-/**
- * 六审 R6-2:`/` 前面是这些字符(或行首)时,它是**正则字面量**起点,否则是除号。
- * 刻意**不含** `)` / `]` / 标识符 / 数字 —— 那些后面的 `/` 必须是除号
- * (`(a + b) / 2`、`arr[i] / 2`、`a / b`),不能改判成正则。
- */
+/** `/` 前出现这些字符或位于行首时，它可以开始正则字面量；其他位置视为除号。 */
 const REGEX_START_AFTER = new Set([
   '',
   '(',
@@ -714,7 +634,7 @@ export function logArgumentRegions(code: string): Array<readonly [number, number
   while (match !== null) {
     let index = match.index + match[0].length
     let depth = 1
-    /** 上一个非空白字符 —— 判断 `/` 是正则起点还是除号(六审 R6-2) */
+    /** 上一个非空白字符，用于判断 `/` 是正则起点还是除号。 */
     let lastSignificant = ''
     while (index < code.length && depth > 0) {
       const char = charAt(code, index)
@@ -733,9 +653,7 @@ export function logArgumentRegions(code: string): Array<readonly [number, number
         lastSignificant = quote
         continue
       }
-      // 六审 R6-2:**必须跳过正则字面量**。此前只跳字符串,于是实参里含未配对 `(` 的正则
-      // (如 `/\(/.test(raw)`)会把 `depth` 永久抬高 → 区间一路延到 `code.length`,
-      // 该 `console.*` **之后整个文件**的中文都被当成「只进日志」而豁免(GREEN 漏报)。
+      // 正则字面量中的括号不影响 console 调用的实参深度。
       if (char === '/' && REGEX_START_AFTER.has(lastSignificant)) {
         index += 1
         let inClass = false
@@ -763,10 +681,7 @@ export function logArgumentRegions(code: string): Array<readonly [number, number
       index += 1
     }
     regions.push([match.index + match[0].length, index])
-    // 从实参右括号之后继续找下一个 `console.*` 调用。
-    // **必须重新 exec**:`match` 不推进则 `while (match !== null)` 永不退出 ——
-    // 这正是本文件此前「整个测试套件被 SIGTERM 杀死且无任何输出」的根因
-    // (只设 `pattern.lastIndex` 不会改变 `match`,循环条件恒真)。
+    // 从实参右括号之后继续搜索下一个 `console.*` 调用。
     pattern.lastIndex = index
     match = pattern.exec(code)
   }
@@ -774,16 +689,12 @@ export function logArgumentRegions(code: string): Array<readonly [number, number
 }
 
 /**
- * 扫描一组源码，返回违规位置。逐行判定：一行只要有一处**未被豁免**的中日韩文案就算违规。
- *
- * 这里**没有**「已登记清单」这个选项:豁免会过滤掉已登记的行,而调用方又要拿同一份清单去
- * 判断“有没有新增/有没有过期”,两者相消后 `unregistered`/`stale` 永远只能有一个为空
- * (此前 `ceiling` 就是这么把自己弄成结构性不可满足的)。登记与否由调用方对**全集**做集合比对。
+ * 扫描源码并返回违规位置。调用方将扫描结果与登记清单作集合比对，避免过滤已登记项后丢失新增或过期信息。
  */
 export function scanSources(files: readonly SourceFile[], options: ScanOptions = {}): Violation[] {
   const violations: Violation[] = []
   for (const file of files) {
-    // 模式按路径选:`.tsx` 认 JSX 文本节点,`.html` 认标签之间的文本(五审 J1/J2/J3/J5)
+    // 按路径选择模式：`.tsx` 保留 JSX 文本，`.html` 保留标签之间的文本。
     const code = stripComments(file.text, modeForPath(file.path))
     const regions = options.logSinks === true ? logArgumentRegions(code) : []
     const lines = code.split('\n')
@@ -805,7 +716,7 @@ export function scanSources(files: readonly SourceFile[], options: ScanOptions =
   return violations
 }
 
-/** 递归收集目录下的源文件（嵌套子目录同样收集 —— 复审 E3 的绕过点） */
+/** 递归收集目录下的源文件，包含嵌套子目录。 */
 export function collectSourceFiles(
   root: string,
   extensions: readonly string[],
@@ -829,7 +740,7 @@ export function collectSourceFiles(
   return found
 }
 
-// ───────────────────────── 规则数据（全部有注释，且改动都受钉值约束） ─────────────────────────
+// ───────────────────────── 规则数据 ─────────────────────────
 
 const SRC_ROOT = join(process.cwd(), 'src')
 const RENDERER_PREFIX = 'src/renderer/'
@@ -846,14 +757,11 @@ const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.css', '.html'] as const
 const ALLOWED_LITERALS: readonly RegExp[] = [/^\{?language === 'zh' \? '中文' : 'English'\}?$/]
 
 /**
- * 扫描的**唯一**排除面（四审 R-a:排除面必须显式且被钉住，不许有“扫不到的文件”这类暗门）。
- * `src/shared/i18n/messages.ts` 是**文案目录本身** —— 迁移的落点，里面每一行就是 zh 文案；
- * 把它当“硬编码待迁移文案”登记等于让护栏自指（也会把 284 条真文案淹进债务清单）。
- * 除它之外 `src/**` 全部受约束；任何新增排除都必须有意改这里 + `SOURCE_EXCLUSIONS_PIN`。
+ * 扫描时唯一排除文案目录本身，避免把文案定义视为待迁移的硬编码文案。
  */
 const SOURCE_EXCLUSIONS: readonly string[] = ['src/shared/i18n/messages.ts']
 
-/** SOURCE_EXCLUSIONS 的钉值:独立字面量副本（照 PENDING_PIN 的写法,不是派生副本） */
+/** SOURCE_EXCLUSIONS 的独立字面量副本。 */
 const SOURCE_EXCLUSIONS_PIN: readonly string[] = ['src/shared/i18n/messages.ts']
 
 const isExcluded = (path: string): boolean => SOURCE_EXCLUSIONS.includes(path)
@@ -892,12 +800,11 @@ const NON_RENDERER_EXEMPTIONS = [
 const LOG_SINK_ENABLED = NON_RENDERER_EXEMPTIONS.some((entry) => entry.kind === 'console-args')
 
 /**
- * 已完成文案迁移的渲染层文件（相对 `src/renderer/src`；`../App.tsx` 表示渲染层根组件）。
- * 说明:覆盖率不再依赖这份清单（全树默认受约束），它保留的意义是记录进度 + 钉住“不许缩小范围”。
+ * 已迁移文案的渲染层文件，相对 `src/renderer/src`。
+ * 清单与独立副本保持一致，防止意外缩小检查范围。
  */
 const MIGRATED = [
   '../App.tsx',
-  // 复审 R1:store.ts 也含用户可见文案(toast),此前完全不在扫描范围内
   '../store.ts',
   'Sidebar.tsx',
   'SettingsView.tsx',
@@ -914,14 +821,7 @@ const MIGRATED = [
   'Wizard.tsx'
 ]
 
-/**
- * MIGRATED 的**钉值**:必须与 MIGRATED 完全一致。任何增删都必须在两处同时改 ——
- * 这就是“有意确认”的落点（评审 S11b:此前从清单里删一行就能缩小护栏范围）。
- *
- * **四审 R-c**:这里必须是**独立字面量副本**。此前写成 `[...MIGRATED]`（派生副本）,
- * `expect([...MIGRATED].sort()).toEqual([...MIGRATED_PIN].sort())` 恒真 —— 删掉 MIGRATED
- * 任一条目护栏仍全绿（假钉值）。现在删任一条目 → 本用例 RED。
- */
+/** MIGRATED 的独立字面量副本，用于验证清单完整性。 */
 const MIGRATED_PIN: readonly string[] = [
   '../App.tsx',
   '../store.ts',
@@ -940,26 +840,15 @@ const MIGRATED_PIN: readonly string[] = [
   'Wizard.tsx'
 ]
 
-/**
- * 尚未迁移、暂缓判定的渲染层文件（**工作区相对 POSIX 路径**，与 Violation.path 同域）。
- * 当前为空 —— 全部已迁移。登记一个文件等于“放过它的硬编码文案”，因此必须同时修改
- * PENDING_PIN（钉值）并在下面写明理由，否则测试失败（评审 E5:PENDING 曾被随意扩大）。
- */
+/** 暂缓检查的渲染层文件，路径与 Violation.path 一致。 */
 const PENDING: readonly string[] = []
 
-/** PENDING 的钉值:与 PENDING 完全一致；改动它 = 对“放过一个文件”的有意确认 */
+/** PENDING 的独立字面量副本。 */
 const PENDING_PIN: readonly string[] = []
 
 const isPending = (path: string): boolean => PENDING.includes(path)
 
-/**
- * 一条非渲染层债务的**身份 = (文件路径, 文案)** —— 五审 N1:`path` 必须参与身份。
- * 此前只按**行文本**做集合比对(`Set(violations.map(v => v.text))`),于是把一条**已登记**的行
- * 原样搬进**新文件**时文案文本没变 → 护栏 20/20 GREEN(漏报);而同一位置换成新文案就 RED。
- * 现在新增任何 (路径, 文案) 站点(包括「把已登记的整行复制到新文件」)→ RED。
- * 行号刻意**不进**身份:同一文件里同文本的多处站点会折叠成一个(见下面清单的残留缺口注释),
- * 换行/插行也不会让整份清单假性过期。
- */
+/** 债务站点由文件路径和行文本标识；行号不参与标识，避免无关换行造成清单失效。 */
 type DebtEntry = readonly [file: string, text: string]
 
 /** 构造一条债务条目(只是让清单可读:比裸元组少一层括号噪音) */
@@ -972,32 +861,9 @@ const siteKey = (path: string, text: string): string => `${path}\u0000${text}`
 const readableSite = (key: string): string => key.replace('\u0000', ' :: ')
 
 /**
- * 非渲染层硬编码文案债务清单（主进程 + shared + preload）—— 分两类登记,**只减不增**。
- *
- * (a) NON_RENDERER_COPY_DEBT_USER_VISIBLE = **用户可见、待迁移**的部分。
- *     这些中文会经非渲染层字段直接显示在界面上(渲染层不翻译这些字段,原样渲染):
- *     IPC 信封 `message` → toast(`result.message`);状态事件 `detail` → App.tsx / DetailView 的
- *     实例状态行;认证状态 `message` → AuthPanel 的 auth-message;探测 `evidence` → UrlDetect;
- *     口令提示语 → SshDialogs 的 askpass 弹窗副标题;指纹值 → 指纹确认弹窗;
- *     `shared/endpoint.ts` 的解析错误文案 → Wizard/UrlDetect 的 `setError(result.message)`;
- *     `shared/contracts.ts` 的 zod 文案 → `formatZodIssues` 折叠进 IPC 信封 message → 表单报错
- *     (后两组是四审 R-a 扩范围后新浮出来的,**今天就已经上屏**,见各组小标题)。
- *     迁移方式(PRD §8):非渲染层只发稳定 code,渲染层按 code 映射到 @shared/i18n/messages.ts。
- *     该迁移要动认证 wire 契约,尚未执行 —— 这些条目是本护栏存在的理由,不是“已确认无碍”。
- *     清单里的行按**到达界面的渠道**分组,便于按通道批量迁移。
- *
- * (b) NON_RENDERER_COPY_DEBT_INTERNAL = **内部诊断**,逐条写明“为什么不可能出现在界面上”。
- *     注意 (b) 不是“允许新增”的口袋:任何新中文都得先归到 (a)/(b) 之一(下面用例强制分档),
- *     而 (b) 的每一条都必须能指着代码说明它不经过 UI。
- *
- * 两层钉值:NON_RENDERER_COPY_DEBT 必须与扫描到的集合**完全相等**(多一条=未登记新增,
- * 少一条=已迁移却忘删),且 (a) ∪ (b) 必须恰好等于它。删条目时请把文案搬进
- * @shared/i18n/messages.ts 后一起改。
- *
- * **残留下的缺口(诚实记账,五审 N1 已闭合主口子)**:身份是 (路径, 文案),不含行号 ——
- * 因此在**同一个文件内**把一条已登记的整行再复制一份到别的位置,扫描结果折叠成同一个站点,
- * 不会被发现(跨文件复制必然 RED)。行号不进身份是刻意的:否则任何一次无关插行/换行都会让
- * 整份清单假性过期,护栏会被噪声淹没。真要逐站点精确,需把行号也钉进来并接受这种脆弱性。
+ * 非渲染层硬编码文案按用户可见和内部诊断分类。
+ * 用户可见项通过 IPC、状态、认证或探测字段进入界面；内部项不经过 UI。
+ * 两类清单的并集必须与扫描到的站点一致。
  */
 const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   // —— IPC 信封 message（渲染层 toast 直接展示 result.message） ——
@@ -1011,7 +877,6 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '只有 SSH 隧道实例才有主机指纹')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '未知的传输类型')"),
   debt('src/main/registry/instance-store.ts', "throw new InstanceStoreError('invalid-input', `字段 ${key} 不适用于 ${current.transport} 实例`)"),
-  // —— 实机反馈 2026-09-16:http 免启动开窗 + 外部 dsh web 接管(IPC message 渲染层直接展示) ——
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '只有本地实例才能接管本机 dsh web')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '本机进程探测能力不可用')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')"),
@@ -1023,9 +888,9 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '保险库中没有该实例的已存密码')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('not-found', `实例不存在：${parsed.instanceId}`)"),
 
-  // —— 状态事件 detail（App.tsx / DetailView 的实例状态行） ——
+  // Runtime status messages displayed by App.tsx and DetailView.
   debt('src/main/local-runtime/local-runtime.ts', ": '分配端口并启动进程（端口区间不可用，改由 dsh 自动选择）'"),
-  debt('src/main/transport/http-endpoint.ts', ": '按配置使用网关登录（T7 接入）'"),
+  debt('src/main/transport/http-endpoint.ts', ": '按配置使用网关登录'"),
   debt('src/main/transport/http-endpoint.ts', "? '按配置跳过登录认证'"),
   debt('src/main/local-runtime/local-runtime.ts', '? `分配端口并启动进程（端口 ${preferredPort}）`'),
   debt('src/main/local-runtime/runtime-installer.ts', "`安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${result.stderr.trim() || '无 stderr'}`"),
@@ -1038,7 +903,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/local-runtime/runtime-installer.ts', 'detail: `安装 ${DSH_PACKAGE_NAME}@${version}`'),
   debt('src/main/local-runtime/local-runtime.ts', 'detail: `就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`,'),
   debt('src/main/local-runtime/local-runtime.ts', 'detail: `已在 ${entry.home} 启动（dsh web）`'),
-  // —— #2 运行时获取策略(hub → PATH → 下载需确认)新增的用户可见文案 ——
+  // Runtime source messages.
   debt('src/main/local-runtime/local-runtime.ts', "emit(id, 'starting', { detail: '解析运行时来源' })"),
   debt('src/main/local-runtime/local-runtime.ts', "emit(id, 'starting', { version: target, detail: `需要下载 dsh ${target}，等待确认` })"),
   debt('src/main/local-runtime/local-runtime.ts', 'detail: `需要下载 dsh ${target}，未获确认，已取消启动（hub 与 PATH 上均无可用运行时）`'),
@@ -1137,10 +1002,8 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   // —— 指纹展示值（指纹确认弹窗） ——
   debt('src/main/ssh/host-trust.ts', "return 'SHA256:<无法解析>'"),
 
-  // —— 四审 R-a 扩范围后新登记:zod 校验文案（src/shared/contracts.ts） ——
   //    渠道:zod 的 message 经 `formatZodIssues`(contracts.ts:510-517)折叠成一条纯文本,
   //    塞进 IPC 错误信封 `message`(`register.ts` 的 invalid-input 分支)→ 渲染层 toast /
-  //    表单报错。**今天就上屏**,不是理论风险:`Wizard.tsx` 的 create/patch 失败即展示它。
   //    迁移方式同 (a):改成稳定 code + 渲染层按 field/code 映射文案。
   debt('src/shared/contracts.ts', "const PORT_SCHEMA = z.number('端口必须是数字').int('端口必须是整数').min(1, '端口最小 1').max(65535, '端口最大 65535')"),
   debt('src/shared/contracts.ts', ".min(1, 'SSH 主机不能为空')"),
@@ -1157,10 +1020,8 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/shared/contracts.ts', ".refine((patch) => Object.keys(patch).length > 0, '补丁不能为空')"),
   debt('src/shared/contracts.ts', "schemaVersion: z.number('schemaVersion 必须是数字').int().min(1),"),
 
-  // —— 四审 R-a 扩范围后新登记:端点解析错误文案（src/shared/endpoint.ts） ——
   //    渠道:`EndpointParseError.message` → `register.ts` wrap 的 invalid-input 信封 message
   //    → `Wizard.tsx:83/120` 与 `UrlDetect.tsx:65` 的 `setError(result.message)` **直接上屏**。
-  //    这些文案刻意不回显 input(安全评审 Finding 1),所以它们是稳定的静态中文 ——
   //    迁移同样只需把静态文案换成 code。
   debt('src/shared/endpoint.ts', "throw new EndpointParseError('empty', input, '端点地址不能为空')"),
   debt('src/shared/endpoint.ts', "throw new EndpointParseError('missing-host', input, '端点地址缺少主机名')"),
@@ -1239,7 +1100,7 @@ const COPY_DEBT_HINT = [
   '  1. 用户可见(会经 IPC message / 状态 detail / 认证 message / 探测 evidence / zod 校验文案 /',
   '     端点解析错误文案 / 提示语到达界面):文案搬进 @shared/i18n/messages.ts，渲染层按',
   '     code / key 展示，并把该行登记进 NON_RENDERER_COPY_DEBT_USER_VISIBLE',
-  '     (推荐;这一步涉及 wire 契约，要单独做);',
+  '     (推荐;此变更影响接口展示方式，应单独处理);',
   '  2. 确属非用户可见(例如只进日志/被 catch 吞掉/当前无消费者):登记进 NON_RENDERER_COPY_DEBT_INTERNAL，',
   '     并在该分组的小标题里写明为什么它不可能出现在界面上 —— 这是对“债务只减不增”的有意确认，',
   '     不要为了变绿放宽规则。'
@@ -1250,10 +1111,8 @@ function migratedPath(name: string): string {
 }
 
 /**
- * 双向比对:**扫描到的站点** vs **已登记站点**,身份都是 (路径, 文案)(五审 N1)。
- * - `unregistered` = 扫到但没登记 → 新增文案,**或把已登记的整行复制进新文件**;
- * - `stale` = 登记了但没扫到 → 已迁移却忘删,或文件被改名/删除。
- * 抽成纯函数是为了能对**合成源码**直接断言(见下面 N1 的钉住用例),不必真的往仓库里放文件。
+ * 比较扫描到的站点与登记站点。
+ * `unregistered` 表示新增站点，`stale` 表示不再存在的登记站点。
  */
 export function diffDebt(
   violations: readonly Violation[],
@@ -1271,15 +1130,14 @@ export function diffDebt(
   }
 }
 
-describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
+describe('i18n 覆盖检查', () => {
   it('渲染层整树(.ts/.tsx/.css/.html,递归)默认受约束:不含硬编码中日韩文案', () => {
     const files = collectScannedFiles().filter((file) => isRendererPath(file.path))
     // 反“空扫”:遍历不到文件时,下面的断言会毫无意义地变绿
-    expect(files.length, '渲染层应能遍历到源文件(否则这条护栏是空转)').toBeGreaterThan(15)
-    // 四审 G2:`src/renderer/index.html` 此前完全不收(.html 不在扩展名表里),改 `<title>` 为中文仍绿
+    expect(files.length, '渲染层应能遍历到源文件').toBeGreaterThan(15)
     expect(
       files.some((file) => file.path === 'src/renderer/index.html'),
-      '渲染层 index.html 必须在扫描集合内(四审 G2:否则改 <title> 不会被抓住)'
+      '渲染层 index.html 必须在扫描集合内，以检查 `<title>` 文案'
     ).toBe(true)
     const violations = scanSources(
       files.filter((file) => !isPending(file.path)),
@@ -1289,8 +1147,6 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
   })
 
   it('新增文件默认受约束:渲染层根目录、嵌套子目录、CSS 与 index.html 里的文案都会被扫到', () => {
-    // 复审 E3 的三种逃逸:根目录新文件 / components/nested/x.tsx / CSS-in-JS 文案
-    // 四审 G2 的第四种:index.html 的 `<title>`
     const synthetic: SourceFile[] = [
       { path: 'src/renderer/src/NewView.tsx', text: 'export const A = () => <p>硬编码文案</p>\n' },
       {
@@ -1316,7 +1172,7 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     ])
   })
 
-  it('目录遍历是递归的:嵌套子目录里的新文件同样会被收集(复审 E3)', () => {
+  it('目录遍历是递归的:嵌套子目录里的新文件同样会被收集', () => {
     const dir = mkdtempSync(join(tmpdir(), 'i18n-guard-'))
     try {
       mkdirSync(join(dir, 'a/b/c'), { recursive: true })
@@ -1338,8 +1194,7 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     }
   })
 
-  it('扫描范围是整个 src 树:shared / preload / main / index.html 都在集合里(四审 R-a)', () => {
-    // 四审 G1:`src/shared/**` 此前完全不扫(add 中文常量仍绿)。这里把范围本身钉成断言:
+  it('扫描范围覆盖整个 src 树中的 shared、preload、main 和 index.html', () => {
     // 一旦有人把根目录从 `src/` 缩回 `src/renderer`+`src/main`,这条用例先失败。
     const paths = collectScannedFiles().map((file) => file.path)
     // 四个目录 + 渲染层 index.html 都必须有代表文件(缺任一个都说明范围被缩回去了)
@@ -1352,7 +1207,7 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
       'src/preload/index.ts',
       'src/renderer/index.html'
     ]) {
-      expect(paths.includes(required), `${required} 必须被扫描到(四审 R-a 的扫描范围)`).toBe(true)
+      expect(paths.includes(required), `${required} 必须被扫描到`).toBe(true)
     }
     // 测试文件与文案目录是唯一的两类例外 —— 且排除必须**真的在做事**:
     // 未经过滤的整树集合里它们**存在**,过滤后的扫描集合里它们**不存在**
@@ -1367,19 +1222,13 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
   it('非渲染层(main + shared + preload)文案受约束:未登记的硬编码中文即失败,债务清单只减不增', () => {
     // 非渲染层的中文会经 IPC 信封 message / 状态事件 detail / 认证 message / 诊断 evidence /
     // zod 校验文案 / 端点解析错误文案到达界面(渲染层直接展示这些字段),所以必须纳入扫描 ——
-    // 不能 blanket-exempt src/main 或 src/shared(四审 R-a:G1 证明 shared 此前是活的绕过口)。
     const files = collectScannedFiles().filter((file) => !isRendererPath(file.path))
-    expect(files.length, '非渲染层应能遍历到源文件(否则这条护栏是空转)').toBeGreaterThan(20)
-    // 四审 G1 的落点:shared 必须在集合内,否则「整树」不成立
+    expect(files.length, '非渲染层应能遍历到源文件').toBeGreaterThan(20)
     expect(
       files.some((file) => file.path === 'src/shared/endpoint.ts'),
-      'src/shared 必须在非渲染层扫描集合内(四审 G1)'
+      'src/shared 必须在非渲染层扫描集合内'
     ).toBe(true)
-    // 注意:**必须不带 ceiling 扫描**。此前把 NON_RENDERER_COPY_DEBT 当 ceiling 传进来,等于让扫描
-    // 先把已登记的整行过滤掉,再拿过滤结果去比对同一份清单 —— 于是 `observed` 恒为空、
-    // `stale` 恒等于整份清单(断言 `{unregistered:[], stale:[]}` 结构性不可满足)。
-    // 现在:扫描给出「实际看到的站点」全集,再与清单做双向集合比对。
-    // 五审 N1:站点身份是 (路径, 文案) —— 只比文本会让「把已登记的行搬进新文件」静默通过。
+    // 扫描全部站点后再与清单双向比较，以识别新增和已移除的条目。
     const violations = scanSources(files, { logSinks: LOG_SINK_ENABLED })
     const { unregistered, stale } = diffDebt(violations, NON_RENDERER_COPY_DEBT)
     expect(
@@ -1418,10 +1267,7 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     expect(NON_RENDERER_COPY_DEBT_INTERNAL.length, '(b) 内部诊断清单不应为空').toBeGreaterThan(0)
   })
 
-  it('非渲染层债务身份含路径:把已登记的整行搬进新文件即 RED(五审 N1)', () => {
-    // 五审 N1 的原始证明:此前按**行文本**集合比对(Set(text)),把一条**已登记**的行原样放进
-    // **新文件** `src/main/r5-dup.ts` → 护栏 20/20 GREEN;而同一位置换成**新**文案则 RED。
-    // 现在站点身份是 (路径, 文案),跨文件复制必然出新站点 → RED。
+  it('非渲染层债务身份包含路径，并识别新文件中的重复文案', () => {
     const files = collectScannedFiles().filter((file) => !isRendererPath(file.path))
     const base = scanSources(files, { logSinks: LOG_SINK_ENABLED })
     // 底座:真实仓库当前双向都空(这条也保证下面的对照不是靠“本来就红”蒙对)
@@ -1434,7 +1280,6 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     const [registeredFile, registeredText] = registered ?? ['', '']
     expect(registeredFile, '已登记的站点应该钉在 shared/endpoint.ts').toBe('src/shared/endpoint.ts')
 
-    // ① 同一条文本放进**新文件** → 必须 RED
     const duplicated = scanSources([{ path: 'src/main/zz-debt-dup.ts', text: `${registeredText}\n` }], {
       logSinks: LOG_SINK_ENABLED
     })
@@ -1446,14 +1291,12 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
       stale: []
     })
 
-    // ② 已知残留缺口(诚实钉住):**同一个文件内**同文本的第 2 处站点折叠成同一个 (路径, 文案),
-    //    因此不会被发现 —— 行号不进身份是刻意的(见清单头注释)。这条对照把边界写死在测试里。
+    // 同一文件中的相同文本共享一个站点标识，因为标识不包含行号。
     expect(
       diffDebt([...base, ...scanSources([{ path: registeredFile, text: `${registeredText}\n` }])], NON_RENDERER_COPY_DEBT),
       '同文件同文本不构成新站点(已知缺口,身份不含行号)'
     ).toEqual({ unregistered: [], stale: [] })
 
-    // ③ 反向对照:真的有**新**文案时同样 RED(证明 diffDebt 不是恒绿)
     const novel = scanSources([{ path: registeredFile, text: "const x = '一条全新的界面文案'\n" }])
     expect(diffDebt([...base, ...novel], NON_RENDERER_COPY_DEBT).unregistered).toEqual([
       `src/shared/endpoint.ts :: const x = '一条全新的界面文案'`
@@ -1469,8 +1312,6 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     expect(scanSources(logged, { logSinks: false })).toHaveLength(1)
 
     // 四行**同一个文件**(行号才有意义):只有第 2 行是界面文案。
-    // 此前这四行被写成 4 个同 path 的 SourceFile,每个都只有 1 行 —— 行号恒为 1,
-    // 断言 `[2]` 与 scanSources 的契约(逐文件独立编号)矛盾,永远不可能通过。
     const mixed: SourceFile[] = [
       {
         path: 'src/main/demo.ts',
@@ -1490,9 +1331,6 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
       1, 2, 3, 4
     ])
 
-    // 六审 R6-2:实参里的**正则**含未配对 `(` 时,区间不许延伸到文件尾。
-    // 修复前 `logArgumentRegions` 只跳字符串不跳正则,`/\(/` 会把 depth 永久抬高 →
-    // 该 `console.*` 之后**整个文件**的中文都被当成「只进日志」而豁免(实测 GREEN 漏报)。
     const withRegex: SourceFile[] = [
       {
         path: 'src/main/demo.ts',
@@ -1504,15 +1342,12 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
       }
     ]
     const regexText = withRegex[0]?.text ?? ''
-    // 区间必须止于该调用的右括号(= 第一行换行处),修复前会一路到 code.length
     expect(logArgumentRegions(regexText)).toEqual([[14, 43]])
     expect(regexText.length).toBeGreaterThan(43)
-    // 行为断言:正则之后的下一行文案必须照报(修复前是空数组)
     expect(scanSources(withRegex, { logSinks: true }).map((violation) => violation.line)).toEqual([2])
   })
 
-  it('模板字面量里的内容是文案(哪怕它长得像注释):askpass 债务行的根因', () => {
-    // 复审追问「`/* 落到取消分支 */` 是注释,剥离器漏了它」的结论是:**不是剥离器的问题**。
+  it('模板字面量中的内容按文案检查，即使看起来像注释', () => {
     // 这一行在 src/main/ssh/askpass.ts 里位于 `ASKPASS_HELPER_SOURCE` 这个模板字面量**内部** ——
     // 在外层 TS 里它是字符串内容(生成脚本自己的注释),不是外层注释;剥离器按设计保留
     // 字符串/模板内容(与下面 c.ts `z//中文` 同一条规则),所以它必须被当作文案登记为债务。
@@ -1531,7 +1366,7 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     expect(violations[0]?.text).toBe('/* 落到取消分支 */')
   })
 
-  it('注释剥离是字符串感知的:字符串里的 `//` 不会吞掉后面的文案(复审 E4)', () => {
+  it('注释剥离是字符串感知的:字符串里的 `//` 不会吞掉后面的文案', () => {
     const synthetic: SourceFile[] = [
       { path: 'a.ts', text: "const a = 'x//中文'\n" },
       { path: 'b.ts', text: 'const b = "y//中文"\n' },
@@ -1549,12 +1384,9 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     ])
   })
 
-  it('注释剥离识别正则字面量:正则里的 `//` 不再吞掉后面的文案(四审 G3)', () => {
-    // 四审 G3 的原始注入:靠正则里的 `\/\/` 把整行剩余部分抹成注释
-    //   `const R4_URL_RE = /https?:\/\//; const R4_PROBE_LABEL = '打开网关登录页'`
-    // 此前护栏 GREEN;对照组(同一行去掉正则)是 RED。下面每一条都是「必须看到该行的中文」。
+  it('注释剥离识别正则字面量:正则里的 `//` 不再吞掉后面的文案', () => {
+    // Regex literals with escaped slashes must not hide following source text.
     const synthetic: SourceFile[] = [
-      // G3 原型
       { path: 'g3.ts', text: "const R = /https?:\\/\\//; const X = '打开网关登录页'\n" },
       // 字符类里含 `/`、转义斜杠、`/*`、引号(引号若被当字符串起点,后面的注释判定会歪)
       { path: 'cls.ts', text: "const A = /[/]\\/\\/x/; const B = '字符类里的文案'\n" },
@@ -1588,7 +1420,6 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
       'div3.ts:3',
       'after.ts:2'
     ])
-    // 对照 A:同一行去掉正则 → 同样 RED(证明扫描器确实覆盖这些行,不是恒绿)
     expect(
       scanSources([
         { path: 'control.ts', text: "const R4_CONTROL = '控制组硬编码文案（无正则遮蔽）'\n" }
@@ -1596,32 +1427,25 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     ).toEqual(['control.ts:1'])
   })
 
-  it('注释剥离识别**语句位置**的正则字面量:`)`/`}` 之后的正则不再吞掉整行文案(五审 E1–E3)', () => {
-    // 五审 R-b 的原始注入:`)`/`]`/`}` 一律被当「值之后」→ 语句位置的真正则被当除号,
+  it('注释剥离识别**语句位置**的正则字面量:`)`/`}` 之后的正则不再吞掉整行文案', () => {
     // 其内的第二个 `/` 与后一个 `/` 凑成 `//`,于是**整行剩余部分(含中文文案)被抹成空格**。
-    // 下面每一条修复前都是 GREEN(漏报),现在每条都必须报出该行的中文。
     const synthetic: SourceFile[] = [
-      // E1:控制语句的 `)` 之后 —— `while` / `for (;;)` 同形
       { path: 'e1-if.ts', text: "if (ok) /a\\//.test(s); const C = '文案E1'\n" },
       { path: 'e1-while.ts', text: "while (ok) /a\\//.test(s); const C = '文案E1b'\n" },
       { path: 'e1-for.ts', text: "for (;;) /a\\//.test(s); const C = '文案E1c'\n" },
-      // E1(六审 R6-1):`for await (` 的 `(` 紧随 `await`,`for` 被挡住 —— 必须同样按控制括号登记
       {
         path: 'e1-for-await.ts',
         text: "for await (const it of xs) /a\\//.test(it); const C = '文案E1d'\n"
       },
       // 反向对照 4:裸 `await (` 前面**没有** `for`,仍是普通括号 → `/` 是除号,该行文案必须照报
-      // (若过度修复成「`await (` 也是控制括号」,`/` 会被当正则起点吞掉整行 → 此用例转 RED)
       {
         path: 'await-paren-div.ts',
         text: "const z = await (a + b) / 2 + '除号之后的文案E1e'\n"
       },
-      // E2:块语句的 `}` 之后 —— `if (…){}` / `function f(){}` / `class X{}` 三种形态
       { path: 'e2-block.ts', text: "if (ok) { f() } /a\\//.test(s); const C = '文案E2'\n" },
       { path: 'e2-fn.ts', text: "function f() {} /a\\//.test(s); const C = '文案E2b'\n" },
       { path: 'e2-fn-ret.ts', text: "function f(): void {} /a\\//.test(s); const C = '文案E2c'\n" },
       { path: 'e2-class.ts', text: "class X {} /a\\//.test(s); const C = '文案E2d'\n" },
-      // E3:`/*` 形态同样不能吞到行尾
       { path: 'e3.ts', text: "if (ok) /a\\/*/.test(s); const C = '文案E3'\n" },
       // 反向对照 1:块语句的 `}` 之后确实是**真注释**时照常剥离(不能反过来把注释留着)
       {
@@ -1656,8 +1480,7 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     ])
   })
 
-  it('JSX/HTML 文本节点按文本保留:文本里的 `//` `/*` `https://` 不再被当注释(五审 J1/J2/J3/J5)', () => {
-    // 五审 R-b 的第二条家族:JSX/HTML **文本节点没有模式** —— `<p>//中文</p>` 里的 `//` 被当行注释,
+  it('JSX/HTML 文本节点按文本保留:文本里的 `//` `/*` `https://` 不再被当注释', () => {
     // `<p>/*中文*/</p>` 被当块注释,`<p>https://例子.中国</p>` 的域名被吞。三者都是**真上屏文案**。
     expect(modeForPath('a.ts')).toBe('code')
     expect(modeForPath('a.tsx')).toBe('jsx')
@@ -1719,8 +1542,6 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
   })
 
   it('注释剥离在畸形输入上仍然终止:未闭合的块注释 / HTML 注释 / 字符串都不会死循环', () => {
-    // 本文件曾因「循环不推进」把整个测试套件挂死(SIGTERM 且无任何输出)。这里把每条能走到的
-    // 「找不到结束标记」的路径都钉住:可以保守(不抹),但**必须前进**。
     const malformed: SourceFile[] = [
       { path: 'open-block.ts', text: "/* 未闭合的块注释:中文\nconst a = 1\nconst b = '后续文案'\n" },
       { path: 'open-html.html', text: '<!-- 未闭合的注释中文\n<p>after</p>\n' },
@@ -1730,7 +1551,7 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
       { path: 'open-script.html', text: '<script>\nconst w = 1\n' },
       { path: 'open-jsx.tsx', text: 'const x = () => <p>未闭合的 JSX\n' }
     ]
-    // 只要它能返回(不挂死),就说明每条分支都在推进;顺带钉住行号没有越界
+    // 所有分支都必须返回，且报告的行号必须位于源文件范围内。
     for (const file of malformed) {
       const violations = scanSources([file])
       for (const violation of violations) {
@@ -1751,7 +1572,6 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
   })
 
   it('模板的 `${...}` 按代码处理:嵌套模板里的注释被剥离、外层模板文案仍保留', () => {
-    // 此前实现会在内层反引号处提前闭合外层模板,于是 `${}` 里的引号/注释判定会歪
     const text = [
       'const S = `${a ? `x${b /* 嵌套模板表达式里的注释 */}` : "y"}`',
       "const T = '嵌套模板旁边的文案'"
@@ -1760,8 +1580,7 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     expect(violations.map((violation) => violation.line)).toEqual([2])
   })
 
-  it('注释剥离保持行号:块注释与字符串里的换行都不许吃掉行号(复审 E10)', () => {
-    // 真实行 36 就是违规行 —— 此前版本把块注释里的换行删掉,报出来的行号整体上移
+  it('注释剥离保持行号:块注释与字符串里的换行都不许吃掉行号', () => {
     const padding = Array.from(
       { length: 30 },
       (_value, index) => `const v${index} = ${index}`
@@ -1780,7 +1599,7 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     expect(violations[0]?.line).toBe(36)
   })
 
-  it('\\uXXXX 转义写法的中文同样被检出(复审 E6)', () => {
+  it('\\uXXXX 转义写法的中文同样被检出', () => {
     const synthetic: SourceFile[] = [
       { path: 'esc.ts', text: "const a = '\\u786c\\u4e2d\\u6587'\n" },
       { path: 'braced.ts', text: "const b = '\\u{4e2d}\\u{6587}'\n" },
@@ -1792,14 +1611,14 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     ])
   })
 
-  it('MIGRATED 清单被钉住:不能靠删条目缩小护栏范围(复审 S11b)', () => {
+  it('MIGRATED 清单与独立副本保持一致，避免缩小检查范围', () => {
     expect([...MIGRATED].sort()).toEqual([...MIGRATED_PIN].sort())
     for (const name of MIGRATED) {
       expect(existsSync(migratedPath(name)), `${name} 已不在磁盘上,请修正 MIGRATED 清单`).toBe(true)
     }
   })
 
-  it('PENDING 被钉住且为空:新增豁免必须有意修改钉值(复审 E5)', () => {
+  it('PENDING 为空且与独立副本保持一致', () => {
     expect([...PENDING]).toEqual([...PENDING_PIN])
     // 当前为空:任何“先放过一个文件”的登记都要同时改 PENDING_PIN 并在旁边写明理由
     expect(PENDING).toEqual([])
@@ -1810,14 +1629,14 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     }
   })
 
-  it('豁免面被钉住:只有语言选择器那一行与 console.* 实参两条出口(复审 E5/E8)', () => {
+  it('豁免仅限语言选择器与 console.* 实参', () => {
     expect(ALLOWED_LITERALS).toHaveLength(1)
     expect(NON_RENDERER_EXEMPTIONS.map((entry) => entry.kind)).toEqual(['console-args'])
     // 删掉这条规则会让主进程日志集体违规,所以它不可能被悄悄关掉而不被发现
     expect(LOG_SINK_ENABLED).toBe(true)
   })
 
-  it('排除面被钉住:唯一被排除的是文案目录本身,增删必须有意改钉值(四审 R-a)', () => {
+  it('仅排除文案目录，且排除清单与独立副本保持一致', () => {
     expect([...SOURCE_EXCLUSIONS]).toEqual([...SOURCE_EXCLUSIONS_PIN])
     expect(SOURCE_EXCLUSIONS, '排除面只允许文案目录这一条(新增排除=新增暗门)').toEqual([
       'src/shared/i18n/messages.ts'
@@ -1848,7 +1667,6 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
 
   it('主线使用的 key 确实存在于文案目录(缺键会在界面显示原始 key)', () => {
     // 只做「目录 → 存在性」方向:反向的「死键」检测需要扫描全部源码字符串，
-    // 当前以人工清理为主(复审 R6 已清掉 settings.openDataDir)。
     const required = [
       'settings.saveFailed',
       'settings.cleared',

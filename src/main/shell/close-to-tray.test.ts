@@ -2,9 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { handleWindowClose } from './close-to-tray'
 
 /**
- * 关闭窗口 → 隐藏到托盘的接线单测（T11 三审 Finding 2）。
  *
- * 复审确认的存活变异:close 处理器把 `shouldMinimizeToTrayOnClose` 的第二个实参
  * **硬编码成 `true`**。纯函数测试覆盖不了它(纯函数本身没错),本文件覆盖接线:
  * 「托盘是否存在」必须实时查询,且只在真的该隐藏时才拦截关闭。
  */
@@ -26,7 +24,7 @@ describe('handleWindowClose（close-to-tray 接线）', () => {
     expect(hideWindow).toHaveBeenCalledTimes(1)
   })
 
-  it('偏好开启但**托盘不存在** → 放行(变异「第二个实参硬编码 true」的锚点)', () => {
+  it('偏好开启但**托盘不存在** → 放行(「第二个实参硬编码 true」的锚点)', () => {
     // 硬编码 true 会让这里拦截关闭并隐藏窗口 —— 应用从此叫不回来(只剩 macOS Dock)
     const { handled, preventDefault, hideWindow } = setup({ tray: true }, false)
     expect(handled).toBe(false)
@@ -47,7 +45,7 @@ describe('handleWindowClose（close-to-tray 接线）', () => {
     expect(preventDefault).not.toHaveBeenCalled()
   })
 
-  it('托盘存在性必须**实时查询**,不能用常量代替(变异「写死 trayAvailable」的锚点)', () => {
+  it('托盘存在性必须**实时查询**,不能用常量代替(「写死 trayAvailable」的锚点)', () => {
     const trayAvailable = vi.fn(() => false)
     handleWindowClose(
       { preventDefault: vi.fn() },

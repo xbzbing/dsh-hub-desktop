@@ -65,7 +65,7 @@ async function waitForStatus(
   throw new Error(`等待状态 ${status} 超时（当前：${manager.statusOf(id)?.status}）`)
 }
 
-describe('createSshTunnels（T4 隧道管理器 + 看门狗）', () => {
+describe('createSshTunnels（隧道管理器 + 看门狗）', () => {
   it('start → 隧道建立(参数含 -L 转发/私有 known_hosts) → 探测通过 → running', async () => {
     const child = makeFakeChild()
     let lastInvocation!: { args: string[]; env: NodeJS.ProcessEnv }
@@ -234,7 +234,7 @@ describe('createSshTunnels（T4 隧道管理器 + 看门狗）', () => {
     expect(restartEvents?.detail).toContain('已就绪')
   })
 
-  it('稳定 ≥ stableResetMs 后断线 → 退避重置(设计 §4.2)', async () => {
+  it('稳定 ≥ stableResetMs 后断线 → 退避重置()', async () => {
     const children: FakeChild[] = []
     const spawnImpl = vi.fn(() => {
       const child = makeFakeChild()
@@ -383,7 +383,6 @@ describe('createSshTunnels（T4 隧道管理器 + 看门狗）', () => {
   })
 
   it('stop 落在 ControlPath 清理的 await 窗口内 → 不 spawn 孤儿 ssh,条目/端口全部回滚', async () => {
-    // 安全评审 HIGH:start() 在 `await rm(entry.controlPath)` 处让出事件循环,期间 stop()
     // 会把条目从 entries 摘除并标记 stopping;旧代码在这里没有重新检查,于是照样 spawn 出一个
     // stop()/stopAll() 再也找不到的 ssh 进程(一直占着转发端口),而 UI 已显示「隧道已停止」。
     const child = makeFakeChild()
@@ -407,7 +406,6 @@ describe('createSshTunnels（T4 隧道管理器 + 看门狗）', () => {
       queueMicrotask(() => void manager.stop(instance.id))
     })
     await manager.start(instance)
-    // 变异:删掉 spawnSsh 前的 stopping 守卫 → 这里会变成 spawnCalls=1(孤儿进程)
     expect(spawnImpl).not.toHaveBeenCalled()
     expect(manager.runningIds()).toEqual([]) // 条目已从 entries 回滚,无残留跟踪
     expect(manager.statusOf(instance.id)?.status).toBe('stopped') // 终端状态准确,绝不报 running
@@ -430,12 +428,11 @@ describe('createSshTunnels（T4 隧道管理器 + 看门狗）', () => {
     expect(manager.statusOf(instance.id)?.detail).toContain('忽略重复启动')
   })
 })
-describe('ControlPath 路径规则（验收实测:unix socket 104 字节上限）', () => {
+describe("ControlPath 路径规则（unix socket 104 字节上限）", () => {
   it('socket slug 按实例隔离且短（12 hex,UUID 去横线）', () => {
     const instance = sshInstance({ id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
     expect(controlSlug(instance)).toBe('f47ac10b58cc')
     expect(controlSlug(instance)).toHaveLength(12)
-    // 不同实例 = 不同 socket(设计 §4.2「ControlPath 每实例独立」)
     expect(controlSlug(sshInstance({ id: 'a47ac10b-58cc-4372-a567-0e02b2c3d479' }))).not.toBe(
       controlSlug(instance)
     )
@@ -445,7 +442,7 @@ describe('ControlPath 路径规则（验收实测:unix socket 104 字节上限�
     expect(socketsDirFor('/tmp/hub-data')).toBe('/tmp/hub-data/ssh')
   })
 
-  it('数据目录过长(仓库内嵌路径)→ 自适应退化到系统临时目录(实测否则 too long)', () => {
+  it("数据目录过长时自适应退化到系统临时目录", () => {
     const long = '/Users/someone/workspace/private/some-very-long-org/dsh-plugins/dsh-hub-desktop/hub-data/verify-ssh'
     const dir = socketsDirFor(long)
     expect(dir).not.toBe(`${long}/ssh`)
@@ -455,8 +452,8 @@ describe('ControlPath 路径规则（验收实测:unix socket 104 字节上限�
   })
 })
 
-describe('T4 评审回归防线', () => {
-  it('R2:僵尸兜底安排重连后,迟到的 exit 不得吞掉重连(清 timer 必须复位标志)', async () => {
+describe('防线', () => {
+  it('僵尸兜底安排重连后,迟到的 exit 不得吞掉重连(清 timer 必须复位标志)', async () => {
     const children: FakeChild[] = []
     const spawnImpl = vi.fn(() => {
       const child = makeFakeChild()
@@ -486,8 +483,7 @@ describe('T4 评审回归防线', () => {
     expect(spawnImpl.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
-  it('R2b:子进程启动失败留下「有条目无子进程」状态时,再次 start 能自愈重排', async () => {
-    // 评审 T4 Required-2 修正版:必须让条目留在 entries 且 child===null(而不是 stop() 删掉条目),
+  it('子进程启动失败留下「有条目无子进程」状态时,再次 start 能自愈重排', async () => {
     // 否则第二次 start 走全新条目路径,自愈分支永不被覆盖(旧用例是空转测试)
     const children: FakeChild[] = []
     let firstAttempt = true
@@ -515,7 +511,6 @@ describe('T4 评审回归防线', () => {
     await waitForStatus(manager, instance.id, 'error')
     expect(spawnImpl).toHaveBeenCalledTimes(1)
 
-    // 第二次 start:必须进入自愈分支重新排程并真的 spawn(变异:删掉自愈分支 -> 本断言失败)
     await manager.start(instance)
     await vi.waitFor(() => expect(spawnImpl.mock.calls.length).toBeGreaterThanOrEqual(2), {
       timeout: 3000
@@ -525,10 +520,8 @@ describe('T4 评审回归防线', () => {
   })
 })
 
-describe('T5 评审回归防线', () => {
-  it('T5-R3:指纹变化一律拒绝连接且不改动旧公钥;显式「忘记该主机指纹」后才重新 TOFU', async () => {
-    // 设计 §7.3「指纹变更一律拒绝连接并告警(不自动清理)」。旧实现允许 connect 期间一键
-    // 「覆盖」旧公钥,等于把这条要求作废;本用例把新契约钉死:
+describe('防线', () => {
+  it('指纹变化一律拒绝连接且不改动旧公钥;显式「忘记该主机指纹」后才重新 TOFU', async () => {
     //   变化 → 拒绝(即使渲染层回答 trust,旧公钥也一个字节都不改)
     //   → 显式 forgetHostKey → 下一次连接重新走首次 TOFU,确认后才放行。
     const { mkdtemp, readFile, mkdir, writeFile } = await import('node:fs/promises')
@@ -543,7 +536,7 @@ describe('T5 评审回归防线', () => {
     await mkdir(join(dataRoot, 'ssh'), { recursive: true })
     await writeFile(knownHostsPath, `${hostField} ssh-ed25519 ${OLD_KEY}\n`, { mode: 0o600 })
 
-    // 故意回答 trust:模拟旧版渲染层仍走「高级确认」路径 —— 主进程必须照样拒绝
+    // 即使确认回调返回 trust，已变化的指纹仍必须被拒绝。
     const confirmHostKey = vi.fn(async (request: { verdict: string }) => {
       void request
       return 'trust' as const
@@ -602,7 +595,7 @@ describe('T5 评审回归防线', () => {
     expect(children[0]?.pid).toBeDefined()
   })
 
-  it('T5-R3b:首次连接确认后追加写入(unaffected 行保留)', async () => {
+  it('首次连接确认后追加写入(unaffected 行保留)', async () => {
     const { mkdtemp, readFile, mkdir, writeFile } = await import('node:fs/promises')
     const { tmpdir } = await import('node:os')
     const { join } = await import('node:path')
@@ -634,7 +627,7 @@ describe('T5 评审回归防线', () => {
     expect(content).toContain(OTHER_HOST_LINE) // 其他主机条目不受影响
   })
 
-  it('T5-R3c:用户拒绝确认 → 隧道不建立且不写 known_hosts', async () => {
+  it('用户拒绝确认 → 隧道不建立且不写 known_hosts', async () => {
     const { mkdtemp, readFile } = await import('node:fs/promises')
     const { tmpdir } = await import('node:os')
     const { join } = await import('node:path')

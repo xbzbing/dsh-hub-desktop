@@ -6,7 +6,7 @@ import type { DisplayStatusInfo } from '../lib/format'
 import { useAppStore } from '../store'
 import type { MessageKey } from '@shared/i18n/messages'
 
-/** 总览页:统计卡 + 全部实例表格(设计稿 view-home,D1 已决表格形态) */
+/** 总览页：统计卡和全部实例表格。 */
 export default function HomeView(): ReactNode {
   const loaded = useAppStore((state) => state.loaded)
   if (!loaded) return <SkeletonHome />
@@ -64,8 +64,7 @@ function HomeContent(): ReactNode {
             </tr>
           </thead>
           <tbody>
-            {/* 圆点/胶囊/文案同源:statuses 是 onInstanceStatus 推进的运行时切片,
-                状态事件换了引用即整表重渲染,圆点随之实时更新(不再只随行创建时定格) */}
+            {/* 状态事件更新切片引用后，表格会重新渲染当前状态。 */}
             {sorted.map((item) => (
               <TableRow
                 key={item.id}
@@ -102,8 +101,7 @@ function TableRow(props: {
     <tr>
       <td>
         <button className="row" onClick={props.onDetail} style={{ gap: 7 }}>
-          {/* 修饰类必须来自共享映射:写死 `status-dot` 会让运行中的实例也显示灰点
-              (用户反馈 #7;侧边栏 InstanceItem 一直是 `status-dot ${info.dotClass}`) */}
+          {/* 使用共享映射提供状态圆点修饰类。 */}
           <span className={`status-dot ${props.info.dotClass}`} aria-hidden="true" />
           <span>{props.item.name}</span>
         </button>
@@ -128,7 +126,7 @@ function TableRow(props: {
   )
 }
 
-/** 首载骨架屏(R6):统计卡 + 表格行占位,不出现空白闪烁 */
+/** 首次加载时显示统计卡和表格行占位，避免空白闪烁。 */
 function SkeletonHome(): ReactNode {
   const t = useAppStore((state) => state.t)
   return (

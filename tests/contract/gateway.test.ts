@@ -1,6 +1,5 @@
 /**
- * 契约测试(对真实网关):验证 hub 的 GatewayClient 与 dsh-auth-gateway 的协议一致。
- * 真值来源:本机网关源码 v0.7.2(lib/gateway.js / lib/auth.js)。
+ * Integration tests for GatewayClient and dsh-auth-gateway.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createGatewayClient } from '../../src/main/auth/gateway-client'
@@ -22,7 +21,7 @@ afterAll(async () => {
   await fixture?.stop()
 })
 
-describe('契约:对真实 dsh-auth-gateway', () => {
+describe('GatewayClient integration', () => {
   it('正确密码 → 200 {ok:true} + Set-Cookie dsh_auth,会话可静默恢复', async () => {
     const client = createGatewayClient({ baseUrl: fixture.baseUrl })
     const login = await client.login({ password: fixture.password })

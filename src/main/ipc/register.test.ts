@@ -196,7 +196,7 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 const VALID_LOCAL = { transport: 'local', name: 'IPC 实例' }
 
 describe('registerIpc', () => {
-  it('注册 app 双探针 + 实例 CRUD + 运行时控制 + T5/T6 辅助通道', () => {
+  it('注册 app 双探针 + 实例 CRUD + 运行时控制 + /辅助通道', () => {
     const expected = [
       'app:info',
       'app:ping',
@@ -231,7 +231,6 @@ describe('registerIpc', () => {
   })
 
   it('ssh:hostKeyForget:入参走 zod 边界,只有 ssh 实例才转交 tunnels.forgetHostKey', async () => {
-    // 设计 §7.3 的显式恢复动作。入参非法 → invalid-input;实例不存在 → not-found;
     // 非 ssh 实例没有主机指纹 → invalid-input。三种情况都不许触碰隧道管理器。
     const invalid = (await invoke('ssh:hostKeyForget', { instanceId: 'not-a-uuid' })) as {
       ok: boolean
@@ -302,7 +301,7 @@ describe('registerIpc', () => {
     }
   })
 
-  it('T9:删除实例一并清理认证客户端与分区会话', async () => {
+  it('删除实例一并清理认证客户端与分区会话', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: '远程',
@@ -315,14 +314,12 @@ describe('registerIpc', () => {
     expect(clearPartitionSession).toHaveBeenCalledWith(created.value.id)
   })
 
-  it('T9:logout 后清理实例分区会话 Cookie(否则 webview 仍带旧会话)', async () => {
+  it('logout 后清理实例分区会话 Cookie(否则 webview 仍带旧会话)', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     const result = (await invoke('auth:logout', id)) as { ok: boolean }
     expect(result.ok).toBe(true)
     expect(authFake.logout).toHaveBeenCalledWith(id)
     expect(clearPartitionSession).toHaveBeenCalledWith(id)
-    // T9/T10 复核 M7:登出必须落两条审计(session-revoked + cookie-cleared)——
-    // 此前该测试只断言了动作,没锁定审计闭环
     expect(auditSpy).toHaveBeenCalledWith({
       instanceId: id,
       event: 'session-revoked',
@@ -335,7 +332,7 @@ describe('registerIpc', () => {
     })
   })
 
-  it('T9:logout 清理失败不影响登出结果(清理是尽力而为)', async () => {
+  it('logout 清理失败不影响登出结果(清理是尽力而为)', async () => {
     clearPartitionSession.mockRejectedValueOnce(new Error('partition 不可用'))
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     const result = (await invoke('auth:logout', id)) as { ok: boolean; code?: string }
@@ -344,9 +341,7 @@ describe('registerIpc', () => {
     expect(result.ok === false || result.ok === true).toBe(true)
   })
 
-  // —— T8 G2 已决边(设计 §5.3):已存密码登录(密码不跨 IPC,主进程自取) ——
-
-  it('T8 G2:auth:loginStored 未勾选「记住密码」→ invalid-input,不触碰 auth.login', async () => {
+  it('auth:loginStored requires an enabled password policy', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: false, rememberSession: true })
     vaultFake.getPassword?.mockReturnValue('stored-secret')
@@ -356,7 +351,7 @@ describe('registerIpc', () => {
     expect(authFake.login).not.toHaveBeenCalled()
   })
 
-  it('T8 G2:auth:loginStored 已勾选但 vault 无密码 → invalid-input', async () => {
+  it('auth:loginStored rejects an unavailable stored password', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
     vaultFake.getPassword?.mockReturnValue(null)
@@ -366,7 +361,7 @@ describe('registerIpc', () => {
     expect(authFake.login).not.toHaveBeenCalled()
   })
 
-  it('T8 G2:auth:loginStored 命中 → 主进程自取已存密码登录(密码不经过通道入参)', async () => {
+  it('auth:loginStored reads the stored password in the main process', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
     vaultFake.getPassword?.mockReturnValue('stored-secret')
@@ -376,7 +371,7 @@ describe('registerIpc', () => {
     expect(authFake.login).toHaveBeenCalledWith(id, 'stored-secret', '654321')
   })
 
-  it('T8 G2:auth:loginStored OTP 过 zod 边界(过短 → invalid-input,不发起登录)', async () => {
+  it('auth:loginStored validates OTP length before logging in', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
     vaultFake.getPassword?.mockReturnValue('stored-secret')
@@ -386,10 +381,9 @@ describe('registerIpc', () => {
     expect(authFake.login).not.toHaveBeenCalled()
   })
 
-  // 触发集合 = needs-auth ‖ await-credentials 且未锁定(T8 评审-2 R1 修复):
   // 真实状态机下 probe 终态是 await-credentials(probe-gateway → session-absent),
   // 只认 needs-auth 会让静默登录生产不可达。
-  it('T8 G2:probe 命中 await-credentials + 已存密码 → 静默登录一次(会话内不再自动重试)', async () => {
+  it('probe attempts stored-password login once from await-credentials', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
     vaultFake.getPassword?.mockReturnValue('stored-secret')
@@ -405,7 +399,7 @@ describe('registerIpc', () => {
     expect(authFake.login).toHaveBeenCalledTimes(1)
   })
 
-  it('T8 G2:probe 触发集合的边界(needs-auth 触发;await-otp/connected/error/锁定 不触发)', async () => {
+  it('probe only attempts silent login from eligible phases', async () => {
     // 每个相用独立实例:静默尝试「每实例一次」的记账不该掩盖相本身的判定
     const uid = ((): (() => string) => {
       let n = 0
@@ -436,7 +430,7 @@ describe('registerIpc', () => {
     expect(authFake.login).toHaveBeenCalledTimes(1)
   })
 
-  it('T8 G2:显式登出压制静默登录,手动登录成功解除', async () => {
+  it('successful manual login re-enables silent login after logout', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
     vaultFake.getPassword?.mockReturnValue('stored-secret')
@@ -453,7 +447,7 @@ describe('registerIpc', () => {
     expect(authFake.login).toHaveBeenLastCalledWith(id, 'stored-secret', undefined)
   })
 
-  it('T8 G2:静默登录抛错不影响 probe 结果,且同样只尝试一次', async () => {
+  it('silent login errors do not change the probe result', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
     vaultFake.getPassword?.mockReturnValue('stored-secret')
@@ -469,8 +463,7 @@ describe('registerIpc', () => {
     expect(authFake.login).toHaveBeenCalledTimes(1)
   })
 
-  it('T8 G2:集成 —— 真实 auth-registry + 真实状态机(不 mock stateOf)打通静默登录', async () => {
-    // T8 评审-2 R1 的关键回归:probe 终态由真实状态机给出(await-credentials),
+  it('集成 —— 真实 auth-registry + 真实状态机(不 mock stateOf)打通静默登录', async () => {
     // 静默登录必须在该前提下真实可达 —— mock stateOf 成 needs-auth 掩盖过这个前提。
     const { createAuthRegistry } = await import('../auth/auth-registry')
     const gwUrl = 'https://gw.example.com/dsh'
@@ -510,7 +503,6 @@ describe('registerIpc', () => {
         value?: { phase: string }
       }
       expect(result.ok).toBe(true)
-      // 真实链路:探测 → await-credentials(R6 设计边)→ 静默登录 → connected
       expect(result.value?.phase).toBe('connected')
       // 会话 Cookie 已入罐(静默登录真实生效,不是状态对象凑出来的)
       expect(realRegistry.sessionCookie(id)?.name).toBe('dsh_auth')
@@ -518,8 +510,6 @@ describe('registerIpc', () => {
       Object.assign(authFake, saved)
     }
   })
-
-  // —— 实机反馈 2026-09-16:http 免启动开窗 + 外部 dsh web 探测/接管 ——
 
   it('openView:SSH 未连接时主动建立隧道，准备完成后开窗', async () => {
     const created = (await invoke('instances:create', {
@@ -629,7 +619,7 @@ describe('registerIpc', () => {
     )
   })
 
-  it('实机反馈:http 实例未「启动」也能打开视图(启动的意义就是开窗,不该做两遍)', async () => {
+  it('http 实例未「启动」也能打开视图(启动的意义就是开窗,不该做两遍)', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: '免启动远程',
@@ -773,7 +763,7 @@ describe('registerIpc', () => {
     expect(runtimeFake.adopt).not.toHaveBeenCalled()
   })
 
-  it('T6-R2/R3:http:detect 非法 URL → invalid-input(而非 internal)', async () => {
+  it('/http:detect 非法 URL → invalid-input(而非 internal)', async () => {
     for (const bad of ['ftp://x', 'http://user:pw@h/', 'not a url', '']) {
       const result = (await invoke('http:detect', bad)) as { ok: boolean; code?: string }
       expect(result.ok, `URL=${JSON.stringify(bad)} 应被拒绝`).toBe(false)
@@ -783,7 +773,7 @@ describe('registerIpc', () => {
     }
   })
 
-  it('T6:http:detect 合法 URL 调通(本地 200 服务 → none)', async () => {
+  it('http:detect 合法 URL 调通(本地 200 服务 → none)', async () => {
     const { createServer } = await import('node:http')
     const server = createServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/html' })
@@ -804,7 +794,7 @@ describe('registerIpc', () => {
     }
   })
 
-  it('R3 回归:host 以 - 开头被拒(argv 选项注入面)', async () => {
+  it('host 以 - 开头被拒(argv 选项注入面)', async () => {
     for (const host of ['-p2222', '-lroot', '-Fevil', '-oProxyCommand=evil']) {
       const result = (await invoke('instances:create', {
         transport: 'ssh',
@@ -925,8 +915,6 @@ describe('registerIpc', () => {
     expect(result.ok).toBe(true)
   })
 
-  // —— T3 运行时控制 ——
-
   it('start:local 实例 → 交给 runtime.start 并立即返回(不阻塞安装/启动)', async () => {
     const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!created.ok) throw new Error('创建失败')
@@ -938,7 +926,7 @@ describe('registerIpc', () => {
     expect(record).toMatchObject({ id: created.value.id, transport: 'local' })
   })
 
-  it('start:http 实例 → 交给 http 管理器(T6 起 HTTP 可启动),不误触 local/ssh', async () => {
+  it('start:http 实例 → 交给 http 管理器(起 HTTP 可启动),不误触 local/ssh', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: '远程',
@@ -976,7 +964,7 @@ describe('registerIpc', () => {
     expect(runtimeFake.start).not.toHaveBeenCalled()
   })
 
-  it('T6:http 实例 start/stop/openView 走 http 管理器', async () => {
+  it('http 实例 start/stop/openView 走 http 管理器', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: '远程直连',
@@ -1065,7 +1053,7 @@ describe('registerIpc', () => {
     expect(runtimeFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: created.value.id }))
   })
 
-  it('openView:ssh 实例 running → 从 tunnels 取状态开窗(评审缺陷 A 回归)', async () => {
+  it("openView:ssh 实例 running → 从 tunnels 取状态开窗", async () => {
     const created = (await invoke('instances:create', {
       transport: 'ssh',
       name: '隧道',
@@ -1108,10 +1096,9 @@ describe('registerIpc', () => {
     expect(openInstanceView.mock.calls[0]?.[1]).toBe('http://127.0.0.1:31234/?token=abc')
   })
 
-  it('T10 vault:status 返回降级与已记住实例', async () => {
+  it('vault:status 返回降级与已记住实例', async () => {
     vaultFake['status']!.mockReturnValueOnce({ available: false, degraded: true, instanceCount: 2 })
     vaultFake['rememberedIds']!.mockReturnValueOnce(['a', 'b'])
-    // 复审 F1:策略表可能包含「已勾选但尚无凭据」的实例,必须一并下发
     vaultFake['policyIds']!.mockReturnValueOnce(['a', 'b', 'c'])
     vaultFake['getPolicy']!.mockReturnValue({ rememberPassword: true, rememberSession: false })
     const result = (await invoke('vault:status')) as {
@@ -1124,7 +1111,6 @@ describe('registerIpc', () => {
       }
     }
     expect(result.ok).toBe(true)
-    // T10-1:策略必须随快照下发,否则 UI 只能渲染成「未勾选」并可能静默删除已存密码
     expect(result.value).toEqual({
       available: false,
       degraded: true,
@@ -1137,7 +1123,7 @@ describe('registerIpc', () => {
     })
   })
 
-  it('T10 vault:setPolicy 经 zod 边界校验后落库', async () => {
+  it('vault:setPolicy 经 zod 边界校验后落库', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: '远程',
@@ -1165,7 +1151,7 @@ describe('registerIpc', () => {
     expect(bad.code).toBe('invalid-input')
   })
 
-  it('T10 vault:forget 缺省两个都忘,并同步取消勾选', async () => {
+  it('vault:forget 缺省两个都忘,并同步取消勾选', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: '远程',
@@ -1188,14 +1174,14 @@ describe('registerIpc', () => {
     })
   })
 
-  it('T10 vault:clear 清空并写审计(审计只记枚举)', async () => {
+  it('vault:clear 清空并写审计(审计只记枚举)', async () => {
     const result = (await invoke('vault:clear')) as { ok: boolean }
     expect(result.ok).toBe(true)
     expect(vaultFake['clearAll']).toHaveBeenCalledTimes(1)
     expect(auditSpy).toHaveBeenCalledWith({ event: 'vault-clear', result: 'ok' })
   })
 
-  it('T10 登录成功且勾选「记住密码」才写 vault(失败不写)', async () => {
+  it('登录成功且勾选「记住密码」才写 vault(失败不写)', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: '远程',
@@ -1247,7 +1233,7 @@ describe('registerIpc', () => {
     expect(vaultFake['rememberPassword']).not.toHaveBeenCalled()
   })
 
-  it('T10 删除实例一并清掉已记住凭据与勾选策略', async () => {
+  it('删除实例一并清掉已记住凭据与勾选策略', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: '远程',
@@ -1258,7 +1244,7 @@ describe('registerIpc', () => {
     expect(vaultFake['forgetInstance']).toHaveBeenCalledWith(created.value.id)
   })
 
-  it('T11 settings:get 返回偏好快照', async () => {
+  it('settings:get 返回偏好快照', async () => {
     const result = (await invoke('settings:get')) as {
       ok: boolean
       value: { language: string; theme: string }
@@ -1268,7 +1254,7 @@ describe('registerIpc', () => {
     expect(result.value.theme).toBe('system')
   })
 
-  it('T11 settings:update 只接受已知字段的部分补丁', async () => {
+  it('settings:update 只接受已知字段的部分补丁', async () => {
     const ok = (await invoke('settings:update', { language: 'en', tray: true })) as {
       ok: boolean
       value: { language: string; tray: boolean }
@@ -1296,7 +1282,7 @@ describe('registerIpc', () => {
   })
 })
 
-  it('T5 复核建议⑤:ssh:askpassReply 空串/全空白在 IPC 边界拒绝(invalid-input)', async () => {
+  it("ssh:askpassReply 空串/全空白在 IPC 边界拒绝(invalid-input)", async () => {
     const reply = (secret: unknown) => invoke('ssh:askpassReply', 'f47ac10b-58cc-4372-a567-0e02b2c3d479', secret)
     // 空串与全空白都不是有效口令(UI 已 disabled,这里是 IPC 边界的第二道闸)
     const empty = (await reply('')) as { ok: boolean; code?: string }

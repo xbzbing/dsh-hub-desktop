@@ -5,7 +5,7 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   retries: 0,
-  /** Electron 单实例，串行执行 */
+  /** Electron tests share one application instance. */
   workers: 1,
   reporter: [['list']],
   use: {

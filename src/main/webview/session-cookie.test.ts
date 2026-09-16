@@ -7,7 +7,7 @@ import {
   type SessionCookieRemover
 } from './session-cookie'
 
-describe('session-cookie（T9 登出清理）', () => {
+describe('session-cookie（登出清理）', () => {
   it('url 规则与注入一致(basePath 不影响 path,仅影响页面 url)', () => {
     expect(sessionCookieUrl('https://gw', '/')).toBe('https://gw/')
     expect(sessionCookieUrl('https://gw/', '/dsh/')).toBe('https://gw/dsh/')
@@ -34,7 +34,6 @@ describe('session-cookie（T9 登出清理）', () => {
   })
 
   it('默认会话 Cookie 名与网关一致(改名会静默破坏登出清理)', () => {
-    // 字面量断言:这个常量是「登出/删除实例能否清掉会话」的关键,必须被钉住
     expect(DEFAULT_SESSION_COOKIE).toBe('dsh_auth')
   })
 })

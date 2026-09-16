@@ -1,5 +1,4 @@
 /**
- * dsh 运行时来源决策(#2 用户反馈,2026-09-16)—— 不 import electron(全局规则 5)。
  *
  * 用户决策的获取优先级:「优先 hub 已装同版本 → 再探测 PATH → 都没有才下载,
  * 真要下载时需要用户确认」。本模块是其中的**纯决策与探测原语**:
@@ -126,14 +125,9 @@ export interface PathProbe {
 
 export interface PathProbeOptions {
   run?: CommandRunner
-  /** 进程平台(注入便于测试 win32 分支);默认取当前进程 */
+
   platform?: NodeJS.Platform
-  /**
-   * GUI 启动的 app 拿不到登录 shell 的 PATH(Finder 下通常只有
-   * `/usr/bin:/bin:/usr/sbin:/sbin`),`which dsh` 因此会漏掉 `~/.local/bin` 等
-   * 常见全局安装位置 —— 用户实测「dsh 明明装了,hub 仍要求重新安装」。
-   * 下面三项把「候选绝对路径探测」做成可注入的纯逻辑,便于穷举测试。
-   */
+
   home?: string
   /** 文件存在性检查(注入便于测试);默认 fs.existsSync */
   exists?: (path: string) => boolean
@@ -149,10 +143,6 @@ const WHICH_TIMEOUT_MS = 15_000
 /** 登录 shell 探测的等待上限:比 which 更短,失败就走「未探到」 */
 const SHELL_PROBE_TIMEOUT_MS = 8_000
 
-/**
- * PATH 探测:`which dsh`(win32 用 `where`)→ 绝对路径校验 → `dsh --version` 解析。
- * 任何一步失败都返回 null —— 探测不到 PATH dsh 不是错误,只是回落到下一优先级。
- */
 export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
   const run =
     options.run ??
@@ -253,14 +243,6 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
     }
   }
 
-  /**
-   * 候选校验用的**增强 PATH**。
-   *
-   * 实测(GUI 启动):dsh 是 `#!/usr/bin/env node` 的 node shim,找到 shim 还不够 ——
-   * `env node` 也需要 node 在 PATH 上,否则 execFile 直接以
-   * `env: node: No such file or directory` 失败,候选被误判为不可用。
-   * 因此把 shim 自己所在目录与常见 node 落点(searchNodeDirs)前置进 PATH。
-   */
   function enrichedEnv(command: string): NodeJS.ProcessEnv {
     const dirs = [posix.dirname(command), ...searchNodeDirs(home, listDir)]
     const existing = process.env.PATH ?? ''

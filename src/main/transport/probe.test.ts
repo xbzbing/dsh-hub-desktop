@@ -25,7 +25,7 @@ function listen(server: ReturnType<typeof createServer>): Promise<number> {
   })
 }
 
-describe('httpHealthProbe（§4.3）', () => {
+describe('httpHealthProbe（）', () => {
   it('200 = 就绪', async () => {
     const port = await listen(
       createServer((_req, res) => {
@@ -46,10 +46,9 @@ describe('httpHealthProbe（§4.3）', () => {
     expect(await httpHealthProbe(`http://127.0.0.1:${port}/`, 1000)).toBe(true)
   })
 
-  it('R4 回归:302 重定向到不可达地址仍算就绪（redirect: manual）', async () => {
+  it('302 重定向到不可达地址仍算就绪（redirect: manual）', async () => {
     const port = await listen(
       createServer((_req, res) => {
-        // 重定向到不可达地址:若跟随重定向会失败 → 被判未就绪(评审 R4)
         res.writeHead(302, { Location: 'http://127.0.0.1:1/nowhere' })
         res.end()
       })

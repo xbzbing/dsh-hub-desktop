@@ -8,14 +8,14 @@ import { createInstanceStore } from '../../src/main/registry/instance-store'
 import { createSettingsStore } from '../../src/main/settings/settings-store'
 
 /**
- * T14 升级路径测试。
+ * 升级路径测试。
  *
  * 「升级不丢数据」在桌面应用里没有 CI 之外的验证手段:用户机器上只有一份注册表,
  * 升级时被静默重置 = 数据资产直接消失。这里把三件事变成可执行断言:
  *
  * 1. **历史夹具可读**:0.1.0 真实写出的 `instances.json` / `settings.json` 必须逐字段还原。
  * 2. **版本号不能空转**:提高 `REGISTRY_SCHEMA_VERSION` 却没配迁移链时,本文件直接失败。
- * 3. **回退不毁数据**:旧版本应用读到来自新版本的文件时,原字节必须完整留档。
+ * 3. **拒绝未知 schema**:版本号高于当前支持范围的文件会被保留原字节并隔离。
  *
  * 夹具纪律见 `tests/fixtures/upgrade/README.md`(不许改夹具来迁就实现)。
  */
@@ -42,7 +42,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-describe('T14 / 注册表跨版本升级路径', () => {
+describe('注册表跨版本升级路径', () => {
   it('0.1.0 夹具逐字段还原(三种 transport 全部保真)', async () => {
     const registryDir = join(dir, 'registry')
     await mkdir(registryDir, { recursive: true })
@@ -130,7 +130,7 @@ describe('T14 / 注册表跨版本升级路径', () => {
     expect(file.schemaVersion).toBe(REGISTRY_SCHEMA_VERSION)
   })
 
-  it('回退到旧版本:来自更高版本的文件被隔离留档,字节无损', async () => {
+  it('高于当前 schema 的文件会被隔离且保留原字节', async () => {
     const registryDir = join(dir, 'registry')
     await mkdir(registryDir, { recursive: true })
     const raw = await fixture('registry-v1.json')
@@ -187,7 +187,7 @@ describe('T14 / 注册表跨版本升级路径', () => {
   })
 })
 
-describe('T14 / 设置跨版本升级路径', () => {
+describe('设置跨版本升级路径', () => {
   it('0.1.0 夹具的五个偏好全部保留(升级不重置用户口味)', async () => {
     const settingsDir = join(dir, 'settings')
     await mkdir(settingsDir, { recursive: true })

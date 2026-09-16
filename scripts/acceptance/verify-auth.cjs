@@ -1,4 +1,4 @@
-/* T8 手工验收:真实网关 + 真实应用 —— 登录 → 分区 Cookie 注入 → 视图直接进入受保护页(不经 /login)
+/* 认证流程验证：真实网关 + 真实应用 —— 登录 → 分区 Cookie 注入 → 视图直接进入受保护页（不经 /login）
    → 会话失效后拦截层触发重登信号。
    用法:cd <repo> && node ./scripts/acceptance/verify-auth.cjs(需 pnpm build) */
 const { _electron: electron } = require('@playwright/test')
@@ -46,7 +46,7 @@ async function main() {
   // 1) 建 http 实例(指向网关)→ start(探测为 gateway)→ running
   const created = await hub.evaluate(
     (url) =>
-      window.dshHub.instances.create({ transport: 'http', name: '验收 · 网关登录', endpointUrl: url }),
+      window.dshHub.instances.create({ transport: 'http', name: '验证 · 网关登录', endpointUrl: url }),
     fixture.baseUrl
   )
   if (!created.ok) throw new Error(`创建失败:${created.message}`)
@@ -110,7 +110,7 @@ async function main() {
   console.log(`[ok] 拦截层信号:${signal.signal}`)
 
   await app.close()
-  console.log('[DONE] T8 真实验收通过:登录 → 分区 Cookie 注入 → 直达受保护页 → 拦截重登信号')
+  console.log('[DONE] 登录、Cookie 注入、受保护页访问和重登信号验证通过')
 }
 
 run()

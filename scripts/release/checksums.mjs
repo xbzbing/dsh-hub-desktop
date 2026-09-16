@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 生成 `dist/SHA256SUMS.txt`(T14 发布演练)。
+ * 生成 `dist/SHA256SUMS.txt`。
  *
  * 为什么需要:自动更新链路自带 sha512,但**手工下载安装包**的人没有完整性依据。
  * SHA-256 是发布物的通用校验口径,发布说明里直接引用这个文件。
@@ -16,8 +16,7 @@ const SUMS_FILE = 'SHA256SUMS.txt'
 /** `*.blockmap` 是给自动更新做差分的中间产物,不属于「分发给人的产物」 */
 const EXCLUDED_SUFFIXES = ['.blockmap']
 /**
- * T13/T14 评审 F4/M1:显式排除非分发产物 ——
- * 点文件(macOS 的 .DS_Store 等)与 builder 调试输出不进校验和清单
+ * 显式排除非分发产物：点文件（如 macOS 的 .DS_Store）与 builder 调试输出不进入校验和清单。
  * (清单引用了不会被上传的文件会误导手工下载者)。
  */
 const EXCLUDED_NAMES = new Set(['builder-debug.yml', 'builder-effective-config.yaml'])

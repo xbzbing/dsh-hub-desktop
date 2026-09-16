@@ -10,19 +10,15 @@ import VaultCard from './VaultCard'
 import { showAuthActions } from '../lib/auth-actions'
 
 /**
- * 设计 §7.1 威胁表「S 冒认(远程)」:直连 HTTP 远程实例默认警告「数据面明文」。
- *
- * 协议判定复用 @shared/endpoint 的权威实现(与主进程 endpoint-resolver 同一份):
- * 省略协议的地址会按 http:// 补全,故同样落入告警;不在此处做 `startsWith('http://')`
- * 这类 ad-hoc 字符串判断。解析失败(记录不该出现)按不告警处理,避免误报。
- * 与 Wizard.tsx 内同名判定保持一致(两处都只在 http 方案下提示)。
+ * 直连 HTTP 远程实例使用明文数据连接，需要显示警告。
+ * 协议判定复用共享端点解析；解析失败时不显示警告以避免误报。
  */
 function isCleartextEndpoint(endpointUrl: string): boolean {
   const parsed = tryParseEndpoint(endpointUrl)
   return parsed.ok && parsed.endpoint.scheme === 'http'
 }
 
-/** 实例详情(设计稿 view-detail 基础卡片版;认证/审计/日志随 T7/T6 扩展) */
+/** 实例详情。 */
 export default function DetailView(): ReactNode {
   const selection = useAppStore((state) => state.selection)
   const t = useAppStore((state) => state.t)
@@ -37,11 +33,7 @@ export default function DetailView(): ReactNode {
   const userDataPath = useAppStore((state) => state.userDataPath)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
-  /**
-   * 实机反馈 2026-09-16:本机已在运行的 dsh web(只读探测,ps+lsof)。
-   * 只在「本地实例且尚未运行」时探测 —— 这是用户最可能踩的场景:
-   * 他手工挂着 dush 实例,hub 却让他重新安装/重新启动一个。
-   */
+  /** 检测尚未由 Hub 管理的本地 dsh web 进程。 */
   const [externalDsh, setExternalDsh] = useState<
     Array<{ pid: number; port: number | null; patch: string | null; command: string }>
   >([])
@@ -51,9 +43,7 @@ export default function DetailView(): ReactNode {
     if (selection) void ensureRecord(selection)
   }, [selection, ensureRecord])
 
-  // UI 打磨 #2:进入详情页时相位未知(本会话还没有 auth:state 事件)→ 轻探一次。
-  // 这同时是 G2 已决边的自然触发点(needs-auth + 已存密码 → 静默登录,会话内一次),
-  // 且让「重新登录 / 登出」的可见性尽快与真实会话对齐。
+  // 认证相位未知时探测一次，使操作按钮反映当前会话状态。
   useEffect(() => {
     if (!selection || !record) return
     if (!showAuthActions(record)) return
@@ -84,7 +74,7 @@ export default function DetailView(): ReactNode {
     }
   }, [recordId, recordTransport, runningNow])
 
-  /** T9-3:登出 = 主进程丢弃客户端 + 清该实例分区会话 Cookie(§5.4) */
+  /** 登出会清除主进程客户端和该实例分区的会话 Cookie。 */
   const logout = async (): Promise<void> => {
     if (!record) return
     const result = await window.dshHub?.auth.logout(record.id)
@@ -199,10 +189,7 @@ export default function DetailView(): ReactNode {
               </>
             )}
           </dl>
-          {/* 设计 §7.1:直连 http:// 远程实例的数据面为明文 —— 常驻警告(https 不告警)。
-              用户反馈 #9:整段文案常驻影响观感 —— 改为「图标 + 短标签」胶囊。
-              UI 打磨 #3:原生 title 提示在 Electron 下延迟明显且不可控 —— 改为
-              CSS 气泡(hover/focus 即现),title 换成 aria-label 保持读屏可达 */}
+          {/* 直连 HTTP 使用明文数据连接，显示可访问的常驻警告。 */}
           {record.transport === 'http' && isCleartextEndpoint(record.endpointUrl) && (
             <span
               className="warn-pill"
@@ -229,15 +216,14 @@ export default function DetailView(): ReactNode {
                 }
               >
                 <Icon name="key" />{' '}
-                {/* UI 打磨 #2:按钮随会话状态变化 —— 已连接才是「重新登录」,否则是「登录」 */}
+                {/* 已连接时显示“重新登录”，否则显示“登录”。 */}
                 {authPhase === 'connected' ? t('detail.relogin') : t('detail.login')}
               </button>
             )}
             <button className="btn btn-secondary btn-sm" onClick={() => void copyAddress()}>
               <Icon name="copy" /> {t('detail.address')}
             </button>
-            {/* T9-3 / UI 打磨 #2:登出只在已连接(有会话可登)时出现 ——
-                未登录页面不该有一个「把没有的东西登出」的按钮 */}
+            {/* 仅在已连接时显示登出操作。 */}
             {showAuthActions(record) && authPhase === 'connected' && (
               <button
                 className="btn btn-secondary btn-sm"
@@ -250,7 +236,7 @@ export default function DetailView(): ReactNode {
           </div>
         </div>
 
-        {/* T10 §7.2:凭据存储策略(显式勾选才持久化;降级必须在 UI 告警) */}
+        {/* 凭据存储策略仅在用户显式勾选后持久化。 */}
         {showAuthActions(record) && (
           <VaultCard key={record.id} instanceId={record.id} />
         )}
@@ -266,9 +252,7 @@ export default function DetailView(): ReactNode {
             {record.transport === 'local' && (
               <>
                 <dt>{t('detail.port')}</dt>
-                {/* 实机反馈 2026-09-16:接管外部 dsh web 时真实端口来自运行状态
-                    (record.port 是「hub 下次启动优先用的端口」,外部接管不回写),
-                    因此运行时优先展示 status.port,否则显示记录值 */}
+                {/* 已接管进程的运行端口优先使用状态事件中的端口。 */}
                 <dd className="num">{status?.port ?? record.port ?? t('detail.unassigned')}</dd>
                 <dt>{t('settings.dataDir')}</dt>
                 <dd className="num" title={t('detail.dataDirTitle')}>
@@ -300,8 +284,7 @@ export default function DetailView(): ReactNode {
               <Icon name="external" />
               {display === 'connecting' ? t('detail.openingWorkspace') : t('detail.openWorkspace')}
             </button>
-            {/* 用户反馈 #10/#11:创建后无法修改 —— 编辑入口(transport 不可改,
-                契约上改形态 = 删除重建;端口留空 = 自动分配,运行中改动下次启动生效) */}
+            {/* transport 不可修改；端口留空时自动分配，运行中修改在下次启动生效。 */}
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => setShowEdit(true)}
@@ -312,8 +295,7 @@ export default function DetailView(): ReactNode {
           </div>
         </div>
 
-        {/* 实机反馈 2026-09-16:本机已在运行的 dsh web —— 让用户直接接管,
-            而不是被迫「重新安装 / 另起一个进程」。只在本地实例且未运行时出现。 */}
+        {/* 显示尚未由 Hub 管理的本地 dsh web 进程，供用户接管。 */}
         {record.transport === 'local' && externalDsh.length > 0 && (
           <div className="card" data-testid="external-dsh-card">
             <div className="card-head">

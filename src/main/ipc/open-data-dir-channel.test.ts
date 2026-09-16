@@ -13,9 +13,7 @@ import { registerIpc } from './register'
 import type { IpcDeps } from './register'
 
 /**
- * `settings:openDataDir` 通道边界测试（T11 三审 Finding 1）。
  *
- * 两条必须钉住的性质:
  * 1. **不接受任何入参** —— 打通「数据目录由主进程解析」的安全前提,
  *    多传一个参数即被空元组 schema 拒绝(invalid-input),且绝不触达打开动作;
  * 2. 失败必须变成 `{ok:false,code,message}` 信封,不是静默成功、也不是未处理 rejection。

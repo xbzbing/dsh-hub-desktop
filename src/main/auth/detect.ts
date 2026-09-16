@@ -1,11 +1,9 @@
 /**
- * 认证模式自动探测（T6,设计文档 §2.3 / 实现计划 §6.2）—— 不 import electron。
  *
  * 连接建立后对端点做一次探测，而不是让用户手选模式：
  * - `302/303 → <path>/login`        → gateway（登录页重定向）
  * - `401` + JSON `error:unauthenticated|onboarding-required` → gateway（API 直探）
  * - `401` + `text/plain` + `dsh web authentication required…` → **browser-auth**
- *   （dsh 0.1.2+ 内置 BrowserAuth,仅回环直连场景;webview 自认证,§6.5）
  * - `200`（HTML/应用响应）            → none
  * - `ECONNREFUSED` / 超时 / 其他网络错误 → unreachable（传输未就绪,回去重连）
  *
@@ -44,7 +42,6 @@ function looksJson(contentType: string | null | undefined, body: string | null |
   return trimmed.startsWith('{') || trimmed.startsWith('[')
 }
 
-/** dsh 内置 BrowserAuth 未认证响应特征（源码实测） */
 export const BROWSER_AUTH_MARKER = 'dsh web authentication required'
 
 export function classifyAuthResponse(observation: ResponseObservation): AuthDetection {
@@ -94,7 +91,6 @@ export function classifyAuthResponse(observation: ResponseObservation): AuthDete
 
   if (status === 401) {
     // dsh 内置 BrowserAuth:必须同时满足「text/plain」+ 完整特征串(与 JSON 分支对称,
-    // 否则任何含 'dsh' 的 401 体会被误判;评审 T6 Required-4)
     const isPlainText = (contentType ?? '').toLowerCase().includes('text/plain')
     if (isPlainText && body.includes(BROWSER_AUTH_MARKER)) {
       return {
@@ -168,7 +164,6 @@ export interface DetectOptions {
 }
 
 /**
- * 对端点做一次 §2.3 探测（不跟随重定向：需要看到 302→/login 本身）。
  * 网络层失败 → unreachable（传输未就绪，交给重连/看门狗），不抛异常。
  */
 export async function detectAuthMode(endpointUrl: string, options: DetectOptions = {}): Promise<AuthDetection> {

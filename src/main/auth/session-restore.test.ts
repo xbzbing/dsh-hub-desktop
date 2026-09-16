@@ -32,7 +32,7 @@ const freshClient = (): { jar: ReturnType<typeof createCookieJar> } => ({
   jar: createCookieJar(() => NOW)
 })
 
-describe('session-restore（T9/T10 重启静默复用登录态）', () => {
+describe('session-restore（/重启静默复用登录态）', () => {
   it('勾选且记录未过期 → 会话被恢复到 Cookie 罐', async () => {
     const { vault } = fakeVault({ session: SESSION })
     const client = freshClient()

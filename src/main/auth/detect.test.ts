@@ -23,7 +23,7 @@ function listen(handler: Parameters<typeof createServer>[1]): Promise<number> {
   })
 }
 
-describe('classifyAuthResponse（§2.3 判定表）', () => {
+describe('classifyAuthResponse（ 判定表）', () => {
   it('302 → /login = gateway（登录页）', () => {
     const result = classifyAuthResponse({ status: 302, location: '/dsh/login' })
     expect(result.mode).toBe('gateway')
@@ -53,7 +53,7 @@ describe('classifyAuthResponse（§2.3 判定表）', () => {
     expect(result.gatewayEvidence).toBe('onboarding')
   })
 
-  it('401 text/plain + dsh BrowserAuth 提示 = browser-auth（源码实测响应）', () => {
+  it("401 text/plain + dsh BrowserAuth 提示 = browser-auth", () => {
     const result = classifyAuthResponse({
       status: 401,
       contentType: 'text/plain; charset=utf-8',
@@ -112,8 +112,8 @@ describe('detectAuthMode（真实 HTTP 往返,含 redirect:manual）', () => {
   })
 })
 
-describe('T6 评审回归防线', () => {
-  it('R4:401 体含 dsh 但非 text/plain → 不判 browser-auth(与 JSON 分支对称)', () => {
+describe('防线', () => {
+  it('401 体含 dsh 但非 text/plain → 不判 browser-auth(与 JSON 分支对称)', () => {
     const result = classifyAuthResponse({
       status: 401,
       contentType: 'application/json',
@@ -122,7 +122,7 @@ describe('T6 评审回归防线', () => {
     expect(result.mode).not.toBe('browser-auth')
   })
 
-  it('R4:401 体含 dsh 的 HTML → 不判 browser-auth', () => {
+  it('401 体含 dsh 的 HTML → 不判 browser-auth', () => {
     const result = classifyAuthResponse({
       status: 401,
       contentType: 'text/html',
@@ -131,7 +131,7 @@ describe('T6 评审回归防线', () => {
     expect(result.mode).not.toBe('browser-auth')
   })
 
-  it('R4:特征串必须完整(仅含 dsh 的 text/plain 401 不判 browser-auth)', () => {
+  it('特征串必须完整(仅含 dsh 的 text/plain 401 不判 browser-auth)', () => {
     expect(
       classifyAuthResponse({ status: 401, contentType: 'text/plain', body: 'dsh: something else' }).mode
     ).not.toBe('browser-auth')

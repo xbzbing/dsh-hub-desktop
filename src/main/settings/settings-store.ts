@@ -1,5 +1,4 @@
 /**
- * 设置持久化（T11）—— 只依赖 node:fs,不 import electron。
  *
  * `<userData>/settings.json`,原子写(tmp + rename),读取时逐字段收敛
  * (`normalizeSettings`):一个坏字段不会让整份偏好重置,文件损坏也不会让应用起不来。
@@ -56,7 +55,6 @@ export function createSettingsStore(options: SettingsStoreOptions): SettingsStor
     filePath: () => path,
 
     update(patch) {
-      // **串行化**是这里的核心正确性要求(复审 R5 二次指出):并发的
       // read → merge → rename 会互相覆盖,先写入的那次改动**静默丢失**,
       // 而两次调用都返回 ok → UI 对已经消失的改动提示「已保存」。
       // 唯一临时名只能消除 ENOENT 崩溃,不能消除丢失更新;必须让整个

@@ -1,6 +1,4 @@
-/**
- * 契约测试:OTP 必需 / 锁定 429 / basePath —— 对真实网关(独立实例,各自 fixture)。
- */
+/** Tests OTP, rate limiting, and basePath against dsh-auth-gateway. */
 import { afterEach, describe, expect, it } from 'vitest'
 import { createGatewayClient } from '../../src/main/auth/gateway-client'
 import { startGatewayFixture } from '../../scripts/gateway-fixture.mjs'
@@ -23,7 +21,7 @@ afterEach(async () => {
   await Promise.all(fixtures.splice(0).map((item) => item.stop()))
 })
 
-describe('契约:OTP 与锁定(真实网关)', () => {
+describe('GatewayClient OTP integration', () => {
   it('OTP 必需时缺码 → 400 otp-required(进入验证码提问的权威信号)', async () => {
     const gw = await fixture({ password: 'contract-pass-123!', otpEnabled: true, otpRequired: true })
     const client = createGatewayClient({ baseUrl: gw.baseUrl })
@@ -35,7 +33,7 @@ describe('契约:OTP 与锁定(真实网关)', () => {
     }
   }, 30_000)
 
-  it('单请求完成 2FA:密码 + 有效 TOTP → 200(设计「五件关键事实 #1」)', async () => {
+  it('单请求完成 2FA:密码 + 有效 TOTP → 200', async () => {
     const gw = await fixture({ password: 'contract-pass-123!', otpEnabled: true, otpRequired: true })
     const client = createGatewayClient({ baseUrl: gw.baseUrl })
     const code = gw.otpCode()
@@ -79,7 +77,7 @@ describe('契约:OTP 与锁定(真实网关)', () => {
     if (!correctWhileLocked.ok) expect(correctWhileLocked.code).toBe('too-many-attempts')
   }, 30_000)
 
-  it('basePath 前缀下所有端点仍可用(设计 §5:basePath 存在时前缀)', async () => {
+  it('basePath 前缀下所有端点仍可用', async () => {
     const gw = await fixture({ password: 'contract-pass-123!', basePath: '/dsh' })
     expect(gw.baseUrl).toMatch(/\/dsh$/)
     const client = createGatewayClient({ baseUrl: gw.baseUrl })

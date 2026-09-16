@@ -214,7 +214,7 @@ const ICONS: Record<IconName, JSX.Element> = {
   dots: <path d="M4 12h.01M12 12h.01M20 12h.01" />
 }
 
-/** 原型 sv() 帮助函数的 React 版:24×24 线性图标 */
+/** 24×24 线性图标的 React 帮助函数。 */
 export function Icon(props: { name: IconName; size?: number; className?: string }): JSX.Element {
   const { name, size = 16, className } = props
   return (

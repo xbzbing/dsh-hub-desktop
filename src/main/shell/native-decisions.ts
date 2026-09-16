@@ -1,5 +1,4 @@
 /**
- * 原生行为决策（T11）—— 纯函数,不 import electron,便于单测。
  *
  * 设置页的开关必须驱动**真实行为**,但「什么时候该弹通知 / 该不该设开机自启」
  * 这类判断是纯逻辑,抽出来穷举单测,electron 侧只做接线。
@@ -59,9 +58,7 @@ export function loginItemSettings(settings: Pick<Settings, 'autoStart'>): {
 }
 
 /**
- * 系统通知的文案计划（T11）。
  *
- * 抽成纯函数是为了让「通知文案跟随语言」与「该不该通知」都可测 —— 复审指出
  * 通知接线（含硬编码中文）在 `index.ts` 里既无测试也无法测。
  * @returns null 表示不通知
  */

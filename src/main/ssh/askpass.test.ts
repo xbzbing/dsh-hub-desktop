@@ -40,7 +40,7 @@ function askpassRoundTrip(socketPath: string, prompt: string): Promise<string> {
   })
 }
 
-describe('askpass（T5 口令通道）', () => {
+describe('askpass（口令通道）', () => {
   it('runtime 写入 helper + 包装脚本,权限收紧,argv 不经 shell', async () => {
     const scripts = await ensureAskpassScripts(dir, '/usr/bin/node', ['--no-warnings'])
     expect(scripts.wrapperPath.endsWith(ASKPASS_WRAPPER_NAME)).toBe(true)
@@ -107,7 +107,7 @@ describe('askpass（T5 口令通道）', () => {
   })
 })
 
-describe('T5 评审 R1:socket 残留自愈', () => {
+describe('socket 残留自愈', () => {
   it('陈旧 socket/普通文件残留在路径上时仍能启动(先清理再 listen)', async () => {
     const socketPath = join(dir, 'stale.sock')
     // 模拟进程被强杀后残留的路径占用(普通文件同样会让 listen 报 EADDRINUSE)
@@ -131,15 +131,13 @@ describe('T5 评审 R1:socket 残留自愈', () => {
   it('连续两次启动同一路径(模拟崩溃后重启)不会 EADDRINUSE', async () => {
     const socketPath = join(dir, 'restart.sock')
     const first = await startAskpassServer({ socketPath, onPrompt: async () => 'a' })
-    // 模拟崩溃:不调用 close 直接占用 -> 第二次启动前会清理该路径
+
     await expect(startAskpassServer({ socketPath, onPrompt: async () => 'b' })).resolves.toBeDefined()
     await first.close().catch(() => undefined)
   })
 
-  it('T4 复审 Required-1 确定性拦截:resolve 后立即 stat 权限即 0600(fire-and-forget 回归当场抓获)', async () => {
-    // 复核实验 D 的教训:旧断言 stat 在 roundtrip 之后,对 chmod fire-and-forget
-    // 只有概率性检出力(变异下 30/30 全绿漏网)。resolve 语义上已含 chmod 完成,
-    // 立即 stat 就是确定性断言 —— 回退该修复的变异会 100% 被本用例杀死。
+  it('Required-1 确定性拦截:resolve 后立即 stat 权限即 0600(fire-and-forget 当场抓获)', async () => {
+
     const socketPath = join(dir, 'mode-deterministic.sock')
     const server = await startAskpassServer({ socketPath, onPrompt: async () => 'x' })
     expect((await stat(socketPath)).mode & 0o777).toBe(0o600)

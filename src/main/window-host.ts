@@ -1,9 +1,6 @@
 /**
- * 实例窗口宿主（T3 基础版）。
  *
- * 设计依据：实现计划 §6.6 —— 每实例独立 `BrowserWindow`，`partition: 'persist:inst-<id>'`
  * 隔离存储，禁用 nodeIntegration、开启 contextIsolation/sandbox、拦截外跳（弹窗 + 顶层导航）。
- * Cookie 注入 / 401 拦截 / 遮罩层属 T6 范围，此处只做「开窗 + 加载就绪 URL + 导航/权限加固」。
  */
 import { BrowserWindow } from 'electron'
 import { isAllowedInstanceNavigation } from './window-host-policy'
@@ -14,7 +11,6 @@ export interface OpenInstanceViewOptions {
   url: string
   /**
    * 是否在返回前自动 `loadURL`(默认 true)。
-   * 置 false 供 §6.2 顺序纪律使用:调用方需先注入分区 Cookie 再加载,
    * 编排见 `webview/instance-view.ts`(先注入再加载,避免首帧 302 抖动)。
    */
   autoLoad?: boolean

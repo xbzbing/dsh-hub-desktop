@@ -1,7 +1,5 @@
 /**
- * 实例注册表存储（T2）—— 不 import electron（全局规则 5）。
  *
- * 设计依据：`docs/desktop-implementation-plan.md` §6.1：
  * - 数据文件 `<registryDir>/instances.json`；写入 = 临时文件 + rename（原子）；
  * - 每次改动前滚动 `.bak-<ts>`（保留 bakRetention 份，默认 20）；
  * - schema 校验（zod，见 contracts.ts）+ 迁移钩子 + 损坏自愈（隔离到 .corrupt-<ts> 后重生）。
@@ -39,7 +37,6 @@ const BAK_PREFIX = `${FILE_NAME}.bak-`
 const CORRUPT_PREFIX = `${FILE_NAME}.corrupt-`
 
 /**
- * 注册表落盘权限（安全评审 Finding 2）。
  * 注册表含用户实例清单（名称 / 主机 / 用户名 / 远端 URL / 备注），
  * 与审计日志（`audit-log.ts`）、设置（`settings-store.ts`）一致按 0600 落盘，
  * 共享机器上不对同机其他用户可读。三处写盘 + 隔离副本统一走此常量。
@@ -183,7 +180,6 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
       // rename 保留**源文件**的权限位：既有 0644 的旧注册表被隔离后仍是 0644，
       // 故需显式收紧（Finding 2），否则隔离副本会把清单继续暴露给同机其他用户。
       //
-      // 但收紧必须**尽力而为**（评审 T12-2 指出）：这里文件已经被移走，若 chmod 失败
       // 仍向上抛，load() 会整体失败、注册表直接不可用 —— 为「锦上添花的权限收紧」
       // 赔上可用性是不划算的。失败只告警，隔离本身视为成功。
       try {
@@ -200,7 +196,6 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
 
   /**
    * 磁盘先提交：备份旧文件 → 原子写新文件，全部成功后**才**替换内存缓存。
-   * 写盘失败时内存不被污染（评审 R3：写失败不再产生幻影记录，错误契约可信）。
    */
   async function persist(next: InstanceRecord[]): Promise<void> {
     const data: RegistryFile = { schemaVersion: REGISTRY_SCHEMA_VERSION, instances: next }
@@ -209,9 +204,7 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     try {
       // 显式 0600（同 settings-store / audit-log 的写法）；不依赖 umask 的默认 0644
       await writeFile(tmpPath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: FILE_MODE })
-      // 权限收紧必须落在 **rename 之前**（评审 T12-2）：
       // 若在 rename 之后 chmod，一旦 chmod 失败，就变成「磁盘已是新内容、内存仍是旧内容」
-      // 且调用方收到 io-error —— 直接推翻本模块自己的 R3 不变量（写失败不得产生幻影记录）。
       // 放在 tmp 上则失败时直接走 catch 清理 tmp、主文件一个字节没动。
       // 另外 rename 装的是**新 inode**（tmp 已是 0600），故目标文件权限天然归一化，
       // 不需要、也不应该再对最终路径补一次 chmod。
@@ -321,7 +314,6 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
     return InstanceRecordSchema.parse(record) // 最终完整性校验（含默认值填充），运行期兜底
   }
 
-  /** zod 校验失败统一转成契约内的 invalid-input 错误码（store 只抛 InstanceStoreError） */
   function parseOrThrow<T>(parse: () => T): T {
     try {
       return parse()
@@ -377,7 +369,6 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
       enqueue(async () => {
         await ensureLoaded()
         const record = (instances ?? []).find((item) => item.id === id)
-        // 返回拷贝,避免调用方污染缓存(评审 Nit)
         return record ? structuredClone(record) : null
       }),
 
@@ -389,7 +380,6 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
         const record = parseOrThrow(() =>
           stamp({ ...normalizeCreate(parsed), id: randomUUID(), createdAt: now, updatedAt: now })
         )
-        // 磁盘先提交,成功后才进入内存(评审 R3)
         await persist([...(instances ?? []), record])
         return structuredClone(record)
       }),

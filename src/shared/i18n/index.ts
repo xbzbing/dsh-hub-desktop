@@ -1,5 +1,5 @@
 /**
- * 翻译器（T11）—— 纯函数,不 import electron/React。
+ * 翻译器——纯函数，不 import electron/React。
  *
  * `t(key, params)` 的 key 受字面量联合类型约束(拼错编译不过),插值用 `{name}`。
  * 缺失插值参数时**保留占位符原样**而不是渲染 `undefined`:漏参是显式可见的,

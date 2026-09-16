@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAuthClient } from './auth-client'
 import type { CookieJar } from './cookie-jar'
 
-/** 用假 fetch 构造网关响应(契约真值见 tests/contract) */
 function fakeFetch(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
   return vi.fn(async (input: string | URL, init?: RequestInit) => {
     return handler(String(input), init ?? {})
@@ -21,8 +20,8 @@ function htmlResponse(status: number, body: string, location?: string): Response
   return new Response(body, { status, headers })
 }
 
-describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
-  it('探测:302 → /login 识别为网关,进入 await-credentials(R6 设计边)', async () => {
+describe('AuthClient（/ 编排）', () => {
+  it('探测:302 → /login 识别为网关,进入 await-credentials(设计边)', async () => {
     const client = createAuthClient({
       instanceId: 'i1',
       endpointUrl: 'https://gw.example.com/dsh',
@@ -33,7 +32,7 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     expect(client.state().phase).toBe('await-credentials')
   })
 
-  it('探测:302 → /otp/verify 消费 gatewayEvidence,进入 await-otp(评审 R1)', async () => {
+  it('探测:302 → /otp/verify 消费 gatewayEvidence,进入 await-otp()', async () => {
     const client = createAuthClient({
       instanceId: 'i1',
       endpointUrl: 'https://gw.example.com/dsh',
@@ -41,12 +40,11 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     })
     const detection = await client.probeAndRestore()
     expect(detection.gatewayEvidence).toBe('otp-page')
-    // 旧实现丢弃该证据,一律退化到 await-credentials
     expect(client.state().phase).toBe('await-otp')
     expect(client.state().otpEnabled).toBe(true)
   })
 
-  it('探测:302 → /onboarding 消费 gatewayEvidence,置 needsOnboarding(评审 R1)', async () => {
+  it('探测:302 → /onboarding 消费 gatewayEvidence,置 needsOnboarding()', async () => {
     const client = createAuthClient({
       instanceId: 'i1',
       endpointUrl: 'https://gw.example.com/dsh',
@@ -58,10 +56,9 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     expect(client.state().phase).toBe('await-credentials')
   })
 
-  it('T8-D1:settings 200 但页面 302 → /onboarding 时不得进入 connected', async () => {
-    // 真实网关的 #verifiedTokenOr401 不检查 onboarding,欠引导改密的会话
+  it('settings 200 但页面 302 → /onboarding 时不得进入 connected', async () => {
+
     // GET /login-api/settings 仍返回 200 —— 若直接静默恢复,界面显示「已连接」
-    // 而 webview 停在引导页(onboarding 半边此前在生产中是死状态)
     const jar = {
       store: vi.fn(),
       header: () => 'dsh_auth=needs-onboarding',
@@ -93,7 +90,7 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
     expect(jar.clear).not.toHaveBeenCalled() // 会话有效,不能清
   })
 
-  it('T8-D1:settings 200 且页面无门禁时仍正常静默恢复(不误伤)', async () => {
+  it('settings 200 且页面无门禁时仍正常静默恢复(不误伤)', async () => {
     const jar = {
       store: vi.fn(),
       header: () => 'dsh_auth=good',
@@ -327,8 +324,8 @@ describe('AuthClient（T7 §5.3/§5.4 编排）', () => {
   })
 })
 
-describe('T7 评审回归防线', () => {
-  it('R1:429 锁定窗口过后自动解锁(单一计时来源,不再永久锁定)', async () => {
+describe('防线', () => {
+  it('429 锁定窗口过后自动解锁(单一计时来源,不再永久锁定)', async () => {
     let now = 1_000_000
     const fetchImpl = vi.fn(async (input: string | URL) =>
       String(input).includes('/login/auth')
@@ -350,7 +347,6 @@ describe('T7 评审回归防线', () => {
     await client.login('pw')
     expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(callsBefore)
 
-    // 推进 91s → 自动解锁(此前会永久锁定:Critical)
     now += 91_000
     expect(client.backoff.canAttempt()).toBe(true)
     expect(client.state().lockedForMs).toBe(0)
@@ -360,7 +356,7 @@ describe('T7 评审回归防线', () => {
     )
   })
 
-  it('R2:锁定期间不发送任何认证请求(以 fetch 调用次数断言,而非死代码)', async () => {
+  it('锁定期间不发送任何认证请求(以 fetch 调用次数断言,而非死代码)', async () => {
     const fetchImpl = vi.fn(async (input: string | URL) =>
       String(input).includes('/login/auth')
         ? jsonResponse(429, { ok: false, error: 'rate-limited' })
@@ -375,7 +371,7 @@ describe('T7 评审回归防线', () => {
     expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(after429)
   })
 
-  it('R3:客户端请求强制 redirect:manual(含 /login/auth 自身请求)', async () => {
+  it('客户端请求强制 redirect:manual(含 /login/auth 自身请求)', async () => {
     const seen: Array<{ url: string; init: RequestInit | undefined }> = []
     const fetchImpl = vi.fn(async (input: string | URL, init?: RequestInit) => {
       const url = String(input)
@@ -393,7 +389,7 @@ describe('T7 评审回归防线', () => {
     for (const item of seen) expect(item.init?.redirect).toBe('manual')
   })
 
-  it('R5:验证码阶段复用同一次密码经 /login/auth 提交(而非分步 /otp/verify)', async () => {
+  it('验证码阶段复用同一次密码经 /login/auth 提交(而非分步 /otp/verify)', async () => {
     const urls: string[] = []
     const fetchImpl = vi.fn(async (input: string | URL) => {
       const url = String(input)
@@ -414,7 +410,7 @@ describe('T7 评审回归防线', () => {
     expect(urls.some((url) => url.includes('/otp/verify'))).toBe(false)
   })
 
-  it('R6:探测为网关且无会话 → await-credentials(密码屏可达)', async () => {
+  it('探测为网关且无会话 → await-credentials(密码屏可达)', async () => {
     const client = createAuthClient({
       instanceId: 'i1',
       endpointUrl: 'https://gw/dsh',

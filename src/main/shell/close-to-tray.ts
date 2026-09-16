@@ -1,7 +1,5 @@
 /**
- * 窗口 close → 隐藏到托盘的判定与动作（T11 三审 Finding 2）—— 不 import electron。
  *
- * 复审指出的存活变异:close 处理器把第二个实参**硬编码为 `true`**
  * (`shouldMinimizeToTrayOnClose(current, true)`),于是「托盘不存在时也隐藏窗口」
  * 这条会把应用变成叫不回来(只剩 macOS Dock)的路径没有任何测试约束。
  *
@@ -31,8 +29,6 @@ export function handleWindowClose(event: CloseEventLike, deps: CloseToTrayDeps):
   const current = deps.settings()
   // 偏好未装配时不做任何拦截(启动早期的关闭必须能真的关掉)
   if (!current) return false
-  // 变异「第二个实参硬编码 true」会让「无托盘时隐藏」通过,本函数在
-  // 「偏好开启 + 托盘不存在」时返回 false,该变异随即被测试抓住
   if (!shouldMinimizeToTrayOnClose(current, deps.trayAvailable())) return false
   event.preventDefault()
   deps.hideWindow()

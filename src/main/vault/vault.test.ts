@@ -38,7 +38,6 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-/** 勾选「两个都记住」后的 vault(§7.2:显式勾选是落盘的前置条件) */
 async function optIn(
   overrides: Partial<typeof BOTH> = {},
   available = true
@@ -48,11 +47,10 @@ async function optIn(
   return vault
 }
 
-describe('vault（§7.2 凭据存储策略）', () => {
+describe('vault（ 凭据存储策略）', () => {
   it('默认不存任何东西,且默认策略是「都不记住」', async () => {
     const vault = createVault({ filePath, crypto: fakeCrypto() })
     expect(vault.status()).toEqual({ available: true, degraded: false, instanceCount: 0 })
-    // 字面量断言(而非与 DEFAULT 自比):默认值本身是安全相关常量,必须被钉住
     expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
     expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: false, rememberSession: false })
     expect(vault.getPassword('i1')).toBeNull()
@@ -131,7 +129,6 @@ describe('vault（§7.2 凭据存储策略）', () => {
 
     await vault.setPolicy('i1', { rememberPassword: false, rememberSession: false })
     expect(vault.getSession('i1')).toBeNull()
-    // 字面量断言(而非与 DEFAULT 自比):默认值本身是安全相关常量,必须被钉住
     expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
     expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: false, rememberSession: false })
     expect(vault.rememberedIds()).toEqual([])
@@ -207,8 +204,7 @@ describe('vault（§7.2 凭据存储策略）', () => {
     expect(other.rememberedIds()).toEqual([])
   })
 
-  it('实测修复:JSON 损坏文件被隔离(corrupt-*),下次写盘重建干净文件', async () => {
-    // 用户实机日志:credentials.json 被截断/拼接损坏后,旧实现每次读都重复报错
+  it("JSON 损坏文件被隔离后下次写盘重建干净文件", async () => {
     // 且 vault 永远起不来 —— 现在坏文件必须被改名隔离、随后由下一次 persist 重建
     await mkdir(join(dir, 'vault'), { recursive: true })
     const corrupt =
@@ -242,8 +238,7 @@ describe('vault（§7.2 凭据存储策略）', () => {
     expect(errors2).toHaveLength(0)
   })
 
-  it('实测修复:并发 persist 不再相互踩踏(唯一 tmp + 串行队列),终态为最后一次写入', async () => {
-    // 用户实机日志:rememberSession 与策略/密码写入并发时 rename ENOENT、文件损坏。
+  it("并发 persist 保持最后一次写入", async () => {
     // 压测:同一 vault 上 20 个并发 remember/forget,全部 resolve 且终态可读回。
     const vault = await optIn()
     const rounds = Array.from({ length: 20 }, (_, i) => i)
@@ -254,7 +249,6 @@ describe('vault（§7.2 凭据存储策略）', () => {
           : vault.forgetSession('i1')
       )
     )
-    // 最后一次写入(序号 19 = forget)已串行落地:终态应为「无会话条目」
     expect(vault.getSession('i1')).toBeNull()
     // 文件存在且为合法 JSON、无残留 tmp
     const raw = await readFile(filePath, 'utf8')
@@ -267,7 +261,6 @@ describe('vault（§7.2 凭据存储策略）', () => {
   })
 
   it('磁盘被篡改的 policy 垃圾值在重开时收敛为默认(不勾选)', async () => {
-    // T10 复核 M6:normalizePolicy 此前无直测 —— IPC 边界有 zod 挡外部输入,
     // 但磁盘文件可被外部篡改,重开时必须收敛而不是抛异常或误信垃圾值
     const vault = await optIn()
     await vault.setPolicy('i1', BOTH)
@@ -319,7 +312,6 @@ describe('vault（§7.2 凭据存储策略）', () => {
     await vault.forgetInstance('i1')
     expect(vault.getPassword('i1')).toBeNull()
     expect(vault.getSession('i1')).toBeNull()
-    // 字面量断言(而非与 DEFAULT 自比):默认值本身是安全相关常量,必须被钉住
     expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
     expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: false, rememberSession: false })
     expect(vault.getPassword('i2')).toBe('p2')

@@ -1,23 +1,20 @@
 /**
- * 实例注册表契约 —— 单一事实源（T2）。
+ * Instance registry types and validation rules.
  *
- * 设计依据：`docs/dsh-hub-desktop-design.md` §2.1（实例 = transport × auth 正交模型）、
- * `docs/desktop-implementation-plan.md` §4（IPC 契约）。
- *
- * 本模块不 import electron（全局规则 5）：主进程 / preload / 渲染进程 / 测试共享同一份
- * 模型与 zod schema；`transport` 为判别联合的判别字段（实现计划 §6.1 的 `kind` 即此字段）。
+ * 本模块不 import electron；主进程、preload、渲染进程和测试共享模型与 Zod schema。
+ * `transport` 是判别联合的判别字段。
  */
 import { z } from 'zod'
 import { tryParseEndpoint } from './endpoint'
 
-// ===== 枚举（§2.1） =====
+// ===== 枚举 =====
 
 export const TRANSPORTS = ['local', 'ssh', 'http'] as const
 export type Transport = (typeof TRANSPORTS)[number]
 
 /**
  * 用户显式选择的认证意图；`auto` 为默认 —— 连接建立后由认证层探测决定有效模式
- * （none / gateway / browser-auth，见设计文档 §2.3）。browser-auth 只可能是探测产物，
+ * （none / gateway / browser-auth）。browser-auth 只可能是探测产物，
  * 不存在于注册表记录中。
  */
 export const AUTH_MODES = ['auto', 'none', 'gateway'] as const
@@ -32,7 +29,7 @@ const PORT_SCHEMA = z.number('端口必须是数字').int('端口必须是整数
  * - 普通主机名 / 别名 / IPv4：不含冒号即可；
  * - 裸 IPv6：至少两个冒号且全为十六进制字符；
  * - `host[:port]` / `[v6][:port]`：端口必须落在 1–65535（非法端口组合显式拒绝，
- *   而不是把整串存进 host 字段由 T4 当主机名解析）。
+ *   而不是把整串存进 host 字段）。
  */
 function isValidSshHost(host: string): boolean {
   const portOfPlain = /^([A-Za-z0-9._-]+):(\d+)$/.exec(host)
@@ -52,8 +49,8 @@ function inPortRange(rawPort: string | undefined): boolean {
 }
 
 /**
- * SSH 主机：主机名 / 别名 / IPv4 / 裸或方括号 [IPv6] / 以及 `host[:port]`、`[v6]:port` 组合形式
- * （组合形式由 instance-store 拆分为独立 host + port 字段）。
+ * SSH 主机：主机名、别名、IPv4、裸或方括号 IPv6，以及带端口的组合形式。
+ * 组合形式由 instance-store 拆分为独立的 host 和 port 字段。
  * 不允许空白、`/`、`@`（userinfo 属于 username 字段，不内嵌主机）。
  */
 const SSH_HOST_SCHEMA = z
@@ -63,7 +60,7 @@ const SSH_HOST_SCHEMA = z
   .max(255, 'SSH 主机最长 255 字符')
   .regex(/^[A-Za-z0-9._\-:[\]]+$/, 'SSH 主机含非法字符（不允许空白 / 斜杠 / @）')
   // host 是 ssh 的位置参数:以 '-' 开头会被当作选项解析(argv 选项注入面),
-  // 边界直接拒绝(评审 R3);`-oProxyCommand=` 之类因字符集不含 '=' 本就被拒
+  // 在边界直接拒绝；`-oProxyCommand=` 之类因字符集不含 '=' 本就被拒。
   .refine((value) => !value.startsWith('-'), 'SSH 主机不能以 - 开头')
   .refine(isValidSshHost, 'host[:port] 形态的端口必须在 1–65535，或主机名不含冒号')
 
@@ -82,9 +79,9 @@ const instanceBaseFields = {
 export const LocalInstanceSchema = z.object({
   ...instanceBaseFields,
   transport: z.literal('local'),
-  /** 已安装的 dsh 版本；null = 未安装（T3 local-runtime 写入） */
+  /** 已安装的 dsh 版本；null = 未安装。 */
   dshVersion: z.string().trim().max(64).nullable().default(null),
-  /** 已分配的监听端口；null = 未分配（T3 端口分配后写入） */
+  /** 已分配的监听端口；null = 未分配。 */
   port: PORT_SCHEMA.nullable().default(null),
   /** 实例配置文件（相对 DSH_HOME） */
   profile: z.string().trim().max(128).nullable().default(null),
@@ -101,19 +98,16 @@ export const SshInstanceSchema = z.object({
   username: z.string().trim().min(1, 'SSH 用户名不能为空').max(128, 'SSH 用户名最长 128 字符'),
   /** 远端 dsh 监听端口（隧道目标，默认 dsh web 惯例端口） */
   remotePort: PORT_SCHEMA.default(3080),
-  /** 隧道本地端口；null = 未分配（T4 分配后写入） */
+  /** 隧道本地端口；null = 未分配。 */
   localPort: PORT_SCHEMA.nullable().default(null),
-  /** 显式私钥路径；null = 默认（agent 优先，设计文档 §7.3） */
+  /** 显式私钥路径；null = 默认，优先使用 agent。 */
   identityFile: z.string().trim().max(512).nullable().default(null)
 })
 
 export const HttpInstanceSchema = z.object({
   ...instanceBaseFields,
   transport: z.literal('http'),
-  /**
-   * 直连端点。存归一化 baseUrl（`parseEndpointUrl` 输出的 baseUrl）；
-   * userinfo / 查询串 / 锚点由 parseEndpointUrl 直接拒绝（设计文档 §7.4）。
-   */
+  /** HTTP 直连端点。存归一化 baseUrl；userinfo、查询串和锚点由 parseEndpointUrl 拒绝。 */
   endpointUrl: z
     .string()
     .trim()
@@ -215,14 +209,14 @@ export type PatchInstanceInput = z.input<typeof PatchInstanceSchema>
 /** 经 schema 解析后的补丁（store 内部使用） */
 export type PatchInstanceParams = z.output<typeof PatchInstanceSchema>
 
-// ===== SSH 密钥预览 / 主机指纹确认 / askpass（T5） =====
+// ===== SSH 密钥预览 / 主机指纹确认 / askpass =====
 
 /**
- * T5 通道：
+ * SSH 通道：
  * - `keyPreview`：向导/详情页只读展示「将使用哪个密钥」与 agent 状态（绝不含私钥内容）；
  * - `hostKeyDecision`(主→渲染) + `hostKeyReply`(渲染→主)：TOFU 指纹确认（首次/变化双变体）；
  * - `hostKeyForget`(渲染→主)：**显式、破坏性**的恢复动作「忘记该主机指纹」。连接时指纹变化
- *   一律拒绝且不自动清理（设计 §7.3），只有走完本动作后下一次连接才重新走首次 TOFU；
+ *   一律拒绝且不自动清理，只有走完本动作后下一次连接才重新走首次 TOFU；
  * - `askpassRequest`(主→渲染) + `askpassReply`(渲染→主)：SSH 口令/密钥口令弹窗，
  *   口令只经 IPC 瞬时传递，不落盘、不入日志、不进审计。
  */
@@ -290,11 +284,10 @@ export interface HostKeyReplyPayload {
 }
 
 /**
- * 「忘记该主机指纹」输入（渲染 → 主，设计 §7.3）。
+ * 「忘记该主机指纹」输入（渲染 → 主）。
  *
- * 显式、破坏性的恢复动作：删除该实例主机在 hub 私有 known_hosts 中的全部条目，
- * 于是下一次连接重新按「首次连接」核对新指纹。**不属于连接确认流程** —— 连接时
- * 指纹变化一律拒绝连接且不自动清理，本动作只能由用户单独发起。
+ * 删除已保存的指纹后，下一次连接会重新按首次连接核对新指纹。
+ * 该操作不属于连接确认流程，且只能由用户单独发起。
  */
 export interface SshHostKeyForgetInput {
   instanceId: string
@@ -313,10 +306,10 @@ export interface AskpassReplyPayload {
   secret: string | null
 }
 
-// ===== HTTP 直连端点探测（T6） =====
+// ===== HTTP 直连端点探测 =====
 
 /**
- * T6 通道：向导 Step3 / 详情页对「直连端点」做一次只读探测（§2.3），
+ * 向导和详情页对「直连端点」做一次只读探测，
  * 返回认证模式判定结果供 UI 展示；不建立实例、不写注册表、不携带凭据。
  */
 export const HTTP_IPC = {
@@ -337,23 +330,20 @@ export interface HttpAuthDetection {
   at: string
 }
 
-// ===== 认证（T8）：状态流与登录提交 =====
+// ===== 认证：状态流与登录提交 =====
 
 /**
- * T8 通道:渲染层只触发登录与观察状态,凭据只在主进程内存中流转(绝不落盘/进日志)。
+ * 渲染层只触发登录与观察状态，凭据只在主进程内存中流转，不落盘或写入日志。
  * - `auth:probe` 探测并静默恢复(带已存 Cookie);
  * - `auth:login` 提交密码(可带 OTP 完成单请求 2FA —— 验证码阶段复用同一次密码重发,
- *   设计 §5.2「优先单次请求带码」;不做分步 /otp/verify);
+ *   不做分步 /otp/verify；
  * - `auth:logout` 清除会话;
  * - `auth:state`(主→渲染)状态机快照,驱动 auth-panel 与工作区浮层。
  */
 export const AUTH_IPC = {
   probe: 'auth:probe',
   login: 'auth:login',
-  /**
-   * G2 已决边(设计 §5.3):用保险库里的已存密码登录(**密码不跨 IPC** —— 主进程
-   * 自行读取;渲染层只传可选 otp)。未勾选「记住密码」或无已存密码 → invalid-input。
-   */
+  /** 使用保险库中的已存密码登录；密码不跨 IPC。 */
   loginStored: 'auth:loginStored',
   logout: 'auth:logout',
   state: 'auth:state',
@@ -362,7 +352,7 @@ export const AUTH_IPC = {
 } as const
 
 /**
- * T10 凭据保险库（设计文档 §7.2）。
+ * 凭据保险库。
  * 通道命名与 auth:* 并列:凭据写入是**用户显式勾选**的结果,不是登录的副作用。
  */
 export const VAULT_IPC = {
@@ -387,29 +377,17 @@ export interface VaultStatusSnapshot {
   degraded: boolean
   /** 已记住凭据的实例 id */
   rememberedInstances: string[]
-  /**
-   * 每个实例的勾选策略(仅含已设置的实例)。
-   *
-   * **必须暴露**:UI 若拿不到当前策略就只能把复选框渲染成未勾选,用户随后
-   * 切换另一个开关时会提交一份过时的策略对 —— 而 `setPolicy` 对「取消勾选」
-   * 的语义是**真的忘掉**,于是会静默删掉已存密码(评审 T10-1 Critical)。
-   */
+  /** 当前实例的勾选策略，用于避免以过时状态覆盖另一个开关。 */
   policies: Record<string, VaultPolicy>
 }
 
 /**
- * T11 应用设置通道(非敏感偏好;敏感项一律走 vault)。
+ * 应用设置通道；敏感项一律走 vault。
  */
 export const SETTINGS_IPC = {
   get: 'settings:get',
   update: 'settings:update',
-  /**
-   * 用系统文件管理器打开**应用数据目录**(设置页「打开」按钮)。
-   *
-   * 安全设计:本通道**不接受任何入参** —— 目录由主进程自行解析
-   * (`DSH_HUB_DATA_DIR` 覆盖 / `app.getPath('userData')`),渲染层给不出路径,
-   * 因此结构上不可能被用作「任意文件/目录打开」原语(T11 三审 Finding 1)。
-   */
+  /** 应用数据目录由主进程自行解析；通道不接受参数。 */
   openDataDir: 'settings:openDataDir'
 } as const
 
@@ -469,7 +447,7 @@ export interface InstanceSummary {
   updatedAt: string
 }
 
-/** T2 注册的 CRUD 通道；auth:* 在其任务内追加（实现计划 §4） */
+/** 实例注册表 CRUD 通道。 */
 export const INSTANCE_IPC = {
   list: 'instances:list',
   get: 'instances:get',
@@ -478,20 +456,14 @@ export const INSTANCE_IPC = {
   delete: 'instances:delete'
 } as const
 
-/** T3 本地运行时控制通道：start/stop 立即返回，进展由 `instance:status` 事件回推 */
+/** 本地运行时控制通道：start/stop 立即返回，进展由 `instance:status` 事件回推。 */
 export const INSTANCE_RUNTIME_IPC = {
   start: 'instances:start',
   stop: 'instances:stop',
   openView: 'instances:openView',
-  /**
-   * 实机反馈(2026-09-16):探测本机**已在运行**的 dsh web 进程(只读 ps+lsof)。
-   * 无参数 —— 渲染层无法指定要探测什么;返回 pid/端口/patch 路径供 UI 展示与接管。
-   */
+  /** 探测本机已运行的 dsh web 进程；返回 pid、端口和 patch 路径。 */
   scanExternal: 'instances:scanExternal',
-  /**
-   * 接管检测到的外部 dsh web 进程(只传 pid;端口/patch 由主进程重新扫描认定,
-   * 渲染层无法凭空指定要连的地址)。
-   */
+  /** 接管已扫描到的外部 dsh web 进程；主进程重新确认 pid、端口和 patch。 */
   adoptExternal: 'instances:adoptExternal'
 } as const
 
@@ -520,13 +492,7 @@ export interface InstanceStatusEvent {
   port?: number
   /** 本次启动使用的 dsh 运行时版本（解析后回填，供 UI 展示与注册表回写） */
   version?: string
-  /**
-   * 运行时来源（#2 用户反馈）：hub = 应用隔离目录；path = 用户本机 PATH 上的 dsh；
-   * external = **接管**本机已在运行的 dsh web（实机反馈 2026-09-16：hub 不 spawn、
-   * 不回写版本，进程归用户所有）。
-   * 主进程回写闸依据它决定是否持久化 version —— path/external 来源不回写，
-   * 未固定实例才能跟随用户本机升级，而不是被钉死在探测当天的版本上。
-   */
+  /** 运行时来源：hub 为应用隔离目录，path 为用户 PATH，external 为接管的本机进程。 */
   runtimeSource?: 'hub' | 'path' | 'external'
   /** 人读诊断信息（进度 / 失败归因） */
   detail?: string
@@ -536,7 +502,7 @@ export interface InstanceStatusEvent {
 
 export type IpcErrorCode = 'invalid-input' | 'not-found' | 'invalid-state' | 'io-error' | 'internal'
 
-/** IPC 统一响应信封：错误码稳定，文案由渲染层按码表映射（PRD §8） */
+/** IPC 统一响应信封：错误码稳定，文案由渲染层按码表映射。 */
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; code: IpcErrorCode; message: string }
 
 // ===== 工具 =====

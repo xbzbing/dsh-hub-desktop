@@ -1,9 +1,5 @@
 /**
- * 原生设置端口的**实现**（T11 三审 Finding 2）—— 不 import electron,便于用 spy 单测。
  *
- * 复审的教训:`createNativeSettingsApplier` 只保证「计划里的动作被调用」,
- * 而**端口实现本身**此前写在 `index.ts` 的 `app.whenReady()` 内,结构上不可测,
- * 于是下面这些变异能在测试全绿时存活:
  * - `updateTray: () => {}`(托盘菜单永不刷新 → 语言切换后菜单停在旧语言);
  * - `setLoginItem` 不落到 OS(「开机自启」开关形同虚设);
  * - `trayExists: () => false`(每次都重新建托盘/自启判定错乱)。
@@ -59,13 +55,11 @@ export interface HubNativePorts<TTray extends TrayLike> extends NativeSettingsPo
 export function createHubNativePorts<TTray extends TrayLike>(
   deps: HubNativeDeps<TTray>
 ): HubNativePorts<TTray> {
-  // 托盘引用的唯一持有者:存在性判断与实际调用不可能再分叉(变异 M17 的锚点)
   let tray: TTray | null = null
 
   return {
     currentTray: () => tray,
 
-    // 变异「trayExists: () => false」会让本行说谎:存在性必须来自真实引用
     trayExists: () => tray !== null,
 
     createTray() {
@@ -86,12 +80,10 @@ export function createHubNativePorts<TTray extends TrayLike>(
     updateTray() {
       // 没有托盘时绝不触碰 electron(创建失败时刷新会对着 null 调用)
       if (!tray) return
-      // 变异「updateTray: () => {}」会让菜单停在旧语言/旧实例数
       deps.refreshTrayMenu(tray, deps.labels(), deps.onShow, deps.onQuit)
     },
 
     setLoginItem(autoStart) {
-      // 变异「setLoginItem 不落到 OS」会丢掉这次调用
       deps.applyLoginItem(loginItemSettings({ autoStart }))
     },
 

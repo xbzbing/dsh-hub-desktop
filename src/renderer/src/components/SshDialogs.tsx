@@ -12,13 +12,9 @@ import { useAppStore } from '../store'
 const BRIDGE = window.dshHub
 
 /**
- * SSH 安全确认浮层（T5）：
- * - 主机指纹（TOFU）：首次连接 = 常规确认；指纹**变化** = 红色警示且连接一律被拒绝
- *   （设计 §7.3「指纹变更一律拒绝连接并告警（不自动清理）」）——连接流程里没有任何
- *   「覆盖旧公钥」的一键放行路径，恢复只能走**独立**的破坏性动作「忘记该主机指纹」，
- *   忘记之后的下一次连接重新走首次 TOFU 确认；
- * - 口令输入（askpass）：私钥口令 / 密码，输入后仅经 IPC 瞬时回传，不写入任何存储。
- * 两者都由主进程事件驱动，答完即销毁。
+ * SSH 安全确认浮层。
+ * 指纹变化时拒绝当前连接；用户可显式删除本地指纹后在下次连接时重新确认。
+ * 口令仅通过 IPC 瞬时回传，不写入任何存储。
  */
 export default function SshDialogs(): ReactNode {
   const t = useAppStore((state) => state.t)

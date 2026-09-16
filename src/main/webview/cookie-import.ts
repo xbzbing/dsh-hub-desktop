@@ -1,7 +1,5 @@
 /**
- * 分区 Cookie 注入（T8,设计文档 §6.2）—— 纯逻辑 + 注入式 session,不 import electron 类型。
  *
- * 登录由主进程完成(§5.3),成功后把会话 Cookie 写入该实例分区:
  * `Path=/; HttpOnly; SameSite=Strict`(网关 Cookie 无 Secure;basePath 不改变 Cookie 路径)。
  * **顺序纪律**:先写分区 Cookie,再 loadURL —— 避免首帧 302 抖动。
  * 密码绝不进入渲染进程:渲染层只触发登录,凭据只在主进程内存中流转。
@@ -26,7 +24,6 @@ export interface CookieSetter {
 export interface ImportCookieOptions {
   /** 端点 origin(含 scheme/port),如 https://gw.example.com */
   origin: string
-  /** basePath(如 '/dsh');Cookie 路径仍为 '/'(设计 §6.4) */
   basePath?: string
   cookie: { name: string; value: string; expiresAt: number | null }
 }
@@ -78,7 +75,6 @@ export async function importSessionCookie(
 }
 
 /**
- * 实例视图加载前的编排:先注入 Cookie 再 loadURL(§6.2 顺序纪律)。
  *
  * 顺序纪律由本函数保证,并被 `instance-view.test.ts` 的调用序列断言锁定
  * —— 反序会让首个 main-frame 请求先打一次未带 Cookie 的 302 → /login 抖动。

@@ -1,9 +1,6 @@
 /**
- * HTTP 直连传输（T6,设计文档 §2.3/§4.3）—— 不 import electron。
  *
- * 远程实例没有本地进程可管：`start` = 校验端点 → §4.3 健康探测 → §2.3 认证模式探测
  * → 发布 running（携带探测结论）；`stop` = 发布 stopped（无进程回收）。
- * 探测结论供 UI 展示与 T7 登录状态机使用；真实登录在 T7。
  */
 import type { HttpInstance, InstanceRuntimeStatus, InstanceStatusEvent } from '@shared/contracts'
 import { parseEndpointUrl } from '@shared/endpoint'
@@ -15,7 +12,6 @@ export interface HttpEndpointOptions {
   probe?: HealthProbe
   detect?: (url: string) => Promise<AuthDetection>
   healthTimeoutMs?: number
-  /** 连接期探测重试（§4.3:500ms） */
   healthProbeRetries?: number
   healthProbeRetryMs?: number
   now?: () => number
@@ -25,7 +21,6 @@ export interface HttpEndpointManager {
   onStatus(listener: (event: InstanceStatusEvent) => void): () => void
   statusOf(id: string): InstanceStatusEvent | null
   runningIds(): string[]
-  /** 立即返回；进展经 onStatus 推进（与 IPC 契约一致） */
   start(instance: HttpInstance): Promise<void>
   stop(id: string): Promise<void>
   stopAll(): Promise<void>
@@ -36,7 +31,6 @@ interface Entry {
   url: string
   detection: AuthDetection | null
   stopping: boolean
-  /** 本条目是否仍是 entries 中的当前条目(防陈旧 start 收尾时误删新条目;评审 T6 Nit-h) */
   current: () => boolean
 }
 
@@ -82,7 +76,6 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
     }
   }
 
-  /** 单次启动流程(端点校验 → §4.3 健康探测 → §2.3 认证探测 → running) */
   async function runStart(instance: HttpInstance, myGen: number): Promise<void> {
     const id = instance.id
     let entry: Entry | null = null
@@ -129,7 +122,7 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
             ? detectionDetail(detection)
             : instance.authMode === 'none'
               ? '按配置跳过登录认证'
-              : '按配置使用网关登录（T7 接入）'
+              : '按配置使用网关登录'
       })
     } catch (error) {
       // 校验/探测失败:未被取消、且没有更新的条目时才报错(避免陈旧 start 误报)
@@ -200,7 +193,6 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
         }
         await runStart(instance, myGen)
       })
-      // 注意:必须比较「存进 map 的那个派生 promise」,否则 compare-and-delete 恒假(评审 Nit)
       const chained = next.catch(() => undefined).finally(() => {
         if (startChains.get(id) === chained) startChains.delete(id)
       })

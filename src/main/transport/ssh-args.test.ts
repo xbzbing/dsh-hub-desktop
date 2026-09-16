@@ -22,7 +22,7 @@ function sshInstance(overrides: Partial<SshInstance> = {}): SshInstance {
   }
 }
 
-describe('buildSshArgs（§4.2 参数库）', () => {
+describe('buildSshArgs（ 参数库）', () => {
   const ctx = {
     controlPath: '/data/ssh/inst-x.sock',
     knownHostsPath: '/data/ssh/known_hosts'
@@ -34,7 +34,6 @@ describe('buildSshArgs（§4.2 参数库）', () => {
     const lIndex = args.indexOf('-L')
     expect(args[lIndex + 1]).toBe('30123:127.0.0.1:3080')
     expect(args).toContain('-N')
-    // 连接/保活参数（§4.2 表）
     const options = args.filter((arg) => arg === '-o' || arg.startsWith('ExitOnForward') || arg.startsWith('ServerAlive') || arg.startsWith('ConnectTimeout') || arg.startsWith('Control') || arg.startsWith('StrictHostKeyChecking') || arg.startsWith('UserKnownHostsFile'))
     const optionValues = options.join(' ')
     expect(optionValues).toContain('ExitOnForwardFailure=yes')
@@ -44,9 +43,8 @@ describe('buildSshArgs（§4.2 参数库）', () => {
     expect(optionValues).toContain('ControlMaster=auto')
     expect(optionValues).toContain('ControlPath=/data/ssh/inst-x.sock')
     // 必须显式 ControlPersist=no:否则用户 ~/.ssh/config 的 controlpersist yes 会注入,
-    // ssh fork 出未跟踪的后台 master、前台退出 0 → hub 停止时回收不掉(实测孤儿)
+
     expect(optionValues).toContain('ControlPersist=no')
-    // T5 起 TOFU 前置完成 → 严格校验（不再 accept-new）
     expect(optionValues).toContain('StrictHostKeyChecking=yes')
     expect(optionValues).toContain('UserKnownHostsFile=/data/ssh/known_hosts')
     // 目标主机在队尾
@@ -73,7 +71,7 @@ describe('buildSshArgs（§4.2 参数库）', () => {
     expect(args[args.indexOf('-i') + 1]).toBe('/Users/dev/.ssh/id_ed25519')
   })
 
-  it('argv 不经 shell：host 含特殊字符时仍为单参数（契约层已限定字符集）', () => {
+  it('argv 不经 shell：host 含特殊字符时仍为单参数（输入已限定字符集）', () => {
     const args = buildSshArgs(sshInstance({ host: 'my-host' }), 30123, ctx)
     expect(args).not.toContain('&&')
     expect(args[args.length - 1]).toBe('my-host')

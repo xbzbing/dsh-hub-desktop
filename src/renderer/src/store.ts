@@ -1,7 +1,4 @@
-/**
- * 渲染层状态(实现计划 §5.2 zustand 切片;T3 先做实例/状态/选中/主题/浮层,
- * auth 与工作区切片随 T7/T5 追加)。
- */
+/** 渲染层 Zustand 状态。 */
 import { create } from 'zustand'
 import type {
   AuthPhase,
@@ -24,7 +21,7 @@ export interface ToastItem {
 export type ToastKind = ToastItem['kind']
 
 interface AppState {
-  /** 首次列表是否已加载(加载中展示骨架屏,不出现空白闪烁 —— R6) */
+  /** 首次列表是否已加载；加载时显示骨架屏。 */
   loaded: boolean
   instances: InstanceSummary[]
   /** 详情缓存:进入详情页时按需 get */
@@ -36,22 +33,21 @@ interface AppState {
   rail: boolean
   theme: 'light' | 'dark'
   wizardOpen: boolean
-  /** T11 设置页是否打开(与实例选中互斥展示) */
+  /** 设置页是否打开；打开时不显示实例详情。 */
   settingsOpen: boolean
   /** 向导创建后待自动打开的实例集合(多个实例并发启动时各自独立) */
   pendingOpen: string[]
   /** 主进程 userData 路径(app:info 快照;详情页展示实例数据目录用) */
   userDataPath: string | null
   /**
-   * 各实例的认证相位快照(auth:state 事件的 id → phase 投影)。
-   * UI 打磨 #2:详情页据此把「登录 / 重新登录」按钮状态化、且仅在已连接时显示「登出」。
-   * 未知实例(本会话尚无事件)不在 map 里 —— 调用方按「未登录」处理。
+   * 各实例的认证相位快照，用于控制详情页认证操作的可见性。
+   * 未收到事件的实例不在 map 中。
    */
   authPhases: Record<string, AuthPhase>
   /** 写入/清除实例的认证相位(登出后为最新相位,无需特判) */
   applyAuthPhase: (instanceId: string, phase: AuthPhase) => void
   toasts: ToastItem[]
-  /** T11 非敏感偏好(主进程 settings.json 是真理源) */
+  /** 非敏感偏好，由主进程 settings.json 保存。 */
   settings: Settings
   /** 实际生效的语言(偏好 + 系统语言推断后的结果) */
   language: Language
@@ -70,20 +66,20 @@ interface AppState {
   toggleTheme: () => void
   setWizardOpen: (open: boolean) => void
   setSettingsOpen: (open: boolean) => void
-  /** T11:跟随系统明暗变化(仅 theme='system' 生效);返回取消订阅函数 */
+  /** 订阅系统主题变化，仅在 theme='system' 时生效。 */
   subscribeSystemTheme: () => () => void
   setPendingOpen: (id: string) => void
   toast: (kind: ToastKind, title: string, detail?: string) => void
   dismissToast: (id: number) => void
-  /** T11:从主进程拉取偏好并应用(启动时调用) */
+  /** 从主进程读取并应用偏好。 */
   hydrateSettings: () => Promise<void>
-  /** T11:更新偏好(落盘 + 立即生效) */
+  /** 更新并立即应用偏好。 */
   updateSettings: (patch: Partial<Settings>) => Promise<void>
 }
 
 let toastSeq = 0
 
-/** 系统主题监听的取消函数(避免重复订阅泄漏) */
+  /** 系统主题监听的取消函数，避免重复订阅。 */
 let systemThemeUnsubscribe: (() => void) | null = null
 
 function initialTheme(): 'light' | 'dark' {
@@ -127,8 +123,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   t: createTranslator(initialLanguage()),
 
   /**
-   * 订阅系统明暗变化(复审 R7):`theme: 'system'` 此前只在启动时解析一次,
-   * 运行中改系统外观不会跟随。回调里只重算「实际生效的明暗」,不改偏好本身。
+   * 在 theme='system' 时随系统外观更新实际主题，不改变用户偏好。
    */
   subscribeSystemTheme: () => {
     const media = window.matchMedia?.('(prefers-color-scheme: dark)')
@@ -155,9 +150,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   updateSettings: async (patch) => {
     const result = await window.dshHub?.settings.update(patch)
-    // 失败必须抛出:此前静默 return 让设置页「无论成败都提示已保存」(复审 R5),
-    // 用户以为改动生效,实际被丢弃。
-    // 文案由调用方经 t() 呈现;store 内不留硬编码文案(走查护栏逐行扫描)
+    // 让调用方在保存失败时显示错误提示；store 不保留硬编码文案。
     if (!result) throw new Error('settings-unavailable')
     if (!result.ok) throw new Error(result.message)
     const settings = result.value
@@ -168,8 +161,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   load: async () => {
     await get().hydrateSettings()
-    // 重新订阅前先退订:此前直接丢弃返回的取消函数,每次 load() 都泄漏一个监听器
-    // (React.StrictMode 在开发下会双调用 effect,立即泄漏两个)
+    // 重新订阅前先取消旧订阅，避免重复监听。
     systemThemeUnsubscribe?.()
     systemThemeUnsubscribe = get().subscribeSystemTheme()
     applyTheme(resolveTheme(get().settings.theme))
@@ -202,13 +194,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const statuses = { ...state.statuses }
       if (removed) delete statuses[event.id]
       else statuses[event.id] = event
-      // 向导创建后:运行即自动打开视图(「创建→安装→启动→健康→开窗」);
-      // 失败/停止则移出待开集合,避免悬挂
+      // 运行后自动打开工作区；失败或停止时移除待打开记录。
       let pendingOpen = state.pendingOpen
       if (pendingOpen.includes(event.id)) {
         if (event.status === 'running') {
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
-          // 打开失败要可见(评审 N9):此前 void 吞掉结果,用户只看到「已连接但没窗口」
+          // 打开工作区失败时显示错误。
           void window.dshHub?.runtime.openView(event.id).then((result) => {
             if (result && !result.ok) {
               const t = useAppStore.getState().t

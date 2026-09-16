@@ -31,7 +31,7 @@ function fakeClient(): AuthClient {
   }
 }
 
-describe('auth-registry（T8 每实例客户端）', () => {
+describe('auth-registry（每实例客户端）', () => {
   it('惰性创建:同一实例复用同一客户端;端点缺失返回 null', async () => {
     const factory = vi.fn(() => fakeClient())
     const registry = createAuthRegistry({

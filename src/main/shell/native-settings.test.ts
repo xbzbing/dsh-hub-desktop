@@ -3,7 +3,7 @@ import { createNativeSettingsApplier, planNativeSettings } from './native-settin
 
 const T = (tray: boolean, autoStart = false) => ({ tray, autoStart })
 
-describe('planNativeSettings（T11 设置 → 原生动作）', () => {
+describe('planNativeSettings（设置 → 原生动作）', () => {
   it('托盘:开→无 创建;有→关 销毁', () => {
     expect(planNativeSettings({ settings: T(true), trayExists: false, startup: false })).toEqual([
       { kind: 'create-tray' },
@@ -14,8 +14,7 @@ describe('planNativeSettings（T11 设置 → 原生动作）', () => {
     ).toContainEqual({ kind: 'destroy-tray' })
   })
 
-  it('托盘已存在且仍开启 → **刷新文案**(R3:切换语言后菜单不能停在旧语言)', () => {
-    // 变异「托盘已存在时什么都不做」会让本用例失败
+  it('托盘已存在且仍开启 → **刷新文案**(切换语言后菜单不能停在旧语言)', () => {
     expect(planNativeSettings({ settings: T(true), trayExists: true, startup: false })).toContainEqual(
       { kind: 'update-tray' }
     )
@@ -54,7 +53,7 @@ describe('planNativeSettings（T11 设置 → 原生动作）', () => {
   })
 })
 
-describe('createNativeSettingsApplier（效果侧:复审指出此前不可测）', () => {
+describe('createNativeSettingsApplier（原生副作用）', () => {
   function spyPorts(trayExists: boolean) {
     return {
       calls: [] as string[],
@@ -86,7 +85,7 @@ describe('createNativeSettingsApplier（效果侧:复审指出此前不可测）
     expect(ports.calls).toContain('create')
   })
 
-  it('托盘已存在且开启 → 真的调用 updateTray(变异 M9 的锚点)', () => {
+  it('托盘已存在且开启 → 真的调用 updateTray(的锚点)', () => {
     const ports = spyPorts(true)
     createNativeSettingsApplier(ports).apply(
       { tray: true, autoStart: false },
@@ -95,7 +94,7 @@ describe('createNativeSettingsApplier（效果侧:复审指出此前不可测）
     expect(ports.calls).toContain('update')
   })
 
-  it('开启自启 → 真的把 true 交给登录项(变异 M14′ 的锚点)', () => {
+  it('开启自启 → 真的把 true 交给登录项(的锚点)', () => {
     const ports = spyPorts(false)
     createNativeSettingsApplier(ports).apply(
       { tray: false, autoStart: true },

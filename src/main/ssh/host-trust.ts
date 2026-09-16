@@ -1,5 +1,4 @@
 /**
- * SSH 主机信任（TOFU,设计文档 §4.2 / 实现计划 §6.3）—— 纯逻辑 + 只读探测,不 import electron。
  *
  * 策略：连接前用 `ssh-keyscan` 预取目标公钥 → 与 hub 私有 known_hosts 比对：
  * - 未见过 → 展示指纹请用户确认，确认后写入 hub 私有 known_hosts 再放行；
@@ -157,7 +156,6 @@ export function createHostTrustProbe(
   return {
     async scan(): Promise<HostKeyEntry[]> {
       const stdout = await new Promise<string>((resolve, reject) => {
-        // argv 不经 shell；主机名已由契约层限定字符集
         execFile(
           keyscan,
           // ssh-keyscan 不接受方括号形式(实测 `getaddrinfo [::1]` 失败),统一传裸主机
@@ -210,13 +208,10 @@ export type HostKeyPrompt = Omit<HostKeyPromptPayload, 'requestId'>
  * - `mode='append'`：追加（去重）。**仅用于 verdict=`unknown` 的首次 TOFU 确认**；
  * - `mode='replace'`：先删除该目标的旧行再写入。
  *
- * ⚠️ **`replace` 不再用于「指纹变更」**（评审 T12-1 High / T12-2 复核）：
- * 设计 §7.3 要求「指纹变更**一律拒绝**连接(不自动清理)」。`changed` 分支对**任何**用户回答
  * 都不放行、旧公钥一个字节都不改；唯一恢复途径是用户**显式**执行 `forgetHostKey`
  * （先删该主机旧行、keys 传空数组 = 只删不写），下次连接重新走首次 TOFU。
  *
  * 因此**不要**再按「changed + 高级确认 → 调用本函数 replace」去"修复"调用方 ——
- * 那等于把已经修掉的漏洞重新引入（此前的 JSDoc 就是这么写的，已更正）。
  */
 export async function recordHostTrust(
   knownHostsPath: string,

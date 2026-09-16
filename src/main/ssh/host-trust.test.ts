@@ -34,8 +34,8 @@ describe('host-trust（TOFU 纯逻辑）', () => {
     expect(knownHostsHostField('dsh.internal', 2222)).toBe('[dsh.internal]:2222')
   })
 
-  it('SHA256 指纹与 ssh-keygen 一致(实测值)', () => {
-    // 该 blob 的 ssh-keygen -lf 输出为 SHA256:WVEaUHwlYk84FEWb7QvPJ5ptvpPwIbrN3GIrwvt32RM
+  it("SHA256 指纹与 ssh-keygen 一致", () => {
+
     expect(publicKeyFingerprint(ED25519_BLOB)).toBe(
       'SHA256:WVEaUHwlYk84FEWb7QvPJ5ptvpPwIbrN3GIrwvt32RM'
     )
@@ -118,8 +118,7 @@ describe('host-trust（TOFU 纯逻辑）', () => {
     expect(hostTargetLabel('h', 2222)).toBe('h:2222')
   })
 
-  it('T5-R4:bracketed IPv6 的裸主机/known_hosts 字段一致性(两端口形态)', () => {
-    // T4/T5 复核建议项 ④:复核探针 I 已验证行为,此处转正为常驻回归
+  it('bracketed IPv6 的裸主机/known_hosts 字段一致性(两端口形态)', () => {
     expect(bareHost('[::1]')).toBe('::1')
     expect(bareHost('[2001:db8::1]')).toBe('2001:db8::1')
     // 22 端口写裸主机;非 22 端口写 [host]:port(known_hosts 规范形态)

@@ -1,9 +1,6 @@
 /**
- * IPC 单点注册（T2）—— 所有 ipcMain.handle 集中于此，入参一律过 zod 边界校验。
  *
- * 设计依据：`docs/desktop-implementation-plan.md` §4 —— 渲染进程只能调用这里注册的
  * 白名单通道（preload 再暴露一层）；非法入参返回 `IpcResult` 错误信封而非抛异常，
- * 渲染层按稳定错误码映射文案（PRD §8）。
  */
 import { app, ipcMain } from 'electron'
 import { z } from 'zod'
@@ -50,43 +47,31 @@ import type { Settings } from '@shared/settings'
 import type { AuditEntry } from '../audit/audit-log'
 
 export interface IpcDeps {
-  /** 本地运行时（T3）；SSH / HTTP 传输在各自任务内接入同一状态通道 */
   runtime: LocalRuntimeManager
   /**
-   * 实机反馈 2026-09-16:本机已在运行的 dsh web 探测器(只读 ps+lsof)。
    * 缺省不装配(单测)→ scan 返回空列表、adopt 一律 invalid-state。
    */
   externalDsh?: ExternalDshScanner
-  /** SSH 隧道传输（T4）；HTTP 直连在 T6 */
   tunnels: SshTunnelManager
   /**
    * 打开实例视图窗口（electron 侧实现，便于 register 单测注入假实现）。
-   * 返回 Promise：加载前的分区 Cookie 注入是异步的（§6.2 顺序纪律），
    * 调用方必须 await —— 否则 IPC 会在视图真正就绪前返回。
    */
   openInstanceView: (instance: InstanceRecord, url: string) => Promise<void>
-  /** T5 用户提示代理（指纹确认 / 口令输入） */
   prompts: PromptBroker
-  /** T6 HTTP 直连传输 */
   http: HttpEndpointManager
-  /** T8 每实例认证客户端 */
   auth: AuthRegistry
-  /** T9 清理实例分区会话 Cookie(登出/切换账号时;缺省不清理,便于单测) */
   clearPartitionSession?: (instanceId: string) => Promise<void>
   /**
-   * T10 凭据保险库(§7.2)。默认不存任何东西;只有实例策略显式勾选后
    * 才在登录成功时写入,勾选取消即忘掉。
    */
   vault: Vault
-  /** T11 应用设置(非敏感偏好) */
   settings: SettingsStore
   /**
-   * T11 设置变更后的原生副作用(开机自启 / 托盘 / 通知偏好)。
    * 缺省不执行(单测);落盘由本模块负责,副作用交给装配层。
    */
   onSettingsChanged?: (settings: Settings, changedKeys: readonly (keyof Settings)[]) => void
   /**
-   * T11 三审 Finding 1:打开应用数据目录(设置页「打开」按钮)。
    *
    * **签名上没有路径参数**——目录由装配层自行解析(`DSH_HUB_DATA_DIR` /
    * `app.getPath('userData')`),渲染层无从指定,故不可能成为任意文件打开原语。
@@ -94,7 +79,6 @@ export interface IpcDeps {
    */
   openDataDir?: () => Promise<void>
   /**
-   * T10 审计(§7.5)。只接收白名单字段(见 `audit/audit-log.ts`),缺省不审计(单测)。
    * 审计写入本身异步且失败隔离,不阻塞业务。
    */
   audit?: (entry: AuditEntry) => void
@@ -115,7 +99,6 @@ async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
       return { ok: false, code: 'invalid-input', message: error.message }
     }
     // 打开数据目录失败:带稳定错误码(io-error/internal)显式回报,
-    // 不让「打不开」被吞成成功或未处理 rejection(T11 三审 Finding 1)
     if (error instanceof DataDirOpenError) {
       return { ok: false, code: error.code, message: error.message }
     }
@@ -149,7 +132,6 @@ function toSummary(record: InstanceRecord): InstanceSummary {
 export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   const processVersions = process.versions as NodeJS.ProcessVersions & { electron?: string }
 
-  // 全部通道统一返回 IpcResult 信封：错误码稳定，渲染层按码表映射文案（PRD §8）
   ipcMain.handle(IPC.info, (): Promise<IpcResult<AppInfo>> =>
     wrap((): AppInfo => ({
       appVersion: app.getVersion(),
@@ -200,16 +182,12 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
         else if (record?.transport === 'http') await deps.http.stop(instanceId)
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
-        // T9:删除实例一并清该分区会话与认证客户端(不留悬挂会话)
         deps.auth.forget(instanceId)
-        // T10:实例没了,已记住的凭据与勾选策略一并清掉
         await deps.vault.forgetInstance(instanceId)
         await deps.clearPartitionSession?.(instanceId).catch(() => undefined)
         return { removed: await store.remove(instanceId) }
       })
   )
-
-  // —— 实例运行时控制（T3 本地 / T4 SSH）：start/stop 立即返回，进展经 `instance:status` 回推 ——
 
   ipcMain.handle(INSTANCE_RUNTIME_IPC.start, (_event, id: unknown): Promise<IpcResult<null>> =>
     wrap(async () => {
@@ -228,7 +206,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         void deps.http.start(instance)
         return null
       }
-      // 契约层已限定三种 transport;此处为穷尽性兜底(TS 已收窄为 never)
       throw new InstanceStoreError('invalid-input', '未知的传输类型')
     })
   )
@@ -250,7 +227,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       const instance = await store.get(instanceId)
       if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
       // 状态按 transport 取:ssh 隧道状态只存在于 tunnels 管理器,
-      // local 的只在 runtime;取错管理器会让 ssh 实例「已连接但打不开视图」(评审缺陷 A)
       const status =
         instance.transport === 'ssh'
           ? deps.tunnels.statusOf(instanceId)
@@ -305,8 +281,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     })
   )
 
-  // —— 外部 dsh web 探测与接管(实机反馈 2026-09-16) ——
-
   ipcMain.handle(
     INSTANCE_RUNTIME_IPC.scanExternal,
     (): Promise<IpcResult<ExternalDshWebSnapshot[]>> =>
@@ -358,8 +332,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       })
   )
 
-  // —— SSH 辅助（T5）：密钥预览 + 指纹确认/口令回复 ——
-
   ipcMain.handle(SSH_IPC.keyPreview, (_event, input: unknown) =>
     wrap(() => {
       const parsed = SshKeyPreviewInputSchema.parse(input)
@@ -387,7 +359,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     SSH_IPC.hostKeyForget,
     (_event, input: unknown): Promise<IpcResult<null>> =>
       wrap(async () => {
-        // 显式、破坏性的恢复动作(设计 §7.3):连接时指纹变化一律拒绝且不自动清理,
         // 只有用户主动「忘记该主机指纹」后,下一次连接才会重新走首次 TOFU 确认。
         const parsed = z.object({ instanceId: z.uuid() }).parse(input)
         const instance = await store.get(parsed.instanceId)
@@ -401,8 +372,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         return null
       })
   )
-
-  // —— 认证（T8）：状态流 + 登录提交（凭据只在主进程内存中流转） ——
 
   const authSnapshot = (
     state: Awaited<ReturnType<AuthRegistry['login']>>
@@ -424,7 +393,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   function vaultSnapshot(): VaultStatusSnapshot {
     const status = deps.vault.status()
     const remembered = deps.vault.rememberedIds()
-    // 用 policyIds 而非 rememberedIds:策略可以先于凭据存在(复审 F1)
     const policies: Record<string, VaultPolicy> = {}
     for (const id of deps.vault.policyIds()) {
       const policy = deps.vault.getPolicy(id)
@@ -439,7 +407,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   }
 
   /**
-   * G2 已决边(设计 §5.3):用保险库里已保存的密码登录 —— **密码不跨 IPC**,
    * 主进程自行读取。门禁:必须显式勾选「记住密码」且 vault 里确有该实例的密码,
    * 否则 invalid-input(渲染层无从绕过:通道只收实例 id 与可选 OTP)。
    */
@@ -455,13 +422,11 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   }
 
   /**
-   * G2 已决边的静默路径(T8 评审-2 R1 修复):探测后处于「需要认证」阶段
    * 且 vault 已存密码 → 自动用已存密码登录一次。
    *
    * 触发集合 = needs-auth ‖ await-credentials 且未锁定(lockedForMs===0)。
    * **为什么是这两相**:真实状态机下 probe 的终态是 await-credentials,不是
    * needs-auth —— probeAndRestore 识别网关后固定走 probe-gateway → session-absent
-   * (gateway-state.ts:136 的 NEEDS_AUTH→AWAIT_CREDENTIALS 设计边,T7 R6 落地),
    * 仅首探瞬间经过 needs-auth。原实现只认 needs-auth,静默登录在生产不可达。
    * await-otp 不触发:已到验证码阶段,密码复用走 AuthPanel 的 loginStored(otp)。
    *
@@ -499,8 +464,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     }
   }
 
-  // probe:返回状态快照(探测结论经 auth:state 事件与 T6 detect 暴露;此处主要驱动 UI 阶段)。
-  // 探测后命中 G2 已决边(需认证阶段 + 已存密码)时静默登录一次。
+  // Try one silent login when probing finds a stored password and an authentication state.
   ipcMain.handle(AUTH_IPC.probe, (_event, id: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
     wrap(async () => {
       const instanceId = parseId(id)
@@ -518,23 +482,20 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         const pwd = z.string().min(1).max(1024).parse(password)
         // 验证码/备份码域:网关 TOTP 位数**可配**(`otpDigits`,默认 6,合法 4-10),
         // 备份码长度也可配(`backupCodeLength`,默认 8,合法 6-12)。
-        // 因此下界必须是 4 —— 评审 R3:曾收紧到 min(6),会让 otpDigits=4|5 的实例
         // 完全无法登录(合法验证码被 zod 拒掉)。
         const code = z.string().trim().min(4).max(12).nullable().parse(otp ?? null)
         const state = await deps.auth.login(instanceId, pwd, code ?? undefined)
-        // T10 §7.2:只有**登录成功**且用户显式勾选「记住密码」才写钥匙串。
         // 失败绝不写(否则一次错误输入会把错密码存进钥匙串);未勾选时 vault 自身也会拒绝。
         if (state?.phase === 'connected' && deps.vault.getPolicy(instanceId).rememberPassword) {
           await rememberQuietly(instanceId, pwd)
           deps.audit?.({ instanceId, event: 'vault-write', result: 'password' })
         }
-        // G2:手动登录成功 = 用户重新表态「用记住的密码走静默」,解除登出压制
+        // A successful manual login allows future silent login attempts.
         if (state?.phase === 'connected') logoutSuppressed.delete(instanceId)
         return authSnapshot(state)
       })
   )
 
-  // G2 已决边(§5.3):渲染层触发「用已保存的密码登录」。门禁全部在主进程:
   // 显式勾选「记住密码」+ vault 里确有密码,否则 invalid-input;密码不跨 IPC。
   ipcMain.handle(
     AUTH_IPC.loginStored,
@@ -554,18 +515,14 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     wrap(async () => {
       const instanceId = parseId(id)
       const snapshot = authSnapshot(await deps.auth.logout(instanceId))
-      // G2(T8 评审-2 R1):显式登出压制静默登录 —— 否则扩大触发集合后,
       // 「登出 → 任何探测」会立刻用已存密码复活会话。手动登录成功才解除。
       logoutSuppressed.add(instanceId)
-      // T9:登出后必须清分区会话,否则 webview 仍带旧 Cookie 访问受保护页面
       await deps.clearPartitionSession?.(instanceId)
       deps.audit?.({ instanceId, event: 'session-revoked', result: 'logout' })
       deps.audit?.({ instanceId, event: 'cookie-cleared', result: 'logout' })
       return snapshot
     })
   )
-
-  // —— T10 凭据保险库（§7.2）：只暴露状态/勾选/忘记/清空,没有「读出凭据」的通道 ——
 
   ipcMain.handle(VAULT_IPC.status, (): Promise<IpcResult<VaultStatusSnapshot>> =>
     wrap(() => vaultSnapshot())
@@ -616,8 +573,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     })
   )
 
-  // —— T11 应用设置（非敏感偏好;敏感项走 vault） ——
-
   ipcMain.handle(
     SETTINGS_IPC.get,
     (): Promise<IpcResult<Settings>> => wrap(() => deps.settings.read())
@@ -646,7 +601,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       })
   )
 
-  // T11 三审 Finding 1:打开应用数据目录。
   // **签名上没有路径参数**,并用空元组 schema 把「多传参数」判为非法调用 ——
   // 目录只能由主进程自行解析,渲染层无法指定路径(见 `shell/open-data-dir.ts`)。
   ipcMain.handle(

@@ -1,8 +1,5 @@
 /**
- * 「打开数据目录」的主进程实现（T11 三审 Finding 1）—— 不 import electron,便于单测。
  *
- * 设置页的「打开」按钮此前**根本不存在**(数据目录只有只读 `<p>`),而设计稿
- * (`design/dsh-hub-desktop.html` 的 `data-act="open-dir"`)与 PRD §292 都要求「展示 + 打开」。
  *
  * 安全要点(这是本模块存在的**首要**理由):
  * 通道**不接受任何路径参数**。目录由主进程从 `DSH_HUB_DATA_DIR` 覆盖 /
@@ -11,7 +8,6 @@
  * 也绝不要校验渲染层给的路径:那意味着已经走错了方向。
  */
 
-/** 打开数据目录失败:带稳定错误码,由 IPC 层映射成错误信封(PRD §8 码表) */
 export class DataDirOpenError extends Error {
   constructor(
     readonly code: 'io-error' | 'internal',

@@ -1,5 +1,4 @@
 /**
- * dsh-auth-gateway 协议客户端（T7,设计文档 §5）—— 不 import electron,零新增依赖。
  *
  * 逐条核对自真实网关源码(v0.7.2 `lib/gateway.js`/`lib/auth.js`):
  * - `POST /login/auth {password, otp?, backupCode?}` → 200 `{ok:true}` + `Set-Cookie: dsh_auth=…`
@@ -12,8 +11,6 @@
  * - 401 `{error:'unauthenticated'}` = 会话失效;`{error:'onboarding-required'}` = 需先改初始密码;
  * - 500 `{error:'otp-secret-missing'}` 等 = 实例配置异常;
  * - 413 `{error:'payload-too-large'}` 防御性处理。
- *
- * 纪律:`redirect:'manual'`(禁止自动跟随);Cookie 由手写 Cookie 罐持有(不落地)。
  */
 import { createCookieJar, type CookieJar } from './cookie-jar'
 
@@ -283,5 +280,4 @@ export function createGatewayClient(options: GatewayClientOptions): GatewayClien
 
   return client
 }
-
 

@@ -9,18 +9,11 @@ import type { IconName } from '../lib/icons'
 const BRIDGE = window.dshHub
 
 /**
- * 向导远程分支的「认证模式探测」展示（T6,设计文档 §2.3 / 设计稿 urlDetect）。
- *
- * 粘贴/输入端点后做一次只读探测：
-
- * - gateway → 提示「检测到登录认证，创建后打开登录面板」
- * - none → 提示可直接访问
- * - browser-auth → 提示由页面内自认证
- * - unreachable → 提示端点当前不可达（仍可创建，连接时重试）
- * 探测不写注册表、不携带凭据。
+ * 远程端点的认证模式探测。
+ * 探测为只读操作，不写注册表也不携带凭据。
  */
 
-/** 只放文案 key:模块级表内嵌文案会让双语必然遗漏(由 i18n-coverage.test.ts 钉住) */
+/** 认证模式对应的文案只保存 key，由调用方翻译。 */
 const MODE_COPY: Record<
   HttpAuthDetection['mode'],
   { tone: string; icon: IconName; textKey: MessageKey }
@@ -35,9 +28,7 @@ const MODE_COPY: Record<
 export default function UrlDetect(props: { endpointUrl: string }): ReactNode {
   const t = useAppStore((state) => state.t)
   const [detection, setDetection] = useState<HttpAuthDetection | null>(null)
-  // React 的初始写法:error 是**来自主进程的运行期文案**(如 invalid-input 的说明),
-  // 无法表示为 key。本地兜底文案则用 key,避免 effect 依赖 t
-  // (否则切换语言会重跑探测)。
+  // 运行期错误直接显示，本地兜底文案使用 key，避免语言变化后重新探测。
   const [error, setError] = useState<string | null>(null)
   const [errorKey, setErrorKey] = useState<MessageKey | null>(null)
   const url = props.endpointUrl.trim()

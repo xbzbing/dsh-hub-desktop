@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { createDataDirOpener, DataDirOpenError } from './open-data-dir'
 
 /**
- * 「打开数据目录」的主进程单测（T11 三审 Finding 1）。
  *
  * 重点不是「能打开」,而是**它永远打开主进程自己解析的那个目录**:
  * 渲染层给不出路径,所以这条通道不可能变成任意文件打开原语。
@@ -22,7 +21,7 @@ describe('createDataDirOpener（打开数据目录:不接受路径参数）', ()
     expect(ports.openPath).toHaveBeenCalledWith('/Users/me/Library/Application Support/DSH Hub')
   })
 
-  it('open() 形参个数为 0:多传的字符串**不会**被当作路径(变异「接受路径参数」的锚点)', async () => {
+  it('open() 形参个数为 0:多传的字符串**不会**被当作路径(「接受路径参数」的锚点)', async () => {
     const ports = spyPorts('/data/hub')
     const opener = createDataDirOpener(ports)
     // 通道签名上没有参数 —— 结构上无法接收路径

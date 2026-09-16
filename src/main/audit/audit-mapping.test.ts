@@ -11,7 +11,7 @@ const auth = (over: Partial<AuthStateLike> = {}): AuthStateLike => ({
 
 const runtime = (status: RuntimeStatusLike['status']): RuntimeStatusLike => ({ status })
 
-describe('audit-mapping（§7.5 状态迁移 → 事件枚举）', () => {
+describe('audit-mapping（ 状态迁移 → 事件枚举）', () => {
   it('进入 connected = login-success', () => {
     expect(mapAuthTransition('i1', auth({ phase: 'await-otp' }), auth({ phase: 'connected' }))).toEqual([
       { instanceId: 'i1', event: 'login-success', result: 'ok' }

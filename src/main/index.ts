@@ -52,12 +52,10 @@ import { resolveLanguage } from '@shared/settings'
 import type { Tray } from 'electron'
 import type { SettingsStore } from './settings/settings-store'
 import { createNativeSettingsApplier } from './shell/native-settings'
-// T11 三审 Finding 2:效果侧接线抽到可单测的模块(此前写在 whenReady 内,结构上不可测)
 import { createHubNativePorts } from './shell/native-ports'
 import type { HubNativePorts } from './shell/native-ports'
 import { handleWindowClose } from './shell/close-to-tray'
 import { createStatusNotifier } from './shell/status-notifier'
-// T11 三审 Finding 1:打开数据目录(通道不接受任何路径参数)
 import { createDataDirOpener } from './shell/open-data-dir'
 import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
 import type { Vault } from './vault/vault'
@@ -86,7 +84,6 @@ function isRendererOrigin(url: URL): boolean {
 }
 
 /**
- * 生产形态 CSP（设计文档 §7 安全基线）。
  * 仅当不使用 Vite dev server 时注入（dev 由 HMR 自行管理资源，注入会打断热更新）。
  * 不依赖 isPackaged：E2E 以未打包形态启动但无 dev server，同样会走到注入路径，让 CSP 可被冒烟覆盖。
  */
@@ -113,34 +110,25 @@ protocol.registerSchemesAsPrivileged([
 
 /**
  * 数据目录可被 `DSH_HUB_DATA_DIR` 覆盖（须在 ready 前生效）。
- * 用途：让 E2E / 契约测试把应用数据写入隔离目录，避免污染真实用户数据，
  * 也便于在受限环境下把 userData 指到可写位置（如 CI 沙箱）。
  */
 const userDataOverride = process.env['DSH_HUB_DATA_DIR']?.trim()
 if (userDataOverride) app.setPath('userData', userDataOverride)
 
 /**
- * hub 窗口引用（T8 修正）：`auth:signal` 只发给 hub 窗口 ——
  * 实例窗口没有 preload，收到也无消费者；`auth:state` 仍广播（详情页可能在任一窗口）。
  */
 let hubWindow: BrowserWindow | null = null
 
-/** T10 数据面:凭据保险库与审计日志(在 whenReady 内装配) */
 let vault: Vault | null = null
 let audit: AuditLog | null = null
 
 /**
- * T11 偏好。挂到模块级是因为 **窗口的 close 处理器需要读当前偏好**
  * (「关闭时最小化到托盘」),而窗口创建早于/独立于装配顺序。
  */
 let settingsRef: SettingsStore | null = null
 
 /**
- * T11 托盘端口(装配时创建;托盘**仅在偏好开启时**存在)。
- *
- * 存在性判断与托盘引用由 `createHubNativePorts` 单点持有(T11 三审 Finding 2):
- * 此前 `hubTray` 变量散落在 whenReady 里,`trayExists`/`updateTray`/`setLoginItem`
- * 的实现都在不可测的闭包中,三个变异因此能存活全部三关。
  */
 let nativePorts: HubNativePorts<Tray> | null = null
 
@@ -148,7 +136,6 @@ let nativePorts: HubNativePorts<Tray> | null = null
  * 托盘图标路径。
  *
  * 打包后资源不在 `out/main` 的相对位置,而是由 electron-builder 经
- * `extraResources` 放到 `process.resourcesPath`(T13 配置)。两处都探测,
  * 避免「开发能跑、打包后托盘空白」这类只在发行版出现的问题。
  */
 function trayIconPath(): string {
@@ -179,7 +166,6 @@ function quitApp(): void {
 }
 
 /**
- * 上一个「已广播」的状态,用于把迁移翻译成审计事件(§7.5)。
  * 放在主进程而不是渲染层:即使没有窗口(后台启动)审计也要完整。
  */
 /** auth 注册表引用(供会话持久化读取 Cookie;装配时赋值) */
@@ -188,13 +174,11 @@ let authRegistryRef: AuthRegistry | null = null
 const lastAuthState = new Map<string, { phase: AuthPhase; lockedForMs: number; lastErrorCode: string | null }>()
 const lastRuntimeState = new Map<string, InstanceRuntimeStatus>()
 
-/** 审计是旁路:失败绝不冒泡进业务流(§7.1「I 泄露」的可用性对偶面) */
 function auditWrite(entry: Parameters<AuditLog['write']>[0]): void {
   void audit?.write(entry).catch(() => undefined)
 }
 
 /**
- * 会话建立后按勾选策略把 Cookie 写进钥匙串(§7.2)。
  * 幂等:同一个值已在 vault 里就不再写(避免每次状态推进都写文件)。
  * 失败只记日志:记住登录态是附加能力,不能影响已经成功的登录。
  */
@@ -264,7 +248,6 @@ function createWindow(): BrowserWindow {
   if (isDev && rendererDevUrl) void win.loadURL(rendererDevUrl)
   else void win.loadURL(`${RENDERER_ORIGIN}/index.html`)
 
-  // T11:偏好「关闭窗口时最小化到托盘」——此时关闭不销毁窗口,而是隐藏。
   // 判定与拦截动作在 `shell/close-to-tray.ts`(三审 Finding 2):
   // 「托盘是否存在」必须**实时查询**真实端口,不能写死 —— 硬编码 `true` 会让
   // 没有托盘时也隐藏窗口,应用从此叫不回来(只剩 macOS Dock)。
@@ -320,7 +303,6 @@ function registerRendererProtocol(): void {
 function registerCsp(): void {
   // 语义见 CSP_POLICY 注释：不用 isDev，用「是否挂 dev server」决定
   if (rendererDevUrl) return
-  // 注意：同一条 onHeadersReceived 通道会在 T4 用于 HttpOnly cookie 注入，届时在此扩展。
   // CSP 只作用于本应用 origin，绝不扩散到未来 webview 加载的远端实例内容。
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     let url: URL | null = null
@@ -347,11 +329,8 @@ function registerCsp(): void {
 /** 运行中的本地实例 / SSH 隧道管理器（退出前需回收进程树，故提到模块级） */
 let runtime: LocalRuntimeManager | null = null
 let tunnels: SshTunnelManager | null = null
-/** T6 HTTP 直连管理器(无本地进程,start=校验+探测) */
 let httpEndpoints: HttpEndpointManager | null = null
-/** T5 提示代理:窗口关闭/退出时收敛所有待答请求(否则指纹/口令请求会挂满超时) */
 let prompts: PromptBroker | null = null
-/** T8 每实例认证客户端(登录成功 → 分区 Cookie 注入 → 打开视图) */
 let auth: AuthRegistry | null = null
 let quitting = false
 
@@ -362,7 +341,6 @@ void app.whenReady().then(() => {
   const dataRoot = app.getPath('userData')
   // 注册表落盘位置：<userData>/registry/instances.json（+ 滚动备份 + 损坏隔离）
   const instanceStore = createInstanceStore({ dir: join(dataRoot, 'registry') })
-  // T10 §7.2:safeStorage 不可用时降级为纯内存(绝不退化成明文落盘),由 UI 告警
   const safeStorageAvailable = (() => {
     try {
       return safeStorage.isEncryptionAvailable()
@@ -378,7 +356,6 @@ void app.whenReady().then(() => {
       decrypt: (payload) => safeStorage.decryptString(Buffer.from(payload, 'base64'))
     }
   })
-  // T11 偏好(非敏感):语言/主题/托盘/自启/通知
   const settings = createSettingsStore({ dir: dataRoot })
   settingsRef = settings
 
@@ -391,7 +368,6 @@ void app.whenReady().then(() => {
    *
    * 「该做哪些动作」由纯函数 `planNativeSettings` 决定,「动作有没有真的落到
    * electron」由注入端口的 `createNativeSettingsApplier` 保证 —— 两者都有单测
-   * (复审指出此前效果侧写在 app.whenReady() 内,结构上不可测,M9/M14′/M17 因此存活)。
    */
   const ports = createHubNativePorts<Tray>({
     // 图标/文案都是**动态取值**:语言或运行中实例数变了,刷新时必须重新求值
@@ -412,7 +388,6 @@ void app.whenReady().then(() => {
     nativeApplier.apply(current, { changedKeys })
   }
 
-  // T11 系统通知:发送本身在 `shell/status-notifier.ts`(单测直接断言 Notification.show()),
   // 这里只注入「偏好/语言」两个取值端口(三审 Finding 2)
   const notifier = createStatusNotifier({
     readSettings: () => settings.read(),
@@ -420,7 +395,6 @@ void app.whenReady().then(() => {
     onError: (error) => console.error('[main] 发送系统通知失败：', error)
   })
 
-  // T11 三审 Finding 1:打开数据目录。通道不接受任何路径参数 ——
   // 目录在此解析(`DSH_HUB_DATA_DIR` 覆盖已在文件顶部生效,故 userData 即权威值)。
   const dataDirOpener = createDataDirOpener({
     dataDir: () => app.getPath('userData'),
@@ -447,7 +421,6 @@ void app.whenReady().then(() => {
     }
   }
   nativeApplier.apply(settings.read(), { startup: true })
-  // T10 §7.5:审计 JSONL(按日历日轮转,保留 90 天,不含任何凭据)
   audit = createAuditLog({ dir: join(dataRoot, 'audit') })
   if (!safeStorageAvailable) {
     // 降级必须留痕,且只记枚举不记内容
@@ -463,7 +436,6 @@ void app.whenReady().then(() => {
     cacheDir: join(dataRoot, 'npm-cache'),
     ...(npmRegistry ? { registry: npmRegistry } : {})
   })
-  // #2 用户反馈:运行时获取优先级 = hub 已装同版本 → PATH 上的本机 dsh → 下载(须用户确认)。
   // 确认用原生对话框(始终可用,含托盘启动场景;文案无凭据);拒绝则该次启动取消。
   runtime = createLocalRuntime({
     installer,
@@ -484,7 +456,6 @@ void app.whenReady().then(() => {
         .then((result) => result.response === 0)
   })
 
-  // T5 用户提示代理：指纹确认 / 口令输入 → 广播到 hub 渲染窗口 → 等待回答
   prompts = createPromptBroker({
     send: (channel, payload) => {
       for (const win of BrowserWindow.getAllWindows()) {
@@ -497,7 +468,6 @@ void app.whenReady().then(() => {
     confirmHostKey: (request) => prompts?.requestHostKey(request) ?? Promise.resolve('reject'),
     askpass: (request) => prompts?.requestAskpass(request) ?? Promise.resolve(null)
   })
-  // T6 HTTP 直连:无本地进程,start = 端点校验 + §4.3 健康探测 + §2.3 认证模式探测
   httpEndpoints = createHttpEndpoints()
 
   // 状态推进（local + ssh 共用同一通道）→ 广播到所有窗口；把实际端口/版本回写注册表
@@ -507,7 +477,6 @@ void app.whenReady().then(() => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(INSTANCE_STATUS_EVENT, event)
     }
-    // T10 §7.5:运行时迁移 → connect/disconnect/ssh-exit/ssh-reconnect
     const previousStatus = lastRuntimeState.get(event.id) ?? null
     for (const entry of mapRuntimeTransition(
       event.id,
@@ -516,8 +485,6 @@ void app.whenReady().then(() => {
     )) {
       auditWrite(entry)
     }
-    // T11:按偏好弹系统通知(首次观测/状态未变化/停止与启动中都不打扰)。
-    // 判定+发送都在 `shell/status-notifier.ts`(三审 Finding 2:此前 `new Notification().show()`
     // 写在不可测的闭包里,删掉后三关全绿);失败已在内部收敛为日志,绝不打断状态流。
     notifier.notify(event, previousStatus)
     lastRuntimeState.set(event.id, event.status)
@@ -535,7 +502,6 @@ void app.whenReady().then(() => {
         .get(event.id)
         .then((record) => {
           // 回写策略集中在纯函数里(可穷举测试):只有 hub 来源回写版本;
-          // external 接管不回写端口与版本。实机缺陷:external 事件只剩空补丁,
           // 而 store 拒绝空补丁(`补丁不能为空`)→ 必须在此跳过,否则每次接管都报错。
           const patch = runtimeWritebackPatch(event, record?.transport)
           if (isEmptyPatch(patch)) return null
@@ -549,9 +515,7 @@ void app.whenReady().then(() => {
   tunnels.onStatus(handleStatusEvent)
   httpEndpoints.onStatus(handleStatusEvent)
 
-  // T8 认证:端点取自注册表;状态变化广播给渲染层(auth-panel / 工作区浮层)
   auth = createAuthRegistry({
-    // T9/T10:重启后按「记住登录态」策略静默复用会话(§7.2)
     restore: async (instanceId, client) => {
       if (!vault) return
       await restoreSessionFromVault({ vault }, instanceId, client)
@@ -559,9 +523,7 @@ void app.whenReady().then(() => {
     resolveEndpoint: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
       if (!record) return null
-      // 认证探测端点与「开窗/探测」同源(§2.4):ssh 走隧道本地口,隧道未就绪则为 null
       // 只取**实时**隧道端口:注册表的 localPort 可能已陈旧(隧道重启会重新分配),
-      // 用它会让 auth-registry 提前创建并永久缓存一个指向死端口的客户端(复审回归 b)。
       // 「隧道已停也要能清 Cookie」的需求由 clearPartitionSession 的 plan 承担。
       const tunnelPort =
         record.transport === 'ssh' ? tunnels?.statusOf(instanceId)?.port : undefined
@@ -577,7 +539,6 @@ void app.whenReady().then(() => {
           })
         }
       }
-      // T10 §7.5:认证迁移 → login-success/login-failed/rate-limited/lockout/session-revoked
       const previous = lastAuthState.get(instanceId) ?? null
       for (const entry of mapAuthTransition(instanceId, previous, state)) {
         auditWrite(entry)
@@ -587,7 +548,6 @@ void app.whenReady().then(() => {
         lockedForMs: state.lockedForMs,
         lastErrorCode: state.lastErrorCode
       })
-      // T10 §7.2:勾选了「记住登录态」才把会话 Cookie 写进钥匙串(重启静默复用的前提)
       if (state.phase === 'connected') void persistSessionIfOptedIn(instanceId)
     }
   })
@@ -599,19 +559,15 @@ void app.whenReady().then(() => {
     tunnels,
     http: httpEndpoints,
     auth,
-    // 实机反馈 2026-09-16:本机已在运行的 dsh web 只读探测(ps + lsof)
     externalDsh: createExternalDshScanner(),
     vault: vault as Vault,
     settings,
     audit: auditWrite,
     onSettingsChanged: applyNativeSettings,
-    // T11 三审 Finding 1:设置页「打开」按钮。**不接收入参** ——
     // 目录由本进程解析,渲染层无从指定路径(见 shell/open-data-dir.ts)
     openDataDir: () => dataDirOpener.open(),
-    // T9:登出时清该实例分区内的会话 Cookie(origin 取自实例记录)
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
-      // 计划由可测纯函数推导(T9-2):隧道已停时回落注册表持久化的 localPort,
       // 否则「先停隧道再清 Cookie」会静默 no-op
       const plan = planPartitionClear(record, tunnels?.statusOf(instanceId)?.port)
       if (!plan) return
@@ -620,9 +576,7 @@ void app.whenReady().then(() => {
     },
     prompts: prompts as PromptBroker,
     openInstanceView: async (instance, url) => {
-      // T8 修正:先注入 Cookie 再 loadURL(§6.2),顺序由此编排保证 ——
-      // 旧版先 openInstanceWindow(内部立刻加载)、之后才注入,顺序被反转。
-      // 接线计划(origin/basePath/cookie)由可测的纯函数单点推导(评审反复指出的装配层盲区)。
+      // Write the session Cookie before navigation starts.
       const plan = buildOpenViewPlan(url, auth?.sessionCookie(instance.id) ?? null)
       await openInstanceViewFlow(
         {
@@ -638,7 +592,6 @@ void app.whenReady().then(() => {
             const targetSession = win.webContents.session
             if (!shouldInstallIntercept(targetSession)) return
             targetSession.webRequest.onHeadersReceived((details, callback) => {
-              // T9-1:basePath 必须来自 plan —— 网关 302 到的是 `<basePath>/login`,
               // 默认 '/' 只能匹配根路径实例,带路径的实例(如 /dsh)永不产生信号
               const signal = classifyViewResponse(plan, {
                 statusCode: details.statusCode,
@@ -646,7 +599,6 @@ void app.whenReady().then(() => {
                 resourceType: details.resourceType
               })
               if (signal) {
-                // T9:会话失效 → 先静默重探(带已存 Cookie 自动恢复);仍失败才由 auth-panel 接手
                 if (signal === 'session-expired' && auth && !reprobeInFlight.has(instance.id)) {
                   reprobeInFlight.add(instance.id)
                   void auth
@@ -685,7 +637,6 @@ void app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 
-  // T5:窗口关闭即收敛未答的指纹/口令请求(否则最长挂 5-10 分钟,期间隧道启动被卡住)
   app.on('browser-window-created', (_event, win) => {
     win.on('closed', () => {
       if (BrowserWindow.getAllWindows().filter((other) => !other.isDestroyed()).length === 0) {
@@ -696,7 +647,6 @@ void app.whenReady().then(() => {
 })
 
 app.on('before-quit', (event) => {
-  // 退出前回收全部实例进程树与 SSH 隧道（设计 §4.1/§4.2：不留孤儿进程）
   if (quitting || (!runtime && !tunnels && !httpEndpoints)) return
   quitting = true
   event.preventDefault()
@@ -722,6 +672,5 @@ app.on('before-quit', (event) => {
 app.on('window-all-closed', () => {
   // 全部窗口关闭:先收敛待答请求(macOS 进程可能驻留,请求不能悬着)
   prompts?.cancelAll()
-  // macOS 之外：全部窗口关闭即退出；macOS 保留进程（托盘能力在 T10 引入）
   if (process.platform !== 'darwin') app.quit()
 })

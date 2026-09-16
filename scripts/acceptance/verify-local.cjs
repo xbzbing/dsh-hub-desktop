@@ -1,5 +1,5 @@
-/* T3 手工验收(双实例版):真实 dsh 安装→启动→健康→自动开窗 ×2,退出后无孤儿。
-   用法:cd <repo> && node ./hub-data-verify.cjs (仓库内保留,作为可复核的验收证据) */
+/* 双实例验证：安装、启动、健康检查和自动开窗各执行两次，退出后不留孤儿进程。
+   用法：cd <repo> && node ./hub-data-verify.cjs */
 const { _electron: electron } = require('@playwright/test')
 const { mkdir, rm } = require('node:fs/promises')
 
@@ -7,7 +7,7 @@ const { join, resolve } = require('node:path')
 const { execSync } = require('node:child_process')
 
 const DATA_DIR = resolve(process.cwd(), 'hub-data', 'verify-real')
-const NAMES = ['验收 · 主力', '验收 · 备用']
+const NAMES = ['验证 · 主力', '验证 · 备用']
 let app = null
 
 async function main() {
@@ -96,7 +96,7 @@ async function main() {
     process.exit(1)
   }
   console.log('[ok] 退出后无孤儿 dsh 进程')
-  console.log('[DONE] 双实例验收通过')
+  console.log('[DONE] 双实例验证通过')
 }
 
 async function run() {

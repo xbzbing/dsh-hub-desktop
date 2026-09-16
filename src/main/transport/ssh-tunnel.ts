@@ -1,10 +1,7 @@
 /**
- * SSH 隧道管理器（T4,设计文档 §4.2 / 实现计划 §6.3）—— 不 import electron。
  *
  * 生命周期：start 分配并保留本地端口 → spawn 系统 OpenSSH（`ssh -N -L`，参数库见
- * ssh-args.ts）→ §4.3 健康探测通过 → running；进程意外退出 → 归因分类（exit code +
  * stderr 特征）→ 指数退避 1→2→4→…→30s 自动重连，稳定运行 ≥ stableResetMs 后重置
- * 退避（设计文档 §4.2 看门狗）；端口转发失败（本地端口被占）时重连前重新分配端口。
  *
  * 状态推进只经 `onStatus` 向外发布，本模块可脱离 Electron 单独测试。
  */
@@ -60,26 +57,19 @@ export interface SshTunnelOptions {
   sshCommand?: string
   /** 注入假 spawn 以便单测（缺省真 spawn + detached） */
   spawnImpl?: SpawnLike
-  /** §4.3 健康探测（缺省任意 HTTP 响应即就绪） */
   probe?: HealthProbe
   /** 端口可绑定探测（含本管理器保留集；缺省真实 bind 探测） */
   portProbe?: PortProbe
   healthTimeoutMs?: number
-  /** 连接期探测频率（§4.3：500ms） */
   healthProbeRetryMs?: number
   /** 就绪探测总期限（含远端 dsh 未就绪的容忍，默认 30s） */
   readyTimeoutMs?: number
-  /** 看门狗退避基数（设计 §4.2：1s） */
   backoffBaseMs?: number
-  /** 看门狗退避上限（设计 §4.2：30s） */
   backoffMaxMs?: number
-  /** 稳定运行多久后重置退避（设计 §4.2：60s） */
   stableResetMs?: number
   stopGraceMs?: number
   now?: () => number
-  /** T5 askpass:ssh 索要口令/密钥口令时询问用户(返回 null = 取消);未接线则不启用 */
   askpass?: (request: { instanceId: string; prompt: string }) => Promise<string | null>
-  /** T5 TOFU:新主机/指纹变化时请用户确认;未接线则跳过确认(单测路径) */
   confirmHostKey?: (request: HostKeyPrompt) => Promise<'trust' | 'reject'>
   /** askpass helper 使用的 Node 命令(缺省 process.execPath + ELECTRON_RUN_AS_NODE) */
   askpassNode?: { command: string; args: string[] }
@@ -91,12 +81,10 @@ export interface SshTunnelManager {
   onStatus(listener: (event: InstanceStatusEvent) => void): () => void
   statusOf(id: string): InstanceStatusEvent | null
   runningIds(): string[]
-  /** 立即返回；进展经 onStatus 推进（与 IPC `instances:start` 契约一致） */
   start(instance: SshInstance): Promise<void>
   stop(id: string): Promise<void>
   stopAll(): Promise<void>
   /**
-   * T5 恢复动作(设计 §7.3):忘记某实例主机的已信任公钥 —— 删除 hub 私有 known_hosts 中
    * 该目标的全部条目。这是**显式、独立、破坏性**的操作,不属于连接确认流程:连接时指纹
    * 变化一律拒绝且不自动清理;只有用户主动调用本方法后,下一次连接才会重新走首次 TOFU。
    */
@@ -126,18 +114,11 @@ interface TunnelEntry {
   forwardFailed: boolean
   reconnectCount: number
   controlPath: string
-  /** 重连是否正在执行(在途守卫,防自愈分支与 timer 双排 -> 双 spawn 孤儿;T4 评审 Nit-a) */
   reconnecting: boolean
-  /** 本实例的 askpass socket 服务(T5);stop 时关闭 */
   askpassServer: AskpassServer | null
-  /** SSH_ASKPASS 指向的包装脚本路径(T5 起用) */
   askpassWrapperPath: string | null
 }
 
-/** 本实例 ControlPath 基础目录：unix socket 名上限 104 字节（含 NUL），ssh 还会给
- *  ControlPath 追加 ~16 字符随机后缀；数据目录过长（如仓库内嵌路径）时退化为
- *  系统临时目录（按 dataRoot 哈希隔离），保证隧道在任何路径下可用。
- *  实测：`%C` 展开 40 字符 SHA-1 超长；`ssh -N … too long for Unix domain socket`。 */
 export function socketsDirFor(dataRoot: string): string {
   const home = join(dataRoot, 'ssh')
   const worst = join(home, `ctl-${'0'.repeat(12)}`) // 名字最长形态
@@ -145,9 +126,7 @@ export function socketsDirFor(dataRoot: string): string {
   return join(tmpdir(), `dsh-hub-ssh-${createHash('sha1').update(dataRoot).digest('hex').slice(0, 8)}`)
 }
 
-/** 每实例 ControlPath slug：实例 UUID 前 12 hex（设计 §4.2「ControlPath 每实例独立」）。
- *  不能按目标哈希共享：多实例/多次重连会命中同一主连接，旧进程被新实例「借用」后
- *  hub 追不回自己的隧道（实测：遗留 ssh 进程累积、hub 只杀得到最后一个）。 */
+/** 每个实例使用独立的 ControlPath slug，避免共享 SSH 主连接。 */
 export function controlSlug(instance: SshInstance): string {
   return instance.id.replace(/-/g, '').slice(0, 12)
 }
@@ -211,7 +190,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
   }
 
-  /** T5 TOFU:连接前校验服务器指纹(未见过 → 询问;变化 → 告警并一律拒绝,设计 §7.3) */
   async function ensureTrust(instance: SshInstance, emitWaiting: (detail: string) => void): Promise<boolean> {
     const knownHostsPath = join(dataRoot, 'ssh', 'known_hosts')
     const hostField = knownHostsHostField(instance.host, instance.port)
@@ -228,7 +206,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     const evaluation = evaluateHostTrust(trusted, scanned)
     if (evaluation.verdict === 'trusted') return true
     if (evaluation.verdict === 'changed') {
-      // 设计 §7.3「指纹变更一律拒绝连接并告警（不自动清理）」:变化不是「再确认一次就能过」,
       // 这里仍然把新旧指纹如实投给 UI 供人工核对(告警),但**任何回答都不放行**,旧公钥
       // 一个字节都不改。想恢复只能在隧道外显式执行遗忘（forgetHostKey），下次连接重新 TOFU。
       emitWaiting('服务器指纹已变化，已拒绝连接')
@@ -257,7 +234,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     return true
   }
 
-  /** T5 askpass:按实例起一条 unix socket 服务,把 ssh 的口令提示转给用户 */
   async function startAskpassFor(entry: TunnelEntry): Promise<AskpassServer | null> {
     if (!askpass) return null
     const scripts = await ensureAskpassScripts(join(dataRoot, 'ssh'), askpassNode.command, askpassNode.args)
@@ -314,7 +290,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       controlPath: entry.controlPath,
       knownHostsPath: join(dataRoot, 'ssh', 'known_hosts')
     })
-    // T5:启用 askpass（SSH_ASKPASS 指向运行时写入的包装脚本 + REQUIRE=force）
     // - DISPLAY 需非空,OpenSSH 才会走 askpass 分支（无 tty 场景）
     // - ELECTRON_RUN_AS_NODE=1 让包装脚本用 Electron 自带 Node 执行 helper
     // - DSH_HUB_ASKPASS_SOCKET 指向本实例的 unix socket
@@ -343,7 +318,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     return isPortAvailable(port)
   }
 
-  /** 就绪探测：§4.3 连接期 500ms 一探，直到进入 readyTimeout 或进程退出 */
   async function waitForReady(entry: TunnelEntry): Promise<void> {
     if (entry.stopping) return
     const deadline = now() + readyTimeoutMs
@@ -403,7 +377,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       entry.reconnectScheduled = false
       entry.reconnectTimer = null
       if (entry.stopping) return
-      // 补 catch:reconnect 抛错时不能让看门狗链路彻底断掉(T4 评审 Nit-g)
       void reconnect(entry).catch((error: unknown) => {
         console.error('[ssh-tunnel] 自动重连失败：', error)
         const current = entries.get(entry.id)
@@ -428,7 +401,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     entry.reconnectCount += 1
     emit(entry.id, 'starting', { detail: `第 ${entry.reconnectCount} 次自动重连（${entry.url}）` })
     // 陈旧的 ControlPath 遗留一并清理（死进程残留的 socket 会让 ssh 拒绝复用）。
-    // 必须 await:否则可能删掉紧接着 spawn 的新 ssh 刚建立的 socket(评审 N3)
     await rm(entry.controlPath, { force: true }).catch(() => undefined)
     const instance = latestInstances.get(entry.id)
     if (!instance) {
@@ -453,7 +425,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         })
         reservedPorts.add(port)
         if (entry.stopping) {
-          // stop() 与换端口竞态:释放保留集,避免端口永久泄漏(评审 N2)
           reservedPorts.delete(port)
           return
         }
@@ -494,7 +465,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       const attribution = entry.pendingReason ?? classifySshExit(code, entry.log.join('\n'))
       entry.pendingReason = null
       entry.ready = false
-      // 稳定 ≥ 阈值后断线 → 退避重置（设计 §4.2：稳定 60s 重置）
       if (entry.stableSince !== null && now() - entry.stableSince >= stableResetMs) {
         entry.backoffMs = backoffBaseMs
       }
@@ -607,7 +577,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
           emit(id, 'stopped', { detail: '已取消启动' })
           return
         }
-        // T5 askpass:口令提示通道(仅当接线了 askpass 时)
         entry.askpassServer = await startAskpassFor(entry).catch((error: unknown) => {
           // 口令通道不可用时必须让用户看见:否则需要口令的主机会以「鉴权失败」静默失败
           console.error('[ssh-tunnel] askpass 通道启动失败：', error)
@@ -679,7 +648,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     },
 
     /**
-     * T5 显式恢复:忘记该主机在 hub 私有 known_hosts 里的全部条目。
      * 复用 recordHostTrust 的 `replace` 语义(先删该目标的旧行);keys 传空数组 = 只删不写,
      * 于是下一次连接读不到已信任公钥 → 重新走一遍首次 TOFU 确认。
      * 主进程侧唯一的调用方是显式的「忘记该主机指纹」动作,连接流程绝不调用它。

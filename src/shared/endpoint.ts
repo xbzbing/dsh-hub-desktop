@@ -1,7 +1,6 @@
 /**
  * 端点地址解析与归一化。
  *
- * 设计依据：`docs/dsh-hub-desktop-design.md` §4（传输层）。
  * transport（local / ssh / http）与 auth（none / gateway / browser-auth）是正交的两维，
  * 无论选哪种传输，最终都会归约到一个端点 URL —— 本模块只负责「用户输入 → 归一化端点」，
  * 不涉及传输与认证，因此不 import electron，主进程 / 渲染进程 / 测试三处复用同一份实现。
@@ -9,7 +8,7 @@
 
 export type EndpointScheme = 'http' | 'https'
 
-/** 解析失败的原因码；UI 侧据此选择文案（见 `docs/PRD.md` §8），不直接展示本模块的 message */
+/** 解析失败的原因码；UI 据此选择文案，不直接展示本模块的 message。 */
 export type EndpointErrorCode =
   | 'empty'
   | 'unsupported-scheme'
@@ -27,7 +26,7 @@ export class EndpointParseError extends Error {
   readonly input: string
 
   /**
-   * `message` 一律为**静态文案**，绝不回显 `input`（安全评审 Finding 1）：
+   * `message` 一律为**静态文案**，绝不回显 `input`：
    * 消息会经 IPC 错误信封 / 表单校验进入渲染层，可被展示、复制或写进日志；
    * 而用户可能把 `http://user:s3cr3t@` 这类内嵌凭据的地址粘进来。
    * 原始输入只保留在结构化字段 `input`（内部排查用），原因由稳定 `code` 表达。
@@ -102,7 +101,7 @@ export function parseEndpointUrl(raw: string): Endpoint {
   // 而 `http:///p` 会被它悄悄解析成主机 `p`。这里统一判为缺主机，更可预测。
   const authority = /^([^/?#]*)/.exec(rest)?.[1] ?? ''
   if (authority === '') {
-    // 不回显 input：`http:///user:s3cr3t@` 会把整个凭据片段带进消息（安全评审 Finding 1）
+    // 不回显 input：`http:///user:s3cr3t@` 会把凭据片段带进消息。
     throw new EndpointParseError('missing-host', input, '端点地址缺少主机名')
   }
 
@@ -111,7 +110,7 @@ export function parseEndpointUrl(raw: string): Endpoint {
   try {
     url = new URL(`${scheme}://${rest}`)
   } catch {
-    // 同上：`http://user:s3cr3t@` 会走这里，绝不能回显 input（安全评审 Finding 1）
+    // 同上：`http://user:s3cr3t@` 会走这里，绝不能回显 input。
     throw new EndpointParseError('malformed', input, '无法解析端点地址')
   }
 
@@ -158,7 +157,7 @@ function normalizeScheme(input: string, raw: string): EndpointScheme {
   const scheme = raw.toLowerCase()
   if (scheme === 'http' || scheme === 'https') return scheme
   // `raw` 是用户在协议位写下的任意 token（如 `mysecret:` 会被当协议），
-  // 因此消息不回显它，只给静态文案（安全评审 Finding 1）
+  // 因此消息不回显它，只给静态文案。
   throw new EndpointParseError('unsupported-scheme', input, '仅支持 http / https 协议')
 }
 
@@ -166,7 +165,7 @@ export type ParseEndpointResult =
   | { ok: true; endpoint: Endpoint }
   | { ok: false; code: EndpointErrorCode; message: string }
 
-/** 表单校验用的不抛异常版本（T3 创建向导 Step 2 直接消费） */
+/** 表单校验用的不抛异常版本。 */
 export function tryParseEndpoint(raw: string): ParseEndpointResult {
   try {
     return { ok: true, endpoint: parseEndpointUrl(raw) }

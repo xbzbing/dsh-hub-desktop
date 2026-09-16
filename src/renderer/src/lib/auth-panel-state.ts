@@ -1,14 +1,8 @@
 /**
- * 认证面板的状态归约（T8 评审修正）—— 纯函数,不 import electron/React,便于单测。
+ * 认证面板的状态归约。保持为纯函数，便于测试。
  *
- * 修正两个实测缺陷:
- * 1. **跨实例串台**:旧实现不过滤 `instanceId`,`onState` 会用实例 B 的状态覆盖
- *    为实例 A 打开的面板(而提交仍带 A 的 id → 密码会被发往 A)。本模块对
- *    `event.instanceId !== target.id` 一律忽略。
- * 2. **锁定倒计时冻结**:旧实现把 `lockedForMs` 当剩余时间渲染,而该值不会随时间变化,
- *    倒计时原地不动、到期后按钮也不恢复。本模块把 `lockedForMs` 换算成**绝对到期时刻**
- *    `lockUntil`,`lockRemaining()` 再按当前时间派生剩余毫秒 —— 倒计时因此真正走动,
- *    并在归零时提示调用方重探(`lockExpired`)。
+ * 事件仅更新对应实例的面板；锁定时长会换算为绝对到期时刻，
+ * 以便按当前时间派生倒计时。
  */
 import type { AuthStateEvent, AuthStateSnapshot } from '@shared/contracts'
 
@@ -80,11 +74,7 @@ export function applyAuthSnapshot(
 }
 
 /**
- * 清除锁定态(倒计时归零 / 用户已能再次提交)。
- *
- * 评审 R4:**到期必须无条件清掉 `lockUntil`**,不能等重探结果 ——
- * 旧实现只在重探成功时才更新模型,重探返回 null/{ok:false} 时会永远停在
- * 「锁定 0s」且按钮永久 disabled(且 effect 依赖 `[model]` 不再重跑)。
+ * 清除锁定态。到期后即使探测失败也必须解除锁定，允许用户再次提交。
  */
 export function clearLock(model: AuthPanelModel): AuthPanelModel {
   if (model.lockUntil === null) return model

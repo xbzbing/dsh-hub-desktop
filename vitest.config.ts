@@ -7,7 +7,7 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
-    // 契约测试(对真实网关)单列:pnpm test:contract
+    // Protocol integration tests run through pnpm test:contract.
     exclude: ['**/node_modules/**', 'tests/contract/**'],
     environment: 'node'
   }

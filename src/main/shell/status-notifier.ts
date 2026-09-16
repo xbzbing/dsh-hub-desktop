@@ -1,7 +1,5 @@
 /**
- * 实例状态系统通知（T11 三审 Finding 2）。
  *
- * 复审指出的存活变异:`new Notification(...).show()` 被整段删掉后,
  * 三关(单测/类型/lint)全绿 —— 因为「该不该通知」的纯函数有测试,
  * 而**真正把通知发出去**的那一行写在 `index.ts` 里,结构上不可测。
  *
@@ -43,7 +41,6 @@ export function createStatusNotifier(deps: StatusNotifierDeps): StatusNotifier {
       deps.show(plan)
       return
     }
-    // 变异「删掉这一行」= 通知永不送达,由 status-notifier.test.ts 钉住
     new Notification({ title: plan.title, body: plan.body }).show()
   }
 

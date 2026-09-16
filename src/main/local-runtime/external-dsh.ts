@@ -1,9 +1,7 @@
 /**
- * 已在运行的 dsh web 探测(实机反馈 2026-09-16)—— 不 import electron。
  *
  * 用户场景:`dush` 给 dsh 打 patch 后手工常驻一个 dsh web
  *   node ~/.local/bin/dsh web --patch ~/.dush/cordis.dush.patch.yml --no-open
- * hub 此前完全不知道它的存在:本地实例只会在自己的隔离 home 里另起一个进程,
  * 于是「已经跑着的实例」既不被识别、也无法直接用视图打开。
  *
  * 本模块只做**只读探测**:`ps` 找 dsh web 进程 → `lsof` 补其监听端口。
@@ -38,7 +36,7 @@ const COMMAND_DISPLAY_MAX = 240
  */
 export function isDshWebCommand(command: string): boolean {
   // 排除 shell / ps / grep 包装行:它们会把「dsh web」当参数,直接匹配会误报
-  // (实测 `ps -axo` 输出里就带着评测脚本自己的 `grep "dsh web"` 行)
+
   if (/^(?:bash|sh|zsh|fish|ps|grep|pgrep|rg)\b/.test(command)) return false
   if (/\bgrep\b|\bpgrep\b/.test(command)) return false
   if (!/dsh/i.test(command)) return false

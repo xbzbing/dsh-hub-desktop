@@ -9,12 +9,10 @@ import {
 } from './external-dsh'
 
 /**
- * 实机反馈(2026-09-16):用户用 dush patch 常驻一个 dsh web
  *   node ~/.local/bin/dsh web --patch ~/.dush/cordis.dush.patch.yml --no-open
  * hub 必须能发现它(只读探测:ps + lsof),且不能把自己的 spawn 或 shell 包装误报成外部实例。
  */
 
-/** 真实机器上抓到的行(评测脚本自身也会出现在 ps 输出里 —— 必须排除) */
 const REAL_PS = [
   '  1 /sbin/launchd',
   '  84758 node /Users/dev/.local/bin/dsh web --patch /Users/dev/.dush/cordis.dush.patch.yml --no-open',
@@ -70,7 +68,7 @@ describe('patchOf / portOf(参数解析)', () => {
     expect(patchOf('dsh web --no-open')).toBeNull()
   })
 
-  it('--port 取合法端口,非法值返回 null(留给 lsof 兜底)', () => {
+  it('-port 取合法端口,非法值返回 null(留给 lsof 兜底)', () => {
     expect(portOf('dsh web --port 52300')).toBe(52300)
     expect(portOf('dsh web --port=3080')).toBe(3080)
     expect(portOf('dsh web --port 99999')).toBeNull()
@@ -186,7 +184,7 @@ describe('createExternalDshScanner(注入 IO)', () => {
     await expect(scanner.scan()).resolves.toEqual([])
   })
 
-  it('win32 暂不探测(避免误报),返回空数组', async () => {
+  it("win32 暂不探测(避免误报),返回空数组", async () => {
     const scanner = createExternalDshScanner({ platform: 'win32', run: async () => ({ code: 0, stdout: '1 node /x/dsh web\n' }) })
     await expect(scanner.scan()).resolves.toEqual([])
   })

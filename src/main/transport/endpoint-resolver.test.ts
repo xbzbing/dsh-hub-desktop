@@ -35,7 +35,7 @@ describe('endpoint-resolver（实例 → 最终端点 URL 唯一出口）', () =
   })
 })
 
-describe('authEndpointOf（认证探测端点,评审 R7）', () => {
+describe('authEndpointOf（认证探测端点,）', () => {
   const http = {
     id: '11111111-1111-4111-8111-111111111111',
     name: '远程',
@@ -52,7 +52,7 @@ describe('authEndpointOf（认证探测端点,评审 R7）', () => {
     expect(authEndpointOf(http, undefined)).toBe('https://gw.example.com/dsh')
   })
 
-  it('ssh 用隧道本地口(隧道未就绪 → null,旧实现恒为 null 导致登录按钮是死的)', () => {
+  it('ssh 用隧道本地口（隧道未就绪时返回 null）', () => {
     expect(authEndpointOf(ssh, 32222)).toBe('http://127.0.0.1:32222/')
     expect(authEndpointOf(ssh, undefined)).toBeNull()
   })

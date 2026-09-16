@@ -4,9 +4,9 @@ import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 /**
- * 用户反馈 #8–#11 的 E2E 确认:
- * - #9:明文连接警告收敛为「图标 + 短标签」胶囊,完整详情在 title(hover 可见)
- * - #10/#11:实例创建后可编辑(编辑按钮 + 表单 + instances:update 落盘),
+ * 实例详情和编辑流程的 E2E 验证：
+ * - 明文连接警告显示为短标签，完整详情可悬停查看
+ * - 实例创建后可编辑（编辑按钮、表单和 `instances:update` 持久化），
  *   本地实例端口可改(留空 = 自动分配)
  * 顺带产出详情页/编辑框截图(用户要求的目验材料)。
  */
@@ -54,7 +54,7 @@ test.afterAll(async () => {
   await app.close()
 })
 
-test('#9:明文警告收敛为胶囊,完整详情经 data-tip 气泡提供(不再占整段版面)', async () => {
+test('明文警告显示为短标签，完整详情通过 data-tip 提供', async () => {
   // 侧栏选中 http 实例(播种的第二个)
   await win.getByTestId('instances-table').isVisible()
   await win.getByText('明文远端实例').first().click()
@@ -64,8 +64,7 @@ test('#9:明文警告收敛为胶囊,完整详情经 data-tip 气泡提供(不�
   await expect(pill).toBeVisible()
   // 胶囊本体是短标签,不含整段长文案
   await expect(pill).toContainText('未加密')
-  // UI 打磨 #3:完整详情改放 data-tip(hover 即现的 CSS 气泡;原生 title 在
-  // Electron 下延迟不可控),读屏语义经 aria-label 保留
+  // 完整详情通过 data-tip 的 CSS 气泡显示，aria-label 保留读屏语义。
   const tip = await pill.getAttribute('data-tip')
   expect(tip).toContain('http://')
   expect(tip).toContain('SSH')
@@ -75,19 +74,18 @@ test('#9:明文警告收敛为胶囊,完整详情经 data-tip 气泡提供(不�
   await win.screenshot({ path: join(SHOT_DIR, 'detail-cleartext-pill.png'), animations: 'disabled' })
 })
 
-test('#10/#11:本地实例可编辑 —— 名称与端口修改落盘,端口留空回到自动分配', async () => {
+test('本地实例可编辑，端口留空时回到自动分配', async () => {
   await win.getByText('可编辑本地实例').first().click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
 
-  // 编辑入口存在(此前完全没有编辑按钮 —— 用户反馈 #10 的本体)
+  // 编辑入口必须可用。
   await expect(win.getByTestId('edit-btn')).toBeVisible()
   await win.getByTestId('edit-btn').click()
   await expect(win.getByTestId('edit-dialog')).toBeVisible()
-  // T8 期间视觉复核发现:toBeVisible 不检测 opacity,0.2s modal 入场动画
-  // (overlay fade + modal rise)会让截图落在半透明中间帧 —— 快进动画后再截
+  // 截图时禁用动画，避免捕获到半透明的中间帧。
   await win.screenshot({ path: join(SHOT_DIR, 'edit-dialog-open.png'), animations: 'disabled' })
 
-  // #11:端口字段存在且可写;名称改写;端口设为 30567
+  // 端口字段可编辑；名称修改，端口设为 30567。
   const portInput = win.getByTestId('edit-port')
   await expect(portInput).toBeVisible()
   await portInput.fill('30567')

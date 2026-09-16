@@ -1,8 +1,4 @@
 /**
- * 子进程抽象（T4）—— 不 import electron（全局规则 5）。
- *
- * 与 `local-runtime.ts` 内的同名结构保持一致（该文件 T3 已评审封版，此处先复制形状，
- * 后续里程碑统一收拢到本模块）；形状可注入，便于单测用假进程驱动看门狗。
  */
 import { spawn } from 'node:child_process'
 

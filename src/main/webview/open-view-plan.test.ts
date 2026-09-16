@@ -56,7 +56,6 @@ describe('classifyViewResponse（装配层:响应 → 认证信号,basePath 来�
   })
 
   it('带路径实例的 302 → /dsh/login 必须产生 session-expired', () => {
-    // 这正是「漏传 basePath」变异会破坏的行为:默认 '/' 只能匹配根路径实例
     const plan = buildOpenViewPlan('https://gw.example.com/dsh/', COOKIE)
     expect(classifyViewResponse(plan, nav('/dsh/login'))).toBe('session-expired')
   })

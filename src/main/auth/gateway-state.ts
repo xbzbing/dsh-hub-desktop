@@ -1,14 +1,9 @@
 /**
- * 登录状态机（T7,设计文档 §5.3）—— 不 import electron。
+ * Authentication state transitions.
  *
- * 状态(判别联合,与设计图一一对应):
- *   unknown → probe → needs-auth → { connected | await-credentials | await-otp | error }
- * - `needs-auth`:识别为网关(302→/login 或 401 unauthenticated);
- * - 已存 Cookie 有效 → 静默恢复到 `connected`(GET /login-api/settings = 200);
- * - **G2 已决边**:钥匙串里有该实例密码 → 从 needs-auth **直达 await-otp**(密码静默提交,
- *   不经过 UI);统一 401 则回退 await-credentials(不暴露是密码错还是码错);
- * - 429:进入锁定倒计时(`retryAfterSeconds` 为唯一计时依据),期间禁止发请求;
- * - 分步(password → otp → backup)是唯一 UI 形态,不做密码+验证码同屏。
+ * unknown → probe → needs-auth → connected, await-credentials, await-otp, or error.
+ * A valid session restores connected state. A stored password can submit silently before
+ * the UI requests an OTP. Rate limits prevent further authentication requests.
  */
 import type { GatewayFailure } from './gateway-client'
 
@@ -53,7 +48,7 @@ export type AuthEvent =
   | { type: 'probe-unreachable'; message: string }
   | { type: 'session-restored'; otpEnabled: boolean } // 带 Cookie settings=200
   | { type: 'session-absent' } // 无 Cookie / 401
-  | { type: 'stored-password-available' } // G2:钥匙串里有密码 → 直达 await-otp
+  | { type: 'stored-password-available' } // Use a stored password before requesting an OTP.
   | { type: 'login-succeeded'; usedOtp: boolean }
   | { type: 'login-requires-otp'; otpEnabled: boolean } // 400 otp-required
   | { type: 'credentials-rejected' } // 401 invalid-credentials(统一)
@@ -65,7 +60,7 @@ export type AuthEvent =
 
 export interface AuthTransition {
   state: AuthState
-  /** 状态机建议的动作(由调用方执行;状态机本身不做 IO) */
+
   action: 'none' | 'probe' | 'submit-password' | 'prompt-credentials' | 'prompt-otp' | 'ready' | 'stop'
 }
 
@@ -129,7 +124,6 @@ export function transition(state: AuthState, event: AuthEvent): AuthTransition {
       }
 
     case 'session-absent':
-      // 探测为网关且无有效会话 → 直接进入「等待凭据」(设计 §5.3 的 NEEDS_AUTH→AWAIT_CREDENTIALS 边)
       return {
         state: {
           ...state,
@@ -141,13 +135,7 @@ export function transition(state: AuthState, event: AuthEvent): AuthTransition {
       }
 
     case 'stored-password-available':
-      // G2:已存密码 → 跳过密码屏,密码静默提交(UI 只等验证码)
-      // 【T8 评审-2 决议】此边**保留为设计记录,生产不派发**:静默登录由 IPC 层等效
-      // 实现(register.ts 的 probe auto-try + auth:loginStored,密码不跨 IPC 且有
-      // vault 双门禁/一次性记账/登出压制)。原因:探测终态固定是 await-credentials
-      // (见上方 session-absent 边),needs-auth 只是首探瞬间相,本边的触发前提在
-      // probe 链路上不存在;接第二个派发方只会造成双轨漂移,删除则动 T7 已锁定的
-      // 状态机测试面。
+      // The password is submitted by the main process; the UI waits for an OTP.
       if (state.phase !== 'needs-auth') return { state, action: 'none' }
       return {
         state: { ...state, phase: 'await-otp', message: null },
@@ -180,7 +168,6 @@ export function transition(state: AuthState, event: AuthEvent): AuthTransition {
       }
 
     case 'credentials-rejected':
-      // 统一 401:不区分密码错/码错;从 await-otp 回退密码屏(设计 §5.3)
       return {
         state: {
           ...state,

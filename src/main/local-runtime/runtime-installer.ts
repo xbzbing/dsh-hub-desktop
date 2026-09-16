@@ -1,7 +1,5 @@
 /**
- * dsh 运行时安装器（T3）—— 不 import electron（全局规则 5）。
  *
- * 设计依据：`docs/dsh-hub-desktop-design.md` §4.1 与实现计划 §6.2 ——
  * 按版本把 `@deepseek-ai/dsh` 装进隔离目录 `runtimes/dsh-<version>/`，版本间零干扰；
  * 安装中写 `installing.json` 支持断点恢复；列表来自 npm registry。
  */

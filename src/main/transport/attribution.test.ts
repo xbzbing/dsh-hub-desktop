@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { classifySshExit } from './attribution'
 
-describe('classifySshExit（§4.2 退出归因）', () => {
+describe('classifySshExit（ 退出归因）', () => {
   it('鉴权失败 → auth（含 stderr 证据）', () => {
     const result = classifySshExit(255, 'dev@dsh.internal: Permission denied (publickey).')
     expect(result.kind).toBe('auth')
@@ -32,7 +32,7 @@ describe('classifySshExit（§4.2 退出归因）', () => {
     expect(result.message).toContain('端口转发失败')
   })
 
-  it('本地 -L 绑定失败 → forward（评审 N5）', () => {
+  it('本地 -L 绑定失败 → forward（）', () => {
     expect(classifySshExit(255, 'Could not request local forwarding.').kind).toBe('forward')
     expect(
       classifySshExit(255, 'bind [127.0.0.1]:30000: Address already in use').kind
@@ -56,7 +56,7 @@ describe('classifySshExit（§4.2 退出归因）', () => {
   })
 
   it('stderr 证据截断到 280 字符', () => {
-    const long = `x\n${'y'.repeat(400)}` 
+    const long = `x\n${'y'.repeat(400)}`
     const result = classifySshExit(255, `Permission denied (publickey).\n${long}`)
     expect(result.message.length).toBeLessThanOrEqual(320)
   })

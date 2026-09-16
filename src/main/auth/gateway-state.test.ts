@@ -11,7 +11,7 @@ const failure = (code: string, extra: Partial<GatewayFailure> = {}): GatewayFail
   ...extra
 })
 
-describe('gateway-state（§5.3 状态机）', () => {
+describe('gateway-state（ 状态机）', () => {
   it('probe → 识别网关 → needs-auth', () => {
     const started = transition(initialState(), { type: 'probe-started' })
     expect(started.state.phase).toBe('probe')
@@ -34,7 +34,7 @@ describe('gateway-state（§5.3 状态机）', () => {
     expect(state.otpEnabled).toBe(true)
   })
 
-  it('G2 已决边:已存密码 → 从 needs-auth 直达 await-otp(密码静默提交)', () => {
+  it('已存密码可从 needs-auth 进入 await-otp', () => {
     const needsAuth = transition(initialState(), { type: 'probe-gateway' }).state
     const { state, action } = transition(needsAuth, { type: 'stored-password-available' })
     expect(state.phase).toBe('await-otp')

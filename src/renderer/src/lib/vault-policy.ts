@@ -1,9 +1,6 @@
 /**
- * 凭据卡片策略推导（T11/T10）—— 纯函数,不 import electron/React,便于单测。
- *
- * 存在的理由:复选框的勾选态**必须**来自主进程快照。若在快照到达前就允许交互,
- * 组件会用「全 false」的兜底值提交,而 `setPolicy` 对「取消勾选」的语义是真的忘掉 ——
- * 于是会静默删除已存密码(复审 F3)。
+ * 凭据卡片的策略推导。保持为纯函数，便于测试。
+ * 策略快照到达前禁止提交，避免默认值覆盖已保存策略或删除凭据。
  */
 import type { VaultPolicy, VaultStatusSnapshot } from '@shared/contracts'
 

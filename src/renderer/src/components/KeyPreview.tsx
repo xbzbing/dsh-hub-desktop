@@ -8,13 +8,8 @@ import type { MessageKey } from '@shared/i18n/messages'
 const BRIDGE = window.dshHub
 
 /**
- * 向导 Step2 的「将使用哪个密钥」只读预览（设计稿 keyPreview / 设计文档 §4.2）。
- *
- * 三态：
- * - 未填主机 → 提示条；
- * - 解析出私钥或 agent 有可用密钥 → 绿色说明（agent 优先，其次 config/default 路径）；
- * - agent 未运行/为空且无解析出的密钥 → 警示 + 引导。
- * **只展示路径与公钥元信息，绝不读取/展示私钥内容。**
+ * SSH 密钥的只读预览。
+ * 仅显示路径和公钥元信息，绝不读取或显示私钥内容。
  */
 export default function KeyPreview(props: {
   host: string

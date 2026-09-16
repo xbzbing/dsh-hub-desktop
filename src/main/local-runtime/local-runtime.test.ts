@@ -404,8 +404,6 @@ describe('createLocalRuntime', () => {
     expect(manager.statusOf(instance.id)?.detail).toContain('registry 不可达')
   })
 
-  // —— T3 复审加固(评审 Required 1-4 的回归防线,均已先行复现) ——
-
   it('健康探测连续失败 → error + SIGKILL + 条目清除 + 队列立即放行(不等到期定时器)', async () => {
     const children: FakeChild[] = []
     const spawnImpl = vi.fn(() => {
@@ -441,7 +439,7 @@ describe('createLocalRuntime', () => {
     await waitForStatus(manager, a.id, 'error')
     expect(children[0]?.killCall).toContain('SIGKILL')
     expect(manager.runningIds()).toEqual([])
-    expect(probe).toHaveBeenCalledTimes(5) // §4.3 连接期 500ms 重试
+    expect(probe).toHaveBeenCalledTimes(5) // 连接期 500ms 重试
 
     // 队列未被卡死:B 在 60s 定时器未触达的情况下也能立即 spawn
     const b = localInstance({ name: 'B' })
@@ -544,7 +542,7 @@ describe('createLocalRuntime', () => {
     const s1 = manager.start(instance)
     const s2 = manager.start(instance)
     await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
-    await manager.stop(instance.id) // 停止运行中的第一代进程
+    await manager.stop(instance.id)
     await s1
     await s2
     expect(children[0]?.killCall).toContain('SIGKILL')
@@ -620,7 +618,7 @@ describe('createLocalRuntime', () => {
       stopGraceMs: 40
     })
     const instance = localInstance()
-    // 第一代进程:正常就绪
+
     const first = manager.start(instance)
     await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
     children[0]?.stdout.write(readyLine())
@@ -636,7 +634,7 @@ describe('createLocalRuntime', () => {
     await second
     await waitForStatus(manager, instance.id, 'running')
     expect(manager.runningIds()).toEqual([instance.id])
-    // 第一代进程此刻才迟到退出:旧 handler 不得删除第二代条目
+
     children[0]?.emit('exit', 0, null)
     expect(manager.runningIds()).toEqual([instance.id])
     expect(manager.statusOf(instance.id)?.status).toBe('running')
@@ -790,7 +788,7 @@ describe('createLocalRuntime', () => {
       healthProbeRetryMs: 10
     })
     const instance = localInstance()
-    // 第一代进程:打印就绪行后在探测窗口内崩溃(「就绪后即崩」是缺失 --expose-internals 的实测模式)
+
     const first = manager.start(instance)
     await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
     children[0]?.stdout.write(readyLine(31234))
@@ -806,15 +804,13 @@ describe('createLocalRuntime', () => {
     // 等陈旧 handleReady(A) 的重试耗尽(3 次 × 10ms),再断言其失败终局不得误删第二代条目。
     // 注:本用例锁定的是「换代场景整体」(身份守卫 + exit 置 stopping 的合效果);
     // 单回退身份检查仍会绿 —— 每条换代路径都隐含旧条目 stopping=true,身份检查属于
-    // 防御纵深,无法被单测独立锁定(复审结论 L1)
     await new Promise((resolve) => setTimeout(resolve, 60))
     expect(manager.runningIds()).toEqual([instance.id])
     expect(manager.statusOf(instance.id)?.url).toBe('http://127.0.0.1:31235/?token=test-token')
-    expect(children[0]?.killCall).toEqual([]) // 第一代已退出,无需补杀
+    expect(children[0]?.killCall).toEqual([])
   })
 
   it('stop:子进程永不退出(僵尸/D 态)→ 放行启动队列,排在后面的实例正常启动', async () => {
-    // 锁测试(复审修正版):id2 的 start 排在「已 spawn、未就绪、永不退出」的 id1 之后,
     // stop(id1) 必须自行 settle 队列,id2 才能开始;readyTimeoutMs 放大到 60s,
     // 防止 ready-timer 兜底触发 settle 而掩盖「缺失的 stop-settle」
     const children: FakeChild[] = []
@@ -847,7 +843,7 @@ describe('createLocalRuntime', () => {
     // id1 已 spawn 但未写就绪行也不退出:串行任务卡在队列头,id2 排在后面
     const s2 = manager.start(inst2)
     await manager.stop(inst1.id) // kill 无效、永不 exit → 只能靠 stop() 自己放行
-    // 修复后的放行必须发生:否则 s2 永远轮不到 spawn(无修复时此处 waitFor 超时失败)
+
     await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(2), { timeout: 2000 })
     children[1]?.stdout.write(readyLine())
     const outcome = await Promise.race([
@@ -860,7 +856,6 @@ describe('createLocalRuntime', () => {
     expect(manager.statusOf(inst1.id)?.status).toBe('stopped')
   })
 })
-// —— #2 用户反馈:运行时来源优先级(hub 同版本 → PATH → 下载需确认)——
 
 describe('#2 运行时来源与下载确认', () => {
   function pathChild(): { child: FakeChild; spawnImpl: ReturnType<typeof vi.fn> } {

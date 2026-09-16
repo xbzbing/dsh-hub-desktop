@@ -1,11 +1,7 @@
 /**
- * 分区会话清理的「接线计划」（T9 装配层）—— 纯函数,不 import electron。
  *
- * 与 `open-view-plan.ts` 同因:三轮评审反复证明 `src/main/index.ts` 的装配逻辑
- * 没有直接测试,清理链路的回归可以静默通过全套用例。这里把
  * 「实例记录 + 隧道实时端口 → (origin, basePath, 分区名)」单点抽出来。
  *
- * 关键约束(评审 T9-2):**ssh 必须在隧道已停时回落到注册表持久化的 `localPort`** ——
  * 删除实例的顺序是「先停隧道 → 再清分区 Cookie」,此时实时端口已经取不到,
  * 若不回落,端点解析返回 null,清理会静默 no-op,留下一个仍然有效的网关会话。
  */
@@ -45,7 +41,6 @@ export function planPartitionClear(
   return {
     partition: `persist:inst-${record.id}`,
     origin,
-    // 与注入侧同一套 basePath 规则(评审 Minor 8)
     basePath: basePathOf(endpoint)
   }
 }

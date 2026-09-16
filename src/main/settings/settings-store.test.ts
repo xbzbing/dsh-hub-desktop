@@ -16,7 +16,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-describe('settings-store（T11 偏好落盘）', () => {
+describe('settings-store（偏好落盘）', () => {
   it('首次读取返回默认值(不写盘)', async () => {
     const store = createSettingsStore({ dir })
     expect(store.read()).toEqual(DEFAULT_SETTINGS)
@@ -74,7 +74,7 @@ describe('settings-store（T11 偏好落盘）', () => {
     expect(store.read()).toEqual(raw)
   })
 
-  it('并发 update 不得丢失改动(复审 R5 二次指出:仅唯一临时名不够)', async () => {
+  it("并发 update 不得丢失改动", async () => {
     const store = createSettingsStore({ dir })
     // 并发发起多笔互不相同的改动;串行化后每一笔都必须留下
     await Promise.all([

@@ -1,8 +1,5 @@
 /**
- * 实例视图打开编排（T8 接线,设计文档 §6.2）—— 不 import electron,依赖注入,便于单测。
  *
- * 评审修正(2026-09):此前 `index.ts` 先 `openInstanceWindow`(内部立刻 loadURL)、
- * **之后**才注入分区 Cookie,与 §6.2「先注入再 loadURL」相反 —— 顺序只靠回环上的时序巧合过关。
  * 现把顺序收进本模块并由 `instance-view.test.ts` 的调用序列断言锁定:
  *
  *   1. 开窗(**不自动 loadURL**)
@@ -97,7 +94,6 @@ export async function openInstanceView<W extends InstanceViewWindow>(
     try {
       await win.loadURL(args.url)
     } catch (error) {
-      // 实测修复(用户实机日志):ERR_ABORTED(-3) 几乎总是「导航被更新的导航取代」
       // —— 页面自身重定向/用户在加载完成前操作/拦截层触发重登再加载。这属于
       // 浏览器的常态而非故障,按 debug 记录即可;其余错误维持 error 级上报。
       const code = (error as { code?: unknown } | null)?.code

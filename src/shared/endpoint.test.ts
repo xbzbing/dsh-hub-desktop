@@ -31,7 +31,7 @@ function parseErrorOf(input: string): EndpointParseError {
 }
 
 /**
- * 触发每一类解析失败的输入（安全评审 Finding 1 的穷尽枚举）。
+ * 覆盖每一类解析失败的输入。
  * 类型是 `Record<EndpointErrorCode, string>`：新增错误码而不补样例会直接编译失败。
  */
 const BRANCH_INPUTS: Record<EndpointErrorCode, string> = {
@@ -177,7 +177,7 @@ describe('parseEndpointUrl / 非法输入', () => {
   })
 })
 
-describe('parseEndpointUrl / 错误消息不回显输入（安全评审 Finding 1）', () => {
+describe('parseEndpointUrl / 错误消息不回显输入', () => {
   it('内嵌凭据的地址不会把用户名/密码带进 message', () => {
     const hostile = [
       'http://user:s3cr3t@',

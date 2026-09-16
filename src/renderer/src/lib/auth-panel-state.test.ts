@@ -34,7 +34,7 @@ function event(instanceId: string, state: AuthStateSnapshot): AuthStateEvent {
 const openA = (): AuthPanelModel =>
   openAuthPanel(initialAuthPanelModel, { id: 'inst-a', name: '甲' })
 
-describe('auth-panel-state（T8 评审修正）', () => {
+describe('auth-panel-state', () => {
   it('面板关闭时收到 auth:state 不自动弹面板', () => {
     const model = applyAuthState(
       initialAuthPanelModel,
@@ -71,7 +71,7 @@ describe('auth-panel-state（T8 评审修正）', () => {
     expect(done.state).toBeNull()
   })
 
-  it('锁定换算为绝对到期时刻,剩余时间随时钟递减(旧实现冻结)', () => {
+  it('锁定换算为绝对到期时刻，剩余时间随时钟递减', () => {
     const opened = openAuthPanel(initialAuthPanelModel, { id: 'inst-a', name: '甲' })
     const locked = applyAuthState(
       opened,
@@ -124,7 +124,7 @@ describe('auth-panel-state（T8 评审修正）', () => {
     expect(switched.state).toBeNull()
   })
 
-  it('到期后无条件解除锁定(评审 R4:重探失败也必须解锁)', () => {
+  it('到期后无条件解除锁定，即使重探失败', () => {
     const opened = openAuthPanel(initialAuthPanelModel, { id: 'inst-a', name: '甲' })
     const locked = applyAuthState(
       opened,

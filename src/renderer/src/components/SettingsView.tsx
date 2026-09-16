@@ -9,14 +9,8 @@ import { useAppStore } from '../store'
 const BRIDGE = window.dshHub
 
 /**
- * 设置页（T11,设计稿 view-settings）。
- *
- * 每个开关都驱动**真实行为**,不做占位:
- * - 语言:切换即时生效(文案来自 store 的翻译器,无刷新);
- * - 主题:system/light/dark,即时生效;
- * - 托盘 / 自启 / 通知:写偏好,主进程据此行为(托盘见 tray.ts);
- * - 数据目录:展示 + 用系统文件管理器打开(设计稿 data-act="open-dir";PRD §292);
- * - 凭据:一键清除(与详情页的 VaultCard 同一通道,含降级告警)。
+ * 设置页：语言、主题、原生偏好、数据目录和凭据存储。
+ * 设置更改在持久化成功后显示确认。
  */
 export default function SettingsView(): ReactNode {
   const t = useAppStore((state) => state.t)
@@ -33,7 +27,7 @@ export default function SettingsView(): ReactNode {
   }, [])
 
   const apply = (patch: Parameters<typeof updateSettings>[0]): void => {
-    // 只有真的落盘成功才提示「已保存」(复审 R5:此前无论成败都提示)
+    // 仅在设置持久化成功后显示确认。
     void updateSettings(patch).then(
       () => toast('ok', t('settings.saved')),
       (error: unknown) => toast('err', t('settings.saveFailed'), String(error))
@@ -50,10 +44,7 @@ export default function SettingsView(): ReactNode {
   }
 
   /**
-   * 打开数据目录(T11 三审 Finding 1)。
-   *
-   * 渲染层**不传路径**:主进程自己解析数据目录(DSH_HUB_DATA_DIR / userData),
-   * 所以这条通道不可能被用作任意文件打开。失败必须可见(信封 → 错误提示)。
+   * 主进程自行解析数据目录，渲染层不传路径，避免将通道用于打开任意文件。
    */
   const openDataDir = (): void => {
     void BRIDGE?.settings.openDataDir().then((result) => {

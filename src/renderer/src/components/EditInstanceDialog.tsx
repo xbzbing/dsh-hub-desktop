@@ -6,12 +6,8 @@ import { useAppStore } from '../store'
 import { Modal } from './Modal'
 
 /**
- * 实例编辑(用户反馈 #10/#11:创建后无法修改 —— 后端 `instances:update` 通道与
- * `PatchInstanceSchema` 早已就绪,本组件补上 UI 入口)。
- *
- * 可编辑面 = PatchInstanceSchema 允许的当前 transport 字段;transport 本身不可改
- * (契约:改形态 = 删除重建)。端口留空 = 回到自动分配(null);
- * 运行中实例的端口/配置在**下次启动**生效。
+ * 编辑当前 transport 支持的实例字段。transport 不可变更；如需变更则删除后重建。
+ * 端口留空时恢复自动分配；运行中实例的配置在下次启动时生效。
  */
 export default function EditInstanceDialog({
   record,
@@ -24,7 +20,7 @@ export default function EditInstanceDialog({
 }): ReactNode {
   const t = useAppStore((state) => state.t)
   const refreshList = useAppStore((state) => state.refreshList)
-  // 保存后必须强制重读:ensureRecord 是「缺失才拉取」的缓存,会留下陈旧记录
+  // 保存后重新读取记录，因为 ensureRecord 只在缓存缺失时读取。
   const reloadRecord = useAppStore((state) => state.reloadRecord)
   const toast = useAppStore((state) => state.toast)
 

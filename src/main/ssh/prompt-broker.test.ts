@@ -11,7 +11,7 @@ function makeBroker() {
   return { broker, sent }
 }
 
-describe('prompt-broker（T5 用户提示代理）', () => {
+describe('prompt-broker（用户提示代理）', () => {
   it('指纹确认:投递带 requestId 的事件,回答后 resolve', async () => {
     const { broker, sent } = makeBroker()
     const promise = broker.requestHostKey({

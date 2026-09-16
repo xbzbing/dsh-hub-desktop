@@ -1,5 +1,4 @@
 /**
- * SSH askpass（设计文档 §4.2 / 实现计划 §6.3）—— 不 import electron。
  *
  * 机制：ssh 需要口令（私钥口令 / 密码认证）时，会调用 `SSH_ASKPASS` 指向的程序并
  * 把提示语作为参数传入。hub 在这里：
@@ -167,7 +166,6 @@ export function startAskpassServer(options: AskpassServerOptions): Promise<Askpa
 
   // 陈旧 socket 文件必须先清理:进程被强杀/崩溃后 unix socket 文件会残留,
   // 直接 listen 会 EADDRINUSE,而该失败又会被上层 catch 吞掉 → askpass 永久静默失效
-  // (T5 评审 R1 实测复现)
   return rm(options.socketPath, { force: true })
     .catch(() => undefined)
     .then(
@@ -175,7 +173,6 @@ export function startAskpassServer(options: AskpassServerOptions): Promise<Askpa
         new Promise<AskpassServer>((resolve, reject) => {
           server.on('error', reject)
           // chmod 必须在 resolve 之前 await:否则调用方拿到的 socket 权限可能是默认 0755
-          // (T4 复审 Required-1:fire-and-forget 与权限断言竞态,导致门禁低频偶发失败)
           server.listen(options.socketPath, () => {
             void chmod(options.socketPath, socketMode)
               .catch(() => undefined)

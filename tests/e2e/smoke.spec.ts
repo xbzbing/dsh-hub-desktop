@@ -41,9 +41,7 @@ test('窗口打开并渲染出应用外壳', async () => {
 
 test('preload 白名单桥接形状正确(无多余暴露)', async () => {
   const api = await win.evaluate(() => (window.dshHub ? Object.keys(window.dshHub).sort() : null))
-  // T5 起新增 ssh 组;T10 起新增 vault 组;T11 起新增 settings 组;
-  // **T12 评审修复**新增 `ssh.forgetHostKey`(显式遗忘主机指纹)与
-  // `settings.openDataDir`(打开数据目录);任何额外暴露都会让本用例失败
+  // 仅暴露白名单中的 API 组；额外暴露会让本用例失败。
   expect(api).toEqual(
     [
       'auth',
@@ -68,7 +66,7 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
       'onHostKeyDecision',
       'replyAskpass',
       'replyHostKey',
-      // 设计 §7.3「指纹变更一律拒绝连接(不自动清理)」的**唯一**恢复入口:
+      // 指纹变化时，用户可显式删除已保存的指纹后重新确认。
       // 用户显式遗忘本机为该主机保存的指纹,下次连接重新 TOFU。
       // 这是破坏性动作,但没有它就无法从「主机合法换钥」中恢复。
       'forgetHostKey'
@@ -81,16 +79,14 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
   const authKeys = await win.evaluate(() =>
     window.dshHub?.auth ? Object.keys(window.dshHub.auth).sort() : null
   )
-  // T8 G2 新增 loginStored:密码不跨 IPC(渲染层只传实例 id 与可选 OTP,
-  // 主进程自取 vault 已存密码)—— 白名单多暴露任何一个都会让本用例失败
+  // loginStored 不跨 IPC 传递密码；任何额外暴露都会让本用例失败。
   expect(authKeys).toEqual(['login', 'loginStored', 'logout', 'onSignal', 'onState', 'probe'])
-  // T10 凭据保险库:只暴露状态/勾选/忘记/清空 —— 没有「读出凭据」的通道
+  // 凭据保险库不提供读取凭据的通道。
   const vaultKeys = await win.evaluate(() =>
     window.dshHub?.vault ? Object.keys(window.dshHub.vault).sort() : null
   )
   expect(vaultKeys).toEqual(['clear', 'forget', 'setPolicy', 'status'])
-  // T11 应用设置:只暴露 get/update;T12 增补 openDataDir —— **签名不带任何参数**,
-  // 目录由主进程自行解析,渲染层无法指定路径(见 shell/open-data-dir.ts)
+  // openDataDir 不接收参数，目录由主进程自行解析。
   const settingsKeys = await win.evaluate(() =>
     window.dshHub?.settings ? Object.keys(window.dshHub.settings).sort() : null
   )

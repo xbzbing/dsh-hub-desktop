@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { isEmptyPatch, runtimeWritebackPatch } from './runtime-writeback'
 
 /**
- * 实机缺陷回归:external 接管事件只剩空补丁 → `instanceStore.update` 抛
- * 「补丁不能为空」→ 日志刷 `回写实例运行信息失败`。以下钉住三类来源的回写策略
  * 与「空补丁」边界。
  */
 describe('runtimeWritebackPatch(运行信息回写决策)', () => {
@@ -23,7 +21,7 @@ describe('runtimeWritebackPatch(运行信息回写决策)', () => {
     expect(patch).toEqual({ localPort: 41111, dshVersion: '0.1.5' })
   })
 
-  it('PATH 来源:不回写版本(用户升级后不能被拖回旧版);端口仍回写', () => {
+  it('PATH 来源不回写版本，但会回写端口', () => {
     const patch = runtimeWritebackPatch(
       { port: 52300, version: '0.1.5-rc.2', runtimeSource: 'path' },
       'local'
@@ -31,7 +29,7 @@ describe('runtimeWritebackPatch(运行信息回写决策)', () => {
     expect(patch).toEqual({ port: 52300 })
   })
 
-  it('external 接管:端口与版本都不回写 —— 这正是空补丁的来源(实机缺陷)', () => {
+  it("external 接管:端口与版本都不回写", () => {
     const patch = runtimeWritebackPatch({ port: 3080, runtimeSource: 'external' }, 'local')
     expect(patch).toEqual({})
     expect(isEmptyPatch(patch)).toBe(true)

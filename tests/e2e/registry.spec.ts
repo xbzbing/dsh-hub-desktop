@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import type { CreateInstanceInput } from '@shared/contracts'
 
 /**
- * T2 注册表端到端:渲染进程 → preload 白名单 → ipcMain → instance-store → 磁盘。
+ * 注册表端到端：渲染进程 → preload 白名单 → ipcMain → instance-store → 磁盘。
  * 以真实 Electron 应用验证 IPC 边界(合法写入/非法拒绝)与落盘位置。
  */
 

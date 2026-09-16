@@ -5,13 +5,7 @@ import { mkdir, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 /**
- * UI 打磨轮(用户 5 条实机反馈)的 E2E + 截图验证:
- * - #1 向导三选项框与卡片边框关系(截图目验)
- * - #2 认证按钮状态化(登录 vs 重新登录、登出仅在已连接时可见)+ 认证面板
- *   密码屏/OTP 屏按钮形态 + 「实例未启用 OTP 时直接连通,不出 TOTP 页」
- * - #3 明文警告胶囊 hover 提示可见
- * - #4 顶栏统一横跨 sidebar+主区(sidebar 边框不到窗口顶,红绿灯落在顶栏内)
- * - #5 详情页美化(截图目验)
+ * UI E2E 与截图验证：向导布局、认证状态、明文提示、顶栏布局和详情页。
  *
  * 认证链路用本地假网关驱动(与 tests/contract 的真值口径一致):
  *   GET  /            → 302 <base>/login(网关特征)

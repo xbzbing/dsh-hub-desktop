@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isAllowedInstanceNavigation } from './window-host-policy'
 
-describe('isAllowedInstanceNavigation（实例窗口外跳拦截 §6.6）', () => {
+describe('isAllowedInstanceNavigation（实例窗口外跳拦截 ）', () => {
   const origin = 'http://127.0.0.1:30000/?token=abc'
 
   it('同源回环导航放行（含路径与查询）', () => {
@@ -40,7 +40,7 @@ describe('isAllowedInstanceNavigation（实例窗口外跳拦截 §6.6）', () =
     expect(isAllowedInstanceNavigation('http://127.0.0.1:30000/', 'not a url')).toBe(false)
   })
 })
-describe('isAllowedInstanceNavigation（用户反馈 #4:远程 http 实例的登录页导航）', () => {
+describe('isAllowedInstanceNavigation（用户#4:远程 http 实例的登录页导航）', () => {
   const remote = 'https://gw.example.com/dsh/?token=abc'
 
   it('同 origin 的网关登录页 / OTP / onboarding / 登录提交一律放行', () => {
@@ -68,7 +68,7 @@ describe('isAllowedInstanceNavigation（用户反馈 #4:远程 http 实例的登
     expect(isAllowedInstanceNavigation('https://gw.example.com:8443/login', remote)).toBe(false)
   })
 
-  it('回环实例语义不回归:跨端口/外部仍拒绝(见上一组用例)', () => {
+  it('回环实例语义不:跨端口/外部仍拒绝(见上一组用例)', () => {
     const loopback = 'http://127.0.0.1:30000/?token=abc'
     expect(isAllowedInstanceNavigation('https://gw.example.com/login', loopback)).toBe(false)
     expect(isAllowedInstanceNavigation('http://127.0.0.1:30001/', loopback)).toBe(false)

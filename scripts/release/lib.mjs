@@ -1,12 +1,10 @@
 /**
- * 发布演练的纯逻辑(T14)。
+ * 发布验证的纯逻辑。
  *
- * 独立成 `lib.mjs` 而不是全写在脚本里,是为了让这些判断**可被单测钉住**:
- * 发布元数据的字段名、URL 归一化规则、校验和比对,任何一条错了都会让
- * 自动更新要么不更新、要么更新到错误产物,而这两件事在本地都「看起来正常」。
+ * This module is separate so tests can verify metadata field names, URL normalization,
+ * and checksum comparison. Incorrect metadata can select the wrong update artifact.
  *
- * 刻意不引入 YAML 依赖(zero-dep 纪律):这里只解析 electron-builder 产出的
- * **固定形态**子集,遇到不认识的结构一律抛错,而不是猜。
+ * Do not add a YAML dependency: parse only the fixed electron-builder subset and reject unknown structures.
  */
 
 export class UpdateMetadataError extends Error {
@@ -60,7 +58,7 @@ function unquote(value) {
  *     size: 120994809
  * path: DSH-Hub-0.1.0-arm64-mac.zip
  * sha512: <base64>
- * releaseDate: '2026-09-15T20:24:52.305Z'
+ * releaseDate: <ISO timestamp>
  * ```
  *
  * @returns {{version: string, files: Array<{url: string, sha512: string, size: number|null}>, path: string, sha512: string, releaseDate: string|null}}
@@ -182,7 +180,7 @@ export function verifyUpdateMetadata({ metadata, appVersion, artifacts }) {
 /**
  * 从发布说明里抽出「机器可校验」的三样东西。
  *
- * 格式契约(发布说明必须长这样,否则发布演练会失败):
+ * Required release-note fields:
  *
  * ```md
  * # DSH Hub v0.1.0

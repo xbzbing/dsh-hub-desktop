@@ -1,8 +1,4 @@
-/* ============================================================
-   DSH Hub · 样式基线
-   Token 真理源:design/brand-spec.md · 视觉基线:design/dsh-hub-desktop.html
-   (原型 CSS 移植;去掉模拟桌面外壳[menubar/窗口饰面],真实窗口替代)
-   ============================================================ */
+/* DSH Hub styles. */
 
 :root {
   color-scheme: light;
@@ -38,7 +34,7 @@
   --ok-ink: color-mix(in oklch, var(--ok) 84%, var(--fg));
   --danger-ink: color-mix(in oklch, var(--danger) 88%, var(--fg));
 
-  /* ---- 阴影分层(brand-spec §4.3) ---- */
+  /* 阴影层级。 */
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.05), 0 1px 1px rgb(0 0 0 / 0.04);
   --shadow-layer: 0 10px 24px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06);
   --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.16);
@@ -158,8 +154,7 @@ textarea {
 }
 
 /* ---- 布局 ---- */
-/* 用户反馈 #4:顶栏统一标题栏 —— grid 重排为「顶栏横跨全宽 + 下行 sidebar/主区」,
-   macOS 红绿灯落在顶栏带内;sidebar 的右边框从顶栏之下才开始,不再直达窗口顶部 */
+/* 顶栏横跨侧边栏和主区。 */
 .app-shell {
   height: 100%;
   display: grid;
@@ -296,8 +291,7 @@ h3,
   color: var(--muted);
   background: var(--surface);
   white-space: nowrap;
-  /* T11 ③:与 .seg button / .tb-title 同法 —— 允许收缩并省略号化,
-     防止长英文文案(transport/status 标签)在窄容器里顶破布局 */
+  /* 允许长标签收缩并显示省略号。 */
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -317,7 +311,7 @@ h3,
   font-size: 11.5px;
   font-weight: 500;
   white-space: nowrap;
-  /* T11 ③:同 .badge —— 状态胶囊的溢出缓解 */
+  /* 允许状态标签收缩并显示省略号。 */
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -434,8 +428,7 @@ h3,
   font-size: 13.5px;
   font-weight: 600;
 }
-/* UI 打磨 #5:危险区以浅红底明确语义边界(其余卡片保持中性);内部上下边距收紧 */
-/* 实机反馈 2026-09-16:外部 dsh web 列表行(接管入口) */
+/* 外部 dsh web 列表行。 */
 .ext-row {
   padding: 9px 0;
   border-top: 1px solid var(--border);
@@ -459,7 +452,7 @@ h3,
 .danger-zone .card-head h3 {
   color: var(--danger-ink);
 }
-/* UI 打磨 #5:状态 chip 内嵌状态点,语义一眼可读 */
+/* 状态标签内嵌状态点。 */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -573,7 +566,7 @@ h3,
   text-align: right;
 }
 
-/* ---- 骨架屏(R6,原型无此态,本期按品牌 token 新增) ---- */
+/* ---- 骨架屏 ---- */
 .skel {
   border-radius: 6px;
   background: linear-gradient(
@@ -730,8 +723,7 @@ h3,
   font-size: 11.5px;
   color: var(--muted);
   white-space: nowrap;
-  /* 三审:分段控件在窄侧栏 + 长英文文案("By transport")下会溢出 ——
-     允许收缩并省略号化(元素自身的 box-shadow 不受 overflow 影响) */
+  /* 分段按钮可收缩并显示省略号。 */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -872,8 +864,7 @@ h3,
   justify-content: center;
   gap: 8px;
   padding: 8px 0 0;
-  /* 用户反馈 #4/#6:顶栏已统一横跨全宽并接管红绿灯带,折叠态侧栏不再需要
-     纵向让位 —— 历史上的 darwin padding-top:40px 规则随统一顶栏一并退役 */
+  /* 顶栏负责窗口控件区域，折叠侧栏不需要额外顶部留白。 */
 }
 .app-shell.rail .brand {
   flex-direction: column;
@@ -992,10 +983,7 @@ h3,
   gap: 14px;
   padding: 7px 16px;
   border-bottom: 1px solid var(--border);
-  /* 用户反馈 #1:此前只有侧栏 `.side-head` 可拖动,右侧顶栏拖不动 ——
-     整个窗口只有一条窄带能移动,体验上像"半张皮"。顶栏同样高度、同样位于
-     窗口顶部,理应也是拖动区;其内的按钮/输入再单独置为 no-drag。
-     (drag 对空白的顶栏背景生效,按钮之间的间隙仍可拖动窗口) */
+  /* 顶栏是拖动区域；其中的交互元素单独设为 no-drag。 */
   -webkit-app-region: drag;
 }
 .topbar button,
@@ -1018,8 +1006,7 @@ h3,
   font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
-  /* 三审:nowrap 在长英文文案(如 "Instance details")下会顶破顶栏 ——
-     允许收缩并省略号化;父级 .tb-left 已有 min-width:0,空间充足时视觉无变化 */
+  /* 长标题可收缩并显示省略号。 */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1248,7 +1235,7 @@ h3,
   background: var(--warn-soft);
   color: var(--warn-ink);
 }
-/* 用户反馈 #9:明文连接的常驻警告从整段 note 收敛为图标胶囊 —— 完整详情经 title 悬停 */
+/* 明文连接警告的紧凑标签。 */
 .warn-pill {
   display: inline-flex;
   align-items: center;
@@ -1268,9 +1255,7 @@ h3,
   height: 12px;
   flex: none;
 }
-/* UI 打磨 #3:明文警告的悬停提示 —— 原生 title 在 Electron 下有 ~1s 延迟且
-   样式不可控,用户实测「指上去没有任何提示」。改为 CSS 气泡:hover/focus 即现,
-   深色浮层 + 向下箭头,宽度受限自动换行;定位相对胶囊,不依赖 JS。 */
+/* hover 或键盘聚焦时显示明文连接警告详情。 */
 .warn-pill {
   position: relative;
   outline: none;
@@ -1345,9 +1330,7 @@ h3,
   font-size: 11.5px;
   margin-top: 2px;
 }
-/* UI 打磨 #1:步骤条拉伸为与 modal 头/脚同宽的结构条(负边距抵消 body 内边距),
-   其分隔线读作「结构线」而非悬在内容旁边的散线;下方内容与之保持 ≥18px 间距,
-   三个类型选项卡不再贴线/视觉重叠。 */
+/* 步骤条与弹窗头脚对齐，并为内容保留间距。 */
 .stepper {
   display: flex;
   align-items: center;

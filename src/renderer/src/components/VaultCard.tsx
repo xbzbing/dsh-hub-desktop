@@ -9,15 +9,8 @@ import { useAppStore } from '../store'
 const BRIDGE = window.dshHub
 
 /**
- * 凭据存储卡（T10,设计文档 §7.2）。
- *
- * 策略是「**显式勾选才持久化**」:默认两个复选框都不勾,凭据只在本次会话内存里。
- * - 勾选「记住密码」→ 登录成功后把密码写入 OS 钥匙串(safeStorage);
- * - 勾选「记住登录态」→ 会话 Cookie 入钥匙串,重启可静默复用;
- * - 「清除已记住的凭据」一并取消勾选 —— 否则清空后下一次登录又会写回来。
- *
- * `safeStorage` 不可用(如无 keyring 的 Linux)时,后端降级为纯内存:
- * 卡片必须**明确告警**,而不是让用户以为勾选生效了。
+ * 凭据存储卡。凭据仅在用户显式选择后保存；默认只保留在当前会话内存中。
+ * safeStorage 不可用时后端使用内存存储，界面显示警告。
  */
 export default function VaultCard({ instanceId }: { instanceId: string }): ReactNode {
   const t = useAppStore((state) => state.t)
@@ -59,13 +52,10 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
   const rememberedHere = status?.rememberedInstances.includes(instanceId) ?? false
   const degraded = status?.degraded ?? false
   /**
-   * 勾选态**必须来自主进程的策略快照**,不能只用本地 state:
-   * 本地初始化为「都不勾」会让用户看到错误的未勾选状态,随后切换另一个开关时
-   * 提交过时的策略对 —— 而 `setPolicy` 对「取消勾选」的语义是真的忘掉,
-   * 于是会静默删除已存密码(评审 T10-1 Critical)。
+   * 勾选态必须来自主进程策略快照，避免提交默认值覆盖已保存策略或删除凭据。
    */
   const effective = effectivePolicy(status, instanceId)
-  // 快照到达前禁止交互:否则会以「全 false」兜底值提交,静默清掉已存凭据(复审 F3)
+  // 快照到达前禁止交互，避免以默认值覆盖已保存凭据。
   const interactive = canSubmitPolicy(status, busy)
 
   return (

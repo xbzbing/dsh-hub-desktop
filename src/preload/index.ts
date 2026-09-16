@@ -45,8 +45,7 @@ const bridge: DshHubBridge = {
     start: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.start, id),
     stop: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.stop, id),
     openView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openView, id),
-    // 外部 dsh web:scan 无参数(渲染层指定不了探测目标);adopt 只传 pid,
-    // 端口与 patch 由主进程重新扫描认定
+    // 扫描不接收渲染层指定的目标；接管只接收 pid，主进程重新确认端口和 patch。
     scanExternal: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.scanExternal),
     adoptExternal: (id: string, pid: number) =>
       ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.adoptExternal, id, pid)
@@ -71,7 +70,7 @@ const bridge: DshHubBridge = {
     },
     replyHostKey: (requestId: string, decision: HostKeyDecision) =>
       ipcRenderer.invoke(SSH_IPC.hostKeyReply, requestId, decision),
-    // 显式、破坏性的恢复动作(设计 §7.3):删除本机为该主机保存的指纹,下次连接重新 TOFU
+    // 显式恢复动作：删除本机保存的主机指纹，下次连接重新执行 TOFU。
     forgetHostKey: (input: SshHostKeyForgetInput) =>
       ipcRenderer.invoke(SSH_IPC.hostKeyForget, input) as Promise<IpcResult<null>>,
     onAskpassRequest: (listener) => {
@@ -95,7 +94,7 @@ const bridge: DshHubBridge = {
       ipcRenderer.invoke(AUTH_IPC.login, instanceId, password, otp ?? null) as Promise<
         IpcResult<AuthStateSnapshot | null>
       >,
-    // G2 已决边(§5.3):密码不跨 IPC —— 只传实例 id 与可选 OTP,主进程自取已存密码
+    // 密码不跨 IPC；只传实例 ID 和可选 OTP，由主进程读取已保存的密码。
     loginStored: (instanceId: string, otp?: string) =>
       ipcRenderer.invoke(AUTH_IPC.loginStored, instanceId, otp ?? null) as Promise<
         IpcResult<AuthStateSnapshot | null>
@@ -117,7 +116,7 @@ const bridge: DshHubBridge = {
       }
     }
   },
-  // T11 应用设置:非敏感偏好(语言/主题/托盘/自启/通知)
+  // 非敏感应用偏好：语言、主题、托盘、自启和通知。
   settings: {
     get: () => ipcRenderer.invoke(SETTINGS_IPC.get) as Promise<IpcResult<Settings>>,
     update: (patch) =>
@@ -125,8 +124,7 @@ const bridge: DshHubBridge = {
     // 打开数据目录:白名单里**不带任何参数**(路径由主进程解析),渲染层传不了路径
     openDataDir: () => ipcRenderer.invoke(SETTINGS_IPC.openDataDir) as Promise<IpcResult<null>>
   },
-  // T10 凭据保险库(§7.2):只暴露「状态/勾选/忘记/清空」——没有「读出凭据」的通道,
-  // 渲染进程永远拿不到已存密码或会话值(凭据只在主进程内使用)。
+  // 只暴露状态和管理操作，不提供读取凭据的通道；凭据仅在主进程内使用。
   vault: {
     status: () =>
       ipcRenderer.invoke(VAULT_IPC.status) as Promise<IpcResult<VaultStatusSnapshot>>,

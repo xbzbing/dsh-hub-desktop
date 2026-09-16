@@ -1,6 +1,6 @@
-/* T5 手工验收:TOFU 首次指纹确认 → askpass 口令弹窗(带口令的私钥)→ 隧道连通 →
-   指纹变化 → 红色警示并拒绝;沿途校验口令不落盘、密钥预览只读元信息。
-   用法:cd <repo> && node ./scripts/acceptance/verify-ssh-t5.cjs(需在沙箱外跑:macOS sshd preauth sandbox_init) */
+/* SSH 指纹与口令验证：首次指纹确认 → askpass 口令弹窗（带口令的私钥）→ 隧道连通 →
+   指纹变化后拒绝连接；同时检查口令不落盘和密钥预览元信息。
+   用法：cd <repo> && node ./scripts/acceptance/verify-ssh-t5.cjs（需要可启动 sshd 的环境） */
 const { _electron: electron } = require('@playwright/test')
 const { mkdir, rm, writeFile, readFile } = require('node:fs/promises')
 const { join, resolve } = require('node:path')
@@ -149,7 +149,7 @@ async function main() {
     ([host, port, user, remotePort, identityFile]) =>
       window.dshHub.instances.create({
         transport: 'ssh',
-        name: '验收 · T5',
+        name: '验证 · SSH',
         host,
         port,
         username: user,
@@ -282,7 +282,7 @@ async function main() {
   const orphans = sh(`pgrep -fl -- ':127.0.0.1:${HTTP_PORT}' || true`)
   if (orphans) throw new Error(`退出后仍有隧道进程:${orphans}`)
   console.log('[ok] 退出后无孤儿 ssh 进程')
-  console.log('[DONE] T5 真实验收通过:TOFU 首次确认 / askpass 口令 / 指纹变化拒绝 / 口令不落盘 / 密钥预览')
+  console.log('[DONE] 指纹确认、口令输入、指纹变更拒绝、口令不落盘和密钥预览验证通过')
 }
 
 async function run() {

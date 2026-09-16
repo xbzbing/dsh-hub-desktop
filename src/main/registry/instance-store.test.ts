@@ -191,7 +191,7 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect((await store.get(created.id))?.name).toBe('原样')
   })
 
-  it('评审回归:notes 可用 null 清空(与补丁契约一致)', async () => {
+  it('notes 可用 null 清空（与补丁输入一致）', async () => {
     const created = await store.create(localInput({ notes: '先记一笔' }))
     expect((await store.get(created.id))?.notes).toBe('先记一笔')
 
@@ -202,7 +202,7 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect((await fresh.get(created.id))?.notes).toBeNull() // 重载依旧为空
   })
 
-  it('评审回归:update 的 host[:port] 拆分与 create 对称(显式 port 并存时拆分优先)', async () => {
+  it('update 的 host[:port] 拆分与 create 对称(显式 port 并存时拆分优先)', async () => {
     const ssh = asSsh(await store.create(sshInput({ host: 'server-a', port: 24 })))
     const updated = asSsh(await store.update(ssh.id, { host: 'server2:2202', port: 24 }))
     expect(updated.host).toBe('server2')
@@ -214,7 +214,7 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(renamed.port).toBe(2202)
   })
 
-  it('评审回归:方括号点分/IPv4-mapped 形态同样拆分端口(与 schema 字符集对齐)', async () => {
+  it('方括号点分/IPv4-mapped 形态同样拆分端口(与 schema 字符集对齐)', async () => {
     const v4 = asSsh(await store.create(sshInput({ name: '括号点分', host: '[192.0.2.1]:2222' })))
     expect(v4.host).toBe('192.0.2.1')
     expect(v4.port).toBe(2222)
@@ -226,11 +226,11 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(mapped.port).toBe(3080)
   })
 
-  it('评审回归:update 裸方括号 IPv6 不得注入默认端口(与无括号写法对称)', async () => {
+  it('update 裸方括号 IPv6 不得注入默认端口(与无括号写法对称)', async () => {
     const withPort = asSsh(await store.create(sshInput({ name: '保持端口', port: 2222 })))
     const stripped = asSsh(await store.update(withPort.id, { host: '[::1]' }))
     expect(stripped.host).toBe('::1')
-    expect(stripped.port).toBe(2222) // 端口保持不变(修复前被静默改成 22)
+    expect(stripped.port).toBe(2222)
 
     const bare = asSsh(await store.update(withPort.id, { host: '::1' }))
     expect(bare.host).toBe('::1')
@@ -242,7 +242,7 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(both.port).toBe(3333)
   })
 
-  it('评审回归:list/get 返回拷贝,外部改动不污染缓存', async () => {
+  it('list/get 返回拷贝,外部改动不污染缓存', async () => {
     const created = await store.create(localInput({ name: '原始名' }))
     const list = await store.list()
     const first = list[0]
@@ -388,7 +388,7 @@ describe('createInstanceStore / 损坏恢复与迁移', () => {
   })
 })
 
-describe('createInstanceStore / 写盘失败不产生幻影(评审 R3)', () => {
+describe('createInstanceStore / 写盘失败不产生幻影()', () => {
   it('目录只读时 create 失败,内存不残留幻影;恢复可写后幻影不会补落盘', async () => {
     const base = asLocal(await store.create(localInput({ name: '基准' })))
     expect(await store.list()).toHaveLength(1)
@@ -412,7 +412,7 @@ describe('createInstanceStore / 写盘失败不产生幻影(评审 R3)', () => {
     expect(list.map((record) => record.id).sort()).toEqual([base.id, second.id].sort())
   })
 
-  it('T11:50+ 实例下 list 走内存缓存,规模化不劣化', async () => {
+  it('50+ 实例下 list 走内存缓存,规模化不劣化', async () => {
     const store = createInstanceStore({ dir })
     const COUNT = 60
     for (let index = 0; index < COUNT; index += 1) {
@@ -441,7 +441,7 @@ describe('createInstanceStore / 写盘失败不产生幻影(评审 R3)', () => {
   })
 })
 
-describe('createInstanceStore / 落盘权限 0600（安全评审 Finding 2）', () => {
+describe('createInstanceStore / 落盘权限 0600', () => {
   it('新建的注册表主文件为 0600', async () => {
     await store.create(localInput())
     expect(await modeOf(join(dir, 'instances.json'))).toBe(0o600)
@@ -458,7 +458,7 @@ describe('createInstanceStore / 落盘权限 0600（安全评审 Finding 2）', 
   it('隔离副本 .corrupt-* 为 0600（源文件曾是 0644 也必须收紧）', async () => {
     await store.create(localInput())
     const file = join(dir, 'instances.json')
-    await chmod(file, 0o644) // 模拟旧版本遗留 / 手工改宽的权限
+    await chmod(file, 0o644) // 模拟不安全的现有文件权限
     await writeFile(file, '{{{ 不是 JSON', 'utf8') // 覆盖写不改动既有 mode
     expect(await modeOf(file)).toBe(0o644)
 

@@ -32,7 +32,7 @@ async function waitForStatus(
   throw new Error(`等待状态 ${status} 超时（当前：${manager.statusOf(id)?.status}）`)
 }
 
-describe('createHttpEndpoints（T6 HTTP 直连传输）', () => {
+describe('createHttpEndpoints（HTTP 直连传输）', () => {
   it('start → 健康探测通过 + 自动探测 gateway → running（detail 带探测结论）', async () => {
     const probe = vi.fn(async () => true)
     const detect = vi.fn(async () => ({
@@ -117,15 +117,15 @@ describe('createHttpEndpoints（T6 HTTP 直连传输）', () => {
   })
 })
 
-describe('T6 评审回归:端点校验与陈旧 start', () => {
-  it('R3:detectDraftEndpoint 拒绝非法 URL(ftp / 内嵌凭据 / 空)', async () => {
+describe('端点校验与陈旧 start', () => {
+  it('detectDraftEndpoint 拒绝非法 URL(ftp / 内嵌凭据 / 空)', async () => {
     const { detectDraftEndpoint } = await import('./http-endpoint')
     await expect(detectDraftEndpoint('ftp://x')).rejects.toThrow()
     await expect(detectDraftEndpoint('http://user:pw@h/')).rejects.toThrow()
     await expect(detectDraftEndpoint('')).rejects.toThrow()
   })
 
-  it('R3:合法 URL 归一化后探测(用本地 200 服务)', async () => {
+  it('合法 URL 归一化后探测(用本地 200 服务)', async () => {
     const { createServer } = await import('node:http')
     const { detectDraftEndpoint } = await import('./http-endpoint')
     const server = createServer((_req, res) => {
@@ -143,7 +143,7 @@ describe('T6 评审回归:端点校验与陈旧 start', () => {
     }
   })
 
-  it('陈旧 start:stop 后不重启,挂起的 start 不得误报 running(评审 Required-1)', async () => {
+  it('陈旧 start:stop 后不重启,挂起的 start 不得误报 running', async () => {
     let release!: () => void
     const gate = new Promise<boolean>((resolve) => {
       release = () => resolve(true)

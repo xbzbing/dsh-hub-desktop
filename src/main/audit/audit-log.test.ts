@@ -27,7 +27,7 @@ const readLines = async (path: string): Promise<Array<Record<string, unknown>>> 
     .map((line) => JSON.parse(line) as Record<string, unknown>)
 }
 
-describe('audit-log（§7.5 JSONL 审计）', () => {
+describe('audit-log（ JSONL 审计）', () => {
   it('写入 JSONL:每行一条记录,字段白名单(ts/instanceId/event/result)', async () => {
     const clock = Date.parse('2026-09-15T10:00:00.000Z')
     const log = createAuditLog({ dir, now: () => clock })

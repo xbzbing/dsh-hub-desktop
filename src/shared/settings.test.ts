@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, normalizeSettings, resolveLanguage, SettingsSchema } from './settings'
 
-describe('settings（T11 非敏感偏好）', () => {
+describe('settings（非敏感偏好）', () => {
   it('默认值:中文、跟随系统主题、不驻留托盘、不自启、开通知', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       language: 'zh',

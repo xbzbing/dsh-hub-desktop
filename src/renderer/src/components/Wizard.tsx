@@ -35,18 +35,15 @@ const EMPTY_FORM: WizardForm = {
 }
 
 /**
- * 设计 §7.1「直连 HTTP 远程实例默认警告『数据面明文』」:保存**之前**就要提示。
- *
- * 方案判定复用 @shared/endpoint 的权威解析(与表单校验、主进程同一份实现):
- * 省略协议按 http:// 补全 → 同样告警;https:// 不告警。未输入/解析失败时不告警。
- * 与 DetailView.tsx 内同名判定保持一致(两处都只在 http 方案下提示)。
+ * 直连 HTTP 使用明文数据连接，需要在保存前显示警告。
+ * 共享端点解析会将省略协议的地址视为 HTTP；HTTPS 和解析失败时不显示警告。
  */
 function isCleartextEndpoint(endpointUrl: string): boolean {
   const parsed = tryParseEndpoint(endpointUrl)
   return parsed.ok && parsed.endpoint.scheme === 'http'
 }
 
-/** 创建向导(设计稿 wizard):三步 —— 类型 → 表单 → 确认;本期本地分支创建后自动启动并开窗 */
+/** 创建向导：选择类型、填写表单并确认创建；本地实例创建后自动启动并打开窗口。 */
 export default function Wizard(): ReactNode {
   const t = useAppStore((state) => state.t)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
@@ -123,7 +120,7 @@ export default function Wizard(): ReactNode {
     setWizardOpen(false)
     toast('ok', t('wizard.created', { name: result.value.name }))
     void refreshList()
-    // 三种传输都走同一状态链「创建→启动(探测)→就绪→开窗」;状态推进与传输无关
+    // 启动成功后由状态事件打开工作区；失败或停止时移除待打开记录。
     setPendingOpen(result.value.id)
     const started = await bridge.runtime.start(result.value.id)
     if (!started.ok) {
@@ -155,7 +152,7 @@ export default function Wizard(): ReactNode {
               <button
                 className="btn btn-primary"
                 onClick={() => {
-                  // 第 1 步(选类型)不需要校验;2→3 与创建前才校验表单
+                  // 仅在填写配置和创建前校验表单。
                   if (step === 1) {
                     setError(null)
                     setStep(2)
@@ -332,7 +329,7 @@ export default function Wizard(): ReactNode {
                 />
                 <span className="hint">{t('wizard.urlHint')}</span>
               </div>
-              {/* 设计 §7.1:http:// 直连的数据面是明文,创建前先提示(https 不提示) */}
+              {/* 直连 HTTP 使用明文数据连接，创建前显示警告。 */}
               {isCleartextEndpoint(form.endpointUrl) && (
                 <div className="note n-warn mt12" data-testid="wizard-cleartext-warning">
                   <Icon name="alert" />

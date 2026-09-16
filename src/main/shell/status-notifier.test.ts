@@ -2,9 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InstanceStatusEvent } from '@shared/contracts'
 
 /**
- * 系统通知的**发送**单测（T11 三审 Finding 2）。
  *
- * 复审确认的存活变异:`new Notification(...).show()` 被整段删除后三关全绿 ——
  * 「该不该通知」有纯函数测试,而真正送达的那一步没有。这里 mock 掉 electron 的
  * `Notification`,直接断言 `.show()` 被调用、且载荷来自 `notificationPlan`。
  */
@@ -57,7 +55,7 @@ beforeEach(() => {
 })
 
 describe('createStatusNotifier（通知真的发出去）', () => {
-  it('状态 stopped→running 且偏好开启 → 真的调用 Notification.show()(变异「删掉 show」的锚点)', () => {
+  it('状态 stopped→running 且偏好开启 → 真的调用 Notification.show()(「删掉 show」的锚点)', () => {
     const sent = notifier().notify(running('端口 30001'), 'stopped')
     expect(sent).toBe(true)
     expect(shown).toEqual([{ title: 'DSH Hub · 已连接', body: '端口 30001' }])

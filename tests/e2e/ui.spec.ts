@@ -4,7 +4,7 @@ import { mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 /**
- * T3 渲染层端到端:空态 → 向导三步创建 → 表格/侧栏 → 详情 → 删除闭环。
+ * 渲染层端到端：空态、创建、列表、详情和删除。
  * 说明:本地分支创建后会自动触发启动,在受限/CI 环境里安装可能失败,但本用例
  * 只断言 UI 与注册表结果,启动结果由 status 事件另行覆盖(见 local-runtime 单测)。
  */

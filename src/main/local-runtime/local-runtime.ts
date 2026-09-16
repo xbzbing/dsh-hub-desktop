@@ -1,10 +1,6 @@
 /**
- * 本地实例运行时（T3）—— 不 import electron（全局规则 5）。
  *
- * 设计依据：设计文档 §4.1（专用 DSH_HOME、spawn 隔离运行时、解析就绪 URL、杀整棵进程树）
- * 与 §4.3（HealthyProbe：任意 HTTP 响应即「传输就绪」）。
  *
- * 状态推进只经 `onStatus` 监听器向外发布（R3 后由 main 进程转成 IPC 事件），
  * 因此本模块可脱离 Electron 单独测试。
  */
 import { spawn } from 'node:child_process'
@@ -17,7 +13,7 @@ import type { RuntimeInstaller } from './runtime-installer'
 import { planRuntimeSource, type PathProbe } from './runtime-source'
 import { httpHealthProbe, type HealthProbe } from '../transport/probe'
 
-export type { HealthProbe } // T3 既有导出保持兼容；类型本体已统一到 transport/probe.ts（§4.3）
+export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
 
 /** dsh 就绪输出：`dsh web: http://127.0.0.1:52300/?token=...` */
 const READY_PATTERN = /dsh\s+web:\s+(https?:\/\/\S+)/i
@@ -49,7 +45,6 @@ export type SpawnLike = (invocation: SpawnInvocation) => SpawnedProcess
 
 export interface LocalRuntimeOptions {
   installer: RuntimeInstaller
-  /** 应用数据根：实例 DSH_HOME 落在 `<dataRoot>/homes/<id>`（评审结论 R7） */
   dataRoot: string
   /** 缺省用 Electron 自带 Node（ELECTRON_RUN_AS_NODE）执行 dsh 入口 */
   nodeInvocation?: { command: string; args: string[]; env: NodeJS.ProcessEnv }
@@ -61,18 +56,14 @@ export interface LocalRuntimeOptions {
   readyTimeoutMs?: number
   stopGraceMs?: number
   healthTimeoutMs?: number
-  /** §4.3 连接期探测重试次数（就绪 URL 先于端口绑定出现时的兜底；默认 5 次） */
   healthProbeRetries?: number
-  /** §4.3 连接期探测间隔（默认 500ms） */
   healthProbeRetryMs?: number
   now?: () => number
   /**
-   * #2 用户反馈:PATH 探测器(探测用户本机的 dsh)。缺省 = 不探测
    * (决策退化为「hub → 下载」两级,与旧行为兼容)。
    */
   pathProbe?: PathProbe
   /**
-   * #2 用户反馈:「真要下载时需要用户确认」的确认口。缺省 = 拒绝下载
    * (生产装配必须注入;测试/受限环境注入 stub)。返回 true 才继续下载。
    */
   confirmDownload?: (version: string) => Promise<boolean>
@@ -82,12 +73,10 @@ export interface LocalRuntimeManager {
   onStatus(listener: (event: InstanceStatusEvent) => void): () => void
   statusOf(id: string): InstanceStatusEvent | null
   runningIds(): string[]
-  /** 立即返回；状态经 onStatus 推进（与 IPC `instances:start` 契约一致） */
   start(instance: LocalInstance): Promise<void>
   stop(id: string): Promise<void>
   stopAll(): Promise<void>
   /**
-   * 实机反馈 2026-09-16:接管本机**已在运行**的 dsh web(hub 不 spawn)。
    * 接管后 statusOf 返回 running + 外部 URL,「打开视图」直接可用;
    * stop() 只断开接管,**绝不终止**用户自己的进程。
    */
@@ -137,7 +126,7 @@ const defaultSpawn: SpawnLike = ({ command, args, env, cwd, detached }) =>
 function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
   // Electron 主进程的 process.execPath 是 Electron 本体：以 ELECTRON_RUN_AS_NODE 退化为纯 Node 执行 dsh。
   // `--expose-internals` 是 dsh web profile 的硬性要求（cordis-plugin-hmr 需要），缺失时就绪后即崩
-  // （实测:node 与 electron-as-node 均需该标志才能稳定存活）。
+
   return { command: process.execPath, args: ['--expose-internals'], env: { ELECTRON_RUN_AS_NODE: '1' } }
 }
 
@@ -247,11 +236,10 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
 
   async function handleReady(id: string, entry: Entry, url: string): Promise<void> {
     // 在途续体身份守卫:探测/重试期间本条目的进程可能已退出(退出处理器会删条目并立即
-    // 放行队列,同 id 的第二次 start 随即拉起新进程)。陈旧续体不得再发布 running、
+
     // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
     // 下次 start 又 spawn 一个,两个 dsh 共享同一 DSH_HOME。
     const stale = (): boolean => entry.stopping || entries.get(id) !== entry
-    // §4.3:连接期探测频率 500ms —— 兜住「先打印就绪 URL、后绑定端口」的打印先行 TOCTOU
     let healthy = false
     for (let attempt = 1; attempt <= healthProbeRetries; attempt++) {
       if (stale()) return
@@ -350,10 +338,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         return
       }
 
-      cancelRequested.delete(id) // 显式重启优先于此前排队期间的取消意图
+      cancelRequested.delete(id) // 新的启动请求取消之前排队的停止请求
       try {
         emit(id, 'starting', { detail: '解析运行时来源' })
-        // #2 用户反馈:「优先 hub 已装同版本 → 再探测 PATH → 都没有才下载,真要下载时需要用户确认」。
         // 探测与决策在启动队列外完成(纯读);hub 清单与 PATH 探测并行,互不拖慢。
         const [hubInstalled, pathRuntime] = await Promise.all([
           options.installer
@@ -404,7 +391,6 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
 
         // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
         // 关键:串行段要等到「就绪或退出」才结束 —— 端口探测与 dsh 实际绑定之间存在
-        // TOCTOU 窗口(设计文档 §4.1),若只等 spawn 就放行,两个实例会抢同一端口后者崩溃。
         const outcome = await enqueueStart(async (): Promise<StartOutcome> => {
             // 队列内二次查重:同一 tick 并发 start(双击启动 / 向导自动启动与手动启动竞速)
             // 时,第一次查重发生在首个 await 之前会双双通过,前一个任务可能已把该实例拉起

@@ -139,7 +139,6 @@ function scriptedRunner(script: Record<string, { code: number; stdout: string; s
 describe('createPathProbe(PATH 探测,尽力而为)', () => {
   /**
    * 纯注入环境:候选探测**不看真实文件系统**、不起登录 shell。
-   * 不加这一层时,`which` 失败后候选列表会去查真实机器(本机确实存在
    * `~/.local/bin/dsh`),测试结果就会随开发机环境漂移。
    */
   const HERMETIC = {
@@ -215,7 +214,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     await expect(probe.probe()).resolves.toBeNull()
   })
 
-  it('--version 输出多行 → 取第一行(带尾随空白也容忍)', async () => {
+  it('-version 输出多行 → 取第一行(带尾随空白也容忍)', async () => {
     const probe = createPathProbe({
       ...HERMETIC,
       run: scriptedRunner({
@@ -229,7 +228,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     })
   })
 
-  it('win32:用 where 探测,接受盘符绝对路径', async () => {
+  it("wi", async () => {
     const probe = createPathProbe({
       ...HERMETIC,
       platform: 'win32',
@@ -244,7 +243,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     })
   })
 
-  it('win32:where 输出相对路径 → 拒绝', async () => {
+  it("wi", async () => {
     const probe = createPathProbe({
       ...HERMETIC,
       platform: 'win32',
@@ -255,9 +254,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     await expect(probe.probe()).resolves.toBeNull()
   })
 
-  // —— 实机反馈修复:GUI 启动的 app 拿不到登录 shell PATH ——
   // 用户实测:dsh 装在 ~/.local/bin(Finder 启动时不在 PATH)→ which 失败 →
-  // 旧实现判定「未安装」并要求重新安装。以下覆盖候选路径与登录 shell 兜底。
 
   it('which 失败 → 回退探测候选绝对路径(~/.local/bin/dsh 命中)', async () => {
     const probe = createPathProbe({
@@ -369,7 +366,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     })
   })
 
-  it('win32:候选补 .cmd(npm 全局脚本形态)', async () => {
+  it("win32:候选补 .cmd(npm 全局脚本形态)", async () => {
     const probe = createPathProbe({
       platform: 'win32',
       home: 'C:\\Users\\tester',

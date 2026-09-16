@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createTranslator, interpolate, translate } from './index'
 import { MESSAGES, MESSAGE_KEYS } from './messages'
 
-describe('i18n 目录（T11 R6 双语）', () => {
+describe('i18n 目录（双语）', () => {
   it('每条文案都有 zh 与 en,且都非空', () => {
     for (const key of MESSAGE_KEYS) {
       const message = MESSAGES[key]

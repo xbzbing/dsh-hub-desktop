@@ -12,7 +12,7 @@ const nav = (
   resourceType: 'mainFrame'
 })
 
-describe('intercept（§6.3 302/401 判定）', () => {
+describe('intercept（ 302/401 判定）', () => {
   it('302 → /login = 会话失效', () => {
     expect(classifyAuthSignal(nav(302, '/login'))).toBe('session-expired')
   })

@@ -5,13 +5,13 @@ import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 
 /**
- * T11 验收 ④:总览列表 50+ 实例的性能取证。
+ * 总览列表 50+ 实例的性能验证。
  *
  * 预播种 60 条真实形态的注册表记录(混合 local/http 变体,形态与 create() 落盘
  * 完全一致 —— 参照 registry.spec 对落盘文件的断言),启动真实应用,断言:
  * ① 总览表格 60 行全部渲染出来;② 从启动到满行的耗时在预算内。
  *
- * 预算是防回归护栏(防 O(n²) 级灾难 / 明显卡死),不是微基准 —— 正常应远低于预算。
+ * 预算用于防止明显卡顿或 O(n²) 行为，不作为微基准。
  */
 
 const DATA_DIR = resolve(__dirname, '..', '..', 'hub-data', 'e2e-perf')

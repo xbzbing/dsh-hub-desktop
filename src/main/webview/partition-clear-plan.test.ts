@@ -23,7 +23,7 @@ const ssh = {
 } as unknown as InstanceRecord
 const local = { ...base, transport: 'local', dshVersion: null, port: null, profile: null, autoStart: false } as unknown as InstanceRecord
 
-describe('planPartitionClear（T9 装配层:清理链路）', () => {
+describe('planPartitionClear（装配层:清理链路）', () => {
   it('http:用持久化端点(与隧道无关)', () => {
     expect(planPartitionClear(http, undefined)).toEqual({
       partition: `persist:inst-${http.id}`,

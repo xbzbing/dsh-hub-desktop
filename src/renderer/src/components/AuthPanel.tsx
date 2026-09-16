@@ -36,10 +36,8 @@ async function instanceNameOf(instanceId: string): Promise<string> {
 const probing = new Set<string>()
 
 /**
- * 打开面板并立即重探(T9:让 `auth:signal` 有真实消费者)。
- *
- * 面板在拿到快照前 `state` 为 null → 渲染为「无」(见下方 early return),
- * 因此**静默恢复成功时不会闪出登录面板**:重探返回 `connected` 时归约会关闭面板。
+ * 打开认证面板后立即探测认证状态。
+ * 状态快照返回前不渲染面板；已连接时归约会关闭面板。
  */
 async function openAndProbe(
   instanceId: string,
@@ -59,9 +57,9 @@ async function openAndProbe(
 }
 
 /**
- * 认证面板（T8,设计稿 auth-panel / 设计文档 §5.3）。
+ * 认证面板。
  *
- * 状态流(分步是唯一 UI 形态,不做密码+验证码同屏):
+ * 状态流：
  *   needs-auth / await-credentials → 密码屏
  *   await-otp                     → 6 位验证码屏(可切备份码)
  *   锁定(lockedForMs>0)          → 倒计时,期间禁用提交
@@ -79,9 +77,8 @@ export default function AuthPanel(): ReactNode {
   const [error, setError] = useState<string | null>(null)
   // 每秒 tick 只用于让「按到期时刻派生」的倒计时重算,不承载状态本身
   const [, setTick] = useState(0)
-  // G2 已决边(§5.3):该实例是否可走「已保存的密码」—— 勾选了记住密码且 vault 里
-  // 确有条目。这只决定 UI 的提交路径与提示;真正的门禁在主进程(未勾选/无密码 →
-  // invalid-input),渲染层无从绕过。
+  // 已保存密码仅在用户选择记住密码且保险库中存在凭据时可用。
+  // 主进程仍会验证此条件，渲染层不能绕过该检查。
   const [storedAvailable, setStoredAvailable] = useState(false)
 
   useEffect(() => {
@@ -99,8 +96,7 @@ export default function AuthPanel(): ReactNode {
       setTick((value) => value + 1)
       if (lockExpired(model)) {
         clearInterval(timer)
-        // 评审 R4:先无条件解除锁定,再尝试重探刷新状态 ——
-        // 若把解锁绑定在重探成功上,重探返回 null/{ok:false} 时按钮会永久停在「锁定 0s」。
+        // 到期时先解除锁定，再探测以刷新状态；探测失败不能使按钮保持禁用。
         setModel((current) => clearLock(current))
         const openId = model.target?.id
         if (!openId) return
@@ -129,8 +125,7 @@ export default function AuthPanel(): ReactNode {
   }, [])
 
   /**
-   * T9:消费拦截层信号(`auth:signal`)—— 会话失效/需二因素/需引导时打开面板并重探。
-   * 此前该信号全仓无渲染层消费者(评审 Minor),主进程只能盲目重探。
+   * 认证信号表示会话失效、需要二次验证或需要引导时，打开面板并重新探测。
    */
   useEffect(() => {
     if (!BRIDGE) return
@@ -139,9 +134,7 @@ export default function AuthPanel(): ReactNode {
     })
   }, [])
 
-  // 打开面板(或切换目标实例/状态推进)时读取 vault 状态,判断「已保存的密码」是否
-  // 可用。T8 评审-2 L1:仅随 targetId 刷新可能读到 stale —— 相位变化时重读一次
-  // (vault:status 是本地读,代价可忽略),保证提交路径判定不过期。
+  // 面板目标或认证相位变化时读取保险库状态，避免使用过期的已保存密码状态。
   const targetId = model.target?.id ?? null
   const targetPhase = model.state?.phase ?? null
   useEffect(() => {
@@ -182,9 +175,7 @@ export default function AuthPanel(): ReactNode {
     setBusy(true)
     setError(null)
     try {
-      // 验证码阶段复用同一次密码经单请求带码提交(设计 §5.2);密码屏只提交密码。
-      // G2 已决边(§5.3):验证码阶段密码留空 + vault 已存密码 → 走 loginStored
-      // (密码不跨 IPC,主进程自取),不再强制用户重输密码;失败时仍可手动输入。
+      // 验证码阶段可使用保存的密码；密码本身不跨 IPC，由主进程读取。
       const useStored = phase === 'await-otp' && password === '' && storedAvailable
       const result = useStored
         ? await BRIDGE.auth.loginStored(target.id, otp === '' ? undefined : otp)
@@ -229,8 +220,7 @@ export default function AuthPanel(): ReactNode {
               : t('auth.credentialsLocalOnly')}
           </span>
           <div className="right">
-            {/* 用户反馈 #8:认证面板是紧凑浮层,标准按钮(31px)显得过大 —— 与详情页
-                操作按钮一致改用 btn-sm(27px),视觉协调 */}
+            {/* 紧凑浮层使用小尺寸操作按钮。 */}
             <button className="btn btn-secondary btn-sm" onClick={close}>
               {t('common.cancel')}
             </button>
@@ -238,9 +228,7 @@ export default function AuthPanel(): ReactNode {
               className="btn btn-primary btn-sm"
               data-testid="auth-submit"
               onClick={() => void submit()}
-              // D5:await-otp 阶段验证码必须填;密码在已存密码可用时允许留空(G2),
-              // 否则维持「密码+验证码都要有」—— register 侧要求密码 min(1),只禁用
-              // 验证码会提交出 invalid-input 而不是给出「按钮不可用」的提示
+              // 验证码阶段需要验证码；没有可用的保存密码时也需要密码。
               disabled={
                 busy ||
                 locked ||
@@ -354,8 +342,7 @@ export default function AuthPanel(): ReactNode {
         </div>
       )}
 
-      {/* UI 打磨 #2:回答「必须输 TOTP 吗」—— 只有网关要求验证码才会到这一页;
-          实例未启用 2FA 时密码登录直接连通,不会出现本页 */}
+      {/* 仅在网关要求验证码时显示此提示。 */}
       {phase === 'await-otp' && (
         <div className="hintbar mt12" data-testid="auth-otp-required-hint">
           <Icon name="shield" />

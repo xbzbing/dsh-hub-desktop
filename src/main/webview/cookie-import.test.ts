@@ -8,7 +8,7 @@ import {
   type CookieSetter
 } from './cookie-import'
 
-describe('cookie-import（§6.2 Cookie 双写）', () => {
+describe('cookie-import（ Cookie 双写）', () => {
   it('Cookie 属性与真实网关一致(Path=/; HttpOnly; SameSite=strict; 无 Secure)', () => {
     const record = toCookieRecord({
       origin: 'https://gw.example.com',

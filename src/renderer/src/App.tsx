@@ -35,7 +35,7 @@ export default function App() {
     const unsubscribeStatus = BRIDGE.onInstanceStatus((event) =>
       useAppStore.getState().applyStatus(event)
     )
-    // 认证相位 → store(#2:详情页按钮状态化的数据源;App 级订阅保证事件不漏)
+    // 认证相位写入 store；应用级订阅确保详情按钮收到状态更新。
     const unsubscribeAuth = BRIDGE.auth.onState((event) =>
       useAppStore.getState().applyAuthPhase(event.instanceId, event.state.phase)
     )
@@ -66,8 +66,7 @@ export default function App() {
 
   return (
     <div className={`app-shell${rail ? ' rail' : ''}`} data-testid="app-shell">
-      {/* 用户反馈 #4:顶栏(工作区标题栏)提升为全宽统一标题栏,横跨 sidebar 与主区 ——
-          macOS 红绿灯落在顶栏带内,sidebar 边框不再直达窗口顶部 */}
+      {/* 顶栏横跨侧边栏和主区，为 macOS 窗口控件预留空间。 */}
       <div className="topbar">
         <div className="tb-left">
           <span className="tb-title" data-testid="tb-title">

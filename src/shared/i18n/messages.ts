@@ -1,5 +1,5 @@
 /**
- * 界面文案目录（T11,R6「完整 zh/en 双语」）—— 纯数据,不 import electron/React。
+ * 界面文案目录 —— 纯数据，不 import electron/React。
  *
  * 为什么用**扁平的 key → {zh,en}** 而不是两棵语言树:
  * 1. 漏译是编译期错误:两个语言写在同一处,少一个字段 `tsc` 直接报错
@@ -134,7 +134,7 @@ export const MESSAGES = {
     en: 'This step appears only when the instance has 2FA enabled; otherwise signing in with your password goes straight through.'
   },
 
-  // —— 凭据存储（T10 §7.2）——
+  // —— 凭据存储 ——
   'vault.title': { zh: '凭据存储', en: 'Credential storage' },
   'vault.backendKeychain': { zh: '系统钥匙串（safeStorage）', en: 'System keychain (safeStorage)' },
   'vault.backendMemory': {
@@ -176,7 +176,7 @@ export const MESSAGES = {
   'settings.autoStart': { zh: '开机自启', en: 'Launch at login' },
   'settings.notifications': { zh: '实例状态通知', en: 'Instance status notifications' },
   'settings.dataDir': { zh: '数据目录', en: 'Data directory' },
-  // 三审 Finding 1:数据目录新增「打开」控件(设计稿 data-act="open-dir";PRD §292)
+  // 数据目录提供「打开」控件。
   'settings.openDataDir': { zh: '打开', en: 'Open' },
   'settings.openDataDirFailed': {
     zh: '打开数据目录失败',
@@ -190,7 +190,7 @@ export const MESSAGES = {
   'settings.saveFailed': { zh: '设置保存失败', en: 'Failed to save settings' },
   'settings.cleared': { zh: '已清除所有记住的凭据', en: 'All remembered credentials cleared' },
 
-  // —— 运行时长（T11:原先在 lib/format.ts 里拼中文）——
+  // —— 运行时长 ——
   'duration.seconds': { zh: '{n} 秒', en: '{n}s' },
   'duration.minutes': { zh: '{n} 分钟', en: '{n}m' },
   'duration.hours': { zh: '{h} 小时 {m} 分', en: '{h}h {m}m' },
@@ -198,7 +198,7 @@ export const MESSAGES = {
   'detail.notRunning': { zh: '未运行', en: 'Not running' },
   'detail.instanceDetail': { zh: '实例详情', en: 'Instance details' },
 
-  // —— 新建向导（T11）——
+  // —— 新建向导 ——
   'wizard.stepTransport': { zh: '连接方式', en: 'Transport' },
   'wizard.stepConfig': { zh: '配置', en: 'Configure' },
   'wizard.stepConfirm': { zh: '确认', en: 'Confirm' },
@@ -235,7 +235,7 @@ export const MESSAGES = {
   'wizard.noteLocal': { zh: '本机实例创建完成后会自动安装 dsh 并启动，就绪后直接打开工作区。', en: 'A local instance installs dsh and starts automatically, then opens the workspace.' },
   'wizard.noteSsh': { zh: '首次连接需要核对服务器指纹，确认后才会建立加密通道。', en: 'The first connection verifies the server fingerprint before the encrypted channel is established.' },
   'wizard.noteHttp': { zh: '粘贴网址后已在第二步实时探测登录方式。', en: 'The sign-in mode was probed live in step two.' },
-  // 设计 §7.1「直连 HTTP 远程实例默认警告『数据面明文』」——保存**之前**就要让用户看到
+  // 保存前显示直连 HTTP 实例的数据面明文警告。
   'wizard.cleartextWarning': {
     zh: '该地址是 http://，数据面为明文：密码、动态验证码与会话 Cookie 都会以明文经过网络。http 实例完全可用；若希望数据面也被加密，https 端点或 SSH 隧道更稳妥。',
     en: 'This address uses http://, so the data plane is cleartext: the password, verification code and session cookie travel over the network unencrypted. http instances work fine; an https endpoint or an SSH tunnel is simply more private if you want the data plane encrypted too.'
@@ -253,7 +253,7 @@ export const MESSAGES = {
     en: 'Reuses the system ssh-agent and ~/.ssh/config; key contents are never displayed or stored by the app.'
   },
 
-  // —— 实例详情（T11）——
+  // —— 实例详情 ——
   'detail.loggedOut': { zh: '已登出', en: 'Signed out' },
   'detail.loggedOutDetail': { zh: '该实例的分区会话已清除', en: 'The instance partition session was cleared' },
   'detail.addressCopied': { zh: '地址已复制', en: 'Address copied' },
@@ -314,15 +314,13 @@ export const MESSAGES = {
     zh: '本机回环连接未加密。仅本机可访问，不会经过网络；实例页面由 dsh 自带的浏览器令牌保护（browser-auth）。',
     en: 'The loopback connection is unencrypted. Only this machine can reach it and no traffic leaves the host; the instance page is protected by dsh\u2019s built-in browser token (browser-auth).'
   },
-  // 设计 §7.1 威胁表「S 冒认(远程)」:直连 HTTP 远程实例默认警告「数据面明文」(PRD §6.2 警告级别,常驻)
-  // 用户反馈 #3:去掉「请改用…」的命令式口吻,并明确 http 实例是被支持的 ——
-  // 但仍**必须**如实陈述"数据面明文"这一事实(设计 §7.1 要求默认警告,不得弱化)
+  // 直连 HTTP 实例持续显示数据面明文警告。
   'detail.cleartextWarning': {
     zh: '未加密连接：直连 http:// 端点的数据面为明文，密码、动态验证码与会话 Cookie 都会以明文经过网络。http 实例完全可用；若希望数据面也被加密，https 端点或 SSH 隧道更稳妥。',
     en: 'Unencrypted connection: a direct http:// endpoint has a cleartext data plane, so the password, verification code and session cookie travel over the network unencrypted. http instances work fine; an https endpoint or an SSH tunnel is simply more private if you want the data plane encrypted too.'
   },
   'detail.cleartextBadge': { zh: '未加密连接', en: 'Unencrypted' },
-  // —— 实例编辑(用户反馈 #10/#11)——
+  // —— 实例编辑 ——
   'edit.openButton': { zh: '编辑', en: 'Edit' },
   'edit.title': { zh: '编辑实例', en: 'Edit instance' },
   'edit.sub': { zh: '{name}：连接方式创建后不可更改；其余字段随时可改。', en: '{name}: the transport cannot be changed after creation; other fields can be edited any time.' },
@@ -357,7 +355,7 @@ export const MESSAGES = {
   },
   'detail.delete': { zh: '删除', en: 'Delete' },
 
-  // —— SSH 指纹/口令对话框（T11）——
+  // —— SSH 指纹/口令对话框 ——
   'ssh.hostKeyChangedTitle': { zh: '服务器指纹已变化', en: 'Server fingerprint changed' },
   'ssh.hostKeyTitle': { zh: '连接安全确认', en: 'Confirm connection security' },
   'ssh.hostKeyChangedSub': { zh: '与此前信任的不一致', en: 'differs from what was trusted before' },
@@ -385,8 +383,7 @@ export const MESSAGES = {
     zh: '可能是服务器重装或密钥轮换，也可能是中间人攻击。为避免误信任，本应用不会在连接时覆盖已信任的指纹；确认服务器端确实换了密钥后，用「忘记该主机指纹」重新走首次确认。',
     en: 'This can be a reinstall or key rotation, but it can also be a man-in-the-middle attack. To avoid trusting the wrong key, this app never overwrites a trusted fingerprint during a connection; once you have confirmed the server really was re-keyed, use "Forget this host key" to verify it as a first-time host.'
   },
-  // 显式、破坏性的恢复动作（设计 §7.3）：连接时指纹变化一律拒绝且不自动清理，
-  // 只有在**独立**的确认框里主动「忘记该主机指纹」，下一次连接才重新走首次 TOFU。
+  // 显式删除已保存的指纹后，下一次连接会重新执行 TOFU 确认。
   'ssh.forgetHostKey': { zh: '忘记该主机指纹', en: 'Forget this host key' },
   'ssh.forgetTitle': { zh: '忘记该主机指纹', en: 'Forget this host key' },
   'ssh.forgetIrreversible': {
@@ -410,7 +407,7 @@ export const MESSAGES = {
   'ssh.previouslyTrusted': { zh: '此前信任：', en: 'Previously trusted: ' },
   'ssh.continue': { zh: '继续', en: 'Continue' },
 
-  // —— 总览表格（T11）——
+  // —— 总览表格 ——
   'home.statInstances': { zh: '个实例，本地 / SSH / 远程统一入口', en: 'instances — one place for local, SSH and remote' },
   'home.statConnected': { zh: '个已连接，通道正常', en: 'connected with a healthy channel' },
   'home.statAttention': { zh: '个需要处理，登录或重试', en: 'need attention — sign in or retry' },
@@ -430,7 +427,7 @@ export const MESSAGES = {
   },
   'home.viewDetail': { zh: '查看详情', en: 'View details' },
 
-  // —— SSH 密钥预览（T11）——
+  // —— SSH 密钥预览 ——
   'keyPreview.failed': { zh: '密钥解析失败', en: 'Key resolution failed' },
   'keyPreview.hint': {
     zh: '填写主机后会自动展示将使用哪个密钥。',
@@ -448,7 +445,7 @@ export const MESSAGES = {
   'keyPreview.alternates': { zh: '备用 {n} 把', en: '{n} more available' },
   'keyPreview.explicit': { zh: '实例已指定私钥', en: 'instance pins a private key' },
 
-  // —— 网址探测（T11）——
+  // —— 网址探测 ——
   'detect.gateway': {
     zh: '已识别登录认证（密码 + 动态验证码），创建后打开登录面板',
     en: 'Login gateway detected (password + TOTP); the sign-in panel opens after creation'
@@ -473,7 +470,7 @@ export const MESSAGES = {
   },
   'detect.probing': { zh: '正在探测端点…', en: 'Probing the endpoint…' },
 
-  // —— 托盘（T11）——
+  // —— 托盘 ——
   'notify.connected': { zh: '已连接', en: 'Connected' },
   'notify.error': { zh: '出错', en: 'Error' },
   'tray.show': { zh: '显示主窗口', en: 'Show window' },

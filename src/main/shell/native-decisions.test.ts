@@ -7,7 +7,7 @@ import {
 } from './native-decisions'
 import { createTranslator } from '@shared/i18n'
 
-describe('native-decisions（T11 设置 → 原生行为）', () => {
+describe('native-decisions（设置 → 原生行为）', () => {
   const on = { notifications: true }
 
   it('运行/失败状态变化会通知', () => {
@@ -53,7 +53,7 @@ describe('native-decisions（T11 设置 → 原生行为）', () => {
     })
   })
 
-  it('通知文案跟随语言(复审 R2:此前硬编码中文)', () => {
+  it('通知文案跟随语言', () => {
     const event = { id: 'i1', status: 'running' as const, detail: '本地实例已就绪' }
     expect(notificationPlan(event, 'starting', { notifications: true }, createTranslator('zh'))).toEqual({
       title: 'DSH Hub · 已连接',

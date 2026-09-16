@@ -1,6 +1,6 @@
 /**
- * 展示层工具：状态/类型映射与格式化（对应原型 STATUS / TYPE 常量表）。
- * 认证相关状态（auth/interrupted/locked）随 T7 认证层接入,这里先按 T3 规则映射。
+ * 展示层工具：状态、类型映射和格式化。
+ * 认证相关状态（auth/interrupted/locked）也在此映射。
  */
 import type { InstanceRecord, InstanceRuntimeStatus, Transport } from '@shared/contracts'
 import type { MessageKey } from '@shared/i18n/messages'
@@ -49,7 +49,7 @@ export const STATUS_INFO: Record<DisplayStatus, DisplayStatusInfo> = {
   locked: { labelKey: 'state.locked', chipClass: 'c-err', dotClass: 's-locked', icon: 'lock' }
 }
 
-/** T3 映射:运行时四态 → 设计稿七态(认证三态由 T7 补) */
+/** 将运行时状态映射为展示状态。 */
 export function toDisplayStatus(status?: InstanceRuntimeStatus): DisplayStatus {
   switch (status) {
     case 'starting':
@@ -66,18 +66,14 @@ export function toDisplayStatus(status?: InstanceRuntimeStatus): DisplayStatus {
 /**
  * 运行时状态 → 展示信息（圆点 / 胶囊 / 文案由**同一次映射**给出）。
  *
- * 总览列表此前把圆点写成死类名 `className="status-dot"`（不带修饰类），于是无论实例
- * 实际状态如何，圆点都只落到 `.status-dot` 的基色 `--idle`（灰）；同一行的胶囊却拿到了
- * 正确的 `chipClass` —— 圆点与它旁边的文案自相矛盾（用户反馈 #7）。
- * 这里把「状态 → 展示信息」收成唯一出口，列表与侧边栏共用，避免列表再造第二套映射。
+ * 列表和侧边栏共用此映射，确保圆点、胶囊和文案反映同一状态。
  */
 export function toStatusInfo(status?: InstanceRuntimeStatus): DisplayStatusInfo {
   return STATUS_INFO[toDisplayStatus(status)]
 }
 
 /**
- * 展示层类型标签**只放文案 key**,不放文案本身 ——
- * 否则 lib 层会残留硬编码文案,双语就必然有遗漏(由 i18n-coverage.test.ts 钉住)。
+ * 展示层类型标签只保存文案 key，文案由调用方翻译。
  */
 export const TYPE_INFO: Record<Transport, { labelKey: MessageKey; icon: IconName }> = {
   local: { labelKey: 'transport.local', icon: 'local' },
@@ -98,8 +94,7 @@ export function addressOf(record: InstanceRecord): string {
 
 /**
  * 运行时长(毫秒)→ 人类可读。
- * 文案经翻译器而非在此拼中文:lib 层残留硬编码文案必然导致双语遗漏
- * (由 i18n-coverage.test.ts 钉住)。
+ * 文案通过翻译器生成，避免在此硬编码语言文本。
  */
 export function fmtDuration(ms: number, t: Translator): string {
   if (!Number.isFinite(ms) || ms < 0) return '—'

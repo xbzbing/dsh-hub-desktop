@@ -1,9 +1,7 @@
 /**
- * Cookie 罐（T7,设计文档 §5.1）—— 不 import electron,零依赖。
  *
  * 手写而非依赖 fetch 的自动 Cookie 管理:
  * - 会话 Cookie `dsh_auth` 是 HttpOnly 的,必须由主进程显式持有并注入分区;
- * - 绝不落地:只在内存中按实例保存,进程退出即消失;
  * - 请求显式带 Cookie 头,响应显式解析 Set-Cookie(禁用自动重定向与隐式状态)。
  */
 

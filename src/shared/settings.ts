@@ -1,7 +1,7 @@
 /**
- * 应用设置（T11,设计文档 view-settings）—— 纯 schema,不 import electron。
+ * 应用设置 —— 纯 schema，不 import electron。
  *
- * 只放**非敏感**偏好:敏感项一律走 vault(T10 §7.2),两者刻意不混。
+ * 只放**非敏感**偏好，敏感项一律走 vault，两者刻意不混。
  * 落盘在 `<userData>/settings.json`,损坏自愈为默认值(与注册表同一套纪律)。
  */
 import { z } from 'zod'

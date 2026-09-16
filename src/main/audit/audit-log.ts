@@ -1,11 +1,9 @@
 /**
- * 审计日志（T10,设计文档 §7.5）—— 只依赖 node:fs,不 import electron。
  *
  * `<dataRoot>/audit/audit.log`(JSONL),**按本地日历日轮转**为
  * `audit.log.<YYYY-MM-DD>`,归档超过 90 天删除 —— 命名与保留策略镜像
  * `dsh-auth-gateway` 的 `lib/audit-log.js`(便于两边对照 grep)。
  *
- * 安全性质(设计 §7.1「I 泄露」与 §7.5「严禁记录密码、OTP、Cookie」):
  * 1. **记录由白名单字段显式构造**,不做对象展开 —— 调用方多传的字段(哪怕误传
  *    密码)不会进入日志;`result` 截断到 64 字符;
  * 2. 只 append,不改写历史;`ts` 为 UTC ISO-8601(归档文件名用本地日,跨零点可能
@@ -19,13 +17,11 @@ import { join } from 'node:path'
 /** 当日活动文件名 */
 export const AUDIT_LOG_NAME = 'audit.log'
 
-/** 归档保留天数(设计 §7.5:90 天) */
 export const AUDIT_MAX_AGE_DAYS = 90
 
 /** 单条 `result` 的最大长度(防御性截断,避免意外写入长文本) */
 export const MAX_RESULT_LENGTH = 64
 
-/** 设计 §7.5 的事件枚举 —— 新增事件必须先加到这里(白名单,不做自由字符串) */
 export const AUDIT_EVENTS = [
   'connect',
   'disconnect',
