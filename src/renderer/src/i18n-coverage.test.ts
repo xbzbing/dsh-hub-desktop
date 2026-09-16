@@ -101,8 +101,35 @@ const KEYWORDS_BEFORE_EXPRESSION = new Set([
  * 这些关键字后面的 `(` 是**控制语句的括号**,它的 `)` 之后是一条新语句 ——
  * 所以 `if (ok) /re/.test(s)`、`while (ok) /re/.test(s)`、`for (;;) /re/.test(s)` 里的 `/` 是正则。
  * 普通括号的 `)` 之后是值(`(a + b) / 2`),`/` 仍是除号。
+ * **例外**:`for await (` 的 `(` 前面一个词是 `await`(不是 `for`),见 `isForAwaitParen`。
  */
 const CONTROL_PAREN_KEYWORDS = new Set(['catch', 'for', 'if', 'switch', 'while', 'with'])
+
+/**
+ * 六审 R6-1:`for await (…)` 的 `(` 前面一个词是 `await`,`for` 被它挡住 —— 只按
+ * `CONTROL_PAREN_KEYWORDS.has(lastWord)` 判定会把该括号登记为**普通**括号,于是 `)` 把
+ * 上下文置回 `value`(`:561`),`/` 被判成除号,正则体里的 `\/` 与收尾 `/` 在上下文判定
+ * **之前**先命中 `//` 分行注释 → 整行剩余部分(含中文文案)被抹成空格(GREEN 漏报)。
+ *
+ * 此处向前回扫:`(` → 空白 → `await` → 空白 → 若为 `for` 则确认为控制括号。
+ * 刻意**只认 `for await`** 这一形态:裸 `await (` 仍是普通括号,`/` 是除号
+ * (反向对照 `await-paren-div.ts` 钉住,防止过度修复把真除号改判成正则)。
+ */
+const isForAwaitParen = (source: string, parenIndex: number): boolean => {
+  let cursor = parenIndex - 1
+  const skipSpaceBack = (): void => {
+    while (cursor >= 0 && /\s/.test(charAt(source, cursor))) cursor -= 1
+  }
+  const wordBack = (): string => {
+    const end = cursor + 1
+    while (cursor >= 0 && /[A-Za-z0-9_$]/.test(charAt(source, cursor))) cursor -= 1
+    return source.slice(cursor + 1, end)
+  }
+  skipSpaceBack()
+  if (wordBack() !== 'await') return false
+  skipSpaceBack()
+  return wordBack() === 'for'
+}
 
 /** `{` 前面是这些**标点**时,它是对象字面量 / 解构模式,而不是块语句 */
 const EXPRESSION_BRACE_AFTER_PUNCT = new Set(['=', '(', '[', ',', ':', '?'])
@@ -545,7 +572,8 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
       }
       if (char === '(') {
         // `if (`/`while (`/`for (`/`switch (`/`catch (`/`with (` 的 `)` 之后是一条新语句
-        parenStack.push(CONTROL_PAREN_KEYWORDS.has(lastWord))
+        // 六审 R6-1:`for await (` 的 `(` 紧随 `await` 而非 `for`,须由 isForAwaitParen 补判
+        parenStack.push(CONTROL_PAREN_KEYWORDS.has(lastWord) || isForAwaitParen(source, index))
         index += 1
         context = 'operator'
         lastWord = ''
@@ -1486,6 +1514,17 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
       { path: 'e1-if.ts', text: "if (ok) /a\\//.test(s); const C = '文案E1'\n" },
       { path: 'e1-while.ts', text: "while (ok) /a\\//.test(s); const C = '文案E1b'\n" },
       { path: 'e1-for.ts', text: "for (;;) /a\\//.test(s); const C = '文案E1c'\n" },
+      // E1(六审 R6-1):`for await (` 的 `(` 紧随 `await`,`for` 被挡住 —— 必须同样按控制括号登记
+      {
+        path: 'e1-for-await.ts',
+        text: "for await (const it of xs) /a\\//.test(it); const C = '文案E1d'\n"
+      },
+      // 反向对照 4:裸 `await (` 前面**没有** `for`,仍是普通括号 → `/` 是除号,该行文案必须照报
+      // (若过度修复成「`await (` 也是控制括号」,`/` 会被当正则起点吞掉整行 → 此用例转 RED)
+      {
+        path: 'await-paren-div.ts',
+        text: "const z = await (a + b) / 2 + '除号之后的文案E1e'\n"
+      },
       // E2:块语句的 `}` 之后 —— `if (…){}` / `function f(){}` / `class X{}` 三种形态
       { path: 'e2-block.ts', text: "if (ok) { f() } /a\\//.test(s); const C = '文案E2'\n" },
       { path: 'e2-fn.ts', text: "function f() {} /a\\//.test(s); const C = '文案E2b'\n" },
@@ -1513,6 +1552,8 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
       'e1-if.ts:1',
       'e1-while.ts:1',
       'e1-for.ts:1',
+      'e1-for-await.ts:1',
+      'await-paren-div.ts:1',
       'e2-block.ts:1',
       'e2-fn.ts:1',
       'e2-fn-ret.ts:1',
