@@ -224,8 +224,8 @@ export const MESSAGES = {
   'wizard.noteHttp': { zh: '粘贴网址后已在第二步实时探测登录方式。', en: 'The sign-in mode was probed live in step two.' },
   // 设计 §7.1「直连 HTTP 远程实例默认警告『数据面明文』」——保存**之前**就要让用户看到
   'wizard.cleartextWarning': {
-    zh: '该地址是 http://，数据面为明文：密码、动态验证码与会话 Cookie 都会以明文经过网络。请改用 HTTPS 端点，或通过 SSH 隧道连接。',
-    en: 'This address is http://, so its data plane is cleartext: the password, verification code and session cookie all travel over the network in cleartext. Use an HTTPS endpoint, or connect through an SSH tunnel.'
+    zh: '该地址是 http://，数据面为明文：密码、动态验证码与会话 Cookie 都会以明文经过网络。http 实例完全可用；若希望数据面也被加密，https 端点或 SSH 隧道更稳妥。',
+    en: 'This address uses http://, so the data plane is cleartext: the password, verification code and session cookie travel over the network unencrypted. http instances work fine; an https endpoint or an SSH tunnel is simply more private if you want the data plane encrypted too.'
   },
   'wizard.typeLocal': { zh: '本机运行的 dsh', en: 'dsh running locally' },
   'wizard.typeLocalDesc': { zh: '版本按需安装，互不干扰', en: 'Versions installed on demand, isolated' },
@@ -286,9 +286,11 @@ export const MESSAGES = {
     en: 'The loopback connection is unencrypted. Only this machine can reach it and no traffic leaves the host; the instance page is protected by dsh\u2019s built-in browser token (browser-auth).'
   },
   // 设计 §7.1 威胁表「S 冒认(远程)」:直连 HTTP 远程实例默认警告「数据面明文」(PRD §6.2 警告级别,常驻)
+  // 用户反馈 #3:去掉「请改用…」的命令式口吻,并明确 http 实例是被支持的 ——
+  // 但仍**必须**如实陈述"数据面明文"这一事实(设计 §7.1 要求默认警告,不得弱化)
   'detail.cleartextWarning': {
-    zh: '未加密连接：直连 http:// 端点的数据面为明文，密码、动态验证码与会话 Cookie 都会以明文经过网络。请改用 HTTPS 端点，或通过 SSH 隧道连接。',
-    en: 'Unencrypted connection: a direct http:// endpoint has a cleartext data plane, so the password, verification code and session cookie all travel over the network in cleartext. Use an HTTPS endpoint, or connect through an SSH tunnel.'
+    zh: '未加密连接：直连 http:// 端点的数据面为明文，密码、动态验证码与会话 Cookie 都会以明文经过网络。http 实例完全可用；若希望数据面也被加密，https 端点或 SSH 隧道更稳妥。',
+    en: 'Unencrypted connection: a direct http:// endpoint has a cleartext data plane, so the password, verification code and session cookie travel over the network unencrypted. http instances work fine; an https endpoint or an SSH tunnel is simply more private if you want the data plane encrypted too.'
   },
   'detail.deleteBody': {
     zh: '删除后本地保存的登录信息与连接记录会一并移除，远端 dsh 本身不受影响。',
