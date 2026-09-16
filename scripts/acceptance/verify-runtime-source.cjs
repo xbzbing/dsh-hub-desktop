@@ -18,7 +18,6 @@ function sh(cmd) {
 }
 
 let app = null
-const events = []
 
 function log(tag, ok, detail = '') {
   const mark = ok === null ? '·' : ok ? '✅' : '❌'

@@ -849,3 +849,17 @@ describe('registerIpc', () => {
     expect(bad.ok).toBe(false)
   })
 })
+
+  it('T5 复核建议⑤:ssh:askpassReply 空串/全空白在 IPC 边界拒绝(invalid-input)', async () => {
+    const reply = (secret: unknown) => invoke('ssh:askpassReply', 'f47ac10b-58cc-4372-a567-0e02b2c3d479', secret)
+    // 空串与全空白都不是有效口令(UI 已 disabled,这里是 IPC 边界的第二道闸)
+    const empty = (await reply('')) as { ok: boolean; code?: string }
+    expect(empty.ok).toBe(false)
+    expect(empty.code).toBe('invalid-input')
+    const blank = (await reply('   ')) as { ok: boolean; code?: string }
+    expect(blank.ok).toBe(false)
+    expect(blank.code).toBe('invalid-input')
+    // null 是合法回答(用户显式取消)
+    const cancelled = (await reply(null)) as { ok: boolean }
+    expect(cancelled.ok).toBe(true)
+  })

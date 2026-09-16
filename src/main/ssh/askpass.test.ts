@@ -135,4 +135,14 @@ describe('T5 评审 R1:socket 残留自愈', () => {
     await expect(startAskpassServer({ socketPath, onPrompt: async () => 'b' })).resolves.toBeDefined()
     await first.close().catch(() => undefined)
   })
+
+  it('T4 复审 Required-1 确定性拦截:resolve 后立即 stat 权限即 0600(fire-and-forget 回归当场抓获)', async () => {
+    // 复核实验 D 的教训:旧断言 stat 在 roundtrip 之后,对 chmod fire-and-forget
+    // 只有概率性检出力(变异下 30/30 全绿漏网)。resolve 语义上已含 chmod 完成,
+    // 立即 stat 就是确定性断言 —— 回退该修复的变异会 100% 被本用例杀死。
+    const socketPath = join(dir, 'mode-deterministic.sock')
+    const server = await startAskpassServer({ socketPath, onPrompt: async () => 'x' })
+    expect((await stat(socketPath)).mode & 0o777).toBe(0o600)
+    await server.close()
+  })
 })

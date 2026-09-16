@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  bareHost,
   evaluateHostTrust,
   formatKnownHostsLines,
   hostTargetLabel,
@@ -115,5 +116,17 @@ describe('host-trust（TOFU 纯逻辑）', () => {
   it('hostTargetLabel:22 端口不显示端口号', () => {
     expect(hostTargetLabel('h', 22)).toBe('h')
     expect(hostTargetLabel('h', 2222)).toBe('h:2222')
+  })
+
+  it('T5-R4:bracketed IPv6 的裸主机/known_hosts 字段一致性(两端口形态)', () => {
+    // T4/T5 复核建议项 ④:复核探针 I 已验证行为,此处转正为常驻回归
+    expect(bareHost('[::1]')).toBe('::1')
+    expect(bareHost('[2001:db8::1]')).toBe('2001:db8::1')
+    // 22 端口写裸主机;非 22 端口写 [host]:port(known_hosts 规范形态)
+    expect(knownHostsHostField('[::1]', 22)).toBe('::1')
+    expect(knownHostsHostField('[::1]', 2222)).toBe('[::1]:2222')
+    // keyscan 输出解析后的查询字段与写入字段一致(bareHost 先去括号再组装)
+    expect(knownHostsHostField(bareHost('[2001:db8::1]'), 22)).toBe('2001:db8::1')
+    expect(knownHostsHostField(bareHost('[2001:db8::1]'), 2222)).toBe('[2001:db8::1]:2222')
   })
 })

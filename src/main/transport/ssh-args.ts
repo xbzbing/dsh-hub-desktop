@@ -14,7 +14,7 @@ import type { SshInstance } from '@shared/contracts'
 export interface SshArgsOptions {
   /** 本实例 ControlPath（隧道复用/清理用），建议 `<dataRoot>/ssh/inst-<id>.sock` */
   controlPath: string
-  /** 私有 known_hosts 路径；配合 accept-new 写入 hub 私有文件，不污染用户 ~/.ssh */
+  /** 私有 known_hosts 路径；配合 TOFU 前置写入(StrictHostKeyChecking=yes,指纹变更一律拒绝),不污染用户 ~/.ssh */
   knownHostsPath: string
 }
 
