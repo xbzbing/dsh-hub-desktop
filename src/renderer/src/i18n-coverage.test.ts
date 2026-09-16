@@ -680,6 +680,33 @@ export function cjkColumns(line: string): number[] {
 }
 
 /** `console.*` 实参的字符区间 `[start, end)`：落在区间内的中文只进日志，不是用户可见文案 */
+/**
+ * 六审 R6-2:`/` 前面是这些字符(或行首)时,它是**正则字面量**起点,否则是除号。
+ * 刻意**不含** `)` / `]` / 标识符 / 数字 —— 那些后面的 `/` 必须是除号
+ * (`(a + b) / 2`、`arr[i] / 2`、`a / b`),不能改判成正则。
+ */
+const REGEX_START_AFTER = new Set([
+  '',
+  '(',
+  ',',
+  '=',
+  ':',
+  '[',
+  '!',
+  '&',
+  '|',
+  '?',
+  ';',
+  '+',
+  '-',
+  '*',
+  '%',
+  '<',
+  '>',
+  '~',
+  '^'
+])
+
 export function logArgumentRegions(code: string): Array<readonly [number, number]> {
   const regions: Array<readonly [number, number]> = []
   const pattern = /\bconsole\s*\.\s*(?:log|info|warn|error|debug|trace)\s*\(/g
@@ -687,10 +714,12 @@ export function logArgumentRegions(code: string): Array<readonly [number, number
   while (match !== null) {
     let index = match.index + match[0].length
     let depth = 1
+    /** 上一个非空白字符 —— 判断 `/` 是正则起点还是除号(六审 R6-2) */
+    let lastSignificant = ''
     while (index < code.length && depth > 0) {
       const char = charAt(code, index)
-      const quote = char === '"' || char === "'" || char === '`' ? char : null
-      if (quote !== null) {
+      if (char === '"' || char === "'" || char === '`') {
+        const quote = char
         index += 1
         while (index < code.length) {
           if (charAt(code, index) === '\\') {
@@ -701,10 +730,36 @@ export function logArgumentRegions(code: string): Array<readonly [number, number
           index += 1
           if (inner === quote) break
         }
+        lastSignificant = quote
+        continue
+      }
+      // 六审 R6-2:**必须跳过正则字面量**。此前只跳字符串,于是实参里含未配对 `(` 的正则
+      // (如 `/\(/.test(raw)`)会把 `depth` 永久抬高 → 区间一路延到 `code.length`,
+      // 该 `console.*` **之后整个文件**的中文都被当成「只进日志」而豁免(GREEN 漏报)。
+      if (char === '/' && REGEX_START_AFTER.has(lastSignificant)) {
+        index += 1
+        let inClass = false
+        while (index < code.length) {
+          const inner = charAt(code, index)
+          if (inner === '\\') {
+            index += 2
+            continue
+          }
+          if (inner === '\n') break
+          index += 1
+          if (inClass) {
+            if (inner === ']') inClass = false
+            continue
+          }
+          if (inner === '[') inClass = true
+          else if (inner === '/') break
+        }
+        lastSignificant = '/'
         continue
       }
       if (char === '(') depth += 1
       else if (char === ')') depth -= 1
+      if (!/\s/.test(char)) lastSignificant = char
       index += 1
     }
     regions.push([match.index + match[0].length, index])
@@ -1418,6 +1473,26 @@ describe('i18n 走查护栏（T11 全界面无遗漏）', () => {
     expect(scanSources(mixed, { logSinks: false }).map((violation) => violation.line)).toEqual([
       1, 2, 3, 4
     ])
+
+    // 六审 R6-2:实参里的**正则**含未配对 `(` 时,区间不许延伸到文件尾。
+    // 修复前 `logArgumentRegions` 只跳字符串不跳正则,`/\(/` 会把 depth 永久抬高 →
+    // 该 `console.*` 之后**整个文件**的中文都被当成「只进日志」而豁免(实测 GREEN 漏报)。
+    const withRegex: SourceFile[] = [
+      {
+        path: 'src/main/demo.ts',
+        text: [
+          "console.error('[demo] 日志:', /\\(/.test(raw))",
+          "throw new Error('正则之后的界面文案')",
+          ''
+        ].join('\n')
+      }
+    ]
+    const regexText = withRegex[0]?.text ?? ''
+    // 区间必须止于该调用的右括号(= 第一行换行处),修复前会一路到 code.length
+    expect(logArgumentRegions(regexText)).toEqual([[14, 43]])
+    expect(regexText.length).toBeGreaterThan(43)
+    // 行为断言:正则之后的下一行文案必须照报(修复前是空数组)
+    expect(scanSources(withRegex, { logSinks: true }).map((violation) => violation.line)).toEqual([2])
   })
 
   it('模板字面量里的内容是文案(哪怕它长得像注释):askpass 债务行的根因', () => {
