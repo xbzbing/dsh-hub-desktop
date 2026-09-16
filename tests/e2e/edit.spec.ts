@@ -68,8 +68,9 @@ test('#9:明文警告收敛为胶囊,完整详情经 title 提供(不再占整�
   const title = await pill.getAttribute('title')
   expect(title).toContain('http://')
   expect(title).toContain('SSH')
-  // 视觉取证:详情页(含胶囊 + 编辑按钮)
-  await win.screenshot({ path: join(SHOT_DIR, 'detail-cleartext-pill.png') })
+  // 视觉取证:详情页(含胶囊 + 编辑按钮)。
+  // animations:'disabled' —— CSS 动画(如 modal fade/rise)快进到终态,避免截到半透明中间帧
+  await win.screenshot({ path: join(SHOT_DIR, 'detail-cleartext-pill.png'), animations: 'disabled' })
 })
 
 test('#10/#11:本地实例可编辑 —— 名称与端口修改落盘,端口留空回到自动分配', async () => {
@@ -80,7 +81,9 @@ test('#10/#11:本地实例可编辑 —— 名称与端口修改落盘,端口留
   await expect(win.getByTestId('edit-btn')).toBeVisible()
   await win.getByTestId('edit-btn').click()
   await expect(win.getByTestId('edit-dialog')).toBeVisible()
-  await win.screenshot({ path: join(SHOT_DIR, 'edit-dialog-open.png') })
+  // T8 期间视觉复核发现:toBeVisible 不检测 opacity,0.2s modal 入场动画
+  // (overlay fade + modal rise)会让截图落在半透明中间帧 —— 快进动画后再截
+  await win.screenshot({ path: join(SHOT_DIR, 'edit-dialog-open.png'), animations: 'disabled' })
 
   // #11:端口字段存在且可写;名称改写;端口设为 30567
   const portInput = win.getByTestId('edit-port')
@@ -112,5 +115,5 @@ test('#10/#11:本地实例可编辑 —— 名称与端口修改落盘,端口留
   }
   const cleared = file2.instances.find((item) => item.name === '改名后的本地实例')
   expect(cleared?.port).toBeNull()
-  await win.screenshot({ path: join(SHOT_DIR, 'edit-saved.png') })
+  await win.screenshot({ path: join(SHOT_DIR, 'edit-saved.png'), animations: 'disabled' })
 })
