@@ -40,3 +40,5 @@ playwright-report/
 
 # --- 应用运行时数据(实例注册表/SSH/审计/homes/runtimes) ---
 hub-data/
+# --- 本地开发过程记录(个人反馈/临时笔记,不入库) ---
+docs/用户反馈-*.md
