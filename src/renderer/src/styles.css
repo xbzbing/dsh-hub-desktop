@@ -806,7 +806,15 @@ h3,
   flex-direction: column;
   justify-content: center;
   gap: 8px;
+  /* 用户反馈 #6:折叠态侧栏只有 64px 宽,而 macOS 红绿灯占据左上角约
+     0–70 × 0–28 的区域 —— 横向根本没有余量给 `padding-left: 80px`(展开态的做法),
+     于是内容从 y=20 起就与关闭/最小化/最大化按钮重叠。折叠态改为**纵向让位**
+     (具体内边距见下方 darwin 限定规则;非 macOS 没有红绿灯,不需要让位)。 */
   padding: 20px 0 0;
+}
+html[data-platform='darwin'] .app-shell.rail .side-head {
+  /* 28px 按钮带 + 间距,把折叠态侧栏内容压到红绿灯之下 */
+  padding-top: 40px;
 }
 .app-shell.rail .brand {
   flex-direction: column;
@@ -925,6 +933,19 @@ h3,
   gap: 14px;
   padding: 7px 16px;
   border-bottom: 1px solid var(--border);
+  /* 用户反馈 #1:此前只有侧栏 `.side-head` 可拖动,右侧顶栏拖不动 ——
+     整个窗口只有一条窄带能移动,体验上像"半张皮"。顶栏同样高度、同样位于
+     窗口顶部,理应也是拖动区;其内的按钮/输入再单独置为 no-drag。
+     (drag 对空白的顶栏背景生效,按钮之间的间隙仍可拖动窗口) */
+  -webkit-app-region: drag;
+}
+.topbar button,
+.topbar a,
+.topbar input,
+.topbar select,
+.topbar textarea,
+.topbar .btn {
+  -webkit-app-region: no-drag;
 }
 .tb-left,
 .tb-right {
