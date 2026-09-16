@@ -64,6 +64,18 @@ export function toDisplayStatus(status?: InstanceRuntimeStatus): DisplayStatus {
 }
 
 /**
+ * 运行时状态 → 展示信息（圆点 / 胶囊 / 文案由**同一次映射**给出）。
+ *
+ * 总览列表此前把圆点写成死类名 `className="status-dot"`（不带修饰类），于是无论实例
+ * 实际状态如何，圆点都只落到 `.status-dot` 的基色 `--idle`（灰）；同一行的胶囊却拿到了
+ * 正确的 `chipClass` —— 圆点与它旁边的文案自相矛盾（用户反馈 #7）。
+ * 这里把「状态 → 展示信息」收成唯一出口，列表与侧边栏共用，避免列表再造第二套映射。
+ */
+export function toStatusInfo(status?: InstanceRuntimeStatus): DisplayStatusInfo {
+  return STATUS_INFO[toDisplayStatus(status)]
+}
+
+/**
  * 展示层类型标签**只放文案 key**,不放文案本身 ——
  * 否则 lib 层会残留硬编码文案,双语就必然有遗漏(由 i18n-coverage.test.ts 钉住)。
  */

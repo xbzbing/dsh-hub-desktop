@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import type { InstanceSummary } from '@shared/contracts'
 import { Icon } from '../lib/icons'
-import { STATUS_INFO, TYPE_INFO, toDisplayStatus } from '../lib/format'
+import { TYPE_INFO, toDisplayStatus, toStatusInfo } from '../lib/format'
+import type { DisplayStatusInfo } from '../lib/format'
 import { useAppStore } from '../store'
 import type { MessageKey } from '@shared/i18n/messages'
 
@@ -63,12 +64,13 @@ function HomeContent(): ReactNode {
             </tr>
           </thead>
           <tbody>
+            {/* 圆点/胶囊/文案同源:statuses 是 onInstanceStatus 推进的运行时切片,
+                状态事件换了引用即整表重渲染,圆点随之实时更新(不再只随行创建时定格) */}
             {sorted.map((item) => (
               <TableRow
                 key={item.id}
                 item={item}
-                statusLabel={t(STATUS_INFO[toDisplayStatus(statuses[item.id]?.status)].labelKey)}
-                chipClass={STATUS_INFO[toDisplayStatus(statuses[item.id]?.status)].chipClass}
+                info={toStatusInfo(statuses[item.id]?.status)}
                 version={statuses[item.id]?.version}
                 onDetail={() => openDetail(item.id)}
               />
@@ -91,8 +93,7 @@ function StatCard(props: { n: number; label: string }): ReactNode {
 
 function TableRow(props: {
   item: InstanceSummary
-  statusLabel: string
-  chipClass: string
+  info: DisplayStatusInfo
   version?: string
   onDetail: () => void
 }): ReactNode {
@@ -101,7 +102,9 @@ function TableRow(props: {
     <tr>
       <td>
         <button className="row" onClick={props.onDetail} style={{ gap: 7 }}>
-          <span className="status-dot" aria-hidden="true" />
+          {/* 修饰类必须来自共享映射:写死 `status-dot` 会让运行中的实例也显示灰点
+              (用户反馈 #7;侧边栏 InstanceItem 一直是 `status-dot ${info.dotClass}`) */}
+          <span className={`status-dot ${props.info.dotClass}`} aria-hidden="true" />
           <span>{props.item.name}</span>
         </button>
       </td>
@@ -112,7 +115,7 @@ function TableRow(props: {
         </span>
       </td>
       <td>
-        <span className={`chip ${props.chipClass}`}>{props.statusLabel}</span>
+        <span className={`chip ${props.info.chipClass}`}>{t(props.info.labelKey)}</span>
       </td>
       <td className="meta">{props.item.address}</td>
       <td className="num-col meta">{props.version ?? '—'}</td>

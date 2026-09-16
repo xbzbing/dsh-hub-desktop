@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Settings } from '@shared/settings'
+import { toStatusInfo } from './lib/format'
 
 /**
  * store.ts 的测试（T11 复审遗留）。
@@ -204,5 +205,68 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
     expect(failureToast?.kind).toBe('err')
     // 失败不得把本地主题改掉(落盘没成功,界面就不该显示已生效)
     expect(useAppStore.getState().theme).toBe('dark')
+  })
+
+  /**
+   * 用户反馈 #7:总览列表的状态原点恒为灰色。
+   *
+   * 缺陷本体是 HomeView 的圆点写死了类名(见 lib/format.test.ts 的源码护栏),
+   * 但「圆点必须**实时**更新」还有一半在 store:选择器订阅的是 `statuses` 这个对象,
+   * zustand 用 Object.is 比较选择器结果 —— 若 applyStatus **原地改**这个对象,
+   * 订阅者收不到通知,列表就只在挂载/换行时定格。这里把「每次事件换引用」钉住。
+   */
+  it('applyStatus 每次事件都换 statuses 引用(订阅者才会重渲染),圆点随之实时变化', async () => {
+    const useAppStore = await freshStore()
+    const before = useAppStore.getState().statuses
+
+    // starting:未连接(灰)→ 连接中(蓝)
+    useAppStore.getState().applyStatus({
+      id: 'i1',
+      status: 'starting',
+      at: '2026-09-16T00:00:00.000Z'
+    })
+    const starting = useAppStore.getState().statuses
+    expect(starting, 'statuses 必须是新对象,否则列表收不到状态事件').not.toBe(before)
+    expect(toStatusInfo(starting['i1']?.status).dotClass).toBe('s-connecting')
+
+    // running:连接中(蓝)→ 已连接(绿)。同一行**不重建**也要拿到新类名
+    useAppStore.getState().applyStatus({
+      id: 'i1',
+      status: 'running',
+      at: '2026-09-16T00:00:01.000Z'
+    })
+    const running = useAppStore.getState().statuses
+    expect(running).not.toBe(starting)
+    expect(toStatusInfo(running['i1']?.status).dotClass).toBe('s-connected')
+
+    // 状态是**逐实例**的:另一个实例出错不得把 i1 的圆点带成红色
+    useAppStore.getState().applyStatus({
+      id: 'i2',
+      status: 'error',
+      at: '2026-09-16T00:00:02.000Z'
+    })
+    const mixed = useAppStore.getState().statuses
+    expect(toStatusInfo(mixed['i1']?.status).dotClass).toBe('s-connected')
+    expect(toStatusInfo(mixed['i2']?.status).dotClass).toBe('s-error')
+  })
+
+  it('applyStatus 的 stopped 事件清掉该实例状态(圆点回落到灰),不残留上一帧的绿点', async () => {
+    const useAppStore = await freshStore()
+    useAppStore.getState().applyStatus({
+      id: 'i1',
+      status: 'running',
+      at: '2026-09-16T00:00:00.000Z'
+    })
+    expect(toStatusInfo(useAppStore.getState().statuses['i1']?.status).dotClass).toBe('s-connected')
+
+    useAppStore.getState().applyStatus({
+      id: 'i1',
+      status: 'stopped',
+      at: '2026-09-16T00:00:02.000Z'
+    })
+    const stopped = useAppStore.getState().statuses
+    // 既有语义(不改变):stopped 即移出切片 → 未知状态 → 灰点 idle
+    expect(stopped['i1']).toBeUndefined()
+    expect(toStatusInfo(stopped['i1']?.status).dotClass).toBe('')
   })
 })
