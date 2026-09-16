@@ -354,20 +354,36 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   }
 
   /**
-   * G2 已决边的静默路径:探测后仍是 needs-auth(无会话可恢复)且 vault 已存密码
-   * → 自动用已存密码登录一次。**会话内每实例只自动尝试一次**(401 密码失效、
-   * 429 限流都不重试,交还用户手动处理)—— 登出后也不重试,否则用户将无法停留在
-   * 已登出状态。审计不在此处发生:状态迁移经 auth:state → 审计映射自动落
+   * G2 已决边的静默路径(T8 评审-2 R1 修复):探测后处于「需要认证」阶段
+   * 且 vault 已存密码 → 自动用已存密码登录一次。
+   *
+   * 触发集合 = needs-auth ‖ await-credentials 且未锁定(lockedForMs===0)。
+   * **为什么是这两相**:真实状态机下 probe 的终态是 await-credentials,不是
+   * needs-auth —— probeAndRestore 识别网关后固定走 probe-gateway → session-absent
+   * (gateway-state.ts:136 的 NEEDS_AUTH→AWAIT_CREDENTIALS 设计边,T7 R6 落地),
+   * 仅首探瞬间经过 needs-auth。原实现只认 needs-auth,静默登录在生产不可达。
+   * await-otp 不触发:已到验证码阶段,密码复用走 AuthPanel 的 loginStored(otp)。
+   *
+   * 两条会话内记忆(进程生命周期,不落盘):
+   * - `storedLoginAttempted`:每实例只自动尝试一次 —— 401 密码失效/429 限流都不重试;
+   * - `logoutSuppressed`:用户显式登出后不再静默登录(否则「登出→探测」立即复活),
+   *   直到该实例手动登录成功才解除。重启后记忆清零:重启静默复登是「记住密码」
+   * 的既定语义,彻底退出须用「清除已记住的凭据」(vault 忘记)。
+   *
+   * 审计不在此处发生:状态迁移经 auth:state → 审计映射自动落
    * login-success / login-failed / rate-limited。
    */
   const storedLoginAttempted = new Set<string>()
+  const logoutSuppressed = new Set<string>()
 
   async function autoLoginWithStored(
     instanceId: string,
     state: Awaited<ReturnType<AuthRegistry['stateOf']>>
   ): Promise<Awaited<ReturnType<AuthRegistry['stateOf']>>> {
-    if (state === null || state.phase !== 'needs-auth') return state
-    if (storedLoginAttempted.has(instanceId)) return state
+    if (state === null) return state
+    const needsAuth = state.phase === 'needs-auth' || state.phase === 'await-credentials'
+    if (!needsAuth || state.lockedForMs > 0) return state
+    if (storedLoginAttempted.has(instanceId) || logoutSuppressed.has(instanceId)) return state
     if (!deps.vault.getPolicy(instanceId).rememberPassword) return state
     const stored = deps.vault.getPassword(instanceId)
     if (stored === null) return state
@@ -383,7 +399,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   }
 
   // probe:返回状态快照(探测结论经 auth:state 事件与 T6 detect 暴露;此处主要驱动 UI 阶段)。
-  // 探测后命中 G2 已决边(needs-auth + 已存密码)时静默登录一次。
+  // 探测后命中 G2 已决边(需认证阶段 + 已存密码)时静默登录一次。
   ipcMain.handle(AUTH_IPC.probe, (_event, id: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
     wrap(async () => {
       const instanceId = parseId(id)
@@ -411,6 +427,8 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
           await rememberQuietly(instanceId, pwd)
           deps.audit?.({ instanceId, event: 'vault-write', result: 'password' })
         }
+        // G2:手动登录成功 = 用户重新表态「用记住的密码走静默」,解除登出压制
+        if (state?.phase === 'connected') logoutSuppressed.delete(instanceId)
         return authSnapshot(state)
       })
   )
@@ -424,7 +442,10 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         const instanceId = parseId(id)
         // OTP 域与 auth:login 同口径:otpDigits 可配(合法 4-10)、备份码 6-12,下界 4
         const code = z.string().trim().min(4).max(12).nullable().parse(otp ?? null)
-        return loginWithStored(instanceId, code ?? undefined)
+        const snapshot = await loginWithStored(instanceId, code ?? undefined)
+        // 与 auth:login 同口径:用户以已存密码显式登录成功 = 重新表态,解除登出压制
+        if (snapshot?.phase === 'connected') logoutSuppressed.delete(instanceId)
+        return snapshot
       })
   )
 
@@ -432,6 +453,9 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     wrap(async () => {
       const instanceId = parseId(id)
       const snapshot = authSnapshot(await deps.auth.logout(instanceId))
+      // G2(T8 评审-2 R1):显式登出压制静默登录 —— 否则扩大触发集合后,
+      // 「登出 → 任何探测」会立刻用已存密码复活会话。手动登录成功才解除。
+      logoutSuppressed.add(instanceId)
       // T9:登出后必须清分区会话,否则 webview 仍带旧 Cookie 访问受保护页面
       await deps.clearPartitionSession?.(instanceId)
       deps.audit?.({ instanceId, event: 'session-revoked', result: 'logout' })

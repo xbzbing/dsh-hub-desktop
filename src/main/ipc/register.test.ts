@@ -376,13 +376,18 @@ describe('registerIpc', () => {
     expect(authFake.login).not.toHaveBeenCalled()
   })
 
-  it('T8 G2:probe 命中 needs-auth + 已存密码 → 静默登录一次(会话内不再自动重试)', async () => {
+  // 触发集合 = needs-auth ‖ await-credentials 且未锁定(T8 评审-2 R1 修复):
+  // 真实状态机下 probe 终态是 await-credentials(probe-gateway → session-absent),
+  // 只认 needs-auth 会让静默登录生产不可达。
+  it('T8 G2:probe 命中 await-credentials + 已存密码 → 静默登录一次(会话内不再自动重试)', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
     vaultFake.getPassword?.mockReturnValue('stored-secret')
-    authFake.stateOf.mockReturnValue({ phase: 'needs-auth', lockedForMs: 0 })
-    authFake.login.mockResolvedValue({ phase: 'await-otp', lockedForMs: 0 })
-    await invoke('auth:probe', id)
+    authFake.stateOf.mockReturnValue({ phase: 'await-credentials', lockedForMs: 0 })
+    authFake.login.mockResolvedValue({ phase: 'connected', lockedForMs: 0 })
+    const first = (await invoke('auth:probe', id)) as { ok: boolean; value?: { phase: string } }
+    expect(first.ok).toBe(true)
+    expect(first.value?.phase).toBe('connected')
     expect(authFake.login).toHaveBeenCalledTimes(1)
     expect(authFake.login).toHaveBeenCalledWith(id, 'stored-secret', undefined)
     // 第二次探测:已尝试过,不再自动登录(401/429 一律交还用户)
@@ -390,40 +395,118 @@ describe('registerIpc', () => {
     expect(authFake.login).toHaveBeenCalledTimes(1)
   })
 
-  it('T8 G2:probe 不满足条件不静默登录(await-credentials / 未勾选 / 无已存密码)', async () => {
+  it('T8 G2:probe 触发集合的边界(needs-auth 触发;await-otp/connected/error/锁定 不触发)', async () => {
+    // 每个相用独立实例:静默尝试「每实例一次」的记账不该掩盖相本身的判定
+    const uid = ((): (() => string) => {
+      let n = 0
+      return () => `f47ac10b-58cc-4372-a567-${String(++n).padStart(12, '0')}`
+    })()
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    vaultFake.getPassword?.mockReturnValue('stored-secret')
+    authFake.login.mockResolvedValue({ phase: 'connected', lockedForMs: 0 })
+    // needs-auth(首探瞬间相):防御性触发
+    authFake.stateOf.mockReturnValue({ phase: 'needs-auth', lockedForMs: 0 })
+    await invoke('auth:probe', uid())
+    expect(authFake.login).toHaveBeenCalledTimes(1)
+    // await-otp:已到验证码阶段,密码复用走 AuthPanel 的 loginStored,不再自动重发
+    authFake.stateOf.mockReturnValue({ phase: 'await-otp', lockedForMs: 0 })
+    await invoke('auth:probe', uid())
+    expect(authFake.login).toHaveBeenCalledTimes(1)
+    // connected / error / null:无认证需求
+    for (const phase of ['connected', 'error']) {
+      authFake.stateOf.mockReturnValue({ phase, lockedForMs: 0 })
+      await invoke('auth:probe', uid())
+    }
+    authFake.stateOf.mockReturnValue(null)
+    await invoke('auth:probe', uid())
+    expect(authFake.login).toHaveBeenCalledTimes(1)
+    // 锁定中(429 之后):不自动重试
+    authFake.stateOf.mockReturnValue({ phase: 'await-credentials', lockedForMs: 30_000 })
+    await invoke('auth:probe', uid())
+    expect(authFake.login).toHaveBeenCalledTimes(1)
+  })
+
+  it('T8 G2:显式登出压制静默登录,手动登录成功解除', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
     vaultFake.getPassword?.mockReturnValue('stored-secret')
-    // 会话恢复失败(await-credentials)不走静默登录 —— 密码可能已失效
     authFake.stateOf.mockReturnValue({ phase: 'await-credentials', lockedForMs: 0 })
+    authFake.login.mockResolvedValue({ phase: 'connected', lockedForMs: 0 })
+    // 登出 → 探测:不得立即用已存密码复活会话
+    await invoke('auth:logout', id)
     await invoke('auth:probe', id)
     expect(authFake.login).not.toHaveBeenCalled()
-    // needs-auth 但未勾选「记住密码」
-    authFake.stateOf.mockReturnValue({ phase: 'needs-auth', lockedForMs: 0 })
-    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: false, rememberSession: false })
+    // 手动登录成功 → 解除压制;此后会话再次失效时允许静默登录
+    await invoke('auth:login', id, 'manual-pw')
     await invoke('auth:probe', id)
-    expect(authFake.login).not.toHaveBeenCalled()
-    // needs-auth 且勾选,但 vault 里没有密码
-    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
-    vaultFake.getPassword?.mockReturnValue(null)
-    await invoke('auth:probe', id)
-    expect(authFake.login).not.toHaveBeenCalled()
+    expect(authFake.login).toHaveBeenCalledTimes(2) // 1 次手动 + 1 次静默
+    expect(authFake.login).toHaveBeenLastCalledWith(id, 'stored-secret', undefined)
   })
 
   it('T8 G2:静默登录抛错不影响 probe 结果,且同样只尝试一次', async () => {
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
     vaultFake.getPassword?.mockReturnValue('stored-secret')
-    const needsAuth = { phase: 'needs-auth', lockedForMs: 0 }
-    authFake.stateOf.mockReturnValue(needsAuth)
+    const awaiting = { phase: 'await-credentials', lockedForMs: 0 }
+    authFake.stateOf.mockReturnValue(awaiting)
     authFake.login.mockRejectedValueOnce(new Error('network down'))
     const result = (await invoke('auth:probe', id)) as { ok: boolean; value?: unknown }
     expect(result.ok).toBe(true)
-    expect(result.value).toEqual(needsAuth)
+    expect(result.value).toEqual(awaiting)
     expect(authFake.login).toHaveBeenCalledTimes(1)
     // 抛错同样记账:会话内不再重试
     await invoke('auth:probe', id)
     expect(authFake.login).toHaveBeenCalledTimes(1)
+  })
+
+  it('T8 G2:集成 —— 真实 auth-registry + 真实状态机(不 mock stateOf)打通静默登录', async () => {
+    // T8 评审-2 R1 的关键回归:probe 终态由真实状态机给出(await-credentials),
+    // 静默登录必须在该前提下真实可达 —— mock stateOf 成 needs-auth 掩盖过这个前提。
+    const { createAuthRegistry } = await import('../auth/auth-registry')
+    const gwUrl = 'https://gw.example.com/dsh'
+    const realRegistry = createAuthRegistry({
+      resolveEndpoint: async () => gwUrl,
+      fetchImpl: (async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('/login/auth')) {
+          // 登录成功:200 + Set-Cookie(网关协议要求会话 Cookie,缺失 = 协议异常)
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'set-cookie': 'dsh_auth=ticket; Path=/; HttpOnly'
+            }
+          })
+        }
+        // 探测:302 → /login = 网关登录页
+        return new Response('', {
+          status: 302,
+          headers: { 'content-type': 'text/html', location: '/dsh/login' }
+        })
+      }) as unknown as typeof fetch
+    })
+    // 用真实注册表的三个方法替换 fake(probe/login/stateOf 是静默登录链路全部);
+    // 其余方法(forget/client/sessionCookie/clientIds)继续用 fake,避免牵连别的用例
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    const saved = { ...authFake }
+    authFake.probe = realRegistry.probe.bind(realRegistry) as never
+    authFake.login = realRegistry.login.bind(realRegistry) as never
+    authFake.stateOf = realRegistry.stateOf.bind(realRegistry) as never
+    try {
+      vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+      vaultFake.getPassword?.mockReturnValue('stored-secret')
+      const result = (await invoke('auth:probe', id)) as {
+        ok: boolean
+        value?: { phase: string }
+      }
+      expect(result.ok).toBe(true)
+      // 真实链路:探测 → await-credentials(R6 设计边)→ 静默登录 → connected
+      expect(result.value?.phase).toBe('connected')
+      // 会话 Cookie 已入罐(静默登录真实生效,不是状态对象凑出来的)
+      expect(realRegistry.sessionCookie(id)?.name).toBe('dsh_auth')
+    } finally {
+      Object.assign(authFake, saved)
+    }
   })
 
   it('T6-R2/R3:http:detect 非法 URL → invalid-input(而非 internal)', async () => {

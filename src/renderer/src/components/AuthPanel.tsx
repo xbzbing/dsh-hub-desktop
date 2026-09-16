@@ -139,8 +139,11 @@ export default function AuthPanel(): ReactNode {
     })
   }, [])
 
-  // 打开面板(或切换目标实例)时读取 vault 状态,判断「已保存的密码」是否可用
+  // 打开面板(或切换目标实例/状态推进)时读取 vault 状态,判断「已保存的密码」是否
+  // 可用。T8 评审-2 L1:仅随 targetId 刷新可能读到 stale —— 相位变化时重读一次
+  // (vault:status 是本地读,代价可忽略),保证提交路径判定不过期。
   const targetId = model.target?.id ?? null
+  const targetPhase = model.state?.phase ?? null
   useEffect(() => {
     if (targetId === null || !BRIDGE) {
       setStoredAvailable(false)
@@ -163,7 +166,7 @@ export default function AuthPanel(): ReactNode {
     return () => {
       cancelled = true
     }
-  }, [targetId])
+  }, [targetId, targetPhase])
 
   const target = model.target
   const state = model.state

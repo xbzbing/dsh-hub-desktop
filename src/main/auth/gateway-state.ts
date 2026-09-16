@@ -142,6 +142,12 @@ export function transition(state: AuthState, event: AuthEvent): AuthTransition {
 
     case 'stored-password-available':
       // G2:已存密码 → 跳过密码屏,密码静默提交(UI 只等验证码)
+      // 【T8 评审-2 决议】此边**保留为设计记录,生产不派发**:静默登录由 IPC 层等效
+      // 实现(register.ts 的 probe auto-try + auth:loginStored,密码不跨 IPC 且有
+      // vault 双门禁/一次性记账/登出压制)。原因:探测终态固定是 await-credentials
+      // (见上方 session-absent 边),needs-auth 只是首探瞬间相,本边的触发前提在
+      // probe 链路上不存在;接第二个派发方只会造成双轨漂移,删除则动 T7 已锁定的
+      // 状态机测试面。
       if (state.phase !== 'needs-auth') return { state, action: 'none' }
       return {
         state: { ...state, phase: 'await-otp', message: null },
