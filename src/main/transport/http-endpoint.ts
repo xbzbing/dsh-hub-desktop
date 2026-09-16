@@ -174,7 +174,12 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
       const id = instance.id
       const existing = entries.get(id)
       if (existing) {
-        emit(id, 'running', { url: existing.url, detail: '实例已在运行，忽略重复启动' })
+        const current = statuses.get(id)
+        const running = current?.status === 'running'
+        emit(id, running ? 'running' : 'starting', {
+          url: existing.url,
+          detail: running ? '实例已在运行，忽略重复启动' : (current?.detail ?? '正在校验端点')
+        })
         return
       }
       // 串行化同 id 启动:排队期间若被 stop,则本次排队作废(重启意图由后续 start 承担)
@@ -185,9 +190,11 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
         if ((cancelGen.get(id) ?? 0) !== myGen || entries.get(id)?.stopping === true) return
         if (entries.has(id)) {
           const current = entries.get(id)
-          emit(id, 'running', {
+          const status = statuses.get(id)
+          const running = status?.status === 'running'
+          emit(id, running ? 'running' : 'starting', {
             ...(current ? { url: current.url } : {}),
-            detail: '实例已在运行，忽略重复启动'
+            detail: running ? '实例已在运行，忽略重复启动' : (status?.detail ?? '正在校验端点')
           })
           return
         }

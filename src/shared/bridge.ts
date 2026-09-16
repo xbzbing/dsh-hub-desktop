@@ -27,7 +27,8 @@ import type {
   PatchInstanceInput,
   SshHostKeyForgetInput,
   SshKeyPreviewInput,
-  SshKeyPreviewResult
+  SshKeyPreviewResult,
+  WorkspaceViewBounds
 } from './contracts'
 
 export const IPC = {
@@ -75,6 +76,8 @@ export interface DshHubBridge {
     start: (id: string) => Promise<IpcResult<null>>
     stop: (id: string) => Promise<IpcResult<null>>
     openView: (id: string) => Promise<IpcResult<null>>
+    updateViewBounds: (bounds: WorkspaceViewBounds) => Promise<IpcResult<null>>
+    hideView: () => Promise<IpcResult<null>>
     /**
      * 列出本机已运行的 dsh web 进程。无参数；返回项包含 pid、监听端口和 `--patch` 路径。
      */

@@ -144,18 +144,28 @@ describe('createExternalDshScanner(注入 IO)', () => {
     ])
   })
 
-  it('命令行已带 --port 时不再查 lsof(省一次外部进程)', async () => {
+  it('命令行带 --port 时仍由 lsof 确认 PID 的监听端口', async () => {
     const calls: string[] = []
     const scanner = createExternalDshScanner({
       run: async (command) => {
         calls.push(command)
         if (command === 'ps') return { code: 0, stdout: '1 node /x/dsh web --port 52300\n' }
-        return { code: 0, stdout: '' }
+        return { code: 0, stdout: 'node 1 user 21u IPv4 0x2 0t0 TCP 127.0.0.1:52301 (LISTEN)\n' }
       }
     })
     const found = await scanner.scan()
-    expect(found[0]?.port).toBe(52300)
-    expect(calls).toEqual(['ps'])
+    expect(found[0]?.port).toBe(52301)
+    expect(calls).toEqual(['ps', 'lsof'])
+  })
+
+  it('命令行端口没有对应的 PID 监听 socket 时不返回可打开端口', async () => {
+    const scanner = createExternalDshScanner({
+      run: async (command) =>
+        command === 'ps'
+          ? { code: 0, stdout: '1 node /x/dsh web --port 52300\n' }
+          : { code: 0, stdout: 'node 2 user 21u IPv4 0x2 0t0 TCP 127.0.0.1:52300 (LISTEN)\n' }
+    })
+    await expect(scanner.scan()).resolves.toMatchObject([{ pid: 1, port: null }])
   })
 
   it('ps 失败 / lsof 失败都退化为空数组或 null 端口,不抛异常', async () => {

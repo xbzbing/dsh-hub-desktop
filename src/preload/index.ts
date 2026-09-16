@@ -45,6 +45,8 @@ const bridge: DshHubBridge = {
     start: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.start, id),
     stop: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.stop, id),
     openView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openView, id),
+    updateViewBounds: (bounds) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.updateViewBounds, bounds),
+    hideView: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.hideView),
     // 扫描不接收渲染层指定的目标；接管只接收 pid，主进程重新确认端口和 patch。
     scanExternal: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.scanExternal),
     adoptExternal: (id: string, pid: number) =>

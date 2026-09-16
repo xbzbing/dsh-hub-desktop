@@ -439,8 +439,9 @@ h3,
 .detail-delete {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: space-between;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
@@ -459,20 +460,6 @@ h3,
 .ext-row:first-of-type {
   border-top: 0;
   padding-top: 2px;
-}
-.danger-zone {
-  background: color-mix(in oklch, var(--danger) 4%, var(--surface));
-  border-color: color-mix(in oklch, var(--danger) 22%, var(--border));
-  padding-top: 13px;
-  padding-bottom: 13px;
-}
-.danger-zone .card-head {
-  border-bottom-color: color-mix(in oklch, var(--danger) 14%, var(--border));
-  margin-bottom: 11px;
-  padding-bottom: 9px;
-}
-.danger-zone .card-head h3 {
-  color: var(--danger-ink);
 }
 /* 状态标签内嵌状态点。 */
 .chip {
@@ -1038,6 +1025,20 @@ h3,
   color: var(--muted);
   font-family: var(--font-mono);
 }
+.workspace-toolbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  padding: 7px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.content.workspace-active .content-scroll {
+  visibility: hidden;
+}
 .content-scroll {
   flex: 1;
   min-height: 0;
@@ -1556,6 +1557,13 @@ details.adv[open] {
   .topbar {
     flex-wrap: wrap;
     row-gap: 8px;
+  }
+  .detail-delete {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .detail-delete .btn {
+    align-self: flex-end;
   }
   .modal-foot {
     flex-direction: column;

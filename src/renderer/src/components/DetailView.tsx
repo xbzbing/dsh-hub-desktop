@@ -29,6 +29,7 @@ export default function DetailView(): ReactNode {
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
   const toast = useAppStore((state) => state.toast)
+  const setWorkspaceOpen = useAppStore((state) => state.setWorkspaceOpen)
   const userDataPath = useAppStore((state) => state.userDataPath)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -270,7 +271,8 @@ export default function DetailView(): ReactNode {
               onClick={() => {
                 // 此调用负责准备运行时并在就绪后导航，避免状态事件触发第二次导航。
                 void window.dshHub?.runtime.openView(record.id).then((result) => {
-                  if (result && !result.ok) toast('err', t('detail.openViewFailed'), result.message)
+                  if (result?.ok) setWorkspaceOpen(true)
+                  else if (result) toast('err', t('detail.openViewFailed'), result.message)
                 })
               }}
               disabled={display === 'connecting'}

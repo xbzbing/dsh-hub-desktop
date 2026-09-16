@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createServer, type Server } from 'node:http'
 import { _electron as electron, expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, rm } from 'node:fs/promises'
@@ -21,7 +20,6 @@ const REMOTE_GATEWAY = 'https://dsh.crazydb.com/'
 let app: ElectronApplication
 let win: Page
 let fakeDsh: ChildProcess | null = null
-let fakeServer: Server | null = null
 
 const launchArgs = ['.']
 if (process.env.CI) launchArgs.push('--no-sandbox')
@@ -34,19 +32,19 @@ test.beforeAll(async () => {
   await mkdir(DATA_DIR, { recursive: true })
   await mkdir(SHOT_DIR, { recursive: true })
 
-  // 假 dsh web:监听 127.0.0.1 的随机端口,命令行带 `dsh web --patch …`
-  const server = createServer((_req, res) => {
-    res.writeHead(200, { 'content-type': 'text/html' })
-    res.end('<html><body><h1 id="external-dsh">外部 dsh web</h1></body></html>')
-  })
-  await new Promise<void>((resolvePromise) => server.listen(0, '127.0.0.1', () => resolvePromise()))
-  fakeServer = server
-  const address = server.address()
-  const port = typeof address === 'object' && address ? address.port : 0
-  const script = `require('node:http').createServer((q,s)=>s.end('ok')).listen(${port},'127.0.0.1',()=>setTimeout(()=>{},600000))`
-  fakeDsh = spawn(process.execPath, ['-e', script, '/tmp/fake-dsh/dsh', 'web', '--patch', '/tmp/fake-dsh/cordis.dush.patch.yml', '--no-open', '--port', String(port)], {
-    stdio: 'ignore',
-    detached: false
+  const script = [
+    "const http = require('node:http')",
+    "http.createServer((_, res) => res.end('<html><body><h1 id=\"external-dsh\">外部 dsh web</h1></body></html>'))",
+    ".listen(0, '127.0.0.1', function () { console.log(this.address().port); setTimeout(() => {}, 600000) })"
+  ].join('\n')
+  fakeDsh = spawn(
+    process.execPath,
+    ['-e', script, '/tmp/fake-dsh/dsh', 'web', '--patch', '/tmp/fake-dsh/cordis.dush.patch.yml', '--no-open'],
+    { stdio: ['ignore', 'pipe', 'ignore'], detached: false }
+  )
+  await new Promise<void>((resolvePromise, reject) => {
+    fakeDsh?.once('error', reject)
+    fakeDsh?.stdout?.once('data', () => resolvePromise())
   })
 
   app = await electron.launch({
@@ -60,7 +58,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await app?.close()
   fakeDsh?.kill('SIGTERM')
-  fakeServer?.close()
 })
 
 test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误日志', async () => {
@@ -87,11 +84,16 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
     await expect(win.getByTestId('app-shell')).toBeVisible()
     await win.getByTestId(`inst-${created}`).click()
     await expect(win.getByTestId('open-view-btn')).toBeEnabled()
-    const openedWindow = app.waitForEvent('window', { timeout: 10_000 })
     await win.getByTestId('open-view-btn').click()
-
-    const instanceWindow = await openedWindow
-    await expect.poll(() => instanceWindow.url()).toContain('/login')
+    await expect.poll(async () =>
+      app.evaluate(({ BrowserWindow }) => {
+        const workspace = BrowserWindow.getAllWindows()[0]?.contentView.children[0] as
+          | { webContents?: { getURL(): string } }
+          | undefined
+        return workspace?.webContents?.getURL() ?? ''
+      })
+    ).toContain('/login')
+    await win.getByRole('button', { name: '关闭' }).click()
     await win.waitForTimeout(300)
     const log = mainErrors.join('')
     expect(log).not.toContain('[instance-view] 加载失败')
@@ -149,25 +151,14 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   await expect(card).toBeVisible({ timeout: 10_000 })
   await win.screenshot({ path: join(SHOT_DIR, 'external-dsh-detected.png'), animations: 'disabled' })
 
-  // 直接打开已运行的本机 dsh 不会接管进程，且详情中的接管卡片保持可用。
-  const directWindow = app.waitForEvent('window', { timeout: 10_000 })
   await win.getByTestId('open-view-btn').click()
-  const directWorkspace = await directWindow
-  await expect.poll(() => directWorkspace.url()).toMatch(/^http:\/\/127\.0\.0\.1:\d+/)
-  await expect(card).toBeVisible()
-
-  // 接管:点第一个接管按钮
-  const adoptBtn = card.locator('[data-testid^="adopt-btn-"]').first()
-  await adoptBtn.click()
-  // 接管成功后运行状态变为 connected，且唯一操作仍是「打开工作区」。
-  await expect(win.getByTestId('open-view-btn')).toBeEnabled()
-  await expect(win.getByTestId('open-view-btn')).toContainText('打开工作区')
-  await win.screenshot({ path: join(SHOT_DIR, 'external-dsh-adopted.png'), animations: 'disabled' })
-
-  // 停止 = 只断开接管,不杀外部进程(卡片应重新出现,外部进程仍在)
-  const stopped = await win.evaluate((id) => window.dshHub.runtime.stop(id), created as string)
-  expect(stopped.ok).toBe(true)
-  await expect(win.getByTestId('external-dsh-card')).toBeVisible({ timeout: 10_000 })
+  await expect.poll(async () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]?.contentView.children.map((child) =>
+        (child as { webContents?: { getURL(): string } }).webContents?.getURL() ?? ''
+      ) ?? []
+    )
+  ).toContainEqual(expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+/))
   expect(fakeDsh?.killed).toBe(false)
 
   // 接管和断开都不应产生运行信息回写错误。

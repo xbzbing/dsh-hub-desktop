@@ -30,6 +30,9 @@ interface AppState {
   statuses: Record<string, InstanceStatusEvent>
   /** 当前选中(侧边栏),null = 回到总览 */
   selection: string | null
+  /** 当前是否有主进程托管的内嵌工作区覆盖内容区。 */
+  workspaceOpen: boolean
+  setWorkspaceOpen: (open: boolean) => void
   rail: boolean
   theme: 'light' | 'dark'
   wizardOpen: boolean
@@ -110,6 +113,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   records: {},
   statuses: {},
   selection: null,
+  workspaceOpen: false,
   rail: false,
   theme: initialTheme(),
   wizardOpen: false,
@@ -201,7 +205,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
           // 打开工作区失败时显示错误。
           void window.dshHub?.runtime.openView(event.id).then((result) => {
-            if (result && !result.ok) {
+            if (result?.ok) useAppStore.getState().setWorkspaceOpen(true)
+            else if (result) {
               const t = useAppStore.getState().t
               useAppStore.getState().toast('err', t('detail.openViewFailed'), result.message)
             }
@@ -234,7 +239,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // 实例与总览导航优先于设置页：否则 settingsOpen 一直为 true，侧栏点击看似
   // 改了 selection，App 却始终渲染 SettingsView，用户被困在设置页。
-  select: (id) => set({ selection: id, settingsOpen: false }),
+  select: (id) => {
+    void window.dshHub?.runtime?.hideView()
+    set({ selection: id, workspaceOpen: false, settingsOpen: false })
+  },
+
+  setWorkspaceOpen: (open) => set({ workspaceOpen: open }),
 
   toggleRail: () => set((state) => ({ rail: !state.rail })),
 
@@ -251,7 +261,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   setWizardOpen: (open) => set({ wizardOpen: open }),
-  setSettingsOpen: (open) => set({ settingsOpen: open, ...(open ? { selection: null } : {}) }),
+  setSettingsOpen: (open) => {
+    if (open) void window.dshHub?.runtime?.hideView()
+    set({ settingsOpen: open, workspaceOpen: false, ...(open ? { selection: null } : {}) })
+  },
 
   setPendingOpen: (id) => set((state) => ({ pendingOpen: [...state.pendingOpen, id] })),
 

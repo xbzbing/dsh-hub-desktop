@@ -61,7 +61,7 @@ import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
 import type { Vault } from './vault/vault'
 import type { Settings } from '@shared/settings'
 import type { AuditLog } from './audit/audit-log'
-import { closeInstanceWindow, openInstanceWindow } from './window-host'
+import { createWorkspaceHost } from './workspace-host'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'] ?? null
@@ -119,6 +119,8 @@ if (userDataOverride) app.setPath('userData', userDataOverride)
  * 实例窗口没有 preload，收到也无消费者；`auth:state` 仍广播（详情页可能在任一窗口）。
  */
 let hubWindow: BrowserWindow | null = null
+const workspaceHost = createWorkspaceHost(() => hubWindow)
+
 
 let vault: Vault | null = null
 let audit: AuditLog | null = null
@@ -261,6 +263,7 @@ function createWindow(): BrowserWindow {
   })
 
   win.on('closed', () => {
+    workspaceHost.closeAll()
     if (hubWindow === win) hubWindow = null
   })
   hubWindow = win
@@ -509,7 +512,7 @@ void app.whenReady().then(() => {
         })
         .catch((error: unknown) => console.error('[main] 回写实例运行信息失败：', error))
     }
-    if (event.status === 'stopped') closeInstanceWindow(event.id)
+    if (event.status === 'stopped') workspaceHost.close(event.id)
   }
   runtime.onStatus(handleStatusEvent)
   tunnels.onStatus(handleStatusEvent)
@@ -564,8 +567,9 @@ void app.whenReady().then(() => {
     settings,
     audit: auditWrite,
     onSettingsChanged: applyNativeSettings,
-    // 目录由本进程解析,渲染层无从指定路径(见 shell/open-data-dir.ts)
     openDataDir: () => dataDirOpener.open(),
+    hideInstanceView: () => workspaceHost.hide(),
+    setInstanceViewBounds: (bounds) => workspaceHost.setBounds(bounds),
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
       // 否则「先停隧道再清 Cookie」会静默 no-op
@@ -580,14 +584,7 @@ void app.whenReady().then(() => {
       const plan = buildOpenViewPlan(url, auth?.sessionCookie(instance.id) ?? null)
       await openInstanceViewFlow(
         {
-          // 开窗但**不自动加载**:加载由编排在注入之后执行
-          createWindow: () =>
-            openInstanceWindow({
-              instanceId: instance.id,
-              title: instance.name,
-              url,
-              autoLoad: false
-            }),
+          createWindow: () => workspaceHost.prepare(instance.id, url),
           installIntercept: (win) => {
             const targetSession = win.webContents.session
             if (!shouldInstallIntercept(targetSession)) return

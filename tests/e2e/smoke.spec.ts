@@ -56,6 +56,10 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
       'vault'
     ].sort()
   )
+  const runtimeKeys = await win.evaluate(() =>
+    window.dshHub?.runtime ? Object.keys(window.dshHub.runtime).sort() : null
+  )
+  expect(runtimeKeys).toEqual(['adoptExternal', 'hideView', 'openView', 'scanExternal', 'start', 'stop', 'updateViewBounds'])
   const sshKeys = await win.evaluate(() =>
     window.dshHub?.ssh ? Object.keys(window.dshHub.ssh).sort() : null
   )

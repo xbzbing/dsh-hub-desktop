@@ -4,7 +4,7 @@
  *   node ~/.local/bin/dsh web --patch ~/.dush/cordis.dush.patch.yml --no-open
  * 于是「已经跑着的实例」既不被识别、也无法直接用视图打开。
  *
- * 本模块只做**只读探测**:`ps` 找 dsh web 进程 → `lsof` 补其监听端口。
+ * 本模块只做**只读探测**:`ps` 找 dsh web 进程，再由 `lsof` 确认该 PID 的监听端口。
  * 两个解析函数是纯函数(便于穷举测试),IO 全部可注入。
  */
 import { execFile } from 'node:child_process'
@@ -155,20 +155,15 @@ export function createExternalDshScanner(
       }
       if (processes.length === 0) return processes
 
-      // 端口兜底:命令行没写 --port 时,用 lsof 查真实监听端口
-      const needPorts = processes.some((item) => item.port === null)
-      if (needPorts) {
-        try {
-          const lsof = await run('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN'])
-          const ports = parseListeningPorts(lsof.stdout)
-          processes = processes.map((item) =>
-            item.port === null && ports.has(item.pid)
-              ? { ...item, port: ports.get(item.pid) ?? null }
-              : item
-          )
-        } catch {
-          // lsof 不可用/超时:端口保持 null,不影响「发现进程」本身
-        }
+      // 端口必须由该 PID 的监听 socket 确认。命令行 --port 仅作显示提示，不能证明
+      // 进程仍成功绑定该端口，也不能证明该端口未被其他本机服务占用。
+      try {
+        const lsof = await run('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN'])
+        const ports = parseListeningPorts(lsof.stdout)
+        processes = processes.map((item) => ({ ...item, port: ports.get(item.pid) ?? null }))
+      } catch {
+        // lsof 不可用或超时时不返回可打开的端口，避免连接到未验证的本机服务。
+        processes = processes.map((item) => ({ ...item, port: null }))
       }
       return processes
     }

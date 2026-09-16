@@ -208,6 +208,8 @@ describe('registerIpc', () => {
       'instances:start',
       'instances:stop',
       'instances:openView',
+      'instances:updateViewBounds',
+      'instances:hideView',
       'instances:scanExternal',
       'instances:adoptExternal',
       'ssh:keyPreview',
@@ -603,6 +605,35 @@ describe('registerIpc', () => {
       expect.objectContaining({ id: local.value.id }),
       'http://127.0.0.1:39002/'
     )
+  })
+
+
+  it('同一实例的并发打开请求只导航一次', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    let release!: () => void
+    const starting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    runtimeFake.start.mockImplementation(async (instance) => {
+      await starting
+      runtimeFake.statusOf.mockReturnValue({
+        id: instance.id,
+        status: 'running',
+        url: 'http://127.0.0.1:39003/',
+        at: '2026-09-16T00:00:00.000Z'
+      })
+    })
+
+    const first = invoke('instances:openView', local.value.id) as Promise<{ ok: boolean }>
+    await vi.waitFor(() => expect(runtimeFake.start).toHaveBeenCalledTimes(1))
+    const second = invoke('instances:openView', local.value.id) as Promise<{ ok: boolean }>
+    release()
+    await expect(Promise.all([first, second])).resolves.toEqual([{ ok: true, value: null }, { ok: true, value: null }])
+    expect(openInstanceView).toHaveBeenCalledTimes(1)
   })
 
   it('http 实例未「启动」也能打开视图(启动的意义就是开窗,不该做两遍)', async () => {

@@ -461,11 +461,24 @@ export const INSTANCE_RUNTIME_IPC = {
   start: 'instances:start',
   stop: 'instances:stop',
   openView: 'instances:openView',
+  updateViewBounds: 'instances:updateViewBounds',
+  hideView: 'instances:hideView',
   /** 探测本机已运行的 dsh web 进程；返回 pid、端口和 patch 路径。 */
   scanExternal: 'instances:scanExternal',
   /** 接管已扫描到的外部 dsh web 进程；主进程重新确认 pid、端口和 patch。 */
   adoptExternal: 'instances:adoptExternal'
 } as const
+
+export const WorkspaceViewBoundsSchema = z
+  .object({
+    x: z.number().int().min(0).max(10_000),
+    y: z.number().int().min(0).max(10_000),
+    width: z.number().int().min(0).max(20_000),
+    height: z.number().int().min(0).max(20_000)
+  })
+  .strict()
+
+export type WorkspaceViewBounds = z.infer<typeof WorkspaceViewBoundsSchema>
 
 /** 本机已在运行的 dsh web(只读探测结果,供 UI 展示与「接管」) */
 export interface ExternalDshWebSnapshot {

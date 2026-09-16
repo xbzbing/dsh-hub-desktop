@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useAppStore } from './store'
 import Sidebar from './components/Sidebar'
 import HomeView from './components/HomeView'
@@ -9,6 +9,7 @@ import Toasts from './components/Toasts'
 import SshDialogs from './components/SshDialogs'
 import AuthPanel from './components/AuthPanel'
 import SettingsView from './components/SettingsView'
+import WorkspaceToolbar from './components/WorkspaceToolbar'
 
 const BRIDGE = window.dshHub
 
@@ -27,6 +28,9 @@ export default function App() {
   const toggleRail = useAppStore((state) => state.toggleRail)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
   const statuses = useAppStore((state) => state.statuses)
+  const workspaceOpen = useAppStore((state) => state.workspaceOpen)
+  const contentRef = useRef<HTMLElement | null>(null)
+  const workspaceToolbarRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!BRIDGE) return
@@ -45,6 +49,30 @@ export default function App() {
     }
   }, [])
 
+  useLayoutEffect(() => {
+    if (!workspaceOpen || !contentRef.current) return
+    const element = contentRef.current
+    const toolbar = workspaceToolbarRef.current
+    const updateBounds = (): void => {
+      const rect = element.getBoundingClientRect()
+      const toolbarHeight = toolbar?.getBoundingClientRect().height ?? 0
+      void window.dshHub?.runtime.updateViewBounds({
+        x: Math.round(rect.left),
+        y: Math.round(rect.top + toolbarHeight),
+        width: Math.round(rect.width),
+        height: Math.max(0, Math.round(rect.height - toolbarHeight))
+      })
+    }
+    updateBounds()
+    const observer = new ResizeObserver(updateBounds)
+    observer.observe(element)
+    if (toolbar) observer.observe(toolbar)
+    window.addEventListener('resize', updateBounds)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateBounds)
+    }
+  }, [workspaceOpen, rail])
   // 快捷键:⌘N 新建实例 · ⌘B 折叠侧栏
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -82,7 +110,8 @@ export default function App() {
         </div>
       </div>
       <Sidebar />
-      <main className="content">
+      <main ref={contentRef} className={`content${workspaceOpen ? ' workspace-active' : ''}`}>
+        {workspaceOpen && <WorkspaceToolbar ref={workspaceToolbarRef} />}
         <div className="content-scroll" data-testid="content-scroll">
           {settingsOpen ? (
             <SettingsView />

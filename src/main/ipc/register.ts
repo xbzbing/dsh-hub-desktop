@@ -19,6 +19,7 @@ import {
   SshKeyPreviewInputSchema,
   VAULT_IPC,
   VaultPolicySchema,
+  WorkspaceViewBoundsSchema,
   type HostKeyDecision,
   type AuthStateSnapshot,
   type ExternalDshWebSnapshot,
@@ -27,7 +28,8 @@ import {
   type VaultPolicy,
   type VaultStatusSnapshot,
   type InstanceSummary,
-  type IpcResult
+  type IpcResult,
+  type WorkspaceViewBounds
 } from '@shared/contracts'
 import { detectDraftEndpoint } from '../transport/http-endpoint'
 import { httpDirectEndpoint } from '../transport/endpoint-resolver'
@@ -58,6 +60,10 @@ export interface IpcDeps {
    * 调用方必须 await —— 否则 IPC 会在视图真正就绪前返回。
    */
   openInstanceView: (instance: InstanceRecord, url: string) => Promise<void>
+  /** 隐藏当前内嵌工作区，不向渲染层暴露访客 WebContents。 */
+  hideInstanceView?: () => void
+  /** 主进程应用经校验的内容区边界。 */
+  setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => void
   prompts: PromptBroker
   http: HttpEndpointManager
   auth: AuthRegistry
@@ -182,6 +188,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
         else if (record?.transport === 'http') await deps.http.stop(instanceId)
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
+        deps.hideInstanceView?.()
         deps.auth.forget(instanceId)
         await deps.vault.forgetInstance(instanceId)
         await deps.clearPartitionSession?.(instanceId).catch(() => undefined)
@@ -221,61 +228,73 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     })
   )
 
-  ipcMain.handle(INSTANCE_RUNTIME_IPC.openView, (_event, id: unknown): Promise<IpcResult<null>> =>
-    wrap(async () => {
-      const instanceId = parseId(id)
-      const instance = await store.get(instanceId)
-      if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
-      // 状态按 transport 取:ssh 隧道状态只存在于 tunnels 管理器,
-      const status =
-        instance.transport === 'ssh'
-          ? deps.tunnels.statusOf(instanceId)
-          : instance.transport === 'http'
-            ? deps.http.statusOf(instanceId)
-            : deps.runtime.statusOf(instanceId)
-      if (status?.status === 'running' && status.url) {
-        await deps.openInstanceView(instance, status.url)
-        return null
-      }
-      // HTTP 立即打开，同时在后台验证端点并更新状态。打开不应等待探测完成。
-      if (instance.transport === 'http') {
+  const openViewTasks = new Map<string, Promise<void>>()
+
+  async function openWorkspace(instanceId: string): Promise<void> {
+    const instance = await store.get(instanceId)
+    if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${instanceId}`)
+    const status =
+      instance.transport === 'ssh'
+        ? deps.tunnels.statusOf(instanceId)
+        : instance.transport === 'http'
+          ? deps.http.statusOf(instanceId)
+          : deps.runtime.statusOf(instanceId)
+    if (status?.status === 'running' && status.url) {
+      await deps.openInstanceView(instance, status.url)
+      return
+    }
+    if (instance.transport === 'http') {
+      if (status?.status !== 'starting') {
         void deps.http.start(instance).catch((error: unknown) => {
           console.error('[register] HTTP 实例状态探测失败：', error)
         })
-        await deps.openInstanceView(instance, httpDirectEndpoint(instance))
+      }
+      await deps.openInstanceView(instance, httpDirectEndpoint(instance))
+      return
+    }
+    if (instance.transport === 'ssh') {
+      await deps.tunnels.start(instance)
+      const ready = deps.tunnels.statusOf(instanceId)
+      if (ready?.status === 'running' && ready.url) {
+        await deps.openInstanceView(instance, ready.url)
+      }
+      return
+    }
+    if (instance.transport === 'local') {
+      // 已运行的本机 dsh 可直接打开工作区，不改变实例的运行来源或进程所有权。
+      // 用户选择「接管」时才会把外部进程关联到实例。
+      const external = deps.externalDsh ? (await deps.externalDsh.scan()) ?? [] : []
+      const target = external.find((item) => item.port !== null)
+      if (target && target.port !== null) {
+        await deps.openInstanceView(instance, `http://127.0.0.1:${target.port}`)
+        return
+      }
+      await deps.runtime.start(instance)
+      const ready = deps.runtime.statusOf(instanceId)
+      if (ready?.status === 'running' && ready.url) {
+        await deps.openInstanceView(instance, ready.url)
+      }
+      return
+    }
+    throw new InstanceStoreError('invalid-input', '未知的传输类型')
+  }
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.openView, (_event, id: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      const instanceId = parseId(id)
+      const existing = openViewTasks.get(instanceId)
+      if (existing) {
+        await existing
         return null
       }
-      if (instance.transport === 'ssh') {
-        await deps.tunnels.start(instance)
-        const ready = deps.tunnels.statusOf(instanceId)
-        if (ready?.status === 'running' && ready.url) {
-          await deps.openInstanceView(instance, ready.url)
-          return null
-        }
-        // 已开始建立隧道：状态事件会让渲染层展示 loading，并在 running 后自动再次
-        // 调用 openView 开窗；这里成功返回，不能把正常准备过程误报成一次失败。
-        return null
+      const task = openWorkspace(instanceId)
+      openViewTasks.set(instanceId, task)
+      try {
+        await task
+      } finally {
+        if (openViewTasks.get(instanceId) === task) openViewTasks.delete(instanceId)
       }
-      if (instance.transport === 'local') {
-        // 已运行的本机 dsh 可直接打开工作区，不改变实例的运行来源或进程所有权。
-        // 用户选择「接管」时才会把外部进程关联到实例。
-        const external = deps.externalDsh ? (await deps.externalDsh.scan()) ?? [] : []
-        const target = external.find((item) => item.port !== null)
-        if (target && target.port !== null) {
-          await deps.openInstanceView(instance, `http://127.0.0.1:${target.port}`)
-          return null
-        }
-        await deps.runtime.start(instance)
-        const ready = deps.runtime.statusOf(instanceId)
-        if (ready?.status === 'running' && ready.url) {
-          await deps.openInstanceView(instance, ready.url)
-          return null
-        }
-        // 已开始解析本机 dsh：状态事件会让渲染层展示 loading，并在 running 后自动
-        // 调用 openView 开窗；下载确认仍由 local-runtime 的安全边界处理。
-        return null
-      }
-      throw new InstanceStoreError('invalid-input', '未知的传输类型')
+      return null
     })
   )
 
@@ -369,6 +388,21 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         await deps.tunnels.forgetHostKey(instance)
         return null
       })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.updateViewBounds, (_event, bounds: unknown): Promise<IpcResult<null>> =>
+    wrap(() => {
+      const parsed = WorkspaceViewBoundsSchema.parse(bounds)
+      deps.setInstanceViewBounds?.(parsed)
+      return null
+    })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.hideView, (): Promise<IpcResult<null>> =>
+    wrap(() => {
+      deps.hideInstanceView?.()
+      return null
+    })
   )
 
   const authSnapshot = (
