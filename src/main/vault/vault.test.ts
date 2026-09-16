@@ -207,6 +207,42 @@ describe('vault（§7.2 凭据存储策略）', () => {
     expect(other.rememberedIds()).toEqual([])
   })
 
+  it('磁盘被篡改的 policy 垃圾值在重开时收敛为默认(不勾选)', async () => {
+    // T10 复核 M6:normalizePolicy 此前无直测 —— IPC 边界有 zod 挡外部输入,
+    // 但磁盘文件可被外部篡改,重开时必须收敛而不是抛异常或误信垃圾值
+    const vault = await optIn()
+    await vault.setPolicy('i1', BOTH)
+    expect(vault.getPolicy('i1')).toEqual(BOTH)
+
+    // 模拟磁盘篡改:字符串/数字/null 三类垃圾形态
+    const parsed = JSON.parse(await readFile(filePath, 'utf8')) as {
+      policy: Record<string, unknown>
+    }
+    parsed.policy['i1'] = { rememberPassword: 'yes', rememberSession: 1, extra: 'x' }
+    parsed.policy['i2'] = 'garbage'
+    parsed.policy['i3'] = null
+    await writeFile(filePath, JSON.stringify(parsed))
+
+    const reopened = createVault({ filePath, crypto: fakeCrypto(), onError: () => undefined })
+    expect(reopened.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(reopened.getPolicy('i2')).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(reopened.getPolicy('i3')).toEqual({ rememberPassword: false, rememberSession: false })
+    // 从未存在过的实例同样拿到默认值
+    expect(reopened.getPolicy('i4')).toEqual({ rememberPassword: false, rememberSession: false })
+    // 垃圾值收敛后没有任何实例被视为「已勾选」;下一次显式写入会把全 false 的
+    // policy 条目从落盘文件清掉(persist 只写 rememberPassword||rememberSession 为真的条目)。
+    // (顺带验证收敛后的 vault 仍走 opt-in 硬闸:未勾选的 i9 直接写密码会被拒 —— requireOptIn)
+    await reopened.setPolicy('i9', BOTH)
+    await reopened.rememberPassword('i9', 'p9')
+    const convergedFile = JSON.parse(await readFile(filePath, 'utf8')) as {
+      policy: Record<string, unknown>
+    }
+    expect(convergedFile.policy['i1']).toBeUndefined()
+    expect(convergedFile.policy['i2']).toBeUndefined()
+    expect(convergedFile.policy['i3']).toBeUndefined()
+    expect(Object.keys(convergedFile.policy ?? {})).toEqual(['i9'])
+  })
+
   it('空密码/空会话被拒绝(即便已勾选)', async () => {
     const vault = await optIn()
     await expect(vault.rememberPassword('i1', '')).rejects.toThrow()

@@ -310,6 +310,18 @@ describe('registerIpc', () => {
     expect(result.ok).toBe(true)
     expect(authFake.logout).toHaveBeenCalledWith(id)
     expect(clearPartitionSession).toHaveBeenCalledWith(id)
+    // T9/T10 复核 M7:登出必须落两条审计(session-revoked + cookie-cleared)——
+    // 此前该测试只断言了动作,没锁定审计闭环
+    expect(auditSpy).toHaveBeenCalledWith({
+      instanceId: id,
+      event: 'session-revoked',
+      result: 'logout'
+    })
+    expect(auditSpy).toHaveBeenCalledWith({
+      instanceId: id,
+      event: 'cookie-cleared',
+      result: 'logout'
+    })
   })
 
   it('T9:logout 清理失败不影响登出结果(清理是尽力而为)', async () => {
