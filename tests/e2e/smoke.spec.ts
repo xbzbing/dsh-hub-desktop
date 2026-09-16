@@ -81,7 +81,9 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
   const authKeys = await win.evaluate(() =>
     window.dshHub?.auth ? Object.keys(window.dshHub.auth).sort() : null
   )
-  expect(authKeys).toEqual(['login', 'logout', 'onSignal', 'onState', 'probe'])
+  // T8 G2 新增 loginStored:密码不跨 IPC(渲染层只传实例 id 与可选 OTP,
+  // 主进程自取 vault 已存密码)—— 白名单多暴露任何一个都会让本用例失败
+  expect(authKeys).toEqual(['login', 'loginStored', 'logout', 'onSignal', 'onState', 'probe'])
   // T10 凭据保险库:只暴露状态/勾选/忘记/清空 —— 没有「读出凭据」的通道
   const vaultKeys = await win.evaluate(() =>
     window.dshHub?.vault ? Object.keys(window.dshHub.vault).sort() : null

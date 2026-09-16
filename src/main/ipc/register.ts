@@ -337,12 +337,59 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     }
   }
 
-  // probe:返回状态快照(探测结论经 auth:state 事件与 T6 detect 暴露;此处主要驱动 UI 阶段)
+  /**
+   * G2 已决边(设计 §5.3):用保险库里已保存的密码登录 —— **密码不跨 IPC**,
+   * 主进程自行读取。门禁:必须显式勾选「记住密码」且 vault 里确有该实例的密码,
+   * 否则 invalid-input(渲染层无从绕过:通道只收实例 id 与可选 OTP)。
+   */
+  function loginWithStored(instanceId: string, otp?: string): Promise<AuthStateSnapshot | null> {
+    if (!deps.vault.getPolicy(instanceId).rememberPassword) {
+      throw new InstanceStoreError('invalid-input', '未勾选「记住密码」，没有已保存的密码可用')
+    }
+    const stored = deps.vault.getPassword(instanceId)
+    if (stored === null) {
+      throw new InstanceStoreError('invalid-input', '保险库中没有该实例的已存密码')
+    }
+    return deps.auth.login(instanceId, stored, otp).then(authSnapshot)
+  }
+
+  /**
+   * G2 已决边的静默路径:探测后仍是 needs-auth(无会话可恢复)且 vault 已存密码
+   * → 自动用已存密码登录一次。**会话内每实例只自动尝试一次**(401 密码失效、
+   * 429 限流都不重试,交还用户手动处理)—— 登出后也不重试,否则用户将无法停留在
+   * 已登出状态。审计不在此处发生:状态迁移经 auth:state → 审计映射自动落
+   * login-success / login-failed / rate-limited。
+   */
+  const storedLoginAttempted = new Set<string>()
+
+  async function autoLoginWithStored(
+    instanceId: string,
+    state: Awaited<ReturnType<AuthRegistry['stateOf']>>
+  ): Promise<Awaited<ReturnType<AuthRegistry['stateOf']>>> {
+    if (state === null || state.phase !== 'needs-auth') return state
+    if (storedLoginAttempted.has(instanceId)) return state
+    if (!deps.vault.getPolicy(instanceId).rememberPassword) return state
+    const stored = deps.vault.getPassword(instanceId)
+    if (stored === null) return state
+    // 先记账再尝试:无论成败,会话内不再自动重试
+    storedLoginAttempted.add(instanceId)
+    try {
+      return (await deps.auth.login(instanceId, stored, undefined)) ?? state
+    } catch (error) {
+      // 自动登录是尽力而为:异常(网络等)不能把一次成功的探测变成 IPC 错误
+      console.error('[register] 已存密码静默登录失败（不重试）：', error)
+      return state
+    }
+  }
+
+  // probe:返回状态快照(探测结论经 auth:state 事件与 T6 detect 暴露;此处主要驱动 UI 阶段)。
+  // 探测后命中 G2 已决边(needs-auth + 已存密码)时静默登录一次。
   ipcMain.handle(AUTH_IPC.probe, (_event, id: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
     wrap(async () => {
       const instanceId = parseId(id)
       await deps.auth.probe(instanceId)
-      return authSnapshot(deps.auth.stateOf(instanceId) as never)
+      const state = await autoLoginWithStored(instanceId, deps.auth.stateOf(instanceId) as never)
+      return authSnapshot(state)
     })
   )
 
@@ -365,6 +412,19 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
           deps.audit?.({ instanceId, event: 'vault-write', result: 'password' })
         }
         return authSnapshot(state)
+      })
+  )
+
+  // G2 已决边(§5.3):渲染层触发「用已保存的密码登录」。门禁全部在主进程:
+  // 显式勾选「记住密码」+ vault 里确有密码,否则 invalid-input;密码不跨 IPC。
+  ipcMain.handle(
+    AUTH_IPC.loginStored,
+    (_event, id: unknown, otp: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
+      wrap(async () => {
+        const instanceId = parseId(id)
+        // OTP 域与 auth:login 同口径:otpDigits 可配(合法 4-10)、备份码 6-12,下界 4
+        const code = z.string().trim().min(4).max(12).nullable().parse(otp ?? null)
+        return loginWithStored(instanceId, code ?? undefined)
       })
   )
 

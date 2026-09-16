@@ -106,6 +106,12 @@ export interface DshHubBridge {
     probe: (instanceId: string) => Promise<IpcResult<AuthStateSnapshot | null>>
     /** 提交密码（可同时带 OTP 完成单请求 2FA） */
     login: (instanceId: string, password: string, otp?: string) => Promise<IpcResult<AuthStateSnapshot | null>>
+    /**
+     * G2 已决边（设计 §5.3）：用保险库里已保存的密码登录。**密码不跨 IPC** ——
+     * 主进程自行从 vault 读取；渲染层只传可选 OTP。未勾选「记住密码」或无已存
+     * 密码时返回 invalid-input。
+     */
+    loginStored: (instanceId: string, otp?: string) => Promise<IpcResult<AuthStateSnapshot | null>>
     logout: (instanceId: string) => Promise<IpcResult<AuthStateSnapshot | null>>
     /** 订阅状态变化；返回取消订阅函数 */
     onState: (listener: (event: AuthStateEvent) => void) => () => void

@@ -207,6 +207,7 @@ describe('registerIpc', () => {
       'http:detect',
       'auth:probe',
       'auth:login',
+      'auth:loginStored',
       'auth:logout',
       'vault:status',
       'vault:setPolicy',
@@ -331,6 +332,98 @@ describe('registerIpc', () => {
     // IPC 层把异常转成错误信封(不崩),但登出动作已完成
     expect(authFake.logout).toHaveBeenCalledWith(id)
     expect(result.ok === false || result.ok === true).toBe(true)
+  })
+
+  // —— T8 G2 已决边(设计 §5.3):已存密码登录(密码不跨 IPC,主进程自取) ——
+
+  it('T8 G2:auth:loginStored 未勾选「记住密码」→ invalid-input,不触碰 auth.login', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: false, rememberSession: true })
+    vaultFake.getPassword?.mockReturnValue('stored-secret')
+    const result = (await invoke('auth:loginStored', id, null)) as { ok: boolean; code?: string }
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('invalid-input')
+    expect(authFake.login).not.toHaveBeenCalled()
+  })
+
+  it('T8 G2:auth:loginStored 已勾选但 vault 无密码 → invalid-input', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    vaultFake.getPassword?.mockReturnValue(null)
+    const result = (await invoke('auth:loginStored', id, null)) as { ok: boolean; code?: string }
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('invalid-input')
+    expect(authFake.login).not.toHaveBeenCalled()
+  })
+
+  it('T8 G2:auth:loginStored 命中 → 主进程自取已存密码登录(密码不经过通道入参)', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    vaultFake.getPassword?.mockReturnValue('stored-secret')
+    authFake.login.mockResolvedValueOnce({ phase: 'connected', lockedForMs: 0 })
+    const result = (await invoke('auth:loginStored', id, '654321')) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    expect(authFake.login).toHaveBeenCalledWith(id, 'stored-secret', '654321')
+  })
+
+  it('T8 G2:auth:loginStored OTP 过 zod 边界(过短 → invalid-input,不发起登录)', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    vaultFake.getPassword?.mockReturnValue('stored-secret')
+    const result = (await invoke('auth:loginStored', id, '12')) as { ok: boolean; code?: string }
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('invalid-input')
+    expect(authFake.login).not.toHaveBeenCalled()
+  })
+
+  it('T8 G2:probe 命中 needs-auth + 已存密码 → 静默登录一次(会话内不再自动重试)', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    vaultFake.getPassword?.mockReturnValue('stored-secret')
+    authFake.stateOf.mockReturnValue({ phase: 'needs-auth', lockedForMs: 0 })
+    authFake.login.mockResolvedValue({ phase: 'await-otp', lockedForMs: 0 })
+    await invoke('auth:probe', id)
+    expect(authFake.login).toHaveBeenCalledTimes(1)
+    expect(authFake.login).toHaveBeenCalledWith(id, 'stored-secret', undefined)
+    // 第二次探测:已尝试过,不再自动登录(401/429 一律交还用户)
+    await invoke('auth:probe', id)
+    expect(authFake.login).toHaveBeenCalledTimes(1)
+  })
+
+  it('T8 G2:probe 不满足条件不静默登录(await-credentials / 未勾选 / 无已存密码)', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    vaultFake.getPassword?.mockReturnValue('stored-secret')
+    // 会话恢复失败(await-credentials)不走静默登录 —— 密码可能已失效
+    authFake.stateOf.mockReturnValue({ phase: 'await-credentials', lockedForMs: 0 })
+    await invoke('auth:probe', id)
+    expect(authFake.login).not.toHaveBeenCalled()
+    // needs-auth 但未勾选「记住密码」
+    authFake.stateOf.mockReturnValue({ phase: 'needs-auth', lockedForMs: 0 })
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: false, rememberSession: false })
+    await invoke('auth:probe', id)
+    expect(authFake.login).not.toHaveBeenCalled()
+    // needs-auth 且勾选,但 vault 里没有密码
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    vaultFake.getPassword?.mockReturnValue(null)
+    await invoke('auth:probe', id)
+    expect(authFake.login).not.toHaveBeenCalled()
+  })
+
+  it('T8 G2:静默登录抛错不影响 probe 结果,且同样只尝试一次', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    vaultFake.getPassword?.mockReturnValue('stored-secret')
+    const needsAuth = { phase: 'needs-auth', lockedForMs: 0 }
+    authFake.stateOf.mockReturnValue(needsAuth)
+    authFake.login.mockRejectedValueOnce(new Error('network down'))
+    const result = (await invoke('auth:probe', id)) as { ok: boolean; value?: unknown }
+    expect(result.ok).toBe(true)
+    expect(result.value).toEqual(needsAuth)
+    expect(authFake.login).toHaveBeenCalledTimes(1)
+    // 抛错同样记账:会话内不再重试
+    await invoke('auth:probe', id)
+    expect(authFake.login).toHaveBeenCalledTimes(1)
   })
 
   it('T6-R2/R3:http:detect 非法 URL → invalid-input(而非 internal)', async () => {

@@ -350,6 +350,11 @@ export interface HttpAuthDetection {
 export const AUTH_IPC = {
   probe: 'auth:probe',
   login: 'auth:login',
+  /**
+   * G2 已决边(设计 §5.3):用保险库里的已存密码登录(**密码不跨 IPC** —— 主进程
+   * 自行读取;渲染层只传可选 otp)。未勾选「记住密码」或无已存密码 → invalid-input。
+   */
+  loginStored: 'auth:loginStored',
   logout: 'auth:logout',
   state: 'auth:state',
   /** 会话失效/需要验证码等来自 webview 拦截的信号(主→渲染) */

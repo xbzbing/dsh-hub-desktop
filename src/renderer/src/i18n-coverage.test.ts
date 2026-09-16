@@ -1012,6 +1012,8 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '未知的传输类型')"),
   debt('src/main/registry/instance-store.ts', "throw new InstanceStoreError('invalid-input', `字段 ${key} 不适用于 ${current.transport} 实例`)"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '实例尚未运行，无法打开视图')"),
+  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '未勾选「记住密码」，没有已保存的密码可用')"),
+  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '保险库中没有该实例的已存密码')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('not-found', `实例不存在：${parsed.instanceId}`)"),
 
   // —— 状态事件 detail（App.tsx / DetailView 的实例状态行） ——

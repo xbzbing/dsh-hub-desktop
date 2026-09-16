@@ -116,6 +116,10 @@ export const MESSAGES = {
     zh: '需要复用本次登录的密码',
     en: 'The password from this sign-in attempt is required'
   },
+  'auth.storedHint': {
+    zh: '密码留空将使用保险库里已保存的密码登录',
+    en: 'Leave the password empty to sign in with the saved password'
+  },
   'auth.otpHint': {
     zh: '该实例启用了二因素认证，提交密码后会要求输入验证码。',
     en: 'Two-factor authentication is enabled; a code will be requested after your password.'

@@ -90,6 +90,11 @@ const bridge: DshHubBridge = {
       ipcRenderer.invoke(AUTH_IPC.login, instanceId, password, otp ?? null) as Promise<
         IpcResult<AuthStateSnapshot | null>
       >,
+    // G2 已决边(§5.3):密码不跨 IPC —— 只传实例 id 与可选 OTP,主进程自取已存密码
+    loginStored: (instanceId: string, otp?: string) =>
+      ipcRenderer.invoke(AUTH_IPC.loginStored, instanceId, otp ?? null) as Promise<
+        IpcResult<AuthStateSnapshot | null>
+      >,
     logout: (instanceId: string) =>
       ipcRenderer.invoke(AUTH_IPC.logout, instanceId) as Promise<IpcResult<AuthStateSnapshot | null>>,
     onState: (listener) => {

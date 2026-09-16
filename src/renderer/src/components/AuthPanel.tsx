@@ -79,6 +79,10 @@ export default function AuthPanel(): ReactNode {
   const [error, setError] = useState<string | null>(null)
   // 每秒 tick 只用于让「按到期时刻派生」的倒计时重算,不承载状态本身
   const [, setTick] = useState(0)
+  // G2 已决边(§5.3):该实例是否可走「已保存的密码」—— 勾选了记住密码且 vault 里
+  // 确有条目。这只决定 UI 的提交路径与提示;真正的门禁在主进程(未勾选/无密码 →
+  // invalid-input),渲染层无从绕过。
+  const [storedAvailable, setStoredAvailable] = useState(false)
 
   useEffect(() => {
     if (!BRIDGE) return
@@ -135,6 +139,32 @@ export default function AuthPanel(): ReactNode {
     })
   }, [])
 
+  // 打开面板(或切换目标实例)时读取 vault 状态,判断「已保存的密码」是否可用
+  const targetId = model.target?.id ?? null
+  useEffect(() => {
+    if (targetId === null || !BRIDGE) {
+      setStoredAvailable(false)
+      return
+    }
+    const instanceId = targetId
+    let cancelled = false
+    void BRIDGE.vault.status().then((result) => {
+      if (cancelled) return
+      if (!result.ok) {
+        setStoredAvailable(false)
+        return
+      }
+      const snapshot = result.value
+      setStoredAvailable(
+        snapshot.policies[instanceId]?.rememberPassword === true &&
+          snapshot.rememberedInstances.includes(instanceId)
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [targetId])
+
   const target = model.target
   const state = model.state
   if (!target || !state) return null
@@ -149,8 +179,13 @@ export default function AuthPanel(): ReactNode {
     setBusy(true)
     setError(null)
     try {
-      // 验证码阶段复用同一次密码经单请求带码提交(设计 §5.2);密码屏只提交密码
-      const result = await BRIDGE.auth.login(target.id, password, otp === '' ? undefined : otp)
+      // 验证码阶段复用同一次密码经单请求带码提交(设计 §5.2);密码屏只提交密码。
+      // G2 已决边(§5.3):验证码阶段密码留空 + vault 已存密码 → 走 loginStored
+      // (密码不跨 IPC,主进程自取),不再强制用户重输密码;失败时仍可手动输入。
+      const useStored = phase === 'await-otp' && password === '' && storedAvailable
+      const result = useStored
+        ? await BRIDGE.auth.loginStored(target.id, otp === '' ? undefined : otp)
+        : await BRIDGE.auth.login(target.id, password, otp === '' ? undefined : otp)
       const value = result.ok ? result.value : null
       if (value) setModel((current) => applyAuthSnapshot(current, target.id, value))
       else if (!result.ok) setError(result.message)
@@ -200,10 +235,23 @@ export default function AuthPanel(): ReactNode {
               className="btn btn-primary btn-sm"
               data-testid="auth-submit"
               onClick={() => void submit()}
-              // D5:await-otp 阶段验证码与密码都要有 —— register 侧要求密码 min(1),
-              // 只禁用验证码会提交出 invalid-input 而不是给出「按钮不可用」的提示
-              disabled={busy || locked || (phase === 'await-otp' ? otp === '' || password === '' : password === '')}
-              title={phase === 'await-otp' && password === '' ? t('auth.needReusedPassword') : undefined}
+              // D5:await-otp 阶段验证码必须填;密码在已存密码可用时允许留空(G2),
+              // 否则维持「密码+验证码都要有」—— register 侧要求密码 min(1),只禁用
+              // 验证码会提交出 invalid-input 而不是给出「按钮不可用」的提示
+              disabled={
+                busy ||
+                locked ||
+                (phase === 'await-otp'
+                  ? otp === '' || (password === '' && !storedAvailable)
+                  : password === '')
+              }
+              title={
+                phase === 'await-otp' && password === ''
+                  ? storedAvailable
+                    ? t('auth.storedHint')
+                    : t('auth.needReusedPassword')
+                  : undefined
+              }
             >
               {busy
                 ? t('auth.submitting')
@@ -284,6 +332,13 @@ export default function AuthPanel(): ReactNode {
           >
             {useBackup ? t('auth.useOtp') : t('auth.useBackup')}
           </button>
+        </div>
+      )}
+
+      {phase === 'await-otp' && storedAvailable && (
+        <div className="hintbar mt12" data-testid="auth-stored-hint">
+          <Icon name="shield" />
+          <span>{t('auth.storedHint')}</span>
         </div>
       )}
 
