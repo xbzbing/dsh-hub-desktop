@@ -261,21 +261,43 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         await deps.openInstanceView(instance, status.url)
         return null
       }
-      // 实机反馈(2026-09-16):「启动」的意义就是打开视图 —— 对 http 直连来说
-      // 根本没有进程可管(http 的 start 只是跑一遍探测),却要求先点「启动」才
-      // 解锁「打开视图」,等于把同一个动作做两遍。
-      // 现在:http 实例直接按端点 URL 开窗(视图内的拦截层 + 认证探测照常工作);
-      // ssh 仍必须先有隧道(那是真实进程);local 仍需 hub 启动或接管(无 URL 无从开窗)。
+      // 「打开工作区」是唯一用户入口：http 直连无需准备；本机按运行时优先级
+      // 接管/探测/启动；SSH 则在此建立隧道并在就绪后开窗。状态探测仍是后台职责，
+      // 但不再暴露一个与打开工作区相互重叠的「启动」按钮。
       if (instance.transport === 'http') {
         await deps.openInstanceView(instance, httpDirectEndpoint(instance))
         return null
       }
-      throw new InstanceStoreError(
-        'invalid-state',
-        instance.transport === 'ssh'
-          ? 'SSH 隧道尚未运行，无法打开视图'
-          : '实例尚未运行，无法打开视图（可先「启动」，或接管本机已在运行的 dsh web）'
-      )
+      if (instance.transport === 'ssh') {
+        await deps.tunnels.start(instance)
+        const ready = deps.tunnels.statusOf(instanceId)
+        if (ready?.status === 'running' && ready.url) {
+          await deps.openInstanceView(instance, ready.url)
+          return null
+        }
+        throw new InstanceStoreError('invalid-state', 'SSH 隧道正在建立，请等待连接就绪后重试')
+      }
+      if (instance.transport === 'local') {
+        // 手工运行的 dsh/dush 优先：接管是零下载、零重启且绝不杀用户进程的路径。
+        // 扫描结果仅由主进程读取，端口仍不接受渲染层输入。
+        const external = deps.externalDsh ? (await deps.externalDsh.scan()) ?? [] : []
+        const target = external.find((item) => item.port !== null)
+        if (target && target.port !== null) {
+          await deps.runtime.adopt(instance, { pid: target.pid, port: target.port, patch: target.patch })
+          deps.audit?.({ instanceId, event: 'connect', result: 'adopt-external' })
+        } else {
+          // 无可接管进程时，local-runtime 才会依次探测本机 dsh、hub 已装运行时，
+          // 最后在用户确认后下载。这里不再由 UI 暴露第二个「启动」动作。
+          await deps.runtime.start(instance)
+        }
+        const ready = deps.runtime.statusOf(instanceId)
+        if (ready?.status === 'running' && ready.url) {
+          await deps.openInstanceView(instance, ready.url)
+          return null
+        }
+        throw new InstanceStoreError('invalid-state', '本机 dsh 正在准备（会优先接管、再探测本机安装），请等待运行就绪后重试')
+      }
+      throw new InstanceStoreError('invalid-input', '未知的传输类型')
     })
   )
 

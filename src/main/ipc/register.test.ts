@@ -518,6 +518,114 @@ describe('registerIpc', () => {
 
   // —— 实机反馈 2026-09-16:http 免启动开窗 + 外部 dsh web 探测/接管 ——
 
+  it('openView:SSH 未连接时主动建立隧道，准备完成后开窗', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '按需连接的隧道',
+      host: 'dsh.internal',
+      username: 'dev'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    tunnelsFake.start.mockImplementation(async (instance) => {
+      tunnelsFake.statusOf.mockReturnValue({
+        id: instance.id,
+        status: 'running',
+        url: 'http://127.0.0.1:39001/',
+        at: '2026-09-16T00:00:00.000Z'
+      })
+    })
+
+    const opened = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    expect(tunnelsFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: created.value.id }))
+    expect(openInstanceView).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.value.id, transport: 'ssh' }),
+      'http://127.0.0.1:39001/'
+    )
+  })
+
+  it('SSH 连接失败时向调用方返回可见错误', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '失败的隧道',
+      host: 'dsh.internal',
+      username: 'dev'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    tunnelsFake.start.mockRejectedValueOnce(new Error('SSH 认证失败'))
+
+    const opened = (await invoke('instances:openView', created.value.id)) as {
+      ok: boolean
+      code?: string
+      message?: string
+    }
+    expect(opened.ok).toBe(false)
+    if (!opened.ok) {
+      expect(opened.code).toBe('internal')
+      expect(opened.message).toContain('内部错误')
+    }
+    expect(openInstanceView).not.toHaveBeenCalled()
+  })
+
+  it('本机未运行时会先尝试接管已扫描到的 dsh web', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValueOnce([
+      { pid: 84758, port: 3080, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
+    ])
+    runtimeFake.adopt.mockImplementation(async (instance, target) => {
+      runtimeFake.statusOf.mockReturnValue({
+        id: instance.id,
+        status: 'running',
+        url: `http://127.0.0.1:${target.port}`,
+        port: target.port,
+        runtimeSource: 'external',
+        at: '2026-09-16T00:00:00.000Z'
+      })
+    })
+
+    const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    expect(runtimeFake.adopt).toHaveBeenCalledWith(
+      expect.objectContaining({ id: local.value.id }),
+      { pid: 84758, port: 3080, patch: '/x.yml' }
+    )
+    expect(runtimeFake.start).not.toHaveBeenCalled()
+    expect(openInstanceView).toHaveBeenCalledWith(
+      expect.objectContaining({ id: local.value.id }),
+      'http://127.0.0.1:3080'
+    )
+  })
+
+  it('本机未运行且无可接管进程时再探测已安装 dsh 并启动', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValueOnce([])
+    runtimeFake.start.mockImplementation(async (instance) => {
+      runtimeFake.statusOf.mockReturnValue({
+        id: instance.id,
+        status: 'running',
+        url: 'http://127.0.0.1:39002/',
+        at: '2026-09-16T00:00:00.000Z'
+      })
+    })
+
+    const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    expect(runtimeFake.adopt).not.toHaveBeenCalled()
+    expect(runtimeFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: local.value.id }))
+    expect(openInstanceView).toHaveBeenCalledWith(
+      expect.objectContaining({ id: local.value.id }),
+      'http://127.0.0.1:39002/'
+    )
+  })
+
   it('实机反馈:http 实例未「启动」也能打开视图(启动的意义就是开窗,不该做两遍)', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
@@ -537,7 +645,7 @@ describe('registerIpc', () => {
     )
   })
 
-  it('实机反馈:ssh 仍需隧道在跑(local 也仍需 hub 启动/接管),错误信息可执行', async () => {
+  it('未连接的 SSH 和本机实例会在打开工作区时开始准备，尚未就绪时返回可执行提示', async () => {
     const ssh = (await invoke('instances:create', {
       transport: 'ssh',
       name: '隧道实例',
@@ -546,31 +654,32 @@ describe('registerIpc', () => {
     })) as { ok: boolean; value: { id: string } }
     if (!ssh.ok) throw new Error('创建失败')
     tunnelsFake.statusOf.mockReturnValue(null)
-    const denied = (await invoke('instances:openView', ssh.value.id)) as {
+    const pendingSsh = (await invoke('instances:openView', ssh.value.id)) as {
       ok: boolean
       code?: string
       message?: string
     }
-    expect(denied.ok).toBe(false)
-    if (!denied.ok) {
-      expect(denied.code).toBe('invalid-state')
-      expect(denied.message).toContain('SSH 隧道')
+    expect(pendingSsh.ok).toBe(false)
+    if (!pendingSsh.ok) {
+      expect(pendingSsh.code).toBe('invalid-state')
+      expect(pendingSsh.message).toContain('正在建立')
     }
-    expect(openInstanceView).not.toHaveBeenCalled()
+    expect(tunnelsFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: ssh.value.id }))
 
     const local = (await invoke('instances:create', VALID_LOCAL)) as {
       ok: boolean
       value: { id: string }
     }
     if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValueOnce([])
     runtimeFake.statusOf.mockReturnValue(null)
-    const localDenied = (await invoke('instances:openView', local.value.id)) as {
+    const pendingLocal = (await invoke('instances:openView', local.value.id)) as {
       ok: boolean
       message?: string
     }
-    expect(localDenied.ok).toBe(false)
-    // 提示要告诉用户出路(启动 或 接管已运行的 dsh web)
-    expect(localDenied.message).toContain('接管')
+    expect(pendingLocal.ok).toBe(false)
+    if (!pendingLocal.ok) expect(pendingLocal.message).toContain('优先接管')
+    expect(runtimeFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: local.value.id }))
   })
 
   it('scanExternal:无参数、只读投影、缺省装配返回空列表', async () => {
