@@ -238,3 +238,24 @@ describe('T14 / 已构建产物与更新元数据端到端自洽(有产物时才
     expect(verdict.problems).toEqual([])
   })
 })
+
+describe('T13/T14 评审 F4/M1:checksums 清单只收分发产物', () => {
+  it('点文件与 builder 调试输出不入清单(手工下载者的校验和只引用会上传的文件)', async () => {
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { collectArtifacts } = await import('../../scripts/release/checksums.mjs')
+    const dir = mkdtempSync(join(tmpdir(), 'sums-exclude-'))
+    // 应收录
+    writeFileSync(join(dir, 'DSH Hub-0.1.0-arm64-mac.zip'), 'zip-bytes')
+    writeFileSync(join(dir, 'latest-mac.yml'), 'yml')
+    // 应排除:macOS 点文件 / builder 调试 / 差分中间产物 / 清单自身 / 目录
+    writeFileSync(join(dir, '.DS_Store'), 'junk')
+    writeFileSync(join(dir, 'builder-debug.yml'), 'debug')
+    writeFileSync(join(dir, 'DSH Hub-0.1.0-arm64-mac.zip.blockmap'), 'diff')
+    writeFileSync(join(dir, 'SHA256SUMS.txt'), 'self')
+    mkdirSync(join(dir, 'mac-arm64'))
+    const files = await collectArtifacts(dir)
+    const names = files.map((file) => file.name)
+    expect(names).toEqual(['DSH Hub-0.1.0-arm64-mac.zip', 'latest-mac.yml'])
+  })
+})

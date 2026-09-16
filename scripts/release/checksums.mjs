@@ -15,6 +15,12 @@ import { join, resolve } from 'node:path'
 const SUMS_FILE = 'SHA256SUMS.txt'
 /** `*.blockmap` 是给自动更新做差分的中间产物,不属于「分发给人的产物」 */
 const EXCLUDED_SUFFIXES = ['.blockmap']
+/**
+ * T13/T14 评审 F4/M1:显式排除非分发产物 ——
+ * 点文件(macOS 的 .DS_Store 等)与 builder 调试输出不进校验和清单
+ * (清单引用了不会被上传的文件会误导手工下载者)。
+ */
+const EXCLUDED_NAMES = new Set(['builder-debug.yml', 'builder-effective-config.yaml'])
 
 export async function sha256Of(path) {
   const hash = createHash('sha256')
@@ -28,6 +34,8 @@ export async function collectArtifacts(distDir) {
   const files = []
   for (const name of names) {
     if (name === SUMS_FILE) continue
+    if (name.startsWith('.')) continue
+    if (EXCLUDED_NAMES.has(name)) continue
     if (EXCLUDED_SUFFIXES.some((suffix) => name.endsWith(suffix))) continue
     const full = join(distDir, name)
     const info = await stat(full)
