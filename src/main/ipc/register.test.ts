@@ -645,7 +645,7 @@ describe('registerIpc', () => {
     )
   })
 
-  it('未连接的 SSH 和本机实例会在打开工作区时开始准备，尚未就绪时返回可执行提示', async () => {
+  it('未连接的 SSH 和本机实例会在打开工作区时开始准备', async () => {
     const ssh = (await invoke('instances:create', {
       transport: 'ssh',
       name: '隧道实例',
@@ -654,16 +654,8 @@ describe('registerIpc', () => {
     })) as { ok: boolean; value: { id: string } }
     if (!ssh.ok) throw new Error('创建失败')
     tunnelsFake.statusOf.mockReturnValue(null)
-    const pendingSsh = (await invoke('instances:openView', ssh.value.id)) as {
-      ok: boolean
-      code?: string
-      message?: string
-    }
-    expect(pendingSsh.ok).toBe(false)
-    if (!pendingSsh.ok) {
-      expect(pendingSsh.code).toBe('invalid-state')
-      expect(pendingSsh.message).toContain('正在建立')
-    }
+    const pendingSsh = (await invoke('instances:openView', ssh.value.id)) as { ok: boolean }
+    expect(pendingSsh.ok).toBe(true)
     expect(tunnelsFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: ssh.value.id }))
 
     const local = (await invoke('instances:create', VALID_LOCAL)) as {
@@ -673,12 +665,8 @@ describe('registerIpc', () => {
     if (!local.ok) throw new Error('创建失败')
     externalDshFake.scan.mockResolvedValueOnce([])
     runtimeFake.statusOf.mockReturnValue(null)
-    const pendingLocal = (await invoke('instances:openView', local.value.id)) as {
-      ok: boolean
-      message?: string
-    }
-    expect(pendingLocal.ok).toBe(false)
-    if (!pendingLocal.ok) expect(pendingLocal.message).toContain('优先接管')
+    const pendingLocal = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
+    expect(pendingLocal.ok).toBe(true)
     expect(runtimeFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: local.value.id }))
   })
 
@@ -1061,7 +1049,7 @@ describe('registerIpc', () => {
     expect(runtimeFake.stop).not.toHaveBeenCalledWith(http.value.id)
   })
 
-  it('stop 交给 runtime.stop;openView 未运行 → invalid-state', async () => {
+  it('stop 交给 runtime.stop；之后打开工作区会再次开始准备', async () => {
     const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!created.ok) throw new Error('创建失败')
 
@@ -1069,12 +1057,9 @@ describe('registerIpc', () => {
     expect(stopResult.ok).toBe(true)
     expect(runtimeFake.stop).toHaveBeenCalledWith(created.value.id)
 
-    const viewResult = (await invoke('instances:openView', created.value.id)) as {
-      ok: boolean
-      code: string
-    }
-    expect(viewResult.ok).toBe(false)
-    if (!viewResult.ok) expect(viewResult.code).toBe('invalid-state')
+    const viewResult = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    expect(viewResult.ok).toBe(true)
+    expect(runtimeFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: created.value.id }))
   })
 
   it('openView:ssh 实例 running → 从 tunnels 取状态开窗(评审缺陷 A 回归)', async () => {

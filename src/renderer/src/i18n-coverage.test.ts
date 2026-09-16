@@ -1012,8 +1012,6 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '未知的传输类型')"),
   debt('src/main/registry/instance-store.ts', "throw new InstanceStoreError('invalid-input', `字段 ${key} 不适用于 ${current.transport} 实例`)"),
   // —— 实机反馈 2026-09-16:http 免启动开窗 + 外部 dsh web 接管(IPC message 渲染层直接展示) ——
-  debt('src/main/ipc/register.ts', "? 'SSH 隧道尚未运行，无法打开视图'"),
-  debt('src/main/ipc/register.ts', ": '实例尚未运行，无法打开视图（可先「启动」，或接管本机已在运行的 dsh web）'"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '只有本地实例才能接管本机 dsh web')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '本机进程探测能力不可用')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')"),

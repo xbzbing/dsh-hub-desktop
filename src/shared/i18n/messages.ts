@@ -81,6 +81,9 @@ export const MESSAGES = {
 
   // —— 详情页 ——
   'detail.login': { zh: '登录', en: 'Sign in' },
+  'detail.openWorkspace': { zh: '打开工作区', en: 'Open workspace' },
+  'detail.openingWorkspace': { zh: '正在打开工作区…', en: 'Opening workspace…' },
+  'detail.runtime': { zh: '运行环境', en: 'Runtime' },
   'detail.relogin': { zh: '重新登录', en: 'Re-sign in' },
   'detail.address': { zh: '地址', en: 'Address' },
   'detail.transport': { zh: '连接方式', en: 'Transport' },

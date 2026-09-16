@@ -115,6 +115,8 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
       topbarW: tb.width,
       shellW: shell.getBoundingClientRect().width,
       sidebarTop: sb.y,
+      sidebarWidth: sb.width,
+      titleX: (topbar.querySelector('.tb-title') as HTMLElement | null)?.getBoundingClientRect().x ?? null,
       topbarBottom: tb.y + tb.height,
       templateAreas: style.gridTemplateAreas,
       columns: style.gridTemplateColumns
@@ -127,6 +129,8 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   expect(layout.topbarW).toBe(layout.shellW)
   // sidebar 从顶栏底缘开始(边框不再直达窗口顶部)
   expect(layout.sidebarTop).toBeGreaterThanOrEqual(layout.topbarBottom - 1)
+  // macOS 展开态:标题与 sidebar 内容轴对齐，而不是紧贴红绿灯。
+  if (layout.titleX !== null) expect(layout.titleX).toBeGreaterThanOrEqual(layout.sidebarWidth - 1)
   // 截图目验:展开态
   await win.screenshot({ path: join(SHOT_DIR, 'shell-expanded.png'), animations: 'disabled' })
 

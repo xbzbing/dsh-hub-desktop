@@ -275,7 +275,9 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
           await deps.openInstanceView(instance, ready.url)
           return null
         }
-        throw new InstanceStoreError('invalid-state', 'SSH 隧道正在建立，请等待连接就绪后重试')
+        // 已开始建立隧道：状态事件会让渲染层展示 loading，并在 running 后自动再次
+        // 调用 openView 开窗；这里成功返回，不能把正常准备过程误报成一次失败。
+        return null
       }
       if (instance.transport === 'local') {
         // 手工运行的 dsh/dush 优先：接管是零下载、零重启且绝不杀用户进程的路径。
@@ -295,7 +297,9 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
           await deps.openInstanceView(instance, ready.url)
           return null
         }
-        throw new InstanceStoreError('invalid-state', '本机 dsh 正在准备（会优先接管、再探测本机安装），请等待运行就绪后重试')
+        // 已开始解析本机 dsh：状态事件会让渲染层展示 loading，并在 running 后自动
+        // 调用 openView 开窗；下载确认仍由 local-runtime 的安全边界处理。
+        return null
       }
       throw new InstanceStoreError('invalid-input', '未知的传输类型')
     })

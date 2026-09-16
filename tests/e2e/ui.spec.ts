@@ -69,8 +69,8 @@ test('详情页展示连接方式,删除后回到空态', async () => {
   await firstSidebarItem.click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
   await expect(win.getByText('连接方式')).toBeVisible()
-  await expect(win.getByText('运行信息')).toBeVisible()
-  await expect(win.getByText('本机回环', { exact: true })).toBeVisible()
+  await expect(win.getByText('运行环境')).toBeVisible()
+  await expect(win.getByTestId('open-view-btn')).toContainText('打开工作区')
 
   // 删除(二次确认)→ 回空态
   await win.getByTestId('delete-btn').click()

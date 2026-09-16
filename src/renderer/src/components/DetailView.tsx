@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { tryParseEndpoint } from '@shared/endpoint'
 import { Icon } from '../lib/icons'
-import { STATUS_INFO, TYPE_INFO, addressOf, fmtDuration, toDisplayStatus } from '../lib/format'
+import { STATUS_INFO, TYPE_INFO, addressOf, toDisplayStatus } from '../lib/format'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
 import EditInstanceDialog from './EditInstanceDialog'
@@ -33,10 +33,10 @@ export default function DetailView(): ReactNode {
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
   const toast = useAppStore((state) => state.toast)
+  const setPendingOpen = useAppStore((state) => state.setPendingOpen)
   const userDataPath = useAppStore((state) => state.userDataPath)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
-  const [nowTick, setNowTick] = useState(0)
   /**
    * 实机反馈 2026-09-16:本机已在运行的 dsh web(只读探测,ps+lsof)。
    * 只在「本地实例且尚未运行」时探测 —— 这是用户最可能踩的场景:
@@ -84,13 +84,6 @@ export default function DetailView(): ReactNode {
     }
   }, [recordId, recordTransport, runningNow])
 
-  // 运行时长刷新:运行中每 5s 一跳
-  useEffect(() => {
-    if (status?.status !== 'running') return
-    const timer = setInterval(() => setNowTick((tick) => tick + 1), 5000)
-    return () => clearInterval(timer)
-  }, [status?.status, nowTick])
-
   /** T9-3:登出 = 主进程丢弃客户端 + 清该实例分区会话 Cookie(§5.4) */
   const logout = async (): Promise<void> => {
     if (!record) return
@@ -112,7 +105,6 @@ export default function DetailView(): ReactNode {
 
   const display = toDisplayStatus(status?.status)
   const info = STATUS_INFO[display]
-  const runningSince = status?.status === 'running' ? Date.parse(status.at) : null
   const version =
     status?.version ?? (record.transport === 'local' ? record.dshVersion : null) ?? '—'
 
@@ -207,14 +199,6 @@ export default function DetailView(): ReactNode {
               </>
             )}
           </dl>
-          {record.transport === 'local' && (
-            <div className="note n-warn mt12">
-              <Icon name="alert" />
-              <span>
-                {t('detail.loopbackWarning')}
-              </span>
-            </div>
-          )}
           {/* 设计 §7.1:直连 http:// 远程实例的数据面为明文 —— 常驻警告(https 不告警)。
               用户反馈 #9:整段文案常驻影响观感 —— 改为「图标 + 短标签」胶囊。
               UI 打磨 #3:原生 title 提示在 Electron 下延迟明显且不可控 —— 改为
@@ -273,18 +257,12 @@ export default function DetailView(): ReactNode {
 
         <div className="card">
           <div className="card-head">
-            <h3>{t('detail.runInfo')}</h3>
+            <h3>{t('detail.runtime')}</h3>
             <span className="meta">{record.transport === 'local' ? t('detail.localSide') : t('detail.remoteSide')}</span>
           </div>
           <dl className="kv">
             <dt>{t('detail.dshVersion')}</dt>
             <dd className="num">{version}</dd>
-            <dt>{t('detail.uptime')}</dt>
-            <dd className="num">
-              {runningSince !== null
-                ? fmtDuration(Date.now() - runningSince, t)
-                : t('detail.notRunning')}
-            </dd>
             {record.transport === 'local' && (
               <>
                 <dt>{t('detail.port')}</dt>
@@ -304,48 +282,24 @@ export default function DetailView(): ReactNode {
             )}
           </dl>
           <div className="row mt12">
-            {record.transport === 'local' ||
-            record.transport === 'ssh' ||
-            record.transport === 'http' ? (
-              <>
-                {display === 'connected' ? (
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => void window.dshHub?.runtime.stop(record.id)}
-                    data-testid="stop-btn"
-                  >
-                    <Icon name="power" /> {t('detail.stop')}
-                  </button>
-                ) : (
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => void window.dshHub?.runtime.start(record.id)}
-                    disabled={display === 'connecting'}
-                    data-testid="start-btn"
-                  >
-                    {display === 'connecting' ? t('detail.starting') : t('detail.start')}
-                  </button>
-                )}
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => {
-                    void window.dshHub?.runtime.openView(record.id).then((result) => {
-                      if (result && !result.ok)
-                        toast('err', t('detail.openViewFailed'), result.message)
-                    })
-                  }}
-                  // 实机反馈 2026-09-16:http 直连没有进程可「启动」(start 只是探测),
-                  // 开窗按钮不再被运行状态挡住 —— 启动与开窗本就是一个动作;
-                  // ssh 需要隧道在跑;local 需要 hub 启动或已接管外部进程。
-                  disabled={record.transport !== 'http' && display !== 'connected'}
-                  data-testid="open-view-btn"
-                >
-                  <Icon name="external" /> {t('detail.openView')}
-                </button>
-              </>
-            ) : (
-              <span className="meta">{t('detail.noRuntimeControl')}</span>
-            )}
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                // SSH/local 首次点击会异步建隧道/探测运行时；先登记 pending，
+                // running 状态到达后 store 自动再次 openView，用户只需点一次。
+                if (record.transport !== 'http' && status?.status !== 'running') {
+                  setPendingOpen(record.id)
+                }
+                void window.dshHub?.runtime.openView(record.id).then((result) => {
+                  if (result && !result.ok) toast('err', t('detail.openViewFailed'), result.message)
+                })
+              }}
+              disabled={display === 'connecting'}
+              data-testid="open-view-btn"
+            >
+              <Icon name="external" />
+              {display === 'connecting' ? t('detail.openingWorkspace') : t('detail.openWorkspace')}
+            </button>
             {/* 用户反馈 #10/#11:创建后无法修改 —— 编辑入口(transport 不可改,
                 契约上改形态 = 删除重建;端口留空 = 自动分配,运行中改动下次启动生效) */}
             <button

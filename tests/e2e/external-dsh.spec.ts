@@ -153,13 +153,14 @@ test('实机 #2:探测到已在运行的 dsh web → 一键接管 → 可直接�
   // 接管:点第一个接管按钮
   const adoptBtn = card.locator('[data-testid^="adopt-btn-"]').first()
   await adoptBtn.click()
-  // 接管成功后运行状态变为 connected(开窗解锁、启动按钮变停止)
-  await expect(win.getByTestId('stop-btn')).toBeVisible({ timeout: 10_000 })
+  // 接管成功后运行状态变为 connected，且唯一操作仍是「打开工作区」。
   await expect(win.getByTestId('open-view-btn')).toBeEnabled()
+  await expect(win.getByTestId('open-view-btn')).toContainText('打开工作区')
   await win.screenshot({ path: join(SHOT_DIR, 'external-dsh-adopted.png'), animations: 'disabled' })
 
   // 停止 = 只断开接管,不杀外部进程(卡片应重新出现,外部进程仍在)
-  await win.getByTestId('stop-btn').click()
+  const stopped = await win.evaluate((id) => window.dshHub.runtime.stop(id), created as string)
+  expect(stopped.ok).toBe(true)
   await expect(win.getByTestId('external-dsh-card')).toBeVisible({ timeout: 10_000 })
   expect(fakeDsh?.killed).toBe(false)
 

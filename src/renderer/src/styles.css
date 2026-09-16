@@ -186,6 +186,10 @@ textarea {
 /* 顶栏左端为红绿灯让位(macOS hiddenInset,trafficLightPosition x:14 y:13);
    非 macOS 没有红绿灯,由下方规则维持常规内边距 */
 html[data-platform='darwin'] .topbar {
+  /* 红绿灯占用左侧约 70px；标题起点继续与展开 sidebar 的内容轴对齐。 */
+  padding-left: 262px;
+}
+html[data-platform='darwin'] .app-shell.rail .topbar {
   padding-left: 84px;
 }
 .side-head {
