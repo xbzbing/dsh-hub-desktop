@@ -482,8 +482,29 @@ export const INSTANCE_IPC = {
 export const INSTANCE_RUNTIME_IPC = {
   start: 'instances:start',
   stop: 'instances:stop',
-  openView: 'instances:openView'
+  openView: 'instances:openView',
+  /**
+   * 实机反馈(2026-09-16):探测本机**已在运行**的 dsh web 进程(只读 ps+lsof)。
+   * 无参数 —— 渲染层无法指定要探测什么;返回 pid/端口/patch 路径供 UI 展示与接管。
+   */
+  scanExternal: 'instances:scanExternal',
+  /**
+   * 接管检测到的外部 dsh web 进程(只传 pid;端口/patch 由主进程重新扫描认定,
+   * 渲染层无法凭空指定要连的地址)。
+   */
+  adoptExternal: 'instances:adoptExternal'
 } as const
+
+/** 本机已在运行的 dsh web(只读探测结果,供 UI 展示与「接管」) */
+export interface ExternalDshWebSnapshot {
+  pid: number
+  /** 监听端口;null = 未能确定(无 --port 且 lsof 未给出) */
+  port: number | null
+  /** `--patch <file>` 取值(dush 形态);null = 未使用 patch */
+  patch: string | null
+  /** 原始命令行(已截断,仅供展示) */
+  command: string
+}
 
 /** 主进程 → 渲染进程的状态推送通道（状态机推进的唯一来源） */
 export const INSTANCE_STATUS_EVENT = 'instance:status'
@@ -500,11 +521,13 @@ export interface InstanceStatusEvent {
   /** 本次启动使用的 dsh 运行时版本（解析后回填，供 UI 展示与注册表回写） */
   version?: string
   /**
-   * 运行时来源（#2 用户反馈）：hub = 应用隔离目录；path = 用户本机 PATH 上的 dsh。
-   * 主进程回写闸依据它决定是否持久化 version —— path 来源不回写，未固定实例
-   * 才能跟随用户本机升级，而不是被钉死在探测当天的版本上。
+   * 运行时来源（#2 用户反馈）：hub = 应用隔离目录；path = 用户本机 PATH 上的 dsh；
+   * external = **接管**本机已在运行的 dsh web（实机反馈 2026-09-16：hub 不 spawn、
+   * 不回写版本，进程归用户所有）。
+   * 主进程回写闸依据它决定是否持久化 version —— path/external 来源不回写，
+   * 未固定实例才能跟随用户本机升级，而不是被钉死在探测当天的版本上。
    */
-  runtimeSource?: 'hub' | 'path'
+  runtimeSource?: 'hub' | 'path' | 'external'
   /** 人读诊断信息（进度 / 失败归因） */
   detail?: string
   /** 事件时间（ISO） */

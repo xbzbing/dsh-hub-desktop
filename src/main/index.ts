@@ -21,6 +21,7 @@ import { AUTH_IPC, INSTANCE_STATUS_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
 import { createLocalRuntime } from './local-runtime/local-runtime'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
+import { createExternalDshScanner } from './local-runtime/external-dsh'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import { createPathProbe } from './local-runtime/runtime-source'
 import { createSshTunnels } from './transport/ssh-tunnel'
@@ -534,13 +535,22 @@ void app.whenReady().then(() => {
         .get(event.id)
         .then((record) => {
           const patch: PatchInstanceInput = {}
-          if (event.port !== undefined) {
+          // 端口的语义是「hub 下次启动时优先使用的端口」—— 外部接管来的端口属于
+          // 用户自己的进程(实机反馈 2026-09-16),写进配置会让 hub 下次启动去抢
+          // 那个端口,因此 external 来源一律不回写端 port。
+          if (event.port !== undefined && event.runtimeSource !== 'external') {
             if (record?.transport === 'ssh') patch.localPort = event.port
             else patch.port = event.port
           }
           // #2 用户反馈:只有 hub 来源的运行时才回写版本;PATH 来源运行的是用户本机
-          // 安装,回写会把未固定实例钉死在探测当天的版本上(用户升级后反被拖回旧版)
-          if (event.version !== undefined && event.runtimeSource !== 'path') {
+          // 安装,回写会把未固定实例钉死在探测当天的版本上(用户升级后反被拖回旧版)。
+          // 实机反馈 2026-09-16:external(接管用户手工常驻的 dsh web)同理 ——
+          // 进程归用户所有、版本不经 hub 认定,一律不回写。
+          if (
+            event.version !== undefined &&
+            event.runtimeSource !== 'path' &&
+            event.runtimeSource !== 'external'
+          ) {
             patch.dshVersion = event.version
           }
           return instanceStore.update(event.id, patch)
@@ -603,6 +613,8 @@ void app.whenReady().then(() => {
     tunnels,
     http: httpEndpoints,
     auth,
+    // 实机反馈 2026-09-16:本机已在运行的 dsh web 只读探测(ps + lsof)
+    externalDsh: createExternalDshScanner(),
     vault: vault as Vault,
     settings,
     audit: auditWrite,

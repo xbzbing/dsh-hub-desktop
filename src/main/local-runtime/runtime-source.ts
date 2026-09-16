@@ -14,6 +14,8 @@
  * 接线(调用方)注意:PATH 来源运行时**不回写** `dshVersion` —— 未固定实例应跟随
  * 用户本机升级,而不是被钉死在探测当天的版本上(见 index.ts 状态事件的回写闸)。
  */
+import { existsSync, readdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { posix } from 'node:path'
 import { VERSION_PATTERN } from './runtime-installer'
 import type { CommandRunner } from './runtime-installer'
@@ -126,9 +128,26 @@ export interface PathProbeOptions {
   run?: CommandRunner
   /** 进程平台(注入便于测试 win32 分支);默认取当前进程 */
   platform?: NodeJS.Platform
+  /**
+   * GUI 启动的 app 拿不到登录 shell 的 PATH(Finder 下通常只有
+   * `/usr/bin:/bin:/usr/sbin:/sbin`),`which dsh` 因此会漏掉 `~/.local/bin` 等
+   * 常见全局安装位置 —— 用户实测「dsh 明明装了,hub 仍要求重新安装」。
+   * 下面三项把「候选绝对路径探测」做成可注入的纯逻辑,便于穷举测试。
+   */
+  home?: string
+  /** 文件存在性检查(注入便于测试);默认 fs.existsSync */
+  exists?: (path: string) => boolean
+  /** 列目录(注入便于测试;nvm 多版本用);默认返回空数组(读失败即忽略) */
+  listDir?: (path: string) => string[]
+  /** 是否额外探测登录 shell(默认开;测试可关避免真的起 shell) */
+  loginShell?: boolean
+  /** 登录 shell 可执行文件;默认 process.env.SHELL ?? /bin/zsh */
+  shell?: string
 }
 
 const WHICH_TIMEOUT_MS = 15_000
+/** 登录 shell 探测的等待上限:比 which 更短,失败就走「未探到」 */
+const SHELL_PROBE_TIMEOUT_MS = 8_000
 
 /**
  * PATH 探测:`which dsh`(win32 用 `where`)→ 绝对路径校验 → `dsh --version` 解析。
@@ -161,35 +180,209 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
           )
         }).catch(reject)
       }))
+
+  /**
+   * 带超时的执行(候选探测/登录 shell 兜底用)。注入的 `run` 自带其超时策略,
+   * 这里只做签名适配;默认实现按传入的 timeoutMs 走独立超时。
+   */
+  const injectedRun = options.run
+  const runWith = (
+    command: string,
+    args: string[],
+    timeoutMs: number,
+    env?: NodeJS.ProcessEnv
+  ): Promise<CommandResultLike> => {
+    if (injectedRun) return injectedRun(command, args)
+    return new Promise((resolve, reject) => {
+      import('node:child_process').then(({ execFile }) => {
+        execFile(
+          command,
+          args,
+          {
+            timeout: timeoutMs,
+            maxBuffer: 64 * 1024,
+            ...(env === undefined ? {} : { env })
+          },
+          (error: Error | null, stdout: string | Buffer, stderr: string | Buffer) => {
+            const code =
+              error && typeof (error as { code?: unknown }).code === 'number'
+                ? ((error as { code?: number }).code ?? 1)
+                : error
+                  ? 1
+                  : 0
+            if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+              reject(error)
+              return
+            }
+            resolve({ code, stdout: String(stdout), stderr: String(stderr) })
+          }
+        )
+      }).catch(reject)
+    })
+  }
   const platform = options.platform ?? process.platform
-
-  return {
-    async probe(): Promise<PathRuntime | null> {
-      const which = platform === 'win32' ? 'where' : 'which'
-      // which/where 自身不存在(极端环境)按「未探测到」处理
-      let located: CommandResultLike
+  const home = options.home ?? homedir()
+  const exists = options.exists ?? ((path: string) => existsSync(path))
+  const listDir =
+    options.listDir ??
+    ((path: string) => {
       try {
-        located = await run(which, ['dsh'])
+        return readdirSync(path)
       } catch {
-        return null
+        return []
       }
-      if (located.code !== 0) return null
-      const command = firstLine(located.stdout)
-      // 输出必须是绝对路径:PATH 被塞相对路径时不采用(不可靠且 spawn 行为随 cwd 漂移)
-      if (command === '' || !isAbsoluteFor(platform, command)) return null
+    })
+  const useLoginShell = options.loginShell ?? true
+  const shell = options.shell ?? process.env.SHELL ?? '/bin/zsh'
 
-      let versioned: CommandResultLike
-      try {
-        versioned = await run(command, ['--version'])
-      } catch {
-        return null
-      }
+  /** 校验候选:绝对路径 + `--version` 可解析(与 which 分支同一口径) */
+  async function validate(
+    command: string,
+    timeoutMs = WHICH_TIMEOUT_MS,
+    env?: NodeJS.ProcessEnv
+  ): Promise<PathRuntime | null> {
+    if (command === '' || !isAbsoluteFor(platform, command)) return null
+    try {
+      const versioned = await runWith(command, ['--version'], timeoutMs, env)
       if (versioned.code !== 0) return null
       const version = firstLine(versioned.stdout)
       if (!VERSION_PATTERN.test(version)) return null
       return { command, version }
+    } catch {
+      return null
     }
   }
+
+  /**
+   * 候选校验用的**增强 PATH**。
+   *
+   * 实测(GUI 启动):dsh 是 `#!/usr/bin/env node` 的 node shim,找到 shim 还不够 ——
+   * `env node` 也需要 node 在 PATH 上,否则 execFile 直接以
+   * `env: node: No such file or directory` 失败,候选被误判为不可用。
+   * 因此把 shim 自己所在目录与常见 node 落点(searchNodeDirs)前置进 PATH。
+   */
+  function enrichedEnv(command: string): NodeJS.ProcessEnv {
+    const dirs = [posix.dirname(command), ...searchNodeDirs(home, listDir)]
+    const existing = process.env.PATH ?? ''
+    return { ...process.env, PATH: [...new Set(dirs)].join(':') + (existing ? `:${existing}` : '') }
+  }
+
+  return {
+    async probe(): Promise<PathRuntime | null> {
+      // ① 常规 PATH 探测(终端启动的场景:这里就命中)
+      const which = platform === 'win32' ? 'where' : 'which'
+      try {
+        const located = await run(which, ['dsh'])
+        if (located.code === 0) {
+          const command = firstLine(located.stdout)
+          const viaWhich = await validate(command, WHICH_TIMEOUT_MS, enrichedEnv(command))
+          if (viaWhich) return viaWhich
+        }
+      } catch {
+        // which/where 不存在(极端环境)也继续走候选探测
+      }
+
+      // ② 常见全局安装位置:GUI 启动时 PATH 残缺,这些路径 which 看不到
+      for (const candidate of candidatePaths(platform, home, listDir)) {
+        if (!exists(candidate)) continue
+        const found = await validate(candidate, WHICH_TIMEOUT_MS, enrichedEnv(candidate))
+        if (found) return found
+      }
+
+      // ③ 登录 shell 兜底:自定义 PATH(nvm/volta/asdf/自建 bin)只有登录环境才知道,
+      //    而且 shell 里 dsh 与 node 都能解析。**在 shell 内一次跑完**路径与版本,
+      //    避免「shell 里找得到、外面跑不动」的假阴性(node 不在 GUI PATH 上)。
+      if (useLoginShell && platform !== 'win32') {
+        try {
+          const located = await runWith(
+            shell,
+            ['-lc', 'command -v dsh; dsh --version'],
+            SHELL_PROBE_TIMEOUT_MS
+          )
+          if (located.code === 0) {
+            const lines = located.stdout
+              .split('\n')
+              .map((line) => line.trim())
+              .filter((line) => line !== '')
+            const command = lines[0] ?? ''
+            const version = lines[1] ?? ''
+            if (isAbsoluteFor(platform, command) && VERSION_PATTERN.test(version)) {
+              return { command, version }
+            }
+          }
+        } catch {
+          // 登录 shell 不可用/超时:按未探到处理
+        }
+      }
+
+      return null
+    }
+  }
+}
+
+/**
+ * 常见 node 落点(用于增强候选校验的 PATH;顺序 = 优先级)。
+ * nvm 逐版本枚举,取不到就跳过。
+ */
+function searchNodeDirs(home: string, listDir: (path: string) => string[]): string[] {
+  const dirs = [
+    `${home}/.local/bin`,
+    `${home}/Library/pnpm`,
+    `${home}/.local/share/pnpm`,
+    `${home}/.volta/bin`,
+    `${home}/.bun/bin`,
+    '/opt/homebrew/bin',
+    '/usr/local/bin'
+  ]
+  const nvmRoot = `${home}/.nvm/versions/node`
+  for (const entry of listDir(nvmRoot).sort().reverse()) {
+    dirs.push(`${nvmRoot}/${entry}/bin`)
+  }
+  return dirs
+}
+
+/**
+ * 候选绝对路径(按「最可能命中」排序,去重)。
+ *
+ * 用户实测(macOS,GUI 启动):dsh 装在 `~/.local/bin/dsh`(npm 全局 symlink),
+ * 而 Finder 启动的 app PATH 只有系统目录 → `which dsh` 永远失败。除 npm 全局外,
+ * 这里覆盖 pnpm / nvm / volta / bun / homebrew 等常见落点;`dsh` 在 win32 下
+ * 补 `.cmd`(npm 全局脚本形态)。
+ */
+function candidatePaths(
+  platform: NodeJS.Platform,
+  home: string,
+  listDir: (path: string) => string[]
+): string[] {
+  if (platform === 'win32') {
+    return [
+      `${home}\\.local\\bin\\dsh.cmd`,
+      `${home}\\AppData\\Roaming\\npm\\dsh.cmd`,
+      `${home}\\AppData\\Local\\pnpm\\dsh.cmd`
+    ]
+  }
+  const candidates = [
+    // npm 全局(--prefix ~/.local 或默认前缀)/ macOS 常见
+    `${home}/.local/bin/dsh`,
+    `${home}/.npm-global/bin/dsh`,
+    // pnpm 全局(macOS 与 Linux 两处默认落点)
+    `${home}/Library/pnpm/dsh`,
+    `${home}/.local/share/pnpm/dsh`,
+    // 其它版本管理器
+    `${home}/.volta/bin/dsh`,
+    `${home}/.bun/bin/dsh`,
+    `${home}/.dnm/shims/dsh`,
+    `${home}/.asdf/shims/dsh`,
+    // 系统包管理器
+    '/opt/homebrew/bin/dsh',
+    '/usr/local/bin/dsh'
+  ]
+  // nvm:多版本,逐个列目录(取全部,由 validate 决定谁可用)
+  const nvmRoot = `${home}/.nvm/versions/node`
+  for (const entry of listDir(nvmRoot).sort().reverse()) {
+    candidates.push(`${nvmRoot}/${entry}/bin/dsh`)
+  }
+  return [...new Set(candidates)]
 }
 
 interface CommandResultLike {

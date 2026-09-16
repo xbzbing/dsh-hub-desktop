@@ -14,6 +14,7 @@ import type {
   AuthStateEvent,
   AuthStateSnapshot,
   CreateInstanceInput,
+  ExternalDshWebSnapshot,
   HostKeyDecision,
   HostKeyPromptPayload,
   HttpAuthDetection,
@@ -74,6 +75,16 @@ export interface DshHubBridge {
     start: (id: string) => Promise<IpcResult<null>>
     stop: (id: string) => Promise<IpcResult<null>>
     openView: (id: string) => Promise<IpcResult<null>>
+    /**
+     * 实机反馈 2026-09-16:列出本机**已在运行**的 dsh web 进程(只读探测)。
+     * 无参数;返回项含 pid / 监听端口 / `--patch` 路径,供 UI 展示与接管。
+     */
+    scanExternal: () => Promise<IpcResult<ExternalDshWebSnapshot[]>>
+    /**
+     * 接管检测到的外部 dsh web:只传 pid(端口与 patch 由主进程重新扫描认定)。
+     * 接管后该实例的「打开视图」直连外部进程;停止只断开接管、**不杀进程**。
+     */
+    adoptExternal: (id: string, pid: number) => Promise<IpcResult<null>>
   }
   /** 订阅实例状态事件；返回取消订阅函数（渲染层不接触原始 IPC 事件对象） */
   onInstanceStatus: (listener: (event: InstanceStatusEvent) => void) => () => void

@@ -30,6 +30,7 @@ let runtimeFake: {
   start: ReturnType<typeof vi.fn>
   stop: ReturnType<typeof vi.fn>
   stopAll: ReturnType<typeof vi.fn>
+  adopt: ReturnType<typeof vi.fn>
 }
 let tunnelsFake: {
   onStatus: ReturnType<typeof vi.fn>
@@ -41,6 +42,7 @@ let tunnelsFake: {
   forgetHostKey: ReturnType<typeof vi.fn>
 }
 let openInstanceView: ReturnType<typeof vi.fn>
+let externalDshFake: { scan: ReturnType<typeof vi.fn> }
 let httpFake: {
   onStatus: ReturnType<typeof vi.fn>
   statusOf: ReturnType<typeof vi.fn>
@@ -87,7 +89,8 @@ beforeEach(async () => {
     runningIds: vi.fn(() => []),
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
-    stopAll: vi.fn(async () => undefined)
+    stopAll: vi.fn(async () => undefined),
+    adopt: vi.fn(async () => undefined)
   }
   tunnelsFake = {
     onStatus: vi.fn(() => () => undefined),
@@ -154,6 +157,7 @@ beforeEach(async () => {
     filePath: vi.fn(() => '/tmp/settings.json')
   }
   openInstanceView = vi.fn()
+  externalDshFake = { scan: vi.fn(async () => []) }
   promptsFake = {
     requestHostKey: vi.fn(async () => 'trust'),
     requestAskpass: vi.fn(async () => null),
@@ -166,6 +170,7 @@ beforeEach(async () => {
     tunnels: tunnelsFake as unknown as SshTunnelManager,
     http: httpFake as unknown as HttpEndpointManager,
     auth: authFake as never,
+    externalDsh: externalDshFake as never,
     vault: vaultFake as never,
     settings: settingsFake as never,
     audit: auditSpy,
@@ -200,6 +205,8 @@ describe('registerIpc', () => {
       'instances:start',
       'instances:stop',
       'instances:openView',
+      'instances:scanExternal',
+      'instances:adoptExternal',
       'ssh:keyPreview',
       'ssh:hostKeyReply',
       'ssh:hostKeyForget',
@@ -507,6 +514,163 @@ describe('registerIpc', () => {
     } finally {
       Object.assign(authFake, saved)
     }
+  })
+
+  // —— 实机反馈 2026-09-16:http 免启动开窗 + 外部 dsh web 探测/接管 ——
+
+  it('实机反馈:http 实例未「启动」也能打开视图(启动的意义就是开窗,不该做两遍)', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '免启动远程',
+      authMode: 'auto',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    // http 管理器尚未启动 → statusOf 为 null(正是用户遇到的「必须先点启动」)
+    httpFake.statusOf.mockReturnValue(null)
+    const opened = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    // 用实例自身端点开窗(httpDirectEndpoint 的归一化结果)
+    expect(openInstanceView).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.value.id, transport: 'http' }),
+      expect.stringContaining('gw.example.com')
+    )
+  })
+
+  it('实机反馈:ssh 仍需隧道在跑(local 也仍需 hub 启动/接管),错误信息可执行', async () => {
+    const ssh = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '隧道实例',
+      host: 'dsh.internal',
+      username: 'dev'
+    })) as { ok: boolean; value: { id: string } }
+    if (!ssh.ok) throw new Error('创建失败')
+    tunnelsFake.statusOf.mockReturnValue(null)
+    const denied = (await invoke('instances:openView', ssh.value.id)) as {
+      ok: boolean
+      code?: string
+      message?: string
+    }
+    expect(denied.ok).toBe(false)
+    if (!denied.ok) {
+      expect(denied.code).toBe('invalid-state')
+      expect(denied.message).toContain('SSH 隧道')
+    }
+    expect(openInstanceView).not.toHaveBeenCalled()
+
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    runtimeFake.statusOf.mockReturnValue(null)
+    const localDenied = (await invoke('instances:openView', local.value.id)) as {
+      ok: boolean
+      message?: string
+    }
+    expect(localDenied.ok).toBe(false)
+    // 提示要告诉用户出路(启动 或 接管已运行的 dsh web)
+    expect(localDenied.message).toContain('接管')
+  })
+
+  it('scanExternal:无参数、只读投影、缺省装配返回空列表', async () => {
+    externalDshFake.scan.mockResolvedValueOnce([
+      {
+        pid: 84758,
+        port: 3080,
+        patch: '/Users/x/.dush/cordis.dush.patch.yml',
+        command: 'node /Users/x/.local/bin/dsh web --patch /x.yml --no-open',
+        // 探测器内部字段不应外泄(只投影 pid/port/patch/command)
+        internalNote: 'should-not-leak'
+      }
+    ])
+    const result = (await invoke('instances:scanExternal')) as {
+      ok: boolean
+      value: Array<Record<string, unknown>>
+    }
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toHaveLength(1)
+    expect(Object.keys(result.value[0] ?? {}).sort()).toEqual(
+      ['command', 'patch', 'pid', 'port'].sort()
+    )
+  })
+
+  it('adoptExternal:端口/patch 由主进程重新扫描认定,渲染层只传 pid', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValue([
+      { pid: 84758, port: 3080, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
+    ])
+    const adopted = (await invoke('instances:adoptExternal', local.value.id, 84758)) as {
+      ok: boolean
+    }
+    expect(adopted.ok).toBe(true)
+    expect(runtimeFake.adopt).toHaveBeenCalledWith(
+      expect.objectContaining({ id: local.value.id }),
+      { pid: 84758, port: 3080, patch: '/x.yml' }
+    )
+    expect(auditSpy).toHaveBeenCalledWith({
+      instanceId: local.value.id,
+      event: 'connect',
+      result: 'adopt-external'
+    })
+  })
+
+  it('adoptExternal 边界:pid 不存在 / 端口未知 / 非本地实例 / 非法 pid 都被拒', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+
+    // pid 不在扫描结果里 → not-found
+    externalDshFake.scan.mockResolvedValue([])
+    const missing = (await invoke('instances:adoptExternal', local.value.id, 999)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(missing.ok).toBe(false)
+    if (!missing.ok) expect(missing.code).toBe('not-found')
+
+    // 端口未知 → invalid-state(接管也无法开窗)
+    externalDshFake.scan.mockResolvedValue([
+      { pid: 5, port: null, patch: null, command: 'node /x/dsh web' }
+    ])
+    const noPort = (await invoke('instances:adoptExternal', local.value.id, 5)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(noPort.ok).toBe(false)
+    if (!noPort.ok) expect(noPort.code).toBe('invalid-state')
+
+    // 非本地实例 → invalid-input(http/ssh 不能「本机接管」)
+    const httpInstance = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程',
+      authMode: 'auto',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!httpInstance.ok) throw new Error('创建失败')
+    const wrongTransport = (await invoke('instances:adoptExternal', httpInstance.value.id, 5)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(wrongTransport.ok).toBe(false)
+    if (!wrongTransport.ok) expect(wrongTransport.code).toBe('invalid-input')
+
+    // 非法 pid(负数/非整数)→ invalid-input;不触碰 runtime.adopt
+    runtimeFake.adopt.mockClear()
+    const badPid = (await invoke('instances:adoptExternal', local.value.id, -1)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(badPid.ok).toBe(false)
+    if (!badPid.ok) expect(badPid.code).toBe('invalid-input')
+    expect(runtimeFake.adopt).not.toHaveBeenCalled()
   })
 
   it('T6-R2/R3:http:detect 非法 URL → invalid-input(而非 internal)', async () => {

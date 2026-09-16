@@ -137,8 +137,20 @@ function scriptedRunner(script: Record<string, { code: number; stdout: string; s
 }
 
 describe('createPathProbe(PATH 探测,尽力而为)', () => {
+  /**
+   * 纯注入环境:候选探测**不看真实文件系统**、不起登录 shell。
+   * 不加这一层时,`which` 失败后候选列表会去查真实机器(本机确实存在
+   * `~/.local/bin/dsh`),测试结果就会随开发机环境漂移。
+   */
+  const HERMETIC = {
+    exists: () => false,
+    listDir: () => [],
+    loginShell: false
+  }
+
   it('which dsh → 绝对路径 + dsh --version → 有效版本 → 返回 {command, version}', async () => {
     const probe = createPathProbe({
+      ...HERMETIC,
       run: scriptedRunner({
         'which dsh': { code: 0, stdout: '/usr/local/bin/dsh\n' },
         '/usr/local/bin/dsh --version': { code: 0, stdout: '0.1.5-rc.2\n' }
@@ -152,6 +164,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('which 找不到(exit 1)→ null,不抛异常', async () => {
     const probe = createPathProbe({
+      ...HERMETIC,
       run: async () => ({ code: 1, stdout: '', stderr: 'not found' })
     })
     await expect(probe.probe()).resolves.toBeNull()
@@ -159,6 +172,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('which 抛 ENOENT(极端环境没有 which)→ null', async () => {
     const probe = createPathProbe({
+      ...HERMETIC,
       run: async () => {
         const error = new Error('ENOENT') as NodeJS.ErrnoException
         error.code = 'ENOENT'
@@ -170,6 +184,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('which 输出相对路径 → 拒绝采用(PATH 里被塞相对路径时 spawn 行为随 cwd 漂移)', async () => {
     const probe = createPathProbe({
+      ...HERMETIC,
       run: scriptedRunner({
         'which dsh': { code: 0, stdout: 'bin/dsh\n' },
         'bin/dsh --version': { code: 0, stdout: '0.1.5\n' }
@@ -180,6 +195,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('dsh --version 输出垃圾(不含合法版本字符集)→ null', async () => {
     const probe = createPathProbe({
+      ...HERMETIC,
       run: scriptedRunner({
         'which dsh': { code: 0, stdout: '/usr/local/bin/dsh\n' },
         '/usr/local/bin/dsh --version': { code: 0, stdout: 'not a version!!\n' }
@@ -190,6 +206,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('dsh --version 非零退出 → null', async () => {
     const probe = createPathProbe({
+      ...HERMETIC,
       run: scriptedRunner({
         'which dsh': { code: 0, stdout: '/usr/local/bin/dsh\n' },
         '/usr/local/bin/dsh --version': { code: 127, stdout: '', stderr: 'command not found' }
@@ -200,6 +217,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('--version 输出多行 → 取第一行(带尾随空白也容忍)', async () => {
     const probe = createPathProbe({
+      ...HERMETIC,
       run: scriptedRunner({
         'which dsh': { code: 0, stdout: '/Users/dev/.local/bin/dsh\n' },
         '/Users/dev/.local/bin/dsh --version': { code: 0, stdout: '0.1.5\nextra line\n' }
@@ -213,6 +231,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('win32:用 where 探测,接受盘符绝对路径', async () => {
     const probe = createPathProbe({
+      ...HERMETIC,
       platform: 'win32',
       run: scriptedRunner({
         'where dsh': { code: 0, stdout: 'C:\\Tools\\dsh.exe\n' },
@@ -227,11 +246,147 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('win32:where 输出相对路径 → 拒绝', async () => {
     const probe = createPathProbe({
+      ...HERMETIC,
       platform: 'win32',
       run: scriptedRunner({
         'where dsh': { code: 0, stdout: 'dsh.exe\n' }
       })
     })
     await expect(probe.probe()).resolves.toBeNull()
+  })
+
+  // —— 实机反馈修复:GUI 启动的 app 拿不到登录 shell PATH ——
+  // 用户实测:dsh 装在 ~/.local/bin(Finder 启动时不在 PATH)→ which 失败 →
+  // 旧实现判定「未安装」并要求重新安装。以下覆盖候选路径与登录 shell 兜底。
+
+  it('which 失败 → 回退探测候选绝对路径(~/.local/bin/dsh 命中)', async () => {
+    const probe = createPathProbe({
+      home: '/Users/tester',
+      exists: (path) => path === '/Users/tester/.local/bin/dsh',
+      listDir: () => [],
+      loginShell: false,
+      run: scriptedRunner({
+        'which dsh': { code: 1, stdout: '', stderr: 'not found' },
+        '/Users/tester/.local/bin/dsh --version': { code: 0, stdout: '0.1.5-rc.2\n' }
+      })
+    })
+    await expect(probe.probe()).resolves.toEqual({
+      command: '/Users/tester/.local/bin/dsh',
+      version: '0.1.5-rc.2'
+    })
+  })
+
+  it('候选路径按优先级:homebrew 与 nvm 多版本都在时,先命中列表靠前者', async () => {
+    const probed: string[] = []
+    const probe = createPathProbe({
+      home: '/Users/tester',
+      exists: () => true,
+      listDir: (path) => (path === '/Users/tester/.nvm/versions/node' ? ['v22.0.0'] : []),
+      loginShell: false,
+      run: async (command, args) => {
+        if (command === 'which') return { code: 1, stdout: '', stderr: '' }
+        if (args[0] === '--version') {
+          probed.push(command)
+          return { code: 0, stdout: '0.1.5\n', stderr: '' }
+        }
+        return { code: 1, stdout: '', stderr: '' }
+      }
+    })
+    const found = await probe.probe()
+    // 预期首个被验证的是 ~/.local/bin/dsh(列表顺序的第一项)
+    expect(probed[0]).toBe('/Users/tester/.local/bin/dsh')
+    expect(found?.command).toBe('/Users/tester/.local/bin/dsh')
+  })
+
+  it('候选都不存在 → 登录 shell 兜底(command -v dsh + dsh --version 在 shell 内一次跑完)', async () => {
+    const probe = createPathProbe({
+      home: '/Users/tester',
+      exists: () => false,
+      listDir: () => [],
+      loginShell: true,
+      shell: '/bin/zsh',
+      run: scriptedRunner({
+        'which dsh': { code: 1, stdout: '', stderr: '' },
+        '/bin/zsh -lc command -v dsh; dsh --version': {
+          code: 0,
+          stdout: '/custom/prefix/bin/dsh\n0.2.0\n'
+        }
+      })
+    })
+    await expect(probe.probe()).resolves.toEqual({
+      command: '/custom/prefix/bin/dsh',
+      version: '0.2.0'
+    })
+  })
+
+  it('登录 shell 输出缺版本行 → 不采信(避免「找得到路径但跑不动」的假阳性)', async () => {
+    const probe = createPathProbe({
+      home: '/Users/tester',
+      exists: () => false,
+      listDir: () => [],
+      loginShell: true,
+      run: scriptedRunner({
+        'which dsh': { code: 1, stdout: '', stderr: '' },
+        '/bin/zsh -lc command -v dsh; dsh --version': { code: 0, stdout: '/custom/dsh\n' }
+      })
+    })
+    await expect(probe.probe()).resolves.toBeNull()
+  })
+
+  it('登录 shell 也不可用 → null(不抛异常、不阻塞启动)', async () => {
+    const probe = createPathProbe({
+      home: '/Users/tester',
+      exists: () => false,
+      listDir: () => [],
+      loginShell: true,
+      run: scriptedRunner({
+        'which dsh': { code: 1, stdout: '', stderr: '' }
+        // shell 未登记 → scriptedRunner 抛 ENOENT
+      })
+    })
+    await expect(probe.probe()).resolves.toBeNull()
+  })
+
+  it('候选存在但 --version 失败 → 继续尝试后续候选,不误判为可用', async () => {
+    const probe = createPathProbe({
+      home: '/Users/tester',
+      exists: (path) => path.endsWith('/dsh'),
+      listDir: () => [],
+      loginShell: false,
+      run: async (command, args) => {
+        if (command === 'which') return { code: 1, stdout: '', stderr: '' }
+        if (args[0] === '--version') {
+          // 只有 /usr/local/bin/dsh 能给出合法版本
+          if (command === '/usr/local/bin/dsh') return { code: 0, stdout: '0.1.5\n', stderr: '' }
+          return { code: 1, stdout: '', stderr: 'broken' }
+        }
+        return { code: 1, stdout: '', stderr: '' }
+      }
+    })
+    await expect(probe.probe()).resolves.toEqual({
+      command: '/usr/local/bin/dsh',
+      version: '0.1.5'
+    })
+  })
+
+  it('win32:候选补 .cmd(npm 全局脚本形态)', async () => {
+    const probe = createPathProbe({
+      platform: 'win32',
+      home: 'C:\\Users\\tester',
+      exists: (path) => path === 'C:\\Users\\tester\\AppData\\Roaming\\npm\\dsh.cmd',
+      listDir: () => [],
+      loginShell: false,
+      run: scriptedRunner({
+        'where dsh': { code: 1, stdout: '', stderr: '' },
+        'C:\\Users\\tester\\AppData\\Roaming\\npm\\dsh.cmd --version': {
+          code: 0,
+          stdout: '0.1.5\r\n'
+        }
+      })
+    })
+    await expect(probe.probe()).resolves.toEqual({
+      command: 'C:\\Users\\tester\\AppData\\Roaming\\npm\\dsh.cmd',
+      version: '0.1.5'
+    })
   })
 })

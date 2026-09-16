@@ -37,6 +37,15 @@ export default function DetailView(): ReactNode {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [nowTick, setNowTick] = useState(0)
+  /**
+   * 实机反馈 2026-09-16:本机已在运行的 dsh web(只读探测,ps+lsof)。
+   * 只在「本地实例且尚未运行」时探测 —— 这是用户最可能踩的场景:
+   * 他手工挂着 dush 实例,hub 却让他重新安装/重新启动一个。
+   */
+  const [externalDsh, setExternalDsh] = useState<
+    Array<{ pid: number; port: number | null; patch: string | null; command: string }>
+  >([])
+  const [adopting, setAdopting] = useState<number | null>(null)
 
   useEffect(() => {
     if (selection) void ensureRecord(selection)
@@ -53,6 +62,27 @@ export default function DetailView(): ReactNode {
     // probe 只在相位未知时发一次;record/authPhase 变化不重复触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection])
+
+  // 本机已在运行的 dsh web:仅本地实例且未运行时探测(探测是只读 ps+lsof,便宜)。
+  // 注意 `display` 在下方早期 return 之后才声明,这里按 status 直接判定;
+  // 用局部常量做依赖,避免把整个 record 对象拖进依赖数组。
+  const runningNow = status?.status === 'running'
+  const recordId = record?.id
+  const recordTransport = record?.transport
+  useEffect(() => {
+    if (!recordTransport || recordTransport !== 'local' || runningNow) {
+      setExternalDsh([])
+      return
+    }
+    let cancelled = false
+    void window.dshHub?.runtime.scanExternal().then((result) => {
+      if (cancelled) return
+      setExternalDsh(result?.ok ? result.value.filter((item) => item.port !== null) : [])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [recordId, recordTransport, runningNow])
 
   // 运行时长刷新:运行中每 5s 一跳
   useEffect(() => {
@@ -258,10 +288,17 @@ export default function DetailView(): ReactNode {
             {record.transport === 'local' && (
               <>
                 <dt>{t('detail.port')}</dt>
-                <dd className="num">{record.port ?? t('detail.unassigned')}</dd>
+                {/* 实机反馈 2026-09-16:接管外部 dsh web 时真实端口来自运行状态
+                    (record.port 是「hub 下次启动优先用的端口」,外部接管不回写),
+                    因此运行时优先展示 status.port,否则显示记录值 */}
+                <dd className="num">{status?.port ?? record.port ?? t('detail.unassigned')}</dd>
                 <dt>{t('settings.dataDir')}</dt>
                 <dd className="num" title={t('detail.dataDirTitle')}>
-                  {userDataPath ? `${userDataPath}/homes/${record.id}` : `…/homes/${record.id}`}
+                  {status?.runtimeSource === 'external'
+                    ? t('detail.externalDataDir')
+                    : userDataPath
+                      ? `${userDataPath}/homes/${record.id}`
+                      : `…/homes/${record.id}`}
                 </dd>
               </>
             )}
@@ -293,10 +330,14 @@ export default function DetailView(): ReactNode {
                   className="btn btn-secondary btn-sm"
                   onClick={() => {
                     void window.dshHub?.runtime.openView(record.id).then((result) => {
-                      if (result && !result.ok) toast('err', t('detail.openViewFailed'), result.message)
+                      if (result && !result.ok)
+                        toast('err', t('detail.openViewFailed'), result.message)
                     })
                   }}
-                  disabled={display !== 'connected'}
+                  // 实机反馈 2026-09-16:http 直连没有进程可「启动」(start 只是探测),
+                  // 开窗按钮不再被运行状态挡住 —— 启动与开窗本就是一个动作;
+                  // ssh 需要隧道在跑;local 需要 hub 启动或已接管外部进程。
+                  disabled={record.transport !== 'http' && display !== 'connected'}
                   data-testid="open-view-btn"
                 >
                   <Icon name="external" /> {t('detail.openView')}
@@ -316,6 +357,59 @@ export default function DetailView(): ReactNode {
             </button>
           </div>
         </div>
+
+        {/* 实机反馈 2026-09-16:本机已在运行的 dsh web —— 让用户直接接管,
+            而不是被迫「重新安装 / 另起一个进程」。只在本地实例且未运行时出现。 */}
+        {record.transport === 'local' && externalDsh.length > 0 && (
+          <div className="card" data-testid="external-dsh-card">
+            <div className="card-head">
+              <h3>{t('detail.externalTitle')}</h3>
+              <span className="meta">{t('detail.externalCount', { n: externalDsh.length })}</span>
+            </div>
+            <p className="meta" style={{ marginBottom: 10 }}>
+              {t('detail.externalBody')}
+            </p>
+            {externalDsh.map((item) => (
+              <div key={item.pid} className="row-between ext-row">
+                <div style={{ minWidth: 0 }}>
+                  <div className="num" style={{ fontSize: 12.5 }}>
+                    127.0.0.1:{item.port} <span className="meta">· pid {item.pid}</span>
+                  </div>
+                  <div
+                    className="meta"
+                    style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    title={item.command}
+                  >
+                    {item.patch
+                      ? `${t('detail.externalPatch')} ${item.patch}`
+                      : t('detail.externalNoPatch')}
+                  </div>
+                </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  data-testid={`adopt-btn-${item.pid}`}
+                  disabled={adopting !== null}
+                  onClick={() => {
+                    setAdopting(item.pid)
+                    void window.dshHub?.runtime
+                      .adoptExternal(record.id, item.pid)
+                      .then((result) => {
+                        if (result && !result.ok) {
+                          toast('err', t('detail.adoptFailed'), result.message)
+                        } else {
+                          toast('ok', t('detail.adopted'), `127.0.0.1:${item.port}`)
+                        }
+                      })
+                      .finally(() => setAdopting(null))
+                  }}
+                >
+                  <Icon name="external" />{' '}
+                  {adopting === item.pid ? t('detail.adopting') : t('detail.adopt')}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="card mt16 danger-zone">

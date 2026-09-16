@@ -44,7 +44,12 @@ const bridge: DshHubBridge = {
   runtime: {
     start: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.start, id),
     stop: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.stop, id),
-    openView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openView, id)
+    openView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openView, id),
+    // 外部 dsh web:scan 无参数(渲染层指定不了探测目标);adopt 只传 pid,
+    // 端口与 patch 由主进程重新扫描认定
+    scanExternal: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.scanExternal),
+    adoptExternal: (id: string, pid: number) =>
+      ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.adoptExternal, id, pid)
   },
   onInstanceStatus: (listener) => {
     // 只把载荷转给渲染层，不透传 IpcRendererEvent（其中含 sender 等能力对象）

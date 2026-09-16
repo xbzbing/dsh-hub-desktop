@@ -86,15 +86,30 @@ export interface LocalRuntimeManager {
   start(instance: LocalInstance): Promise<void>
   stop(id: string): Promise<void>
   stopAll(): Promise<void>
+  /**
+   * 实机反馈 2026-09-16:接管本机**已在运行**的 dsh web(hub 不 spawn)。
+   * 接管后 statusOf 返回 running + 外部 URL,「打开视图」直接可用;
+   * stop() 只断开接管,**绝不终止**用户自己的进程。
+   */
+  adopt(instance: LocalInstance, external: AdoptTarget): Promise<void>
+}
+
+/** 接管目标(来自 external-dsh 的只读探测;端口必须已确定) */
+export interface AdoptTarget {
+  pid: number
+  port: number
+  /** `--patch <file>` 取值(dush 形态);仅用于展示 */
+  patch: string | null
 }
 
 interface Entry {
-  child: SpawnedProcess
+  /** hub spawn 的子进程;接管外部实例时为 null(进程归用户所有) */
+  child: SpawnedProcess | null
   url: string | null
   port: number | null
   version: string
-  /** #2:运行时来源(hub=隔离目录 / path=用户本机 PATH);事件回写闸依赖它 */
-  runtimeSource: 'hub' | 'path'
+  /** #2:运行时来源(hub=隔离目录 / path=用户本机 PATH / external=接管外部进程) */
+  runtimeSource: 'hub' | 'path' | 'external'
   home: string
   log: string[]
   /** 未以换行结尾的残片：跨 chunk 的就绪行靠它拼接，否则会漏匹配就绪行 */
@@ -104,6 +119,8 @@ interface Entry {
   timer: NodeJS.Timeout | null
   /** 队列放行钩子:就绪 / 退出 / 出错 / 超时 任一发生时调用(TOCTOU 防线) */
   settleSpawn?: () => void
+  /** 外部接管的 pid(仅展示与诊断;停止时不 kill) */
+  externalPid?: number
 }
 
 /** 串行启动任务的结果：spawned=正常拉起；cancelled=排队期间被取消；duplicate=已被前一个任务拉起 */
@@ -191,14 +208,17 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   }
 
   function killTree(entry: Entry, signal: NodeJS.Signals): void {
-    const pid = entry.child.pid
+    // 外部接管的条目没有子进程(hub 没 spawn 过):绝不对它做任何 kill
+    const child = entry.child
+    if (!child) return
+    const pid = child.pid
     if (pid === undefined) return
     try {
       // detached 启动 → 子进程自成进程组，负 pid 杀整组（包装 shell + 其全部后代）
       process.kill(-pid, signal)
     } catch {
       try {
-        entry.child.kill(signal)
+        child.kill(signal)
       } catch {
         /* 已退出 */
       }
@@ -216,6 +236,11 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       }
       const timer = setTimeout(() => finish(false), timeoutMs)
       timer.unref?.()
+      // 外部接管条目没有子进程:没什么可等的,视作「已退出」
+      if (!entry.child) {
+        finish(true)
+        return
+      }
       entry.child.on('exit', () => finish(true))
     })
   }
@@ -289,8 +314,11 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         }
       }
     }
-    entry.child.stdout?.on('data', onChunk('stdout'))
-    entry.child.stderr?.on('data', onChunk('stderr'))
+    const child = entry.child
+    // 只有 hub spawn 出来的条目才有 stdout/stderr 可监听(外部接管条目没有)
+    if (!child) return
+    child.stdout?.on('data', onChunk('stdout'))
+    child.stderr?.on('data', onChunk('stderr'))
   }
 
   return {
@@ -559,6 +587,15 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         emit(id, 'stopped', { detail: '实例未在运行' })
         return
       }
+      // 外部接管(hub 没 spawn 过):只断开接管 —— 用户自己的 dsh web 进程必须留着,
+      // 我们无权替用户结束它(误杀会连带终止他手工挂着的 patch 实例)。
+      if (entry.runtimeSource === 'external') {
+        entries.delete(id)
+        emit(id, 'stopped', {
+          detail: `已断开接管（外部 dsh web 进程 pid ${entry.externalPid ?? '?'} 未终止）`
+        })
+        return
+      }
       entry.stopping = true
       if (entry.timer) {
         clearTimeout(entry.timer)
@@ -576,6 +613,45 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       // 队列任务永不返回,之后所有实例的 start 全部永久排队(settled 标志保证此处重复无害)
       entry.settleSpawn?.()
       emit(id, 'stopped', { detail: exited ? '已停止' : '已强制停止（SIGKILL）' })
+    },
+
+    async adopt(instance, external) {
+      const id = instance.id
+      const existing = entries.get(id)
+      if (existing) {
+        // 已在运行(hub 自己拉起的或已接管的):不覆盖,只重播状态
+        emit(id, existing.ready ? 'running' : 'starting', {
+          version: existing.version,
+          runtimeSource: existing.runtimeSource,
+          ...(existing.url ? { url: existing.url } : {}),
+          ...(existing.port !== null ? { port: existing.port } : {}),
+          detail: '实例已在运行，忽略重复接管'
+        })
+        return
+      }
+      const url = `http://127.0.0.1:${external.port}`
+      entries.set(id, {
+        child: null,
+        url,
+        port: external.port,
+        // 外部进程的版本我们不去猜(hub 未安装、也不该回写):显式留空字符串,
+        // 状态事件里由调用方决定是否展示
+        version: '',
+        runtimeSource: 'external',
+        home: '',
+        log: [],
+        buffer: '',
+        ready: true,
+        stopping: false,
+        timer: null,
+        externalPid: external.pid
+      })
+      emit(id, 'running', {
+        url,
+        port: external.port,
+        runtimeSource: 'external',
+        detail: `已接管本机运行的 dsh web（pid ${external.pid}${external.patch ? `，patch ${external.patch}` : ''}）`
+      })
     },
 
     async stopAll() {

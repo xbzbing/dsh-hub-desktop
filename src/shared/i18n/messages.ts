@@ -283,6 +283,22 @@ export const MESSAGES = {
   'detail.start': { zh: '启动', en: 'Start' },
   'detail.openView': { zh: '打开视图', en: 'Open view' },
   'detail.noRuntimeControl': { zh: '该传输类型暂不支持运行时控制', en: 'Runtime control is not supported for this transport' },
+  'detail.externalTitle': { zh: '本机已在运行的 dsh web', en: 'dsh web already running on this machine' },
+  'detail.externalCount': { zh: '检测到 {n} 个', en: '{n} detected' },
+  'detail.externalBody': {
+    zh: '这是你自己启动的 dsh 进程（hub 不会结束它）。接管后可直接打开视图，无需 hub 再启动一个。',
+    en: 'These are dsh processes you started yourself (hub never terminates them). Adopt one to open its view directly instead of starting another.'
+  },
+  'detail.externalPatch': { zh: '补丁', en: 'patch' },
+  'detail.externalNoPatch': { zh: '未使用 patch', en: 'no patch' },
+  'detail.adopt': { zh: '接管', en: 'Adopt' },
+  'detail.adopting': { zh: '接管中…', en: 'Adopting…' },
+  'detail.adopted': { zh: '已接管外部 dsh web', en: 'Adopted external dsh web' },
+  'detail.adoptFailed': { zh: '接管失败', en: 'Adopt failed' },
+  'detail.externalDataDir': {
+    zh: '（外部进程，由你自己管理）',
+    en: '(external process, managed by you)'
+  },
   'detail.dangerZone': { zh: '危险操作', en: 'Danger zone' },
   'detail.irreversible': { zh: '不可撤销', en: 'irreversible' },
   'detail.deleteInstance': { zh: '删除实例', en: 'Delete instance' },

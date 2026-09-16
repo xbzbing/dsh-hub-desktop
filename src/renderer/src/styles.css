@@ -431,6 +431,16 @@ h3,
   font-weight: 600;
 }
 /* UI 打磨 #5:危险区以浅红底明确语义边界(其余卡片保持中性);内部上下边距收紧 */
+/* 实机反馈 2026-09-16:外部 dsh web 列表行(接管入口) */
+.ext-row {
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  gap: 10px;
+}
+.ext-row:first-of-type {
+  border-top: 0;
+  padding-top: 2px;
+}
 .danger-zone {
   background: color-mix(in oklch, var(--danger) 4%, var(--surface));
   border-color: color-mix(in oklch, var(--danger) 22%, var(--border));

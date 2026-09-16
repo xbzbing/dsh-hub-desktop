@@ -24,6 +24,7 @@ import {
   VaultPolicySchema,
   type HostKeyDecision,
   type AuthStateSnapshot,
+  type ExternalDshWebSnapshot,
   type HttpAuthDetection,
   type InstanceRecord,
   type VaultPolicy,
@@ -32,11 +33,13 @@ import {
   type IpcResult
 } from '@shared/contracts'
 import { detectDraftEndpoint } from '../transport/http-endpoint'
+import { httpDirectEndpoint } from '../transport/endpoint-resolver'
 import type { HttpEndpointManager } from '../transport/http-endpoint'
 import { resolveSshKeyPreview } from '../ssh/key-preview'
 import type { PromptBroker } from '../ssh/prompt-broker'
 import type { AuthRegistry } from '../auth/auth-registry'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
+import type { ExternalDshScanner } from '../local-runtime/external-dsh'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 import { DataDirOpenError } from '../shell/open-data-dir'
@@ -49,6 +52,11 @@ import type { AuditEntry } from '../audit/audit-log'
 export interface IpcDeps {
   /** 本地运行时（T3）；SSH / HTTP 传输在各自任务内接入同一状态通道 */
   runtime: LocalRuntimeManager
+  /**
+   * 实机反馈 2026-09-16:本机已在运行的 dsh web 探测器(只读 ps+lsof)。
+   * 缺省不装配(单测)→ scan 返回空列表、adopt 一律 invalid-state。
+   */
+  externalDsh?: ExternalDshScanner
   /** SSH 隧道传输（T4）；HTTP 直连在 T6 */
   tunnels: SshTunnelManager
   /**
@@ -249,12 +257,79 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
           : instance.transport === 'http'
             ? deps.http.statusOf(instanceId)
             : deps.runtime.statusOf(instanceId)
-      if (status?.status !== 'running' || !status.url) {
-        throw new InstanceStoreError('invalid-state', '实例尚未运行，无法打开视图')
+      if (status?.status === 'running' && status.url) {
+        await deps.openInstanceView(instance, status.url)
+        return null
       }
-      await deps.openInstanceView(instance, status.url)
-      return null
+      // 实机反馈(2026-09-16):「启动」的意义就是打开视图 —— 对 http 直连来说
+      // 根本没有进程可管(http 的 start 只是跑一遍探测),却要求先点「启动」才
+      // 解锁「打开视图」,等于把同一个动作做两遍。
+      // 现在:http 实例直接按端点 URL 开窗(视图内的拦截层 + 认证探测照常工作);
+      // ssh 仍必须先有隧道(那是真实进程);local 仍需 hub 启动或接管(无 URL 无从开窗)。
+      if (instance.transport === 'http') {
+        await deps.openInstanceView(instance, httpDirectEndpoint(instance))
+        return null
+      }
+      throw new InstanceStoreError(
+        'invalid-state',
+        instance.transport === 'ssh'
+          ? 'SSH 隧道尚未运行，无法打开视图'
+          : '实例尚未运行，无法打开视图（可先「启动」，或接管本机已在运行的 dsh web）'
+      )
     })
+  )
+
+  // —— 外部 dsh web 探测与接管(实机反馈 2026-09-16) ——
+
+  ipcMain.handle(
+    INSTANCE_RUNTIME_IPC.scanExternal,
+    (): Promise<IpcResult<ExternalDshWebSnapshot[]>> =>
+      wrap(async () => {
+        // 无参数:渲染层指定不了探测目标(只读 ps+lsof,不做任何写入)
+        if (!deps.externalDsh) return []
+        const found = await deps.externalDsh.scan()
+        // 只暴露 UI 需要的字段,并限制条数(避免异常环境下列表爆炸)
+        return found.slice(0, 10).map((item) => ({
+          pid: item.pid,
+          port: item.port,
+          patch: item.patch,
+          command: item.command
+        }))
+      })
+  )
+
+  ipcMain.handle(
+    INSTANCE_RUNTIME_IPC.adoptExternal,
+    (_event, id: unknown, pid: unknown): Promise<IpcResult<null>> =>
+      wrap(async () => {
+        const instanceId = parseId(id)
+        const targetPid = z.number().int().positive().parse(pid)
+        const instance = await store.get(instanceId)
+        if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
+        if (instance.transport !== 'local') {
+          throw new InstanceStoreError('invalid-input', '只有本地实例才能接管本机 dsh web')
+        }
+        if (!deps.externalDsh) {
+          throw new InstanceStoreError('invalid-state', '本机进程探测能力不可用')
+        }
+        // 关键:端口/patch **不采信渲染层** —— 重新扫描并按 pid 认定,
+        // 渲染层无法借这个通道让 hub 去连任意地址
+        const found = await deps.externalDsh.scan()
+        const match = found.find((item) => item.pid === targetPid)
+        if (!match) {
+          throw new InstanceStoreError('not-found', `未找到 pid ${targetPid} 的 dsh web 进程`)
+        }
+        if (match.port === null) {
+          throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')
+        }
+        await deps.runtime.adopt(instance, {
+          pid: match.pid,
+          port: match.port,
+          patch: match.patch
+        })
+        deps.audit?.({ instanceId, event: 'connect', result: 'adopt-external' })
+        return null
+      })
   )
 
   // —— SSH 辅助（T5）：密钥预览 + 指纹确认/口令回复 ——
