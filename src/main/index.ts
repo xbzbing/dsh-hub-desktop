@@ -408,8 +408,8 @@ void app.whenReady().then(() => {
   nativePorts = ports
   const nativeApplier = createNativeSettingsApplier(ports)
 
-  const applyNativeSettings = (current: Settings, options: { startup?: boolean } = {}): void => {
-    nativeApplier.apply(current, options)
+  const applyNativeSettings = (current: Settings, changedKeys: readonly (keyof Settings)[]): void => {
+    nativeApplier.apply(current, { changedKeys })
   }
 
   // T11 系统通知:发送本身在 `shell/status-notifier.ts`(单测直接断言 Notification.show()),
@@ -446,7 +446,7 @@ void app.whenReady().then(() => {
       status: tr('tray.status', { count: runningInstanceCount() })
     }
   }
-  applyNativeSettings(settings.read(), { startup: true })
+  nativeApplier.apply(settings.read(), { startup: true })
   // T10 §7.5:审计 JSONL(按日历日轮转,保留 90 天,不含任何凭据)
   audit = createAuditLog({ dir: join(dataRoot, 'audit') })
   if (!safeStorageAvailable) {

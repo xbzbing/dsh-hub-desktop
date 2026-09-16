@@ -38,6 +38,16 @@ describe('planNativeSettings（T11 设置 → 原生动作）', () => {
     ).toContainEqual({ kind: 'set-login-item', autoStart: false })
   })
 
+  it('仅切换语言时只刷新已有托盘文案，绝不重写登录项', () => {
+    const actions = planNativeSettings({
+      settings: T(true, true),
+      trayExists: true,
+      startup: false,
+      changedKeys: ['language']
+    })
+    expect(actions).toEqual([{ kind: 'update-tray' }])
+  })
+
   it('关托盘时不产生创建/刷新动作(不留下无用图标)', () => {
     const actions = planNativeSettings({ settings: T(false), trayExists: false, startup: false })
     expect(actions.some((a) => a.kind === 'create-tray' || a.kind === 'update-tray')).toBe(false)

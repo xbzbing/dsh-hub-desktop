@@ -84,7 +84,7 @@ export interface IpcDeps {
    * T11 设置变更后的原生副作用(开机自启 / 托盘 / 通知偏好)。
    * 缺省不执行(单测);落盘由本模块负责,副作用交给装配层。
    */
-  onSettingsChanged?: (settings: Settings) => void
+  onSettingsChanged?: (settings: Settings, changedKeys: readonly (keyof Settings)[]) => void
   /**
    * T11 三审 Finding 1:打开应用数据目录(设置页「打开」按钮)。
    *
@@ -639,8 +639,9 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
           if (key in raw) provided[key] = raw[key] as never
         }
         const next = await deps.settings.update(provided)
-        // 副作用失败不能回滚设置(偏好已落盘);由装配层自行隔离错误
-        deps.onSettingsChanged?.(next)
+        // 原生副作用只按真正被修改的字段施加：例如切语言仅刷新托盘文案，
+        // 绝不能顺带调用 macOS 的 setLoginItemSettings。
+        deps.onSettingsChanged?.(next, Object.keys(provided) as Array<keyof Settings>)
         return next
       })
   )

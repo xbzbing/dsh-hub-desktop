@@ -20,6 +20,8 @@ export interface NativePlanInput {
   trayExists: boolean
   /** 是否为启动时的首次应用 */
   startup: boolean
+  /** 运行期实际发生变化的设置字段；缺省用于既有全量 apply 调用 */
+  changedKeys?: readonly (keyof Settings)[]
 }
 
 /**
@@ -32,13 +34,21 @@ export interface NativePlanInput {
  */
 export function planNativeSettings(input: NativePlanInput): NativeAction[] {
   const actions: NativeAction[] = []
-  const { settings, trayExists, startup } = input
+  const { settings, trayExists, startup, changedKeys } = input
+  const changed = (key: keyof Settings): boolean => changedKeys === undefined || changedKeys.includes(key)
 
-  if (settings.tray && !trayExists) actions.push({ kind: 'create-tray' })
-  else if (!settings.tray && trayExists) actions.push({ kind: 'destroy-tray' })
-  else if (settings.tray && trayExists) actions.push({ kind: 'update-tray' })
+  // 创建/销毁托盘只响应 tray 开关；语言变更只刷新已有托盘菜单。
+  if (changed('tray')) {
+    if (settings.tray && !trayExists) actions.push({ kind: 'create-tray' })
+    else if (!settings.tray && trayExists) actions.push({ kind: 'destroy-tray' })
+    else if (settings.tray && trayExists) actions.push({ kind: 'update-tray' })
+  } else if (changed('language') && settings.tray && trayExists) {
+    actions.push({ kind: 'update-tray' })
+  }
 
-  if (!startup || settings.autoStart) {
+  // 语言、主题、通知等无关修改绝不能重写 macOS 登录项；后者既是系统副作用，
+  // 也可能在未授权的开发环境产生 Operation not permitted。
+  if ((startup && settings.autoStart) || (!startup && changed('autoStart'))) {
     actions.push({ kind: 'set-login-item', autoStart: settings.autoStart })
   }
 
@@ -61,7 +71,10 @@ export interface NativeSettingsPorts {
 export type NativeSettingsFields = Pick<Settings, 'tray' | 'autoStart'>
 
 export interface NativeSettingsApplier {
-  apply(settings: NativeSettingsFields, options?: { startup?: boolean }): NativeAction[]
+  apply(
+    settings: NativeSettingsFields,
+    options?: { startup?: boolean; changedKeys?: readonly (keyof Settings)[] }
+  ): NativeAction[]
 }
 
 /**
@@ -78,7 +91,8 @@ export function createNativeSettingsApplier(ports: NativeSettingsPorts): NativeS
       const actions = planNativeSettings({
         settings,
         trayExists: ports.trayExists(),
-        startup: options.startup === true
+        startup: options.startup === true,
+        ...(options.changedKeys === undefined ? {} : { changedKeys: options.changedKeys })
       })
       for (const action of actions) {
         try {

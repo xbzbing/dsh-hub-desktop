@@ -65,6 +65,7 @@ let clearPartitionSession: ReturnType<typeof vi.fn>
 let vaultFake: Record<string, ReturnType<typeof vi.fn>>
 let auditSpy: (entry: { instanceId?: string | null; event: string; result?: string }) => void
 let settingsFake: Record<string, ReturnType<typeof vi.fn>>
+let onSettingsChanged: ReturnType<typeof vi.fn>
 let promptsFake: {
   requestHostKey: ReturnType<typeof vi.fn>
   requestAskpass: ReturnType<typeof vi.fn>
@@ -138,6 +139,7 @@ beforeEach(async () => {
     policyIds: vi.fn(() => [])
   }
   auditSpy = vi.fn() as unknown as typeof auditSpy
+  onSettingsChanged = vi.fn()
   settingsFake = {
     read: vi.fn(() => ({
       language: 'zh',
@@ -174,6 +176,7 @@ beforeEach(async () => {
     vault: vaultFake as never,
     settings: settingsFake as never,
     audit: auditSpy,
+    onSettingsChanged: onSettingsChanged as never,
     clearPartitionSession: clearPartitionSession as never,
     prompts: promptsFake as never,
     openInstanceView: openInstanceView as never
@@ -1272,6 +1275,15 @@ describe('registerIpc', () => {
     }
     expect(ok.ok).toBe(true)
     expect(settingsFake['update']).toHaveBeenCalledWith({ language: 'en', tray: true })
+    expect(onSettingsChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ language: 'en', tray: true }),
+      ['language', 'tray']
+    )
+
+    onSettingsChanged.mockClear()
+    const languageOnly = (await invoke('settings:update', { language: 'zh' })) as { ok: boolean }
+    expect(languageOnly.ok).toBe(true)
+    expect(onSettingsChanged).toHaveBeenCalledWith(expect.anything(), ['language'])
 
     // 未知字段被 .strict() 拒绝(错误信封,不抛异常)
     const unknown = (await invoke('settings:update', { nope: 1 })) as { ok: boolean; code?: string }
