@@ -237,10 +237,11 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         await deps.openInstanceView(instance, status.url)
         return null
       }
-      // 「打开工作区」是唯一用户入口：http 直连无需准备；本机按运行时优先级
-      // 接管/探测/启动；SSH 则在此建立隧道并在就绪后开窗。状态探测仍是后台职责，
-      // 但不再暴露一个与打开工作区相互重叠的「启动」按钮。
+      // HTTP 立即打开，同时在后台验证端点并更新状态。打开不应等待探测完成。
       if (instance.transport === 'http') {
+        void deps.http.start(instance).catch((error: unknown) => {
+          console.error('[register] HTTP 实例状态探测失败：', error)
+        })
         await deps.openInstanceView(instance, httpDirectEndpoint(instance))
         return null
       }
@@ -256,18 +257,15 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         return null
       }
       if (instance.transport === 'local') {
-        // 手工运行的 dsh/dush 优先：接管是零下载、零重启且绝不杀用户进程的路径。
-        // 扫描结果仅由主进程读取，端口仍不接受渲染层输入。
+        // 已运行的本机 dsh 可直接打开工作区，不改变实例的运行来源或进程所有权。
+        // 用户选择「接管」时才会把外部进程关联到实例。
         const external = deps.externalDsh ? (await deps.externalDsh.scan()) ?? [] : []
         const target = external.find((item) => item.port !== null)
         if (target && target.port !== null) {
-          await deps.runtime.adopt(instance, { pid: target.pid, port: target.port, patch: target.patch })
-          deps.audit?.({ instanceId, event: 'connect', result: 'adopt-external' })
-        } else {
-          // 无可接管进程时，local-runtime 才会依次探测本机 dsh、hub 已装运行时，
-          // 最后在用户确认后下载。这里不再由 UI 暴露第二个「启动」动作。
-          await deps.runtime.start(instance)
+          await deps.openInstanceView(instance, `http://127.0.0.1:${target.port}`)
+          return null
         }
+        await deps.runtime.start(instance)
         const ready = deps.runtime.statusOf(instanceId)
         if (ready?.status === 'running' && ready.url) {
           await deps.openInstanceView(instance, ready.url)

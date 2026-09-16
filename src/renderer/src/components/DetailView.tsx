@@ -29,7 +29,6 @@ export default function DetailView(): ReactNode {
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
   const toast = useAppStore((state) => state.toast)
-  const setPendingOpen = useAppStore((state) => state.setPendingOpen)
   const userDataPath = useAppStore((state) => state.userDataPath)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -241,7 +240,7 @@ export default function DetailView(): ReactNode {
           <VaultCard key={record.id} instanceId={record.id} />
         )}
 
-        <div className="card">
+        <div className="card runtime-card">
           <div className="card-head">
             <h3>{t('detail.runtime')}</h3>
             <span className="meta">{record.transport === 'local' ? t('detail.localSide') : t('detail.remoteSide')}</span>
@@ -265,15 +264,11 @@ export default function DetailView(): ReactNode {
               </>
             )}
           </dl>
-          <div className="row mt12">
+          <div className="row mt12 runtime-actions">
             <button
               className="btn btn-primary btn-sm"
               onClick={() => {
-                // SSH/local 首次点击会异步建隧道/探测运行时；先登记 pending，
-                // running 状态到达后 store 自动再次 openView，用户只需点一次。
-                if (record.transport !== 'http' && status?.status !== 'running') {
-                  setPendingOpen(record.id)
-                }
+                // 此调用负责准备运行时并在就绪后导航，避免状态事件触发第二次导航。
                 void window.dshHub?.runtime.openView(record.id).then((result) => {
                   if (result && !result.ok) toast('err', t('detail.openViewFailed'), result.message)
                 })
@@ -348,27 +343,15 @@ export default function DetailView(): ReactNode {
         )}
       </div>
 
-      <div className="card mt16 danger-zone">
-        <div className="card-head">
-          <h3>{t('detail.dangerZone')}</h3>
-          <span className="meta">{t('detail.irreversible')}</span>
-        </div>
-        <div className="row-between">
-          <p className="meta" style={{ maxWidth: '52ch' }}>
-            {t('detail.deleteBody')}
-          </p>
-          <button
-            className="btn btn-sm"
-            style={{
-              color: 'var(--danger-ink)',
-              border: '1px solid color-mix(in oklch, var(--danger) 40%, var(--border))'
-            }}
-            onClick={() => setConfirmDelete(true)}
-            data-testid="delete-btn"
-          >
-            <Icon name="trash" /> {t('detail.deleteInstance')}
-          </button>
-        </div>
+      <div className="detail-delete mt16">
+        <span className="meta">{t('detail.deleteBody')}</span>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => setConfirmDelete(true)}
+          data-testid="delete-btn"
+        >
+          <Icon name="trash" /> {t('detail.deleteInstance')}
+        </button>
       </div>
 
       {confirmDelete && (

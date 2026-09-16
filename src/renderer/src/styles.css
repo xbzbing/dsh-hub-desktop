@@ -428,6 +428,28 @@ h3,
   font-size: 13.5px;
   font-weight: 600;
 }
+.runtime-card {
+  display: flex;
+  flex-direction: column;
+}
+.runtime-card .runtime-actions {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.detail-delete {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.detail-delete .btn {
+  color: var(--danger-ink);
+}
+.detail-delete .btn:hover {
+  background: var(--danger-soft);
+}
 /* 外部 dsh web 列表行。 */
 .ext-row {
   padding: 9px 0;

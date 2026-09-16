@@ -560,7 +560,7 @@ describe('registerIpc', () => {
     expect(openInstanceView).not.toHaveBeenCalled()
   })
 
-  it('本机未运行时会先尝试接管已扫描到的 dsh web', async () => {
+  it('打开本机工作区会直接使用已扫描到的 dsh，不改变实例的运行来源', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as {
       ok: boolean
       value: { id: string }
@@ -569,23 +569,10 @@ describe('registerIpc', () => {
     externalDshFake.scan.mockResolvedValueOnce([
       { pid: 84758, port: 3080, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
     ])
-    runtimeFake.adopt.mockImplementation(async (instance, target) => {
-      runtimeFake.statusOf.mockReturnValue({
-        id: instance.id,
-        status: 'running',
-        url: `http://127.0.0.1:${target.port}`,
-        port: target.port,
-        runtimeSource: 'external',
-        at: '2026-09-16T00:00:00.000Z'
-      })
-    })
 
     const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
     expect(opened.ok).toBe(true)
-    expect(runtimeFake.adopt).toHaveBeenCalledWith(
-      expect.objectContaining({ id: local.value.id }),
-      { pid: 84758, port: 3080, patch: '/x.yml' }
-    )
+    expect(runtimeFake.adopt).not.toHaveBeenCalled()
     expect(runtimeFake.start).not.toHaveBeenCalled()
     expect(openInstanceView).toHaveBeenCalledWith(
       expect.objectContaining({ id: local.value.id }),
@@ -593,13 +580,12 @@ describe('registerIpc', () => {
     )
   })
 
-  it('本机未运行且无可接管进程时再探测已安装 dsh 并启动', async () => {
+  it('本机未运行时会启动实例自身的 dsh', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as {
       ok: boolean
       value: { id: string }
     }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValueOnce([])
     runtimeFake.start.mockImplementation(async (instance) => {
       runtimeFake.statusOf.mockReturnValue({
         id: instance.id,
@@ -632,6 +618,7 @@ describe('registerIpc', () => {
     const opened = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
     expect(opened.ok).toBe(true)
     // 用实例自身端点开窗(httpDirectEndpoint 的归一化结果)
+    expect(httpFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: created.value.id }))
     expect(openInstanceView).toHaveBeenCalledWith(
       expect.objectContaining({ id: created.value.id, transport: 'http' }),
       expect.stringContaining('gw.example.com')

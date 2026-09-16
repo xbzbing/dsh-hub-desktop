@@ -149,6 +149,13 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   await expect(card).toBeVisible({ timeout: 10_000 })
   await win.screenshot({ path: join(SHOT_DIR, 'external-dsh-detected.png'), animations: 'disabled' })
 
+  // 直接打开已运行的本机 dsh 不会接管进程，且详情中的接管卡片保持可用。
+  const directWindow = app.waitForEvent('window', { timeout: 10_000 })
+  await win.getByTestId('open-view-btn').click()
+  const directWorkspace = await directWindow
+  await expect.poll(() => directWorkspace.url()).toMatch(/^http:\/\/127\.0\.0\.1:\d+/)
+  await expect(card).toBeVisible()
+
   // 接管:点第一个接管按钮
   const adoptBtn = card.locator('[data-testid^="adopt-btn-"]').first()
   await adoptBtn.click()
