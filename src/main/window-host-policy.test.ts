@@ -40,3 +40,37 @@ describe('isAllowedInstanceNavigation（实例窗口外跳拦截 §6.6）', () =
     expect(isAllowedInstanceNavigation('http://127.0.0.1:30000/', 'not a url')).toBe(false)
   })
 })
+describe('isAllowedInstanceNavigation（用户反馈 #4:远程 http 实例的登录页导航）', () => {
+  const remote = 'https://gw.example.com/dsh/?token=abc'
+
+  it('同 origin 的网关登录页 / OTP / onboarding / 登录提交一律放行', () => {
+    // #4 的复现场景:302 落到 <origin>/login,用户输入密码提交 form → 顶层导航
+    expect(isAllowedInstanceNavigation('https://gw.example.com/login', remote)).toBe(true)
+    expect(isAllowedInstanceNavigation('https://gw.example.com/login/auth', remote)).toBe(true)
+    expect(isAllowedInstanceNavigation('https://gw.example.com/dsh/otp/verify', remote)).toBe(true)
+    expect(isAllowedInstanceNavigation('https://gw.example.com/dsh/onboarding/password', remote)).toBe(true)
+    expect(isAllowedInstanceNavigation('https://gw.example.com/dsh/', remote)).toBe(true)
+  })
+
+  it('http(明文)远程实例的同 origin 导航同样放行', () => {
+    const plain = 'http://remote.internal.example.com/dsh/'
+    expect(isAllowedInstanceNavigation('http://remote.internal.example.com/login', plain)).toBe(true)
+  })
+
+  it('远程实例:跨 origin(外部钓鱼/其他网关)一律拒绝 —— 分区 Cookie 不出实例服务', () => {
+    expect(isAllowedInstanceNavigation('https://evil.example.com/phish', remote)).toBe(false)
+    expect(isAllowedInstanceNavigation('https://other-gw.example.com/login', remote)).toBe(false)
+    expect(isAllowedInstanceNavigation('http://gw.example.com.evil.io/login', remote)).toBe(false)
+  })
+
+  it('远程实例:同 host 跨协议/跨端口拒绝(origin 不等价)', () => {
+    expect(isAllowedInstanceNavigation('http://gw.example.com/login', remote)).toBe(false)
+    expect(isAllowedInstanceNavigation('https://gw.example.com:8443/login', remote)).toBe(false)
+  })
+
+  it('回环实例语义不回归:跨端口/外部仍拒绝(见上一组用例)', () => {
+    const loopback = 'http://127.0.0.1:30000/?token=abc'
+    expect(isAllowedInstanceNavigation('https://gw.example.com/login', loopback)).toBe(false)
+    expect(isAllowedInstanceNavigation('http://127.0.0.1:30001/', loopback)).toBe(false)
+  })
+})
