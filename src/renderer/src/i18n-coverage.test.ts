@@ -408,7 +408,8 @@ export function stripComments(source: string, mode: StripMode = 'code'): string 
         if (source.startsWith('<!--', index)) {
           // 已闭合 → 抹成空格;未闭合 → **不猜**:只前进一格,其余按文本保留(只会多报)
           // **必须前进**:`skipHtmlComment` 在找不到 `-->` 时一个字都不抹,直接 continue 会死循环
-          skipHtmlComment()
+          if (skipHtmlComment()) continue
+          index += 1
           continue
         }
         skipHtmlTag() // `<!doctype html>` 之类
