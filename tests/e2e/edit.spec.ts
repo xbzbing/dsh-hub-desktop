@@ -54,7 +54,7 @@ test.afterAll(async () => {
   await app.close()
 })
 
-test('#9:明文警告收敛为胶囊,完整详情经 title 提供(不再占整段版面)', async () => {
+test('#9:明文警告收敛为胶囊,完整详情经 data-tip 气泡提供(不再占整段版面)', async () => {
   // 侧栏选中 http 实例(播种的第二个)
   await win.getByTestId('instances-table').isVisible()
   await win.getByText('明文远端实例').first().click()
@@ -64,10 +64,12 @@ test('#9:明文警告收敛为胶囊,完整详情经 title 提供(不再占整�
   await expect(pill).toBeVisible()
   // 胶囊本体是短标签,不含整段长文案
   await expect(pill).toContainText('未加密')
-  // 完整详情保留在 title(hover 提示),内容与原警告一致(以「明文」结尾关键词校验)
-  const title = await pill.getAttribute('title')
-  expect(title).toContain('http://')
-  expect(title).toContain('SSH')
+  // UI 打磨 #3:完整详情改放 data-tip(hover 即现的 CSS 气泡;原生 title 在
+  // Electron 下延迟不可控),读屏语义经 aria-label 保留
+  const tip = await pill.getAttribute('data-tip')
+  expect(tip).toContain('http://')
+  expect(tip).toContain('SSH')
+  expect(await pill.getAttribute('aria-label')).toBe(tip)
   // 视觉取证:详情页(含胶囊 + 编辑按钮)。
   // animations:'disabled' —— CSS 动画(如 modal fade/rise)快进到终态,避免截到半透明中间帧
   await win.screenshot({ path: join(SHOT_DIR, 'detail-cleartext-pill.png'), animations: 'disabled' })

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -205,6 +205,65 @@ describe('vault（§7.2 凭据存储策略）', () => {
     await writeFile(filePath, JSON.stringify({ version: 99, items: { i1: {} } }))
     const other = createVault({ filePath, crypto: fakeCrypto(), onError: () => undefined })
     expect(other.rememberedIds()).toEqual([])
+  })
+
+  it('实测修复:JSON 损坏文件被隔离(corrupt-*),下次写盘重建干净文件', async () => {
+    // 用户实机日志:credentials.json 被截断/拼接损坏后,旧实现每次读都重复报错
+    // 且 vault 永远起不来 —— 现在坏文件必须被改名隔离、随后由下一次 persist 重建
+    await mkdir(join(dir, 'vault'), { recursive: true })
+    const corrupt =
+      '{"version":1,"items":{"i1":{"session":"enc:abc"}}}\n{"version":1,"items":{}}\n'
+    await writeFile(filePath, corrupt)
+    const errors: unknown[] = []
+    const vault = createVault({
+      filePath,
+      crypto: fakeCrypto(),
+      onError: (error) => errors.push(error)
+    })
+    // load 是惰性的:首次读取才触发解析与隔离
+    expect(vault.rememberedIds()).toEqual([])
+    expect(errors.length).toBeGreaterThanOrEqual(1)
+
+    // 损坏文件已隔离(不再占用正式路径),目录里留有 corrupt- 隔离件
+    const quarantined = (await readdir(join(dir, 'vault'))).filter((name) =>
+      name.includes('corrupt-')
+    )
+    expect(quarantined).toHaveLength(1)
+    expect(await readFile(join(dir, 'vault', quarantined[0] ?? ''), 'utf8')).toBe(corrupt)
+
+    // 下一次显式写入 → 正式路径上是干净 JSON,重新加载可用
+    await vault.setPolicy('i1', BOTH)
+    await vault.rememberSession('i1', SESSION)
+    const reloaded = createVault({ filePath, crypto: fakeCrypto(), onError: () => undefined })
+    expect(reloaded.getSession('i1')).toEqual(SESSION)
+    // 新实例再读(触发 load)不再产生新错误 —— 损坏已被隔离干净
+    const errors2: unknown[] = []
+    createVault({ filePath, crypto: fakeCrypto(), onError: (e) => errors2.push(e) })
+    expect(errors2).toHaveLength(0)
+  })
+
+  it('实测修复:并发 persist 不再相互踩踏(唯一 tmp + 串行队列),终态为最后一次写入', async () => {
+    // 用户实机日志:rememberSession 与策略/密码写入并发时 rename ENOENT、文件损坏。
+    // 压测:同一 vault 上 20 个并发 remember/forget,全部 resolve 且终态可读回。
+    const vault = await optIn()
+    const rounds = Array.from({ length: 20 }, (_, i) => i)
+    await Promise.all(
+      rounds.map((i) =>
+        i % 2 === 0
+          ? vault.rememberSession('i1', { ...SESSION, value: `sess-${i}` })
+          : vault.forgetSession('i1')
+      )
+    )
+    // 最后一次写入(序号 19 = forget)已串行落地:终态应为「无会话条目」
+    expect(vault.getSession('i1')).toBeNull()
+    // 文件存在且为合法 JSON、无残留 tmp
+    const raw = await readFile(filePath, 'utf8')
+    expect(() => JSON.parse(raw)).not.toThrow()
+    const leftovers = (await readdir(join(dir, 'vault'))).filter((name) => name.includes('.tmp'))
+    expect(leftovers).toEqual([])
+    // 并发写后的文件没有损坏:新实例读到的终态一致
+    const reloaded = createVault({ filePath, crypto: fakeCrypto(), onError: () => undefined })
+    expect(reloaded.getSession('i1')).toBeNull()
   })
 
   it('磁盘被篡改的 policy 垃圾值在重开时收敛为默认(不勾选)', async () => {

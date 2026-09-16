@@ -80,7 +80,8 @@ export const MESSAGES = {
   'state.locked': { zh: '已锁定', en: 'Locked' },
 
   // —— 详情页 ——
-  'detail.login': { zh: '登录 / 重新登录', en: 'Sign in / Re-authenticate' },
+  'detail.login': { zh: '登录', en: 'Sign in' },
+  'detail.relogin': { zh: '重新登录', en: 'Re-sign in' },
   'detail.address': { zh: '地址', en: 'Address' },
   'detail.transport': { zh: '连接方式', en: 'Transport' },
   'detail.uptime': { zh: '运行时长', en: 'Uptime' },
@@ -123,6 +124,11 @@ export const MESSAGES = {
   'auth.otpHint': {
     zh: '该实例启用了二因素认证，提交密码后会要求输入验证码。',
     en: 'Two-factor authentication is enabled; a code will be requested after your password.'
+  },
+  'auth.submitOtp': { zh: '提交', en: 'Submit' },
+  'auth.otpRequiredHint': {
+    zh: '此页仅在实例开启两因素验证后出现；未开启的实例输入密码即直接登录。',
+    en: 'This step appears only when the instance has 2FA enabled; otherwise signing in with your password goes straight through.'
   },
 
   // —— 凭据存储（T10 §7.2）——

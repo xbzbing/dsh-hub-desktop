@@ -260,7 +260,9 @@ export default function AuthPanel(): ReactNode {
                 ? t('auth.submitting')
                 : locked
                   ? t('auth.lockButton', { seconds: lockedSeconds })
-                  : t('auth.submit')}
+                  : phase === 'await-otp'
+                    ? t('auth.submitOtp')
+                    : t('auth.submit')}
             </button>
           </div>
         </>
@@ -349,6 +351,15 @@ export default function AuthPanel(): ReactNode {
         <div className="hintbar mt12">
           <Icon name="shield" />
           <span>{t('auth.otpHint')}</span>
+        </div>
+      )}
+
+      {/* UI 打磨 #2:回答「必须输 TOTP 吗」—— 只有网关要求验证码才会到这一页;
+          实例未启用 2FA 时密码登录直接连通,不会出现本页 */}
+      {phase === 'await-otp' && (
+        <div className="hintbar mt12" data-testid="auth-otp-required-hint">
+          <Icon name="shield" />
+          <span>{t('auth.otpRequiredHint')}</span>
         </div>
       )}
 

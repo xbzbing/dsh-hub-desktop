@@ -158,26 +158,39 @@ textarea {
 }
 
 /* ---- 布局 ---- */
+/* 用户反馈 #4:顶栏统一标题栏 —— grid 重排为「顶栏横跨全宽 + 下行 sidebar/主区」,
+   macOS 红绿灯落在顶栏带内;sidebar 的右边框从顶栏之下才开始,不再直达窗口顶部 */
 .app-shell {
   height: 100%;
   display: grid;
   grid-template-columns: 262px 1fr;
+  grid-template-rows: 46px 1fr;
+  grid-template-areas:
+    'topbar topbar'
+    'sidebar main';
   transition: grid-template-columns 0.2s ease;
 }
 .app-shell.rail {
   grid-template-columns: 64px 1fr;
 }
+.topbar {
+  grid-area: topbar;
+}
+.sidebar {
+  grid-area: sidebar;
+}
+.content {
+  grid-area: main;
+}
 
-/* macOS hiddenInset 的可拖拽区 = 侧栏顶部条;左侧预留红绿灯位(对应设计稿 .traffic 所在行) */
-html[data-platform='darwin'] .side-head {
-  padding-left: 80px;
+/* 顶栏左端为红绿灯让位(macOS hiddenInset,trafficLightPosition x:14 y:13);
+   非 macOS 没有红绿灯,由下方规则维持常规内边距 */
+html[data-platform='darwin'] .topbar {
+  padding-left: 84px;
 }
 .side-head {
-  -webkit-app-region: drag;
-}
-.side-head .collapse-btn,
-.side-head button {
-  -webkit-app-region: no-drag;
+  /* 顶栏接管了窗口顶部拖拽带,侧栏顶部条不再承担红绿灯让位职责 */
+  padding: 10px 10px 0 14px;
 }
 
 .rail {
@@ -416,6 +429,31 @@ h3,
 .card-head h3 {
   font-size: 13.5px;
   font-weight: 600;
+}
+/* UI 打磨 #5:危险区以浅红底明确语义边界(其余卡片保持中性);内部上下边距收紧 */
+.danger-zone {
+  background: color-mix(in oklch, var(--danger) 4%, var(--surface));
+  border-color: color-mix(in oklch, var(--danger) 22%, var(--border));
+  padding-top: 13px;
+  padding-bottom: 13px;
+}
+.danger-zone .card-head {
+  border-bottom-color: color-mix(in oklch, var(--danger) 14%, var(--border));
+  margin-bottom: 11px;
+  padding-bottom: 9px;
+}
+.danger-zone .card-head h3 {
+  color: var(--danger-ink);
+}
+/* UI 打磨 #5:状态 chip 内嵌状态点,语义一眼可读 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.chip .status-dot {
+  width: 7px;
+  height: 7px;
 }
 .stat .stat-num {
   font-family: var(--font-display);
@@ -819,15 +857,9 @@ h3,
   flex-direction: column;
   justify-content: center;
   gap: 8px;
-  /* 用户反馈 #6:折叠态侧栏只有 64px 宽,而 macOS 红绿灯占据左上角约
-     0–70 × 0–28 的区域 —— 横向根本没有余量给 `padding-left: 80px`(展开态的做法),
-     于是内容从 y=20 起就与关闭/最小化/最大化按钮重叠。折叠态改为**纵向让位**
-     (具体内边距见下方 darwin 限定规则;非 macOS 没有红绿灯,不需要让位)。 */
-  padding: 20px 0 0;
-}
-html[data-platform='darwin'] .app-shell.rail .side-head {
-  /* 28px 按钮带 + 间距,把折叠态侧栏内容压到红绿灯之下 */
-  padding-top: 40px;
+  padding: 8px 0 0;
+  /* 用户反馈 #4/#6:顶栏已统一横跨全宽并接管红绿灯带,折叠态侧栏不再需要
+     纵向让位 —— 历史上的 darwin padding-top:40px 规则随统一顶栏一并退役 */
 }
 .app-shell.rail .brand {
   flex-direction: column;
@@ -1222,6 +1254,55 @@ html[data-platform='darwin'] .app-shell.rail .side-head {
   height: 12px;
   flex: none;
 }
+/* UI 打磨 #3:明文警告的悬停提示 —— 原生 title 在 Electron 下有 ~1s 延迟且
+   样式不可控,用户实测「指上去没有任何提示」。改为 CSS 气泡:hover/focus 即现,
+   深色浮层 + 向下箭头,宽度受限自动换行;定位相对胶囊,不依赖 JS。 */
+.warn-pill {
+  position: relative;
+  outline: none;
+}
+.warn-pill::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 7px);
+  z-index: 40;
+  width: max-content;
+  max-width: 320px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: color-mix(in oklch, var(--fg) 92%, var(--bg));
+  color: var(--bg);
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  text-align: left;
+  box-shadow: var(--shadow-layer);
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.warn-pill::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: calc(100% + 2px);
+  z-index: 41;
+  border: 5px solid transparent;
+  border-bottom-color: color-mix(in oklch, var(--fg) 92%, var(--bg));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.warn-pill:hover::after,
+.warn-pill:focus-visible::after,
+.warn-pill:hover::before,
+.warn-pill:focus-visible::before {
+  opacity: 1;
+  transform: translateY(0);
+}
 .n-err {
   background: var(--danger-soft);
   color: var(--danger-ink);
@@ -1250,12 +1331,17 @@ html[data-platform='darwin'] .app-shell.rail .side-head {
   font-size: 11.5px;
   margin-top: 2px;
 }
+/* UI 打磨 #1:步骤条拉伸为与 modal 头/脚同宽的结构条(负边距抵消 body 内边距),
+   其分隔线读作「结构线」而非悬在内容旁边的散线;下方内容与之保持 ≥18px 间距,
+   三个类型选项卡不再贴线/视觉重叠。 */
 .stepper {
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 14px 18px;
+  padding: 12px 18px;
+  margin: -16px -18px 18px;
   border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--bg) 45%, var(--surface));
 }
 .step {
   display: flex;
@@ -1437,6 +1523,11 @@ details.adv[open] {
   }
   .app-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: 46px auto 1fr;
+    grid-template-areas:
+      'topbar'
+      'sidebar'
+      'main';
   }
   .sidebar {
     max-height: 42vh;

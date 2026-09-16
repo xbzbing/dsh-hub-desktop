@@ -3,7 +3,12 @@
  * auth 与工作区切片随 T7/T5 追加)。
  */
 import { create } from 'zustand'
-import type { InstanceRecord, InstanceStatusEvent, InstanceSummary } from '@shared/contracts'
+import type {
+  AuthPhase,
+  InstanceRecord,
+  InstanceStatusEvent,
+  InstanceSummary
+} from '@shared/contracts'
 import { DEFAULT_SETTINGS, resolveLanguage } from '@shared/settings'
 import type { Language, Settings, Theme } from '@shared/settings'
 import { createTranslator } from '@shared/i18n'
@@ -37,6 +42,14 @@ interface AppState {
   pendingOpen: string[]
   /** 主进程 userData 路径(app:info 快照;详情页展示实例数据目录用) */
   userDataPath: string | null
+  /**
+   * 各实例的认证相位快照(auth:state 事件的 id → phase 投影)。
+   * UI 打磨 #2:详情页据此把「登录 / 重新登录」按钮状态化、且仅在已连接时显示「登出」。
+   * 未知实例(本会话尚无事件)不在 map 里 —— 调用方按「未登录」处理。
+   */
+  authPhases: Record<string, AuthPhase>
+  /** 写入/清除实例的认证相位(登出后为最新相位,无需特判) */
+  applyAuthPhase: (instanceId: string, phase: AuthPhase) => void
   toasts: ToastItem[]
   /** T11 非敏感偏好(主进程 settings.json 是真理源) */
   settings: Settings
@@ -107,6 +120,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   settingsOpen: false,
   pendingOpen: [],
   userDataPath: null,
+  authPhases: {},
   toasts: [],
   settings: DEFAULT_SETTINGS,
   language: initialLanguage(),
@@ -176,6 +190,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (result.ok) {
       set({ instances: result.value })
     }
+  },
+
+  applyAuthPhase: (instanceId, phase) => {
+    set((state) => ({ authPhases: { ...state.authPhases, [instanceId]: phase } }))
   },
 
   applyStatus: (event) => {

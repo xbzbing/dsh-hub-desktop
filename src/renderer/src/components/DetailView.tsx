@@ -28,6 +28,7 @@ export default function DetailView(): ReactNode {
   const t = useAppStore((state) => state.t)
   const record = useAppStore((state) => (selection ? state.records[selection] : undefined))
   const status = useAppStore((state) => (selection ? state.statuses[selection] : undefined))
+  const authPhase = useAppStore((state) => (selection ? state.authPhases[selection] : undefined))
   const ensureRecord = useAppStore((state) => state.ensureRecord)
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
@@ -40,6 +41,18 @@ export default function DetailView(): ReactNode {
   useEffect(() => {
     if (selection) void ensureRecord(selection)
   }, [selection, ensureRecord])
+
+  // UI 打磨 #2:进入详情页时相位未知(本会话还没有 auth:state 事件)→ 轻探一次。
+  // 这同时是 G2 已决边的自然触发点(needs-auth + 已存密码 → 静默登录,会话内一次),
+  // 且让「重新登录 / 登出」的可见性尽快与真实会话对齐。
+  useEffect(() => {
+    if (!selection || !record) return
+    if (!showAuthActions(record)) return
+    if (authPhase !== undefined) return
+    void window.dshHub?.auth.probe(selection)
+    // probe 只在相位未知时发一次;record/authPhase 变化不重复触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection])
 
   // 运行时长刷新:运行中每 5s 一跳
   useEffect(() => {
@@ -98,7 +111,7 @@ export default function DetailView(): ReactNode {
   return (
     <section data-od-id="view-detail" data-testid="view-detail">
       <div className="row-between" style={{ alignItems: 'flex-start' }}>
-        <div className="row" style={{ gap: 10 }}>
+        <div className="row" style={{ gap: 12 }}>
           <span className="brand-mark">
             <Icon name={TYPE_INFO[record.transport].icon} />
           </span>
@@ -110,8 +123,11 @@ export default function DetailView(): ReactNode {
                 {t(TYPE_INFO[record.transport].labelKey)}
               </span>
             </div>
-            <p className="meta" style={{ marginTop: 3 }}>
-              <span className={`chip ${info.chipClass}`}>{t(info.labelKey)}</span>
+            <p className="meta" style={{ marginTop: 4 }}>
+              <span className={`chip ${info.chipClass}`}>
+                <span className={`status-dot ${info.dotClass}`} aria-hidden="true" />
+                {t(info.labelKey)}
+              </span>
               {status?.detail ? ` · ${status.detail}` : ''}
             </p>
           </div>
@@ -170,13 +186,16 @@ export default function DetailView(): ReactNode {
             </div>
           )}
           {/* 设计 §7.1:直连 http:// 远程实例的数据面为明文 —— 常驻警告(https 不告警)。
-              用户反馈 #9:整段文案常驻影响观感 —— 改为「图标 + 短标签」胶囊,
-              完整详情经 title 悬停显示(原生 tooltip,读屏/自动化同样可达) */}
+              用户反馈 #9:整段文案常驻影响观感 —— 改为「图标 + 短标签」胶囊。
+              UI 打磨 #3:原生 title 提示在 Electron 下延迟明显且不可控 —— 改为
+              CSS 气泡(hover/focus 即现),title 换成 aria-label 保持读屏可达 */}
           {record.transport === 'http' && isCleartextEndpoint(record.endpointUrl) && (
             <span
               className="warn-pill"
               data-testid="cleartext-warning"
-              title={t('detail.cleartextWarning')}
+              data-tip={t('detail.cleartextWarning')}
+              aria-label={t('detail.cleartextWarning')}
+              tabIndex={0}
             >
               <Icon name="alert" />
               <span>{t('detail.cleartextBadge')}</span>
@@ -195,15 +214,17 @@ export default function DetailView(): ReactNode {
                   )
                 }
               >
-                <Icon name="key" /> {t('detail.login')}
+                <Icon name="key" />{' '}
+                {/* UI 打磨 #2:按钮随会话状态变化 —— 已连接才是「重新登录」,否则是「登录」 */}
+                {authPhase === 'connected' ? t('detail.relogin') : t('detail.login')}
               </button>
             )}
             <button className="btn btn-secondary btn-sm" onClick={() => void copyAddress()}>
               <Icon name="copy" /> {t('detail.address')}
             </button>
-            {/* T9-3:登出此前只有 IPC 通道、没有渲染层入口 ——
-                导致「登出即清分区会话」这条链路在产品里根本走不到 */}
-            {showAuthActions(record) && (
+            {/* T9-3 / UI 打磨 #2:登出只在已连接(有会话可登)时出现 ——
+                未登录页面不该有一个「把没有的东西登出」的按钮 */}
+            {showAuthActions(record) && authPhase === 'connected' && (
               <button
                 className="btn btn-secondary btn-sm"
                 data-testid="logout-btn"
@@ -297,7 +318,7 @@ export default function DetailView(): ReactNode {
         </div>
       </div>
 
-      <div className="card mt16">
+      <div className="card mt16 danger-zone">
         <div className="card-head">
           <h3>{t('detail.dangerZone')}</h3>
           <span className="meta">{t('detail.irreversible')}</span>

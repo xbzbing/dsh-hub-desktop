@@ -28,8 +28,8 @@
  * `policy` 段,明文、非敏感),`clearAll`/`forgetInstance` 一并清掉。
  * 降级模式不落盘:此时复选框本就无意义(钥匙串不可用,什么也记不住)。
  */
-import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, rename, writeFile } from 'node:fs/promises'
+import { existsSync, readFileSync, renameSync } from 'node:fs'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /** 加密后端(生产:`electron.safeStorage`) */
@@ -181,13 +181,42 @@ export function createVault(options: VaultOptions): Vault {
         policy.set(id, normalizePolicy(raw))
       }
     } catch (error) {
-      onError(error)
+      quarantineCorruptFile(error)
     }
   }
 
-  /** 降级模式只留内存:退化成明文落盘是不可接受的 */
-  async function persist(): Promise<void> {
-    if (!available) return
+  /**
+   * 实测修复(用户实机日志):credentials.json 被截断/拼接损坏后,旧实现每次读
+   * (`status`/`getPolicy` 都会触发 load)都重复 JSON.parse 报错,且 vault 永远起不来。
+   * 现在解析失败 → 把坏文件**隔离改名**(corrupt-<时间戳>),内存从空开始,
+   * 下一次显式写入(persist)会写出干净文件 —— 与 registry 的「损坏自愈」同一口径。
+   * 隔离是纯文件级操作,不读写内容,凭据纪律无涉。
+   */
+  function quarantineCorruptFile(error: unknown): void {
+    onError(error)
+    try {
+      const path = options.filePath
+      if (!existsSync(path)) return
+      const quarantined = `${path}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
+      renameSync(path, quarantined)
+      console.error(`[vault] 凭据文件损坏,已隔离到 ${quarantined}(内容从空重建)`)
+    } catch (renameError) {
+      onError(renameError)
+    }
+  }
+
+  /**
+   * 实测修复(用户实机日志):旧实现所有 persist 并发共用同一个 `.tmp` 路径,
+   * 「登录态写入」与「策略写入/密码写入」并发时 write→rename 交错,
+   * 第二个 rename 拿不到已被别人挪走的 .tmp → ENOENT;更糟的交错会把半份内容
+   * rename 成正式文件 → JSON.parse 损坏。现在:
+   * ① 每次 persist 使用**唯一 tmp 名**(.tmp-<随机>),写入互不覆盖;
+   * ② 全部 persist 经**串行队列**链式执行,落盘顺序与调用顺序一致。
+   */
+  let persistQueue: Promise<void> = Promise.resolve()
+  let tmpSeq = 0
+
+  function serializePayload(): string {
     const payload: VaultFile = { version: 1, items: {}, policy: {} }
     for (const [id, entry] of items) {
       const next: VaultItem = {}
@@ -198,11 +227,29 @@ export function createVault(options: VaultOptions): Vault {
     for (const [id, value] of policy) {
       if (value.rememberPassword || value.rememberSession) payload.policy![id] = value
     }
-    const path = options.filePath
-    await mkdir(dirname(path), { recursive: true })
-    const tmp = `${path}.tmp`
-    await writeFile(tmp, `${JSON.stringify(payload)}\n`, { mode: 0o600 })
-    await rename(tmp, path)
+    return `${JSON.stringify(payload)}\n`
+  }
+
+  /** 降级模式只留内存:退化成明文落盘是不可接受的 */
+  async function persist(): Promise<void> {
+    if (!available) return
+    const run = persistQueue.then(async () => {
+      const path = options.filePath
+      await mkdir(dirname(path), { recursive: true })
+      tmpSeq += 1
+      const tmp = `${path}.tmp-${process.pid}-${tmpSeq}`
+      try {
+        await writeFile(tmp, serializePayload(), { mode: 0o600 })
+        await rename(tmp, path)
+      } catch (error) {
+        // 写失败要清掉本次的 tmp,避免残留物堆积(rename ENOENT 时文件可能已被挪走)
+        await rm(tmp, { force: true })
+        throw error
+      }
+    })
+    // 队列容错:单次失败不阻断后续写入(调用方各自拿到自己的成功/失败)
+    persistQueue = run.catch(() => undefined)
+    return run
   }
 
   /**

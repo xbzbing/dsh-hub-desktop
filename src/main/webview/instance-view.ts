@@ -74,6 +74,14 @@ export async function openInstanceView<W extends InstanceViewWindow>(
     try {
       await win.loadURL(args.url)
     } catch (error) {
+      // 实测修复(用户实机日志):ERR_ABORTED(-3) 几乎总是「导航被更新的导航取代」
+      // —— 页面自身重定向/用户在加载完成前操作/拦截层触发重登再加载。这属于
+      // 浏览器的常态而非故障,按 debug 记录即可;其余错误维持 error 级上报。
+      const code = (error as { code?: unknown } | null)?.code
+      if (code === 'ERR_ABORTED') {
+        console.debug('[instance-view] 导航被更新的导航取代(正常),跳过:', args.url)
+        return
+      }
       onLoadError(error)
     }
   }
