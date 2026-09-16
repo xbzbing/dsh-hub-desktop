@@ -77,6 +77,16 @@ scripts/release/    发布演练与校验和
 - **目录别名** `@shared → src/shared`，已在 electron.vite.config.ts / tsconfig ×3 /
   vitest.config.ts / playwright 侧配置。
 
+## 协作准则（多 agent / 并发编辑）
+
+- **有 agent 正在编辑某个文件时，不要提交工作树快照。** 尤其不要用 `git add -A` /
+  `git add .`：并发写者的**中间态**会被一起提交（本仓库真实发生过 —— 一次 `git add -A`
+  把某个测试文件的中间态提交进去，其中含一个**会挂死整套测试的无限循环**）。
+  正确做法：按**明确路径**暂存（`git add <file>`），并在提交前确认该路径不是别人正在
+  改的实验对象。
+- **变异/探针实验应在隔离副本里做**，实验完成后必须还原；主树的探针文件不得残留。
+- 提交前的最小核查：`git status --short` 只应出现你**预期**的路径。
+
 ## 常用命令
 
 ```bash
