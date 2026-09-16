@@ -1,7 +1,10 @@
 # AGENTS.md — DSH Hub Desktop
 
 > 仓库级规则文件（agent 上下文基线，始终加载）。只承载**项目架构与稳定准则**；
-> 进度与任务状态见 `docs/开发任务清单.md`。
+> 面向使用者的项目介绍与上手说明见 `README.md`。
+> 任务进度、评审记录、交付清单等一次性任务追踪文档为**本地文档**，按里程碑放
+> `docs/local/ms-<N>/`（当前：`docs/local/ms-1/`；见 `.gitignore`，`docs/local` 整体忽略）
+> ——不进 git，不要把它们加入提交。
 
 ## 项目是什么
 
@@ -98,7 +101,7 @@ pnpm build          # 三端产物（E2E 前置）
 pnpm test:e2e       # Playwright _electron
 ```
 
-发布相关（详见 `docs/T14-发布演练.md`）：
+发布相关（演练细节与「本机无法演练项」清单见本地发布演练文档，不进 git）：
 
 ```bash
 pnpm dist:mac:zip      # mac zip + 更新元数据 dist/latest-mac.yml

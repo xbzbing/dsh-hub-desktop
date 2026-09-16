@@ -288,7 +288,7 @@ if (absentAssets.length > 0) {
   for (const name of absentAssets) console.log(`      · ${name}`)
 }
 
-console.log('\n--- 本机无法演练的项（诚实清单，详见 docs/T14-发布演练.md §6）---')
+console.log('\n--- 本机无法演练的项（诚实清单，记账于本地发布演练文档）---')
 console.log('  · 代码签名与公证：无 Apple Developer 证书，产物未签名（只宜自用）')
 console.log('  · Windows NSIS 产物：需 Windows 或 wine 环境')
 console.log('  · 自动更新端到端：需真实远端 + 已安装的旧版本，本机无法闭环')

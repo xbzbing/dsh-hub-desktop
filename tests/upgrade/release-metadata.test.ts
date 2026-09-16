@@ -19,7 +19,7 @@ import {
  * 所以把能离线判定的部分放进 `pnpm test`,让它在每次提交时自动跑。
  *
  * 需要真实远端/证书的部分(签名、推送、自动更新闭环)刻意**不**在这里假装通过,
- * 由 `scripts/release/rehearse.mjs` 显式标 SKIP,并在 docs/T14-发布演练.md §6 记账。
+ * 由 `scripts/release/rehearse.mjs` 显式标 SKIP,并在本地发布演练文档(不进 git)记账。
  */
 
 const ROOT = process.cwd()
