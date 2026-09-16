@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createOncePerSession, openInstanceView } from './instance-view'
+import { createOncePerSession, isSameOriginLoginRedirect, openInstanceView } from './instance-view'
 import type { InstanceViewWindow, OpenInstanceViewDeps } from './instance-view'
 
 const COOKIE = { name: 'dsh_auth', value: 'sess-token', expiresAt: null }
@@ -133,6 +133,64 @@ describe('openInstanceView（§6.2 先注入再 loadURL 的顺序纪律）', () 
       installIntercept: () => undefined,
       onLoadError: (error) => errors.push(error)
     }
+    await expect(openInstanceView(deps, args)).resolves.toBe(true)
+    expect(errors).toHaveLength(1)
+  })
+})
+
+describe('认证重定向后的加载失败', () => {
+  it('仅将同源根路径 /login 识别为认证重定向', () => {
+    expect(isSameOriginLoginRedirect('https://dsh.crazydb.com/login', 'https://dsh.crazydb.com')).toBe(true)
+    expect(isSameOriginLoginRedirect('https://dsh.crazydb.com/login/', 'https://dsh.crazydb.com')).toBe(true)
+    expect(isSameOriginLoginRedirect('https://evil.example.com/login', 'https://dsh.crazydb.com')).toBe(false)
+    expect(isSameOriginLoginRedirect('https://dsh.crazydb.com/not-login', 'https://dsh.crazydb.com')).toBe(false)
+  })
+
+  it('ERR_FAILED 且已观测到同源登录重定向时不作为普通加载错误上报', async () => {
+    const errors: unknown[] = []
+    const redirects: Array<(_event: unknown, url: string) => void> = []
+    const deps: OpenInstanceViewDeps<InstanceViewWindow> = {
+      createWindow: () => ({
+        loadURL: async () => {
+          redirects[0]?.(null, 'https://dsh.crazydb.com/login')
+          throw Object.assign(new Error('ERR_FAILED (-2)'), { code: 'ERR_FAILED' })
+        },
+        webContents: {
+          session: { cookies: { set: async () => undefined } },
+          on: (_event, listener) => redirects.push(listener)
+        }
+      }),
+      installIntercept: () => undefined,
+      onLoadError: (error) => errors.push(error)
+    }
+
+    await expect(
+      openInstanceView(deps, {
+        url: 'https://dsh.crazydb.com/',
+        origin: 'https://dsh.crazydb.com',
+        basePath: '/',
+        cookie: null
+      })
+    ).resolves.toBe(false)
+    expect(errors).toEqual([])
+  })
+
+  it('未观测到认证重定向的 ERR_FAILED 仍按错误上报', async () => {
+    const errors: unknown[] = []
+    const deps: OpenInstanceViewDeps<InstanceViewWindow> = {
+      createWindow: () => ({
+        loadURL: async () => {
+          throw Object.assign(new Error('ERR_FAILED (-2)'), { code: 'ERR_FAILED' })
+        },
+        webContents: {
+          session: { cookies: { set: async () => undefined } },
+          on: () => undefined
+        }
+      }),
+      installIntercept: () => undefined,
+      onLoadError: (error) => errors.push(error)
+    }
+
     await expect(openInstanceView(deps, args)).resolves.toBe(true)
     expect(errors).toHaveLength(1)
   })

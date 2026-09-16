@@ -16,6 +16,7 @@ import { join, resolve } from 'node:path'
 
 const DATA_DIR = resolve(__dirname, '..', '..', 'hub-data', 'e2e-external')
 const SHOT_DIR = resolve(__dirname, '..', '..', 'hub-data', 'ui-polish-shots')
+const REMOTE_GATEWAY = 'https://dsh.crazydb.com/'
 
 let app: ElectronApplication
 let win: Page
@@ -60,6 +61,45 @@ test.afterAll(async () => {
   await app?.close()
   fakeDsh?.kill('SIGTERM')
   fakeServer?.close()
+})
+
+test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误日志', async () => {
+  const mainErrors: string[] = []
+  const onOutput = (chunk: Buffer): void => {
+    mainErrors.push(String(chunk))
+  }
+  app.process().stderr?.on('data', onOutput)
+  app.process().stdout?.on('data', onOutput)
+  try {
+    const created = await win.evaluate(async (endpointUrl) => {
+      const r = await window.dshHub.instances.create({
+        transport: 'http',
+        name: '远程登录重定向',
+        authMode: 'gateway',
+        endpointUrl
+      })
+      return r.ok ? r.value.id : null
+    }, REMOTE_GATEWAY)
+    expect(created).not.toBeNull()
+    if (!created) return
+
+    await win.reload()
+    await expect(win.getByTestId('app-shell')).toBeVisible()
+    await win.getByTestId(`inst-${created}`).click()
+    await expect(win.getByTestId('open-view-btn')).toBeEnabled()
+    const openedWindow = app.waitForEvent('window', { timeout: 10_000 })
+    await win.getByTestId('open-view-btn').click()
+
+    const instanceWindow = await openedWindow
+    await expect.poll(() => instanceWindow.url()).toContain('/login')
+    await win.waitForTimeout(300)
+    const log = mainErrors.join('')
+    expect(log).not.toContain('[instance-view] 加载失败')
+    expect(log).not.toContain("ERR_FAILED (-2) loading 'https://dsh.crazydb.com/'")
+  } finally {
+    app.process().stderr?.off('data', onOutput)
+    app.process().stdout?.off('data', onOutput)
+  }
 })
 
 test('实机 #1:http 实例未启动也能直接打开视图', async () => {

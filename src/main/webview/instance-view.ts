@@ -36,7 +36,11 @@ export function createOncePerSession<S extends object>(): (session: S) => boolea
 /** 打开实例视图所需的最小窗口面(生产实现即 electron `BrowserWindow`) */
 export interface InstanceViewWindow {
   loadURL(url: string): Promise<void>
-  webContents: { session: { cookies: CookieSetter } }
+  webContents: {
+    session: { cookies: CookieSetter }
+    /** electron `will-redirect`;可选以保持最小测试假件简单 */
+    on?(event: 'will-redirect', listener: (_event: unknown, url: string) => void): void
+  }
 }
 
 export interface OpenInstanceViewDeps<W extends InstanceViewWindow> {
@@ -58,6 +62,21 @@ export interface OpenInstanceViewArgs {
 }
 
 /**
+ * Electron 的 `will-redirect` 是认证跳转已发生的确证；只接受同源根路径登录页。
+ * 不按错误文字猜测，避免网络/TLS 错误被静默吞掉。
+ */
+export function isSameOriginLoginRedirect(redirectUrl: string | null, origin: string): boolean {
+  if (!redirectUrl || !origin) return false
+  try {
+    const target = new URL(redirectUrl)
+    const expectedOrigin = new URL(origin).origin
+    return target.origin === expectedOrigin && target.pathname.replace(/\/+$/, '') === '/login'
+  } catch {
+    return false
+  }
+}
+
+/**
  * 开窗 → 装拦截 → 注入 Cookie → 加载。
  * @returns 是否在加载前成功写入了会话 Cookie
  */
@@ -67,6 +86,10 @@ export async function openInstanceView<W extends InstanceViewWindow>(
 ): Promise<boolean> {
   const win = deps.createWindow()
   deps.installIntercept(win)
+  let redirectedTo: string | null = null
+  win.webContents.on?.('will-redirect', (_event, url) => {
+    redirectedTo = url
+  })
 
   const onLoadError =
     deps.onLoadError ?? ((error: unknown) => console.error('[instance-view] 加载失败：', error))
@@ -80,6 +103,14 @@ export async function openInstanceView<W extends InstanceViewWindow>(
       const code = (error as { code?: unknown } | null)?.code
       if (code === 'ERR_ABORTED') {
         console.debug('[instance-view] 导航被更新的导航取代(正常),跳过:', args.url)
+        return
+      }
+      // 有些网关会把根路径 302 到 /login 后再做一次自身导航;Electron 此时会把
+      // 原始 loadURL Promise 以 ERR_FAILED(-2) 拒绝,但窗口已经在同源认证页，
+      // 不是连接或证书失败。仅在已实际观测到同源 /login 重定向时降级，避免吞掉
+      // DNS、TLS、代理等真正的 ERR_FAILED。
+      if (code === 'ERR_FAILED' && isSameOriginLoginRedirect(redirectedTo, args.origin)) {
+        console.debug('[instance-view] 已重定向至同源登录页(正常),跳过:', redirectedTo)
         return
       }
       onLoadError(error)
