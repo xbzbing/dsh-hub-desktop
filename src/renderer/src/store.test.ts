@@ -215,6 +215,21 @@ describe('store 设置切片（T11 复审遗留：此前无任何 store 测试�
    * zustand 用 Object.is 比较选择器结果 —— 若 applyStatus **原地改**这个对象,
    * 订阅者收不到通知,列表就只在挂载/换行时定格。这里把「每次事件换引用」钉住。
    */
+  it('选中实例或回到总览都会退出设置页（设置页不能困住导航）', async () => {
+    const useAppStore = await freshStore()
+    useAppStore.getState().setSettingsOpen(true)
+    expect(useAppStore.getState().settingsOpen).toBe(true)
+
+    useAppStore.getState().select('instance-1')
+    expect(useAppStore.getState().selection).toBe('instance-1')
+    expect(useAppStore.getState().settingsOpen).toBe(false)
+
+    useAppStore.getState().setSettingsOpen(true)
+    useAppStore.getState().select(null)
+    expect(useAppStore.getState().selection).toBeNull()
+    expect(useAppStore.getState().settingsOpen).toBe(false)
+  })
+
   it('applyStatus 每次事件都换 statuses 引用(订阅者才会重渲染),圆点随之实时变化', async () => {
     const useAppStore = await freshStore()
     const before = useAppStore.getState().statuses

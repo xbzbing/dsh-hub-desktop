@@ -241,7 +241,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
   },
 
-  select: (id) => set({ selection: id }),
+  // 实例与总览导航优先于设置页：否则 settingsOpen 一直为 true，侧栏点击看似
+  // 改了 selection，App 却始终渲染 SettingsView，用户被困在设置页。
+  select: (id) => set({ selection: id, settingsOpen: false }),
 
   toggleRail: () => set((state) => ({ rail: !state.rail })),
 
