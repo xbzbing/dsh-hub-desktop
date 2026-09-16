@@ -85,6 +85,12 @@ test('实机 #1:http 实例未启动也能直接打开视图', async () => {
 })
 
 test('实机 #2:探测到已在运行的 dsh web → 一键接管 → 可直接开窗', async () => {
+  // 实机缺陷回归:接管事件的补丁曾算成空对象 → store 抛「补丁不能为空」→
+  // 主进程日志刷「回写实例运行信息失败」。整条接管链路都不允许出现该错误。
+  const mainErrors: string[] = []
+  app.process().stderr?.on('data', (chunk: Buffer) => mainErrors.push(String(chunk)))
+  app.process().stdout?.on('data', (chunk: Buffer) => mainErrors.push(String(chunk)))
+
   const created = await win.evaluate(async () => {
     const r = await window.dshHub.instances.create({
       transport: 'local',
@@ -116,4 +122,10 @@ test('实机 #2:探测到已在运行的 dsh web → 一键接管 → 可直接�
   await win.getByTestId('stop-btn').click()
   await expect(win.getByTestId('external-dsh-card')).toBeVisible({ timeout: 10_000 })
   expect(fakeDsh?.killed).toBe(false)
+
+  // 空补丁回归:接管/断开两条路径都不得产生「回写实例运行信息失败」
+  await win.waitForTimeout(300)
+  const log = mainErrors.join('')
+  expect(log).not.toContain('回写实例运行信息失败')
+  expect(log).not.toContain('补丁不能为空')
 })

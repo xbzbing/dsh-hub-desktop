@@ -14,8 +14,7 @@ import { pathToFileURL } from 'node:url'
 import type {
   AuthPhase,
   InstanceRuntimeStatus,
-  InstanceStatusEvent,
-  PatchInstanceInput
+  InstanceStatusEvent
 } from '@shared/contracts'
 import { AUTH_IPC, INSTANCE_STATUS_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
@@ -42,6 +41,7 @@ import { clearSessionCookie } from './webview/session-cookie'
 import type { PromptBroker } from './ssh/prompt-broker'
 import type { AuthRegistry } from './auth/auth-registry'
 import { createInstanceStore } from './registry/instance-store'
+import { isEmptyPatch, runtimeWritebackPatch } from './registry/runtime-writeback'
 import { createVault } from './vault/vault'
 import { createAuditLog } from './audit/audit-log'
 import { createSettingsStore } from './settings/settings-store'
@@ -534,25 +534,11 @@ void app.whenReady().then(() => {
       void instanceStore
         .get(event.id)
         .then((record) => {
-          const patch: PatchInstanceInput = {}
-          // 端口的语义是「hub 下次启动时优先使用的端口」—— 外部接管来的端口属于
-          // 用户自己的进程(实机反馈 2026-09-16),写进配置会让 hub 下次启动去抢
-          // 那个端口,因此 external 来源一律不回写端 port。
-          if (event.port !== undefined && event.runtimeSource !== 'external') {
-            if (record?.transport === 'ssh') patch.localPort = event.port
-            else patch.port = event.port
-          }
-          // #2 用户反馈:只有 hub 来源的运行时才回写版本;PATH 来源运行的是用户本机
-          // 安装,回写会把未固定实例钉死在探测当天的版本上(用户升级后反被拖回旧版)。
-          // 实机反馈 2026-09-16:external(接管用户手工常驻的 dsh web)同理 ——
-          // 进程归用户所有、版本不经 hub 认定,一律不回写。
-          if (
-            event.version !== undefined &&
-            event.runtimeSource !== 'path' &&
-            event.runtimeSource !== 'external'
-          ) {
-            patch.dshVersion = event.version
-          }
+          // 回写策略集中在纯函数里(可穷举测试):只有 hub 来源回写版本;
+          // external 接管不回写端口与版本。实机缺陷:external 事件只剩空补丁,
+          // 而 store 拒绝空补丁(`补丁不能为空`)→ 必须在此跳过,否则每次接管都报错。
+          const patch = runtimeWritebackPatch(event, record?.transport)
+          if (isEmptyPatch(patch)) return null
           return instanceStore.update(event.id, patch)
         })
         .catch((error: unknown) => console.error('[main] 回写实例运行信息失败：', error))
