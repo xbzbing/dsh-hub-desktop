@@ -11,8 +11,8 @@ import { join } from 'node:path'
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
 
-/** 版本号只允许这些字符，避免拼接目录名被穿越 */
-const VERSION_PATTERN = /^[0-9A-Za-z.+_-]+$/
+/** 版本号只允许这些字符，避免拼接目录名被穿越（runtime-source 的 PATH 探测同样复用） */
+export const VERSION_PATTERN = /^[0-9A-Za-z.+_-]+$/
 
 export interface CommandResult {
   code: number
