@@ -111,6 +111,7 @@ describe('createLocalRuntime', () => {
     const installer = makeFakeInstaller()
 
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer,
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -132,7 +133,9 @@ describe('createLocalRuntime', () => {
     expect(status?.port).toBe(31234)
     expect(status?.version).toBe('0.1.5-rc.1')
     expect(probe).toHaveBeenCalledWith('http://127.0.0.1:31234/?token=abc', expect.any(Number))
+    // #2 后的进度序列:解析来源 → 需下载待确认 → 准备运行时 → 分配端口 → running
     expect(events.map((event) => event.status)).toEqual([
+      'starting',
       'starting',
       'starting',
       'starting',
@@ -152,6 +155,7 @@ describe('createLocalRuntime', () => {
     }) as never
 
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: (() => child) as never,
@@ -179,6 +183,7 @@ describe('createLocalRuntime', () => {
     const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
 
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -211,6 +216,7 @@ describe('createLocalRuntime', () => {
     }) as never
 
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: (() => child) as never,
@@ -233,6 +239,7 @@ describe('createLocalRuntime', () => {
 
   it('stop:未运行的 id → 幂等 stopped', async () => {
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data'
     })
@@ -251,6 +258,7 @@ describe('createLocalRuntime', () => {
     const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
     const installer = makeFakeInstaller()
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer,
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -277,6 +285,7 @@ describe('createLocalRuntime', () => {
 
     const installer = makeFakeInstaller()
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer,
       dataRoot: '/tmp/hub-data',
       spawnImpl: (() => child) as never,
@@ -291,6 +300,7 @@ describe('createLocalRuntime', () => {
     // 指定版本的实例:直接把该版本交给 ensureInstalled
     const pinned = makeFakeInstaller()
     const manager2 = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: pinned,
       dataRoot: '/tmp/hub-data',
       spawnImpl: (() => child) as never,
@@ -317,6 +327,7 @@ describe('createLocalRuntime', () => {
       return child as unknown as SpawnedProcess
     })
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -359,6 +370,7 @@ describe('createLocalRuntime', () => {
       })
     })
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: blocker,
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -378,6 +390,7 @@ describe('createLocalRuntime', () => {
 
   it('抛错路径(安装失败) → error 事件而非未处理拒绝', async () => {
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller({
         resolveDefaultVersion: async () => {
           throw new Error('registry 不可达')
@@ -411,6 +424,7 @@ describe('createLocalRuntime', () => {
     const probe = vi.fn(async (url: string) => !url.includes(':31234'))
     // readyTimeoutMs=60s:若失败路径不 settle,队列会被卡到定时器触发,测试会在此超时
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -455,6 +469,7 @@ describe('createLocalRuntime', () => {
     }) as never
 
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: (() => child) as never,
@@ -482,6 +497,7 @@ describe('createLocalRuntime', () => {
     const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
 
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -516,6 +532,7 @@ describe('createLocalRuntime', () => {
       return child as unknown as SpawnedProcess
     })
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -555,6 +572,7 @@ describe('createLocalRuntime', () => {
     const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
 
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -593,6 +611,7 @@ describe('createLocalRuntime', () => {
       return child as unknown as SpawnedProcess
     })
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -632,6 +651,7 @@ describe('createLocalRuntime', () => {
     child.kill = vi.fn(() => true) as never
     const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -663,6 +683,7 @@ describe('createLocalRuntime', () => {
       return child1 as unknown as SpawnedProcess
     })
     const manager1 = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl1 as never,
@@ -692,6 +713,7 @@ describe('createLocalRuntime', () => {
       return child2 as unknown as SpawnedProcess
     })
     const manager2 = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl2 as never,
@@ -722,6 +744,7 @@ describe('createLocalRuntime', () => {
       return child3 as unknown as SpawnedProcess
     })
     const manager3 = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl3 as never,
@@ -757,6 +780,7 @@ describe('createLocalRuntime', () => {
     // 旧条目 A 的端口(31234)探测恒失败;B(31235)恒成功
     const probe = vi.fn(async (url: string) => url.includes(':31235'))
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -808,6 +832,7 @@ describe('createLocalRuntime', () => {
       return child as unknown as SpawnedProcess
     })
     const manager = createLocalRuntime({
+      confirmDownload: async () => true,
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
@@ -833,5 +858,151 @@ describe('createLocalRuntime', () => {
     await waitForStatus(manager, inst2.id, 'running')
     expect(manager.runningIds()).toEqual([inst2.id])
     expect(manager.statusOf(inst1.id)?.status).toBe('stopped')
+  })
+})
+// —— #2 用户反馈:运行时来源优先级(hub 同版本 → PATH → 下载需确认)——
+
+describe('#2 运行时来源与下载确认', () => {
+  function pathChild(): { child: FakeChild; spawnImpl: ReturnType<typeof vi.fn> } {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 888001
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+    return { child, spawnImpl }
+  }
+
+  const PATH_DSH = { command: '/usr/local/bin/dsh', version: '0.9.9' }
+
+  it('未固定实例:PATH 有 dsh → 不安装、直接用本机 dsh 启动,事件带 runtimeSource=path', async () => {
+    const { child, spawnImpl } = pathChild()
+    const installer = makeFakeInstaller()
+    const manager = createLocalRuntime({
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      pathProbe: { probe: async () => ({ ...PATH_DSH }) }
+    })
+    const events: InstanceStatusEvent[] = []
+    manager.onStatus((event) => events.push(event))
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    child.stdout.write(readyLine())
+    await starting
+    await waitForStatus(manager, instance.id, 'running')
+
+    // 不走安装(未固定 + PATH 优先):ensureInstalled 绝不能被调
+    expect(installer.ensureInstalled).not.toHaveBeenCalled()
+    // spawn 经 nodeInvocation + PATH 上的 dsh bin(而不是隔离目录入口)
+    const invocation = (spawnImpl.mock.calls[0] as unknown as [
+      { command: string; args: string[]; env: NodeJS.ProcessEnv }
+    ])[0]
+    expect(invocation.args).toContain(PATH_DSH.command)
+    expect(invocation.args.some((arg) => arg.includes('runtimes/dsh-'))).toBe(false)
+    // running 事件带版本与来源
+    const running = events.find((event) => event.status === 'running')
+    expect(running?.version).toBe('0.9.9')
+    expect(running?.runtimeSource).toBe('path')
+    expect(manager.statusOf(instance.id)?.version).toBe('0.9.9')
+  })
+
+  it('固定版本:hub 已装同版本 → 用 hub 入口(runtimeSource=hub),不走确认', async () => {
+    const { child, spawnImpl } = pathChild()
+    const installer = makeFakeInstaller({
+      listInstalled: async () => [
+        {
+          version: '0.1.4-rc.1',
+          dir: '/tmp/runtimes/dsh-0.1.4-rc.1',
+          entry: '/tmp/runtimes/dsh-0.1.4-rc.1/node_modules/@deepseek-ai/dsh/lib/bin.js',
+          installedAt: ISO
+        }
+      ]
+    })
+    const confirm = vi.fn(async () => true)
+    const manager = createLocalRuntime({
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      confirmDownload: confirm,
+      pathProbe: { probe: async () => ({ ...PATH_DSH }) } // 版本不匹配,不该被固定版采用
+    })
+    const instance = localInstance({ dshVersion: '0.1.4-rc.1', id: randomUUID() })
+    const starting = manager.start(instance)
+    child.stdout.write(readyLine())
+    await starting
+    await waitForStatus(manager, instance.id, 'running')
+
+    expect(confirm).not.toHaveBeenCalled() // hub 命中 → 不需下载 → 不需确认
+    const invocation = (spawnImpl.mock.calls[0] as unknown as [
+      { command: string; args: string[] }
+    ])[0]
+    expect(invocation.args.some((arg) => arg.includes('dsh-0.1.4-rc.1'))).toBe(true)
+    expect(manager.statusOf(instance.id)?.runtimeSource).toBe('hub')
+  })
+
+  it('下载未确认 → stopped,不 spawn、不安装', async () => {
+    const { spawnImpl } = pathChild()
+    const installer = makeFakeInstaller()
+    const manager = createLocalRuntime({
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      readyTimeoutMs: 2000,
+      confirmDownload: async () => false
+    })
+    const events: InstanceStatusEvent[] = []
+    manager.onStatus((event) => events.push(event))
+    const instance = localInstance()
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'stopped')
+
+    expect(spawnImpl).not.toHaveBeenCalled()
+    expect(installer.ensureInstalled).not.toHaveBeenCalled()
+    expect(manager.statusOf(instance.id)?.detail).toContain('未获确认')
+  })
+
+  it('未配置确认口(缺省)→ 拒绝下载并 stopped(安全缺省,不静默安装)', async () => {
+    const { spawnImpl } = pathChild()
+    const installer = makeFakeInstaller()
+    const manager = createLocalRuntime({
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never
+      // 刻意不传 confirmDownload
+    })
+    const instance = localInstance()
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'stopped')
+    expect(spawnImpl).not.toHaveBeenCalled()
+    expect(installer.ensureInstalled).not.toHaveBeenCalled()
+  })
+
+  it('确认后下载并启动(runtimeSource=hub),未固定实例解析 latest 为下载目标', async () => {
+    const { child, spawnImpl } = pathChild()
+    const installer = makeFakeInstaller()
+    const confirm = vi.fn(async () => true)
+    const manager = createLocalRuntime({
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      confirmDownload: confirm
+    })
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    child.stdout.write(readyLine())
+    await starting
+    await waitForStatus(manager, instance.id, 'running')
+
+    expect(confirm).toHaveBeenCalledWith('0.1.5-rc.1') // resolveDefaultVersion 的返回值
+    expect(installer.ensureInstalled).toHaveBeenCalledWith('0.1.5-rc.1')
+    expect(manager.statusOf(instance.id)?.runtimeSource).toBe('hub')
   })
 })

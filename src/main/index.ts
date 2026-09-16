@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   net,
   protocol,
   safeStorage,
@@ -21,6 +22,7 @@ import { registerIpc } from './ipc/register'
 import { createLocalRuntime } from './local-runtime/local-runtime'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
+import { createPathProbe } from './local-runtime/runtime-source'
 import { createSshTunnels } from './transport/ssh-tunnel'
 import { authEndpointOf } from './transport/endpoint-resolver'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
@@ -460,7 +462,26 @@ void app.whenReady().then(() => {
     cacheDir: join(dataRoot, 'npm-cache'),
     ...(npmRegistry ? { registry: npmRegistry } : {})
   })
-  runtime = createLocalRuntime({ installer, dataRoot })
+  // #2 用户反馈:运行时获取优先级 = hub 已装同版本 → PATH 上的本机 dsh → 下载(须用户确认)。
+  // 确认用原生对话框(始终可用,含托盘启动场景;文案无凭据);拒绝则该次启动取消。
+  runtime = createLocalRuntime({
+    installer,
+    dataRoot,
+    pathProbe: createPathProbe(),
+    confirmDownload: (version) =>
+      dialog
+        .showMessageBox({
+          type: 'question',
+          title: 'DSH Hub',
+          message: '未找到可复用的 dsh 运行时',
+          detail: `hub 隔离目录与本机 PATH 上都没有可用的 dsh，需要下载 @deepseek-ai/dsh@${version}（首次下载可能较慢）。是否继续？`,
+          buttons: ['下载并启动', '取消'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true
+        })
+        .then((result) => result.response === 0)
+  })
 
   // T5 用户提示代理：指纹确认 / 口令输入 → 广播到 hub 渲染窗口 → 等待回答
   prompts = createPromptBroker({
@@ -517,7 +538,11 @@ void app.whenReady().then(() => {
             if (record?.transport === 'ssh') patch.localPort = event.port
             else patch.port = event.port
           }
-          if (event.version !== undefined) patch.dshVersion = event.version
+          // #2 用户反馈:只有 hub 来源的运行时才回写版本;PATH 来源运行的是用户本机
+          // 安装,回写会把未固定实例钉死在探测当天的版本上(用户升级后反被拖回旧版)
+          if (event.version !== undefined && event.runtimeSource !== 'path') {
+            patch.dshVersion = event.version
+          }
           return instanceStore.update(event.id, patch)
         })
         .catch((error: unknown) => console.error('[main] 回写实例运行信息失败：', error))

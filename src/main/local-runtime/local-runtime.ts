@@ -14,6 +14,7 @@ import type { InstanceRuntimeStatus, InstanceStatusEvent, LocalInstance } from '
 import { DEFAULT_PORT_RANGE_END, DEFAULT_PORT_RANGE_START, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
 import type { RuntimeInstaller } from './runtime-installer'
+import { planRuntimeSource, type PathProbe } from './runtime-source'
 import { httpHealthProbe, type HealthProbe } from '../transport/probe'
 
 export type { HealthProbe } // T3 既有导出保持兼容；类型本体已统一到 transport/probe.ts（§4.3）
@@ -65,6 +66,16 @@ export interface LocalRuntimeOptions {
   /** §4.3 连接期探测间隔（默认 500ms） */
   healthProbeRetryMs?: number
   now?: () => number
+  /**
+   * #2 用户反馈:PATH 探测器(探测用户本机的 dsh)。缺省 = 不探测
+   * (决策退化为「hub → 下载」两级,与旧行为兼容)。
+   */
+  pathProbe?: PathProbe
+  /**
+   * #2 用户反馈:「真要下载时需要用户确认」的确认口。缺省 = 拒绝下载
+   * (生产装配必须注入;测试/受限环境注入 stub)。返回 true 才继续下载。
+   */
+  confirmDownload?: (version: string) => Promise<boolean>
 }
 
 export interface LocalRuntimeManager {
@@ -82,6 +93,8 @@ interface Entry {
   url: string | null
   port: number | null
   version: string
+  /** #2:运行时来源(hub=隔离目录 / path=用户本机 PATH);事件回写闸依赖它 */
+  runtimeSource: 'hub' | 'path'
   home: string
   log: string[]
   /** 未以换行结尾的残片：跨 chunk 的就绪行靠它拼接，否则会漏匹配就绪行 */
@@ -257,6 +270,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     emit(id, 'running', {
       url,
       version: entry.version,
+      runtimeSource: entry.runtimeSource,
       ...(entry.port !== null ? { port: entry.port } : {}),
       detail: `已在 ${entry.home} 启动（dsh web）`
     })
@@ -300,6 +314,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         // 重复 start 只重播一次当前状态,不重复 spawn
         emit(id, existing.ready ? 'running' : 'starting', {
           version: existing.version,
+          runtimeSource: existing.runtimeSource,
           ...(existing.url ? { url: existing.url } : {}),
           ...(existing.port !== null ? { port: existing.port } : {}),
           detail: '实例已在运行，忽略重复启动'
@@ -309,11 +324,54 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
 
       cancelRequested.delete(id) // 显式重启优先于此前排队期间的取消意图
       try {
-        emit(id, 'starting', { detail: '解析运行时版本' })
-        const version = instance.dshVersion ?? (await options.installer.resolveDefaultVersion())
+        emit(id, 'starting', { detail: '解析运行时来源' })
+        // #2 用户反馈:「优先 hub 已装同版本 → 再探测 PATH → 都没有才下载,真要下载时需要用户确认」。
+        // 探测与决策在启动队列外完成(纯读);hub 清单与 PATH 探测并行,互不拖慢。
+        const [hubInstalled, pathRuntime] = await Promise.all([
+          options.installer
+            .listInstalled()
+            .then((items) => items.map((item) => item.version))
+            .catch(() => [] as string[]),
+          options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
+        ])
+        const plan = planRuntimeSource({
+          desiredVersion: instance.dshVersion,
+          hubInstalled,
+          pathRuntime
+        })
         if (cancelRequested.delete(id)) {
           emit(id, 'stopped', { detail: '已取消启动' })
           return
+        }
+
+        // 统一收敛为:显示用 version + 来源标记 + 「实际要跑的脚本路径」(path 来源 = 用户 bin;hub 来源 = 隔离目录入口)
+        let version: string
+        let runtimeSource: 'hub' | 'path'
+        let scriptPath: string
+        if (plan.kind === 'path') {
+          version = plan.version
+          runtimeSource = 'path'
+          scriptPath = plan.command
+        } else if (plan.kind === 'hub') {
+          version = plan.version
+          runtimeSource = 'hub'
+          scriptPath = options.installer.resolveEntry(plan.version)
+        } else {
+          // download:目标版本(未固定时解析 registry latest),**必须经用户确认**
+          const target = plan.version ?? (await options.installer.resolveDefaultVersion())
+          emit(id, 'starting', { version: target, detail: `需要下载 dsh ${target}，等待确认` })
+          const confirmed = await options.confirmDownload?.(target)
+          if (confirmed !== true) {
+            emit(id, 'stopped', {
+              version: target,
+              detail: `需要下载 dsh ${target}，未获确认，已取消启动（hub 与 PATH 上均无可用运行时）`
+            })
+            return
+          }
+          if (cancelRequested.delete(id)) return
+          version = target
+          runtimeSource = 'hub'
+          scriptPath = options.installer.resolveEntry(target)
         }
 
         // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
@@ -326,6 +384,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             if (already) {
               emit(id, already.ready ? 'running' : 'starting', {
                 version: already.version,
+                runtimeSource: already.runtimeSource,
                 ...(already.url ? { url: already.url } : {}),
                 ...(already.port !== null ? { port: already.port } : {}),
                 detail: '实例已在运行，忽略重复启动'
@@ -335,9 +394,14 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             if (cancelRequested.delete(id)) return 'cancelled'
             emit(id, 'starting', {
               version,
-              detail: `准备 dsh ${version} 运行时（首次需要安装，可能较慢）`
+              runtimeSource,
+              detail:
+                runtimeSource === 'path'
+                  ? `使用本机 dsh ${version} 启动`
+                  : `准备 dsh ${version} 运行时（首次需要安装，可能较慢）`
             })
-            await options.installer.ensureInstalled(version)
+            // path 来源运行的是用户本机安装,不需要(也不许)往应用隔离目录安装
+            if (runtimeSource === 'hub') await options.installer.ensureInstalled(version)
             if (cancelRequested.delete(id)) return 'cancelled'
 
             // 优先实例记录里用户选定的端口(向导高级设置);被占则向上递增,启动后仍回写实际端口。
@@ -353,6 +417,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             }).catch(() => 0)
             emit(id, 'starting', {
               version,
+              runtimeSource,
               detail:
                 preferredPort > 0
                   ? `分配端口并启动进程（端口 ${preferredPort}）`
@@ -361,11 +426,14 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           const home = join(options.dataRoot, 'homes', id)
           await mkdir(home, { recursive: true })
 
+          // path 来源:scriptPath = 用户 PATH 上的 dsh bin(node 包装脚本);
+          // 仍经 nodeInvocation(带 --expose-internals)执行 —— cordis-plugin-hmr
+          // 对该标志是硬依赖,node 与 electron-as-node 都需要(见 defaultNodeInvocation 注释)
           const child = spawnImpl({
             command: nodeInvocation.command,
             args: [
               ...nodeInvocation.args,
-              options.installer.resolveEntry(version),
+              scriptPath,
               '--profile',
               profile,
               '--host',
@@ -384,6 +452,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             url: null,
             port: null,
             version,
+            runtimeSource,
             home,
             log: [],
             buffer: '',

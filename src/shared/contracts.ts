@@ -494,6 +494,12 @@ export interface InstanceStatusEvent {
   port?: number
   /** 本次启动使用的 dsh 运行时版本（解析后回填，供 UI 展示与注册表回写） */
   version?: string
+  /**
+   * 运行时来源（#2 用户反馈）：hub = 应用隔离目录；path = 用户本机 PATH 上的 dsh。
+   * 主进程回写闸依据它决定是否持久化 version —— path 来源不回写，未固定实例
+   * 才能跟随用户本机升级，而不是被钉死在探测当天的版本上。
+   */
+  runtimeSource?: 'hub' | 'path'
   /** 人读诊断信息（进度 / 失败归因） */
   detail?: string
   /** 事件时间（ISO） */
