@@ -1202,6 +1202,26 @@ html[data-platform='darwin'] .app-shell.rail .side-head {
   background: var(--warn-soft);
   color: var(--warn-ink);
 }
+/* 用户反馈 #9:明文连接的常驻警告从整段 note 收敛为图标胶囊 —— 完整详情经 title 悬停 */
+.warn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+  cursor: help;
+  max-width: 100%;
+}
+.warn-pill svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
 .n-err {
   background: var(--danger-soft);
   color: var(--danger-ink);

@@ -49,6 +49,9 @@ interface AppState {
   refreshList: () => Promise<void>
   applyStatus: (event: InstanceStatusEvent) => void
   ensureRecord: (id: string) => Promise<InstanceRecord | null>
+  /** 强制从主进程重读该实例(绕过缓存)—— 编辑保存后刷新详情必须用它:
+      `ensureRecord` 只在缓存缺失时拉取,会把陈旧记录留在 store 里 */
+  reloadRecord: (id: string) => Promise<void>
   select: (id: string | null) => void
   toggleRail: () => void
   toggleTheme: () => void
@@ -211,6 +214,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return result.value as InstanceRecord
     }
     return null
+  },
+
+  reloadRecord: async (id) => {
+    const result = await window.dshHub?.instances.get(id)
+    if (result?.ok && result.value) {
+      set((state) => ({ records: { ...state.records, [id]: result.value as InstanceRecord } }))
+    }
   },
 
   select: (id) => set({ selection: id }),

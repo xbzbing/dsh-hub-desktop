@@ -5,6 +5,7 @@ import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, addressOf, fmtDuration, toDisplayStatus } from '../lib/format'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
+import EditInstanceDialog from './EditInstanceDialog'
 import VaultCard from './VaultCard'
 import { showAuthActions } from '../lib/auth-actions'
 
@@ -33,6 +34,7 @@ export default function DetailView(): ReactNode {
   const toast = useAppStore((state) => state.toast)
   const userDataPath = useAppStore((state) => state.userDataPath)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
   const [nowTick, setNowTick] = useState(0)
 
   useEffect(() => {
@@ -167,12 +169,18 @@ export default function DetailView(): ReactNode {
               </span>
             </div>
           )}
-          {/* 设计 §7.1:直连 http:// 远程实例的数据面为明文 —— 常驻警告(https 不告警) */}
+          {/* 设计 §7.1:直连 http:// 远程实例的数据面为明文 —— 常驻警告(https 不告警)。
+              用户反馈 #9:整段文案常驻影响观感 —— 改为「图标 + 短标签」胶囊,
+              完整详情经 title 悬停显示(原生 tooltip,读屏/自动化同样可达) */}
           {record.transport === 'http' && isCleartextEndpoint(record.endpointUrl) && (
-            <div className="note n-warn mt12" data-testid="cleartext-warning">
+            <span
+              className="warn-pill"
+              data-testid="cleartext-warning"
+              title={t('detail.cleartextWarning')}
+            >
               <Icon name="alert" />
-              <span>{t('detail.cleartextWarning')}</span>
-            </div>
+              <span>{t('detail.cleartextBadge')}</span>
+            </span>
           )}
           <div className="row mt12">
             {showAuthActions(record) && (
@@ -276,6 +284,15 @@ export default function DetailView(): ReactNode {
             ) : (
               <span className="meta">{t('detail.noRuntimeControl')}</span>
             )}
+            {/* 用户反馈 #10/#11:创建后无法修改 —— 编辑入口(transport 不可改,
+                契约上改形态 = 删除重建;端口留空 = 自动分配,运行中改动下次启动生效) */}
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowEdit(true)}
+              data-testid="edit-btn"
+            >
+              <Icon name="edit" /> {t('edit.openButton')}
+            </button>
           </div>
         </div>
       </div>
@@ -327,6 +344,14 @@ export default function DetailView(): ReactNode {
             {t('detail.deleteConfirm', { name: record.name })}
           </p>
         </Modal>
+      )}
+
+      {showEdit && (
+        <EditInstanceDialog
+          record={record}
+          running={status?.status === 'running'}
+          onClose={() => setShowEdit(false)}
+        />
       )}
     </section>
   )

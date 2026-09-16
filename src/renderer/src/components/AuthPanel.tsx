@@ -191,11 +191,13 @@ export default function AuthPanel(): ReactNode {
               : t('auth.credentialsLocalOnly')}
           </span>
           <div className="right">
-            <button className="btn btn-secondary" onClick={close}>
+            {/* 用户反馈 #8:认证面板是紧凑浮层,标准按钮(31px)显得过大 —— 与详情页
+                操作按钮一致改用 btn-sm(27px),视觉协调 */}
+            <button className="btn btn-secondary btn-sm" onClick={close}>
               {t('common.cancel')}
             </button>
             <button
-              className="btn btn-primary"
+              className="btn btn-primary btn-sm"
               data-testid="auth-submit"
               onClick={() => void submit()}
               // D5:await-otp 阶段验证码与密码都要有 —— register 侧要求密码 min(1),

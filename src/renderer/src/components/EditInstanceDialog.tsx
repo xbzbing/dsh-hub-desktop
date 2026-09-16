@@ -1,0 +1,248 @@
+import { useState } from 'react'
+import type { ReactNode } from 'react'
+import type { InstanceRecord, PatchInstanceInput } from '@shared/contracts'
+import { Icon } from '../lib/icons'
+import { useAppStore } from '../store'
+import { Modal } from './Modal'
+
+/**
+ * 实例编辑(用户反馈 #10/#11:创建后无法修改 —— 后端 `instances:update` 通道与
+ * `PatchInstanceSchema` 早已就绪,本组件补上 UI 入口)。
+ *
+ * 可编辑面 = PatchInstanceSchema 允许的当前 transport 字段;transport 本身不可改
+ * (契约:改形态 = 删除重建)。端口留空 = 回到自动分配(null);
+ * 运行中实例的端口/配置在**下次启动**生效。
+ */
+export default function EditInstanceDialog({
+  record,
+  running,
+  onClose
+}: {
+  record: InstanceRecord
+  running: boolean
+  onClose: () => void
+}): ReactNode {
+  const t = useAppStore((state) => state.t)
+  const refreshList = useAppStore((state) => state.refreshList)
+  // 保存后必须强制重读:ensureRecord 是「缺失才拉取」的缓存,会留下陈旧记录
+  const reloadRecord = useAppStore((state) => state.reloadRecord)
+  const toast = useAppStore((state) => state.toast)
+
+  const [name, setName] = useState(record.name)
+  const [notes, setNotes] = useState(record.notes ?? '')
+  const [authMode, setAuthMode] = useState(record.authMode)
+  const [port, setPort] = useState(record.transport === 'local' ? (record.port ? String(record.port) : '') : '')
+  const [profile, setProfile] = useState(record.transport === 'local' ? (record.profile ?? '') : '')
+  const [autoStart, setAutoStart] = useState(record.transport === 'local' ? record.autoStart : false)
+  const [host, setHost] = useState(record.transport === 'ssh' ? record.host : '')
+  const [username, setUsername] = useState(record.transport === 'ssh' ? record.username : '')
+  const [remotePort, setRemotePort] = useState(record.transport === 'ssh' ? String(record.remotePort) : '')
+  const [identityFile, setIdentityFile] = useState(record.transport === 'ssh' ? (record.identityFile ?? '') : '')
+  const [endpointUrl, setEndpointUrl] = useState(record.transport === 'http' ? record.endpointUrl : '')
+  const [busy, setBusy] = useState(false)
+
+  const save = async (): Promise<void> => {
+    if (name.trim() === '') {
+      toast('err', t('edit.nameRequired'))
+      return
+    }
+    const patch: PatchInstanceInput = {
+      name: name.trim(),
+      notes: notes.trim() === '' ? null : notes.trim(),
+      authMode
+    }
+    if (record.transport === 'local') {
+      patch.port = port.trim() === '' ? null : Number(port.trim())
+      patch.profile = profile.trim() === '' ? null : profile.trim()
+      patch.autoStart = autoStart
+    } else if (record.transport === 'ssh') {
+      if (host.trim() === '' || username.trim() === '' || remotePort.trim() === '') {
+        toast('err', t('edit.sshRequired'))
+        return
+      }
+      patch.host = host.trim()
+      patch.username = username.trim()
+      patch.remotePort = Number(remotePort.trim())
+      patch.identityFile = identityFile.trim() === '' ? null : identityFile.trim()
+    } else {
+      if (endpointUrl.trim() === '') {
+        toast('err', t('edit.endpointRequired'))
+        return
+      }
+      patch.endpointUrl = endpointUrl.trim()
+    }
+    setBusy(true)
+    const result = await window.dshHub?.instances.update(record.id, patch)
+    setBusy(false)
+    if (result && !result.ok) {
+      toast('err', t('edit.failed'), result.message)
+      return
+    }
+    await Promise.all([refreshList(), reloadRecord(record.id)])
+    toast('ok', t('edit.saved'))
+    onClose()
+  }
+
+  return (
+    <Modal
+      title={t('edit.title')}
+      sub={t('edit.sub', { name: record.name })}
+      onClose={onClose}
+      testId="edit-dialog"
+      closeLabel={t('common.close')}
+      footer={
+        <div className="right">
+          <button className="btn btn-secondary btn-sm" onClick={onClose} data-testid="edit-cancel">
+            {t('common.cancel')}
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => void save()}
+            disabled={busy}
+            data-testid="edit-save"
+          >
+            <Icon name="check" /> {t('common.save')}
+          </button>
+        </div>
+      }
+    >
+      <div className="field">
+        <label htmlFor="edit-name">{t('edit.nameLabel')}</label>
+        <input
+          className="input"
+          id="edit-name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          data-testid="edit-name"
+        />
+      </div>
+      <div className="field mt8">
+        <label htmlFor="edit-notes">{t('edit.notesLabel')}</label>
+        <textarea
+          className="input"
+          id="edit-notes"
+          rows={2}
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+          data-testid="edit-notes"
+        />
+      </div>
+      <div className="field mt8">
+        <label htmlFor="edit-authmode">{t('edit.authModeLabel')}</label>
+        <select
+          className="input"
+          id="edit-authmode"
+          value={authMode}
+          onChange={(event) => setAuthMode(event.target.value as typeof authMode)}
+          data-testid="edit-authmode"
+        >
+          <option value="auto">{t('edit.authModeAuto')}</option>
+          <option value="none">{t('edit.authModeNone')}</option>
+          <option value="gateway">{t('edit.authModeGateway')}</option>
+        </select>
+        <span className="hint">{t('edit.authModeHint')}</span>
+      </div>
+
+      {record.transport === 'local' && (
+        <div className="grid-2 mt8">
+          <div className="field">
+            <label htmlFor="edit-port">{t('edit.portLabel')}</label>
+            <input
+              className="input num"
+              id="edit-port"
+              inputMode="numeric"
+              placeholder={t('edit.portPlaceholder')}
+              value={port}
+              onChange={(event) => setPort(event.target.value)}
+              data-testid="edit-port"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="edit-profile">{t('edit.profileLabel')}</label>
+            <input
+              className="input"
+              id="edit-profile"
+              placeholder={t('edit.profilePlaceholder')}
+              value={profile}
+              onChange={(event) => setProfile(event.target.value)}
+              data-testid="edit-profile"
+            />
+          </div>
+          <label className="row mt12" style={{ gap: 8, alignItems: 'center' }} htmlFor="edit-autostart">
+            <input
+              type="checkbox"
+              id="edit-autostart"
+              checked={autoStart}
+              onChange={(event) => setAutoStart(event.target.checked)}
+              data-testid="edit-autostart"
+            />
+            <span>{t('edit.autoStartLabel')}</span>
+          </label>
+        </div>
+      )}
+
+      {record.transport === 'ssh' && (
+        <div className="grid-2 mt8">
+          <div className="field">
+            <label htmlFor="edit-host">{t('edit.hostLabel')}</label>
+            <input
+              className="input"
+              id="edit-host"
+              value={host}
+              onChange={(event) => setHost(event.target.value)}
+              data-testid="edit-host"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="edit-username">{t('edit.usernameLabel')}</label>
+            <input
+              className="input"
+              id="edit-username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              data-testid="edit-username"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="edit-remoteport">{t('edit.remotePortLabel')}</label>
+            <input
+              className="input num"
+              id="edit-remoteport"
+              inputMode="numeric"
+              value={remotePort}
+              onChange={(event) => setRemotePort(event.target.value)}
+              data-testid="edit-remoteport"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="edit-identity">{t('edit.identityLabel')}</label>
+            <input
+              className="input"
+              id="edit-identity"
+              placeholder={t('edit.identityPlaceholder')}
+              value={identityFile}
+              onChange={(event) => setIdentityFile(event.target.value)}
+              data-testid="edit-identity"
+            />
+          </div>
+        </div>
+      )}
+
+      {record.transport === 'http' && (
+        <div className="field mt8">
+          <label htmlFor="edit-endpoint">{t('edit.endpointLabel')}</label>
+          <input
+            className="input"
+            id="edit-endpoint"
+            value={endpointUrl}
+            onChange={(event) => setEndpointUrl(event.target.value)}
+            data-testid="edit-endpoint"
+          />
+          <span className="hint">{t('edit.endpointHint')}</span>
+        </div>
+      )}
+
+      {running && <p className="hint mt8">{t('edit.restartHint')}</p>}
+    </Modal>
+  )
+}
