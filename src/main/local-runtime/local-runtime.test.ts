@@ -1010,3 +1010,111 @@ describe('#2 运行时来源与下载确认', () => {
     expect(manager.statusOf(instance.id)?.runtimeSource).toBe('hub')
   })
 })
+
+describe('C1 凭据脱敏', () => {
+  it('就绪 URL 中的 token 不出现在 error detail 中（健康探测失败）', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999600
+    child.killCall = []
+    child.kill = vi.fn((signal?: NodeJS.Signals) => {
+      child.killCall.push(signal ?? 'SIGTERM')
+      return true
+    }) as never
+
+    // 恒失败探测:触发 detail 中包含就绪 URL 的 error 事件
+    const probe = vi.fn(async () => false)
+    const manager = createLocalRuntime({
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: (() => child) as never,
+      probe,
+      readyTimeoutMs: 2000,
+      healthProbeRetries: 2,
+      healthProbeRetryMs: 10
+    })
+    const events: InstanceStatusEvent[] = []
+    manager.onStatus((event) => events.push(event))
+
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    child.stdout.write('dsh web: http://127.0.0.1:31234/?token=SECRET_TOKEN_VALUE\n')
+    await starting
+    await waitForStatus(manager, instance.id, 'error')
+
+    const errorEvent = events.find((e) => e.status === 'error')
+    expect(errorEvent).toBeDefined()
+    // detail 中的 URL 必须脱敏:查询串(含 token)被剥离
+    expect(errorEvent!.detail).not.toContain('SECRET_TOKEN_VALUE')
+    expect(errorEvent!.detail).toContain('http://127.0.0.1:31234')
+    // url 字段保留完整(供内部使用),但不进入 detail
+    expect(errorEvent!.url).toBe('http://127.0.0.1:31234/?token=SECRET_TOKEN_VALUE')
+  })
+
+  it('pushLog 不脱敏:就绪行匹配不受影响（READY_PATTERN 守卫）', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999601
+    child.kill = vi.fn(() => true) as never
+
+    const manager = createLocalRuntime({
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: (() => child) as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000
+    })
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    // 就绪行含完整 token:pushLog 不脱敏才能匹配 READY_PATTERN
+    child.stdout.write('dsh web: http://127.0.0.1:31234/?token=my-secret-token\n')
+    await starting
+    await waitForStatus(manager, instance.id, 'running')
+
+    // url 字段保留完整 token(内部使用)
+    expect(manager.statusOf(instance.id)?.url).toBe(
+      'http://127.0.0.1:31234/?token=my-secret-token'
+    )
+  })
+
+  it('进程意外退出:日志中的 URL token 在 detail 中被脱敏', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999602
+    child.killCall = []
+    child.kill = vi.fn((signal?: NodeJS.Signals) => {
+      child.killCall.push(signal ?? 'SIGTERM')
+      return true
+    }) as never
+
+    const manager = createLocalRuntime({
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: (() => child) as never,
+      readyTimeoutMs: 5000
+    })
+    const events: InstanceStatusEvent[] = []
+    manager.onStatus((event) => events.push(event))
+
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    await vi.waitFor(() => child.stdout)
+    // 先输出一行含 token 的日志
+    child.stdout.write('dsh web: http://127.0.0.1:40000/?token=SUPER_SECRET\n')
+    // 进程退出:exit handler 会把日志尾巴放进 detail
+    child.emit('exit', 1, null)
+    await starting
+    await waitForStatus(manager, instance.id, 'error')
+
+    const errorEvent = events.find((e) => e.status === 'error')
+    expect(errorEvent).toBeDefined()
+    // detail 中的 URL token 必须脱敏
+    expect(errorEvent!.detail).not.toContain('SUPER_SECRET')
+  })
+})

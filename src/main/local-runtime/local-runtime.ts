@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { InstanceRuntimeStatus, InstanceStatusEvent, LocalInstance } from '@shared/contracts'
+import { redactLine } from '@shared/redact'
 import { DEFAULT_PORT_RANGE_END, DEFAULT_PORT_RANGE_START, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
 import type { RuntimeInstaller } from './runtime-installer'
@@ -195,7 +196,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   }
 
   function logTail(entry: Entry, lines = 6): string {
-    return entry.log.slice(-lines).join(' / ')
+    return entry.log.slice(-lines).join(' / ').split(' / ').map(redactLine).join(' / ')
   }
 
   function killTree(entry: Entry, signal: NodeJS.Signals): void {
@@ -260,7 +261,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       // 缺失任一项都会造成 head-of-line 阻塞(下一个实例等到 readyTimer 触发)
       // 与无人回收的存活进程。
       emit(id, 'error', {
-        detail: `就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`,
+        detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`),
         url
       })
       entry.stopping = true

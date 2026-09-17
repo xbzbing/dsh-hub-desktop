@@ -915,7 +915,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/transport/ssh-tunnel.ts', 'detail: `SSH 隧道断开（${attribution.message}）；${entry.backoffMs / 1000}s 后自动重连`'),
   debt('src/main/local-runtime/local-runtime.ts', "detail: `启动超时（${Math.round(readyTimeoutMs / 1000)}s）：未解析到就绪 URL${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`"),
   debt('src/main/local-runtime/runtime-installer.ts', 'detail: `安装 ${DSH_PACKAGE_NAME}@${version}`'),
-  debt('src/main/local-runtime/local-runtime.ts', 'detail: `就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`,'),
+  debt('src/main/local-runtime/local-runtime.ts', 'detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`),'),
   debt('src/main/local-runtime/local-runtime.ts', 'detail: `已在 ${entry.home} 启动（dsh web）`'),
   // Runtime source messages.
   debt('src/main/local-runtime/local-runtime.ts', "emit(id, 'starting', { detail: '解析运行时来源' })"),
@@ -1087,7 +1087,10 @@ const NON_RENDERER_COPY_DEBT_INTERNAL: readonly DebtEntry[] = [
 
   // —— 当前**没有任何消费者**:backoff 的 reason 只写不读;auth-client 的 evidence 被两处 probe 调用方丢弃(register.ts:344 / index.ts:630),session-restored 分支 message 置 null ——
   debt('src/main/auth/auth-client.ts', "evidence: '已存会话有效（静默恢复）',"),
-  debt('src/main/auth/backoff.ts', "reason = why ?? '请求过于频繁，已暂停自动重试'")
+  debt('src/main/auth/backoff.ts', "reason = why ?? '请求过于频繁，已暂停自动重试'"),
+
+  // —— redact.ts 的正则字符类含中文标点(。，；！？、):用于排除 URL 末尾标点,是正则语法不是界面文案 ——
+  debt('src/shared/redact.ts', "return line.replace(/https?:\\/\\/[^\\s,。，；！？、()]+/gi, (match) => redactUrl(match))")
 ]
 
 /**
