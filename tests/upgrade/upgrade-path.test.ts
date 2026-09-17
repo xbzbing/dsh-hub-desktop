@@ -203,7 +203,7 @@ describe('设置跨版本升级路径', () => {
       tray: true,
       autoStart: true,
       notifications: false,
-      workspaceCacheSize: 5
+      workspaceCacheSize: 3 // 夹具无此字段,回落默认
     })
     for (const [key, value] of Object.entries(settings).filter(([key]) => key !== 'workspaceCacheSize')) {
       expect(value, `字段 ${key} 恰好等于默认值,夹具失去检出能力`).not.toEqual(
@@ -255,7 +255,7 @@ describe('设置跨版本升级路径', () => {
       // 'neon' / 'yes' 不是合法取值 → 各自回落默认值,而不是整份重置
       theme: 'system',
       autoStart: false,
-      workspaceCacheSize: 5
+      workspaceCacheSize: 3 // 未来文件无此字段,回落默认
     })
     // 逐字段收敛是**静默**的(设置坏了不该拦住启动),不产出噪音错误
     expect(errorSeen).toBeNull()

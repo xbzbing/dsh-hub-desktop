@@ -36,7 +36,7 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
   const entries = new Map<string, Entry>()
   let activeId: string | null = null
   let activeBounds: WorkspaceViewBounds | null = null
-  let cacheLimit = 5
+  let cacheLimit = 3
   let useSequence = 0
 
   function touch(entry: Entry): void {

@@ -22,8 +22,8 @@ export const SettingsSchema = z.object({
   autoStart: z.boolean().default(false),
   /** 实例状态变化弹系统通知 */
   notifications: z.boolean().default(true),
-  /** 内嵌工作区 WebContentsView 的 LRU 缓存上限。 */
-  workspaceCacheSize: z.number().int().min(1).max(10).default(5)
+  /** 内嵌工作区 WebContentsView 的 LRU 缓存上限(默认 3,防内存膨胀)。 */
+  workspaceCacheSize: z.number().int().min(1).max(10).default(3)
 })
 
 export type Settings = z.infer<typeof SettingsSchema>

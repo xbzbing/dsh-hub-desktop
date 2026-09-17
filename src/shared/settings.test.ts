@@ -9,7 +9,7 @@ describe('settings（非敏感偏好）', () => {
       tray: false,
       autoStart: false,
       notifications: true,
-      workspaceCacheSize: 5
+      workspaceCacheSize: 3
     })
   })
 
@@ -42,8 +42,8 @@ describe('settings（非敏感偏好）', () => {
       theme: 'rainbow', // 非法
       tray: 'yes', // 非法
       autoStart: true,
-      notifications: false,
-      workspaceCacheSize: 5
+      notifications: false
+      // workspaceCacheSize 缺失 → 回落默认
     })
     expect(normalized).toEqual({
       language: 'en', // 保留
@@ -51,7 +51,7 @@ describe('settings（非敏感偏好）', () => {
       tray: false, // 回落默认
       autoStart: true, // 保留
       notifications: false, // 保留
-      workspaceCacheSize: 5 // 缺失回落默认
+      workspaceCacheSize: 3 // 缺失回落默认
     })
   })
 

@@ -90,7 +90,7 @@ describe('settings-store（偏好落盘）', () => {
       tray: true,
       autoStart: false,
       notifications: false,
-      workspaceCacheSize: 5
+      workspaceCacheSize: 3
     })
     // 内存缓存也必须与落盘一致
     expect(store.read()).toEqual(persisted)
