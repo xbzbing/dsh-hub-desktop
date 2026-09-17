@@ -125,6 +125,20 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   expect(layout.sidebarTop).toBeGreaterThanOrEqual(layout.topbarBottom - 1)
   // macOS 展开态:标题与 sidebar 内容轴对齐，而不是紧贴红绿灯。
   if (layout.titleX !== null) expect(layout.titleX).toBeGreaterThanOrEqual(layout.sidebarWidth - 1)
+  const railItemId = await win.evaluate(async () => {
+    const result = await window.dshHub.instances.create({
+      transport: 'http',
+      name: '收起态留白检查',
+      authMode: 'none',
+      endpointUrl: 'https://rail-spacing.example.com/dsh'
+    })
+    if (!result.ok) throw new Error(result.message)
+    return result.value.id
+  })
+  await win.reload()
+  await expect(win.getByTestId('app-shell')).toBeVisible()
+  await expect(win.getByTestId(`inst-${railItemId}`)).toBeVisible()
+
   // 截图目验:展开态
   await win.screenshot({ path: join(SHOT_DIR, 'shell-expanded.png'), animations: 'disabled' })
 
@@ -164,6 +178,12 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   })
   expect(railMark).not.toBeNull()
   if (railMark !== null && expandedMark !== null) expect(Math.abs(railMark - expandedMark)).toBeLessThanOrEqual(3)
+  const railItem = await win.getByTestId(`inst-${railItemId}`).boundingBox()
+  expect(railItem).not.toBeNull()
+  if (railItem) {
+    expect(railItem.x).toBeGreaterThan(0)
+    expect(railItem.x + railItem.width).toBeLessThan(64)
+  }
   await win.keyboard.press('Meta+b')
   await win.waitForTimeout(300)
 })
