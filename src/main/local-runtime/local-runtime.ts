@@ -89,6 +89,8 @@ export interface AdoptTarget {
   port: number
   /** `--patch <file>` 取值(dush 形态);仅用于展示 */
   patch: string | null
+  /** 已验证的完整访问 URL；外部 dsh 开启 browser-auth 时包含用户提供的 token。 */
+  url?: string
 }
 
 interface Entry {
@@ -615,7 +617,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         })
         return
       }
-      const url = `http://127.0.0.1:${external.port}`
+      const url = external.url ?? `http://127.0.0.1:${external.port}`
       entries.set(id, {
         child: null,
         url,
@@ -633,7 +635,6 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         externalPid: external.pid
       })
       emit(id, 'running', {
-        url,
         port: external.port,
         runtimeSource: 'external',
         detail: `已接管本机运行的 dsh web（pid ${external.pid}${external.patch ? `，patch ${external.patch}` : ''}）`

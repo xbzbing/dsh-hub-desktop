@@ -251,6 +251,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set({ selection: id, workspaceOpen: false, settingsOpen: false })
     const result = await window.dshHub?.runtime.openView(id)
     if (result?.ok) {
+      // 删除、总览或另一实例切换可能在等待 IPC 时发生；陈旧完成不得重新覆盖当前视图。
+      if (get().selection !== id) {
+        void window.dshHub?.runtime?.hideView()
+        return
+      }
       set({ workspaceOpen: true })
       return
     }

@@ -38,6 +38,7 @@ export default function DetailView(): ReactNode {
     Array<{ pid: number; port: number | null; patch: string | null; command: string }>
   >([])
   const [adopting, setAdopting] = useState<number | null>(null)
+  const [externalAccess, setExternalAccess] = useState<Record<number, string>>({})
 
   useEffect(() => {
     if (selection) void ensureRecord(selection)
@@ -317,15 +318,25 @@ export default function DetailView(): ReactNode {
                       ? `${t('detail.externalPatch')} ${item.patch}`
                       : t('detail.externalNoPatch')}
                   </div>
+                  <input
+                    className="input num mt8"
+                    value={externalAccess[item.pid] ?? ''}
+                    onChange={(event) =>
+                      setExternalAccess((current) => ({ ...current, [item.pid]: event.target.value }))
+                    }
+                    autoComplete="off"
+                    aria-label={t('wizard.externalAccessLabel')}
+                    data-testid={`external-access-${item.pid}`}
+                  />
                 </div>
                 <button
                   className="btn btn-primary btn-sm"
                   data-testid={`adopt-btn-${item.pid}`}
-                  disabled={adopting !== null}
+                  disabled={adopting !== null || !(externalAccess[item.pid]?.trim())}
                   onClick={() => {
                     setAdopting(item.pid)
                     void window.dshHub?.runtime
-                      .adoptExternal(record.id, item.pid)
+                      .adoptExternal(record.id, item.pid, externalAccess[item.pid] ?? '')
                       .then((result) => {
                         if (result && !result.ok) {
                           toast('err', t('detail.adoptFailed'), result.message)
@@ -336,8 +347,7 @@ export default function DetailView(): ReactNode {
                       .finally(() => setAdopting(null))
                   }}
                 >
-                  <Icon name="external" />{' '}
-                  {adopting === item.pid ? t('detail.adopting') : t('detail.adopt')}
+                  <Icon name="external" /> {adopting === item.pid ? t('detail.adopting') : t('detail.adopt')}
                 </button>
               </div>
             ))}

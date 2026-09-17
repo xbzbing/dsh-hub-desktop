@@ -141,8 +141,10 @@ export const CreateInstanceInputSchema = z.discriminatedUnion('transport', [
       dshVersion: z.string().trim().max(64).optional(),
       port: PORT_SCHEMA.optional(),
       profile: z.string().trim().max(128).optional(),
-      /** 创建时显式复用检测到的外部 dsh web；不写入注册表。 */
+      /** 创建后接管检测到的外部 dsh web；这些瞬时输入不写入注册表。 */
       useExistingExternal: z.boolean().optional(),
+      externalPid: z.number().int().positive().optional(),
+      externalAccess: z.string().trim().min(1).max(4096).optional(),
       autoStart: z.boolean().optional()
     })
     .strict(),
@@ -469,8 +471,8 @@ export const INSTANCE_RUNTIME_IPC = {
   probeLocalDsh: 'instances:probeLocalDsh',
   /** 探测本机已运行的 dsh web 进程；返回 pid、端口和 patch 路径。 */
   scanExternal: 'instances:scanExternal',
-  /** 接管已扫描到的外部 dsh web 进程；主进程重新确认 pid、端口和 patch。 */
-  adoptExternal: 'instances:adoptExternal'
+  /** 接管外部 dsh 时提交 token 或完整 URL；主进程重新扫描 PID 并验证回环端口。 */
+  adoptExternal: 'instances:adoptExternal',
 } as const
 
 export const WorkspaceViewBoundsSchema = z

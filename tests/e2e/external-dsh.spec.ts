@@ -151,6 +151,9 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   await expect(card).toBeVisible({ timeout: 10_000 })
   await win.screenshot({ path: join(SHOT_DIR, 'external-dsh-detected.png'), animations: 'disabled' })
 
+  await card.locator('[data-testid^="external-access-"]').first().fill('external-token')
+  await card.locator('[data-testid^="adopt-btn-"]:not([disabled])').click()
+  await expect(win.getByTestId('open-view-btn')).toBeEnabled()
   await win.getByTestId('open-view-btn').click()
   await expect.poll(async () =>
     app.evaluate(({ BrowserWindow }) =>

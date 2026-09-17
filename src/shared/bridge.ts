@@ -85,10 +85,9 @@ export interface DshHubBridge {
      */
     scanExternal: () => Promise<IpcResult<ExternalDshWebSnapshot[]>>
     /**
-     * 接管检测到的外部 dsh web:只传 pid(端口与 patch 由主进程重新扫描认定)。
-     * 接管后该实例的「打开视图」直连外部进程;停止只断开接管、**不杀进程**。
+     * 接管检测到的外部 dsh web。`access` 是用户提供的 token 或完整 URL，只在主进程会话内保留。
      */
-    adoptExternal: (id: string, pid: number) => Promise<IpcResult<null>>
+    adoptExternal: (id: string, pid: number, access: string) => Promise<IpcResult<null>>
   }
   /** 订阅实例状态事件；返回取消订阅函数（渲染层不接触原始 IPC 事件对象） */
   onInstanceStatus: (listener: (event: InstanceStatusEvent) => void) => () => void

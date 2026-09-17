@@ -563,7 +563,7 @@ describe('registerIpc', () => {
     expect(openInstanceView).not.toHaveBeenCalled()
   })
 
-  it('打开本机工作区会直接使用已扫描到的 dsh，不改变实例的运行来源', async () => {
+  it('未提供接管 token 时不会把外部 dsh 当作可直接访问的工作区', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as {
       ok: boolean
       value: { id: string }
@@ -575,12 +575,8 @@ describe('registerIpc', () => {
 
     const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
     expect(opened.ok).toBe(true)
-    expect(runtimeFake.adopt).not.toHaveBeenCalled()
-    expect(runtimeFake.start).not.toHaveBeenCalled()
-    expect(openInstanceView).toHaveBeenCalledWith(
-      expect.objectContaining({ id: local.value.id }),
-      'http://127.0.0.1:3080'
-    )
+    expect(runtimeFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: local.value.id }))
+    expect(openInstanceView).not.toHaveBeenCalled()
   })
 
   it('本机未运行时会启动实例自身的 dsh', async () => {
@@ -686,7 +682,12 @@ describe('registerIpc', () => {
     externalDshFake.scan.mockResolvedValue([
       { pid: 84758, port: 52300, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
     ])
-    const created = (await invoke('instances:create', { ...VALID_LOCAL, useExistingExternal: true })) as {
+    const created = (await invoke('instances:create', {
+      ...VALID_LOCAL,
+      useExistingExternal: true,
+      externalPid: 84758,
+      externalAccess: 'access-token'
+    })) as {
       ok: boolean
       value: { id: string; port: number | null }
     }
@@ -698,7 +699,7 @@ describe('registerIpc', () => {
     expect(opened.ok).toBe(true)
     expect(openInstanceView).toHaveBeenCalledWith(
       expect.objectContaining({ id: created.value.id }),
-      'http://127.0.0.1:52300'
+      'http://127.0.0.1:52300/?token=access-token'
     )
     expect(runtimeFake.start).not.toHaveBeenCalled()
   })
@@ -735,7 +736,12 @@ describe('registerIpc', () => {
     externalDshFake.scan.mockResolvedValue([
       { pid: 84758, port: 3080, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
     ])
-    const adopted = (await invoke('instances:adoptExternal', local.value.id, 84758)) as {
+    const adopted = (await invoke(
+      'instances:adoptExternal',
+      local.value.id,
+      84758,
+      'http://127.0.0.1:3080/?token=token-value'
+    )) as {
       ok: boolean
     }
     expect(adopted.ok).toBe(true)
@@ -750,6 +756,51 @@ describe('registerIpc', () => {
     })
   })
 
+  it('接管外部 dsh 的 token 只用于匹配 PID 的回环 URL，拒绝远程或错误端口', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValue([
+      { pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }
+    ])
+
+    const remote = (await invoke('instances:adoptExternal', local.value.id, 84758, 'https://example.com/?token=x')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(remote.ok).toBe(false)
+    expect(remote.code).toBe('invalid-input')
+
+    const localhost = (await invoke('instances:adoptExternal', local.value.id, 84758, 'http://localhost:3080/?token=x')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(localhost.ok).toBe(false)
+    expect(localhost.code).toBe('invalid-input')
+
+    const wrongPort = (await invoke('instances:adoptExternal', local.value.id, 84758, 'http://127.0.0.1:3081/?token=x')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(wrongPort.ok).toBe(false)
+    expect(wrongPort.code).toBe('invalid-input')
+  })
+
+  it('不允许运行中的实例覆盖已接管外部 dsh 的访问会话', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!local.ok) throw new Error('创建失败')
+    currentStatus = { id: local.value.id, status: 'running', at: '2026-09-17T00:00:00.000Z' }
+    externalDshFake.scan.mockResolvedValue([
+      { pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }
+    ])
+    const adopted = (await invoke('instances:adoptExternal', local.value.id, 84758, 'token')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(adopted.ok).toBe(false)
+    expect(adopted.code).toBe('invalid-state')
+    expect(runtimeFake.adopt).not.toHaveBeenCalled()
+  })
+
   it('adoptExternal 边界:pid 不存在 / 端口未知 / 非本地实例 / 非法 pid 都被拒', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as {
       ok: boolean
@@ -759,7 +810,7 @@ describe('registerIpc', () => {
 
     // pid 不在扫描结果里 → not-found
     externalDshFake.scan.mockResolvedValue([])
-    const missing = (await invoke('instances:adoptExternal', local.value.id, 999)) as {
+    const missing = (await invoke('instances:adoptExternal', local.value.id, 999, 'token')) as {
       ok: boolean
       code?: string
     }
@@ -770,7 +821,7 @@ describe('registerIpc', () => {
     externalDshFake.scan.mockResolvedValue([
       { pid: 5, port: null, patch: null, command: 'node /x/dsh web' }
     ])
-    const noPort = (await invoke('instances:adoptExternal', local.value.id, 5)) as {
+    const noPort = (await invoke('instances:adoptExternal', local.value.id, 5, 'token')) as {
       ok: boolean
       code?: string
     }
@@ -785,7 +836,7 @@ describe('registerIpc', () => {
       endpointUrl: 'https://gw.example.com/dsh'
     })) as { ok: boolean; value: { id: string } }
     if (!httpInstance.ok) throw new Error('创建失败')
-    const wrongTransport = (await invoke('instances:adoptExternal', httpInstance.value.id, 5)) as {
+    const wrongTransport = (await invoke('instances:adoptExternal', httpInstance.value.id, 5, 'token')) as {
       ok: boolean
       code?: string
     }
@@ -794,7 +845,7 @@ describe('registerIpc', () => {
 
     // 非法 pid(负数/非整数)→ invalid-input;不触碰 runtime.adopt
     runtimeFake.adopt.mockClear()
-    const badPid = (await invoke('instances:adoptExternal', local.value.id, -1)) as {
+    const badPid = (await invoke('instances:adoptExternal', local.value.id, -1, 'token')) as {
       ok: boolean
       code?: string
     }
@@ -802,6 +853,8 @@ describe('registerIpc', () => {
     if (!badPid.ok) expect(badPid.code).toBe('invalid-input')
     expect(runtimeFake.adopt).not.toHaveBeenCalled()
   })
+
+
 
   it('/http:detect 非法 URL → invalid-input(而非 internal)', async () => {
     for (const bad of ['ftp://x', 'http://user:pw@h/', 'not a url', '']) {

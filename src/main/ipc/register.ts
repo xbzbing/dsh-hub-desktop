@@ -122,6 +122,37 @@ function parseId(id: unknown): string {
   return z.uuid().parse(id)
 }
 
+/**
+ * 将用户提供的 token 或 dsh 输出的完整地址收敛为已验证的回环 URL。
+ * token 只由主进程保存在当前会话中，不能进入注册表、状态事件或日志。
+ */
+function externalAccessUrl(raw: unknown, port: number): string {
+  const access = z.string().trim().min(1).max(4096).parse(raw)
+  if (!access.includes('://')) {
+    if (/\s/.test(access)) throw new InstanceStoreError('invalid-input', '访问 token 不能包含空白')
+    return `http://127.0.0.1:${port}/?token=${encodeURIComponent(access)}`
+  }
+  let url: URL
+  try {
+    url = new URL(access)
+  } catch {
+    throw new InstanceStoreError('invalid-input', '访问链接无法解析')
+  }
+  if (
+    url.protocol !== 'http:' ||
+    (url.hostname !== '127.0.0.1' && url.hostname !== '[::1]') ||
+    url.port !== String(port) ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.hash !== '' ||
+    url.searchParams.get('token') === null ||
+    url.searchParams.get('token') === ''
+  ) {
+    throw new InstanceStoreError('invalid-input', '访问链接必须匹配已检测的本机 dsh 端口并包含 token')
+  }
+  return url.toString()
+}
+
 function toSummary(record: InstanceRecord): InstanceSummary {
   const address =
     record.transport === 'local'
@@ -140,6 +171,8 @@ function toSummary(record: InstanceRecord): InstanceSummary {
 }
 
 export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
+  /** 外部 dsh 的 token URL 仅驻留在主进程会话内，绝不进入状态流或注册表。 */
+  const externalAccessUrls = new Map<string, { pid: number; port: number; url: string }>()
   const processVersions = process.versions as NodeJS.ProcessVersions & { electron?: string }
 
   ipcMain.handle(IPC.info, (): Promise<IpcResult<AppInfo>> =>
@@ -175,11 +208,20 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     wrap(async () => {
       const parsed = CreateInstanceInputSchema.parse(input)
       if (parsed.transport !== 'local') return store.create(parsed)
-      const { useExistingExternal, ...recordInput } = parsed
-      if (useExistingExternal !== true || !deps.externalDsh) return store.create(recordInput)
-      const external = await deps.externalDsh.scan()
-      const running = external.find((item) => item.port !== null)
-      return store.create(running && running.port !== null ? { ...recordInput, port: running.port } : recordInput)
+      const { useExistingExternal, externalPid, externalAccess, ...recordInput } = parsed
+      if (useExistingExternal !== true) return store.create(recordInput)
+      if (!deps.externalDsh) throw new InstanceStoreError('invalid-state', '本机进程探测能力不可用')
+      const pid = z.number().int().positive().parse(externalPid)
+      const found = await deps.externalDsh.scan()
+      const match = found.find((item) => item.pid === pid)
+      if (!match) throw new InstanceStoreError('not-found', `未找到 pid ${pid} 的 dsh web 进程`)
+      if (match.port === null) throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')
+      const accessUrl = externalAccessUrl(externalAccess, match.port)
+      const record = await store.create({ ...recordInput, port: match.port })
+      if (record.transport !== 'local') throw new Error('本机实例创建结果无效')
+      externalAccessUrls.set(record.id, { pid: match.pid, port: match.port, url: accessUrl })
+      await deps.runtime.adopt(record, { pid: match.pid, port: match.port, patch: match.patch })
+      return record
     })
   )
 
@@ -197,6 +239,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         // 详情页文案承诺「删除运行中的实例会先停止其进程」:先回收进程树再移除记录,
         // 否则 dsh/ssh 进程继续存活(独占端口与 DSH_HOME),窗口也无 stopped 事件可回收
         const record = await store.get(instanceId)
+        externalAccessUrls.delete(instanceId)
         if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
         else if (record?.transport === 'http') await deps.http.stop(instanceId)
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
@@ -232,6 +275,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   ipcMain.handle(INSTANCE_RUNTIME_IPC.stop, (_event, id: unknown): Promise<IpcResult<null>> =>
     wrap(async () => {
       const instanceId = parseId(id)
+      externalAccessUrls.delete(instanceId)
       const record = await store.get(instanceId)
       if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
       else if (record?.transport === 'http') await deps.http.stop(instanceId)
@@ -251,7 +295,11 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         : instance.transport === 'http'
           ? deps.http.statusOf(instanceId)
           : deps.runtime.statusOf(instanceId)
-    if (status?.status === 'running' && status.url) {
+    if (
+      status?.status === 'running' &&
+      status.url &&
+      !(instance.transport === 'local' && status.runtimeSource === 'external')
+    ) {
       await deps.openInstanceView(instance, status.url)
       return
     }
@@ -273,15 +321,18 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       return
     }
     if (instance.transport === 'local') {
-      // 已运行的本机 dsh 可直接打开工作区，不改变实例的运行来源或进程所有权。
-      // 用户选择「接管」时才会把外部进程关联到实例。
-      const external = deps.externalDsh ? (await deps.externalDsh.scan()) ?? [] : []
-      const target = external.find((item) => item.port === instance.port) ??
-        (instance.port === null ? external.find((item) => item.port !== null) : undefined)
-      if (target && target.port !== null) {
-        await deps.openInstanceView(instance, `http://127.0.0.1:${target.port}`)
+      const savedAccess = externalAccessUrls.get(instanceId)
+      if (savedAccess) {
+        const external = deps.externalDsh ? await deps.externalDsh.scan() : []
+        const match = external.find((item) => item.pid === savedAccess.pid && item.port === savedAccess.port)
+        if (!match) {
+          externalAccessUrls.delete(instanceId)
+          throw new InstanceStoreError('not-found', '已接管的本机 dsh web 已停止')
+        }
+        await deps.openInstanceView(instance, savedAccess.url)
         return
       }
+      // 已运行的本机 dsh 可直接打开工作区，不改变实例的运行来源或进程所有权。
       await deps.runtime.start(instance)
       const ready = deps.runtime.statusOf(instanceId)
       if (ready?.status === 'running' && ready.url) {
@@ -337,7 +388,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
 
   ipcMain.handle(
     INSTANCE_RUNTIME_IPC.adoptExternal,
-    (_event, id: unknown, pid: unknown): Promise<IpcResult<null>> =>
+    (_event, id: unknown, pid: unknown, access: unknown): Promise<IpcResult<null>> =>
       wrap(async () => {
         const instanceId = parseId(id)
         const targetPid = z.number().int().positive().parse(pid)
@@ -359,11 +410,16 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         if (match.port === null) {
           throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')
         }
+        if (deps.runtime.statusOf(instanceId) !== null) {
+          throw new InstanceStoreError('invalid-state', '实例已在运行，不能接管其他本机 dsh web')
+        }
+        const accessUrl = externalAccessUrl(access, match.port)
         await deps.runtime.adopt(instance, {
           pid: match.pid,
           port: match.port,
           patch: match.patch
         })
+        externalAccessUrls.set(instanceId, { pid: match.pid, port: match.port, url: accessUrl })
         deps.audit?.({ instanceId, event: 'connect', result: 'adopt-external' })
         return null
       })

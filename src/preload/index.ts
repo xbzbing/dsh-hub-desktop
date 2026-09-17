@@ -50,8 +50,8 @@ const bridge: DshHubBridge = {
     probeLocalDsh: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.probeLocalDsh),
     // 扫描不接收渲染层指定的目标；接管只接收 pid，主进程重新确认端口和 patch。
     scanExternal: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.scanExternal),
-    adoptExternal: (id: string, pid: number) =>
-      ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.adoptExternal, id, pid)
+    adoptExternal: (id: string, pid: number, access: string) =>
+      ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.adoptExternal, id, pid, access)
   },
   onInstanceStatus: (listener) => {
     // 只把载荷转给渲染层，不透传 IpcRendererEvent（其中含 sender 等能力对象）

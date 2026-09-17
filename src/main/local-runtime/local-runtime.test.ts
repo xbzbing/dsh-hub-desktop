@@ -871,6 +871,15 @@ describe('#2 运行时来源与下载确认', () => {
 
   const PATH_DSH = { command: '/usr/local/bin/dsh', version: '0.9.9' }
 
+  it('接管外部 dsh 的状态事件不包含访问 URL', async () => {
+    const manager = createLocalRuntime({ installer: makeFakeInstaller(), dataRoot: '/tmp/hub-data' })
+    const events: InstanceStatusEvent[] = []
+    manager.onStatus((event) => events.push(event))
+    await manager.adopt(localInstance(), { pid: 77, port: 3080, patch: null })
+    expect(events.at(-1)).toMatchObject({ status: 'running', runtimeSource: 'external', port: 3080 })
+    expect(events.at(-1)?.url).toBeUndefined()
+  })
+
   it('未固定实例:PATH 有 dsh → 不安装、直接用本机 dsh 启动,事件带 runtimeSource=path', async () => {
     const { child, spawnImpl } = pathChild()
     const installer = makeFakeInstaller()

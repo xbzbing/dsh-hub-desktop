@@ -21,6 +21,7 @@ interface WizardForm {
   sshPort: string
   remotePort: string
   endpointUrl: string
+  externalAccess: string
 }
 
 const EMPTY_FORM: WizardForm = {
@@ -31,7 +32,8 @@ const EMPTY_FORM: WizardForm = {
   username: '',
   sshPort: '22',
   remotePort: '3080',
-  endpointUrl: ''
+  endpointUrl: '',
+  externalAccess: ''
 }
 
 /**
@@ -108,6 +110,9 @@ export default function Wizard(): ReactNode {
 
   const formError = (): string | null => {
     if (!form.name.trim()) return t('wizard.errName')
+    if (transport === 'local' && useExistingExternal && !form.externalAccess.trim()) {
+      return t('wizard.errExternalAccess')
+    }
     if (transport === 'ssh') {
       if (!form.host.trim()) return t('wizard.errHost')
       if (!form.username.trim()) return t('wizard.errUsername')
@@ -128,7 +133,13 @@ export default function Wizard(): ReactNode {
         ? {
             transport: 'local',
             name,
-            ...(useExistingExternal ? { useExistingExternal: true } : {}),
+            ...(useExistingExternal
+              ? {
+                  useExistingExternal: true,
+                  externalPid: externalWorkspace?.pid,
+                  externalAccess: form.externalAccess.trim()
+                }
+              : {}),
             ...(form.version.trim() !== '' ? { dshVersion: form.version.trim() } : {}),
             ...(form.port.trim() !== '' ? { port: Number(form.port) } : {})
           }
@@ -288,6 +299,20 @@ export default function Wizard(): ReactNode {
                       />
                       {t('wizard.useExistingExternal')}
                     </label>
+                    {useExistingExternal && (
+                      <div className="field mt8">
+                        <label htmlFor="wizard-external-access">{t('wizard.externalAccessLabel')}</label>
+                        <input
+                          className="input num"
+                          id="wizard-external-access"
+                          value={form.externalAccess}
+                          onChange={set('externalAccess')}
+                          autoComplete="off"
+                          data-testid="wizard-external-access"
+                        />
+                        <span className="hint">{t('wizard.externalAccessHint')}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
