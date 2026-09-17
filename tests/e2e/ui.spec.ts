@@ -67,6 +67,11 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   const table = win.getByTestId('instances-table')
   await expect(table).toContainText('E2E 演示实例')
   await expect(table).toContainText('本地')
+  const deleteFromHome = table.getByTestId(/delete-/)
+  await deleteFromHome.click()
+  await expect(win.getByTestId('home-confirm-delete')).toBeVisible()
+  await win.getByTestId('home-confirm-delete').getByRole('button', { name: '取消' }).click()
+  await expect(win.getByTestId('home-confirm-delete')).toBeHidden()
 })
 
 test('侧栏实例名称经加载页进入工作区，返回后保留实例详情', async () => {

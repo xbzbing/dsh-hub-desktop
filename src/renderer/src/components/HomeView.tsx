@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { InstanceSummary } from '@shared/contracts'
 import { Icon } from '../lib/icons'
 import { TYPE_INFO, toDisplayStatus, toStatusInfo } from '../lib/format'
 import type { DisplayStatusInfo } from '../lib/format'
 import { useAppStore } from '../store'
+import { Modal } from './Modal'
 import type { MessageKey } from '@shared/i18n/messages'
 
 /** 总览页：统计卡和全部实例表格。 */
@@ -18,7 +20,10 @@ function HomeContent(): ReactNode {
   const instances = useAppStore((state) => state.instances)
   const statuses = useAppStore((state) => state.statuses)
   const select = useAppStore((state) => state.select)
+  const refreshList = useAppStore((state) => state.refreshList)
+  const toast = useAppStore((state) => state.toast)
   const ensureRecord = useAppStore((state) => state.ensureRecord)
+  const [deleteTarget, setDeleteTarget] = useState<InstanceSummary | null>(null)
 
   const connected = instances.filter(
     (item) => toDisplayStatus(statuses[item.id]?.status) === 'connected'
@@ -31,6 +36,18 @@ function HomeContent(): ReactNode {
   const openDetail = (id: string): void => {
     void ensureRecord(id)
     select(id)
+  }
+
+  const deleteInstance = async (): Promise<void> => {
+    if (!deleteTarget) return
+    const result = await window.dshHub?.instances.remove(deleteTarget.id)
+    if (!result?.ok) {
+      if (result) toast('err', t('detail.deleteFailed'), result.message)
+      return
+    }
+    toast('ok', t('detail.deleted', { name: deleteTarget.name }))
+    setDeleteTarget(null)
+    await refreshList()
   }
 
   return (
@@ -72,11 +89,35 @@ function HomeContent(): ReactNode {
                 info={toStatusInfo(statuses[item.id]?.status)}
                 version={statuses[item.id]?.version}
                 onDetail={() => openDetail(item.id)}
+                onDelete={() => setDeleteTarget(item)}
               />
             ))}
           </tbody>
         </table>
       </div>
+      {deleteTarget && (
+        <Modal
+          closeLabel={t('common.close')}
+          title={t('detail.deleteTitle')}
+          onClose={() => setDeleteTarget(null)}
+          testId="home-confirm-delete"
+          footer={
+            <>
+              <span className="meta">{t('detail.deleteCannotUndo')}</span>
+              <div className="right">
+                <button className="btn btn-secondary btn-sm" onClick={() => setDeleteTarget(null)}>
+                  {t('common.cancel')}
+                </button>
+                <button className="btn btn-danger btn-sm" onClick={() => void deleteInstance()}>
+                  {t('detail.delete')}
+                </button>
+              </div>
+            </>
+          }
+        >
+          <p className="meta">{t('detail.deleteConfirm', { name: deleteTarget.name })}</p>
+        </Modal>
+      )}
     </section>
   )
 }
@@ -95,6 +136,7 @@ function TableRow(props: {
   info: DisplayStatusInfo
   version?: string
   onDetail: () => void
+  onDelete: () => void
 }): ReactNode {
   const t = useAppStore((state) => state.t)
   return (
@@ -118,9 +160,19 @@ function TableRow(props: {
       <td className="meta">{props.item.address}</td>
       <td className="num-col meta">{props.version ?? '—'}</td>
       <td className="num-col">
-        <button className="btn btn-ghost btn-sm" onClick={props.onDetail} data-testid={`detail-${props.item.id}`}>
-          {t('home.viewDetail')}
-        </button>
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost btn-sm" onClick={props.onDetail} data-testid={`detail-${props.item.id}`}>
+            {t('home.viewDetail')}
+          </button>
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={props.onDelete}
+            data-testid={`delete-${props.item.id}`}
+            aria-label={t('detail.deleteInstance')}
+          >
+            <Icon name="trash" />
+          </button>
+        </div>
       </td>
     </tr>
   )
