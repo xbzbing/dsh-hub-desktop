@@ -84,6 +84,22 @@ describe('openInstanceView（ 先注入再 loadURL 的顺序纪律）', () => {
     expect(h.loaded).toEqual(['http://127.0.0.1:8002/?token=abc'])
   })
 
+  it('复用已加载的同一工作区时不重新导航，避免切换后的白屏', async () => {
+    const h = harness()
+    h.deps.createWindow = (() => ({
+      loadURL: async (url: string): Promise<void> => {
+        h.loaded.push(url)
+      },
+      webContents: {
+        getURL: () => args.url,
+        session: { cookies: { set: async () => undefined } }
+      }
+    })) as OpenInstanceViewDeps<InstanceViewWindow>['createWindow']
+
+    await expect(openInstanceView(h.deps, { ...args, cookie: null })).resolves.toBe(false)
+    expect(h.loaded).toEqual([])
+    expect(h.order).toEqual([])
+  })
   it('无会话时只开窗+装拦截+加载,不写 Cookie', async () => {
     const h = harness()
     const injected = await openInstanceView(h.deps, { ...args, cookie: null })

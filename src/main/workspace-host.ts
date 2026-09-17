@@ -6,6 +6,7 @@ export interface WorkspaceView {
   loadURL(url: string): Promise<void>
   webContents: {
     session: Electron.Session
+    getURL(): string
     on(event: 'will-redirect', listener: (_event: { preventDefault(): void }, url: string) => void): void
   }
 }

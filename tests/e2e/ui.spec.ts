@@ -73,10 +73,17 @@ test('侧栏实例名称经加载页进入工作区，返回后保留实例详�
   await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
   await win.getByTestId('workspace-back-btn').click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
-  await expect(win.getByTestId('open-view-btn')).toContainText('打开工作区')
+  const deleteButton = win.getByTestId('delete-btn')
+  await expect(deleteButton).toBeVisible()
+  const deleteMetrics = await deleteButton.evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    return { width: box.width, height: box.height }
+  })
+  expect(deleteMetrics.height).toBeGreaterThanOrEqual(46)
+  await expect(win.getByTestId('detail-delete-area')).toBeVisible()
 
   // 删除(二次确认)→ 回空态
-  await win.getByTestId('delete-btn').click()
+  await deleteButton.click()
   await expect(win.getByTestId('confirm-delete')).toBeVisible()
   await win.getByTestId('confirm-delete').getByRole('button', { name: '删除', exact: true }).click({ force: true })
   await expect(win.getByTestId('view-empty')).toBeVisible()

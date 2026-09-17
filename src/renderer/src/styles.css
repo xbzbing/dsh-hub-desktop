@@ -24,14 +24,17 @@
   --hover: color-mix(in oklch, var(--fg) 5%, var(--surface));
   --sel: color-mix(in oklch, var(--fg) 8%, var(--surface));
   --idle-soft: color-mix(in oklch, var(--idle) 14%, var(--surface));
-  --info-soft: color-mix(in oklch, var(--info) 14%, var(--surface));
+  --info-soft: #edf6ff;
+  /* 选择不是风险状态：固定为浅蓝，避免在不同 Chromium 色彩路径中混色偏粉。 */
+  --selection-soft: #e3f2fd;
   --warn-soft: color-mix(in oklch, var(--warn) 16%, var(--surface));
-  --ok-soft: color-mix(in oklch, var(--ok) 14%, var(--surface));
+  /* 成功状态采用固定绿相，避免颜色混合被平台色彩管理渲染为红底。 */
+  --ok-soft: #eaf8ef;
   --danger-soft: color-mix(in oklch, var(--danger) 13%, var(--surface));
   --idle-ink: color-mix(in oklch, var(--idle) 70%, var(--fg));
   --info-ink: color-mix(in oklch, var(--info) 84%, var(--fg));
   --warn-ink: color-mix(in oklch, var(--warn) 70%, var(--fg));
-  --ok-ink: color-mix(in oklch, var(--ok) 84%, var(--fg));
+  --ok-ink: #166534;
   --danger-ink: color-mix(in oklch, var(--danger) 88%, var(--fg));
 
   /* 阴影层级。 */
@@ -78,6 +81,10 @@ html[data-theme='dark'] {
   --warn: oklch(0.8 0.14 82);
   --ok: oklch(0.74 0.15 152);
   --danger: oklch(0.68 0.18 27);
+  --info-soft: #173a5d;
+  --selection-soft: #193a59;
+  --ok-soft: #123d28;
+  --ok-ink: #9ee6b7;
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-layer: 0 14px 34px rgb(0 0 0 / 0.5);
   --shadow-pop: 0 16px 40px rgb(0 0 0 / 0.55);
@@ -439,17 +446,32 @@ h3,
 .detail-delete {
   display: flex;
   align-items: center;
-  min-width: 0;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  justify-content: flex-end;
+  min-height: 96px;
+  margin-top: 18px;
 }
-.detail-delete .btn {
-  color: var(--danger-ink);
+.detail-delete > .meta {
+  display: none;
 }
-.detail-delete .btn:hover {
+.detail-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 11px 16px;
+  border: 1px solid color-mix(in oklch, var(--danger) 45%, var(--border));
+  border-radius: 10px;
   background: var(--danger-soft);
+  color: var(--danger-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.detail-delete-btn:hover {
+  background: color-mix(in oklch, var(--danger) 19%, var(--surface));
+}
+.detail-delete-btn svg {
+  width: 20px;
+  height: 20px;
 }
 /* 外部 dsh web 列表行。 */
 .ext-row {
@@ -624,9 +646,16 @@ h3,
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
-  padding: 14px 10px 0 14px;
+  min-height: 54px;
+  padding: 10px 10px 8px 12px;
+}
+.side-head .brand {
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  flex: 1;
 }
 .collapse-btn {
   display: grid;
@@ -869,16 +898,13 @@ h3,
 
 /* rail(折叠) */
 .app-shell.rail .side-head {
-  flex-direction: column;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 0 0;
-  /* 顶栏负责窗口控件区域，折叠侧栏不需要额外顶部留白。 */
+  min-height: 52px;
+  padding: 8px 0;
 }
-.app-shell.rail .brand {
-  flex-direction: column;
-  gap: 0;
-  padding: 9px 0;
+.app-shell.rail .side-head .brand {
+  flex: 0;
+  padding: 0;
 }
 .app-shell.rail .brand-text {
   display: none;
@@ -1463,7 +1489,7 @@ h3,
 }
 .type-card[aria-pressed='true'] {
   border-color: var(--info);
-  background: var(--info-soft);
+  background: var(--selection-soft);
 }
 .type-card .tc-icon {
   width: 26px;

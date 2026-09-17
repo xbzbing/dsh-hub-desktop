@@ -45,6 +45,20 @@ export default function Sidebar(): ReactNode {
     <aside className="sidebar" data-testid="sidebar">
       <div className="side-head">
         <button
+          className="brand"
+          onClick={() => select(null)}
+          title={t('nav.backToWorkbench')}
+          data-testid="brand"
+        >
+          <span className="brand-mark">
+            <Icon name="hub" />
+          </span>
+          <span className="brand-text">
+            <b>DSH Hub</b>
+            <em>{t('nav.brandTagline')}</em>
+          </span>
+        </button>
+        <button
           className="collapse-btn"
           aria-label={rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
           title={`${rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')} (⌘B)`}
@@ -53,20 +67,6 @@ export default function Sidebar(): ReactNode {
           <Icon name={rail ? 'expand' : 'collapse'} />
         </button>
       </div>
-      <button
-        className="brand"
-        onClick={() => select(null)}
-        title={t('nav.backToWorkbench')}
-        data-testid="brand"
-      >
-        <span className="brand-mark">
-          <Icon name="hub" />
-        </span>
-        <span className="brand-text">
-          <b>DSH Hub</b>
-          <em>{t('nav.brandTagline')}</em>
-        </span>
-      </button>
       <div className="side-tools">
         <label className="search">
           <Icon name="search" />

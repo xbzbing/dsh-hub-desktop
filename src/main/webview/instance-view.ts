@@ -35,6 +35,8 @@ export interface InstanceViewWindow {
   loadURL(url: string): Promise<void>
   webContents: {
     session: { cookies: CookieSetter }
+    /** Electron 当前页面 URL；提供时允许复用已加载工作区而不重复导航。 */
+    getURL?(): string
     /** electron `will-redirect`;可选以保持最小测试假件简单 */
     on?(event: 'will-redirect', listener: (_event: unknown, url: string) => void): void
   }
@@ -82,6 +84,9 @@ export async function openInstanceView<W extends InstanceViewWindow>(
   args: OpenInstanceViewArgs
 ): Promise<boolean> {
   const win = deps.createWindow()
+  // `prepare` has already made the existing WebContentsView visible. Reusing an
+  // unchanged URL preserves its document and avoids a flash/reload on instance switching.
+  if (win.webContents.getURL?.() === args.url) return false
   deps.installIntercept(win)
   let redirectedTo: string | null = null
   win.webContents.on?.('will-redirect', (_event, url) => {

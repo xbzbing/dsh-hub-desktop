@@ -4,6 +4,7 @@ vi.mock('electron', () => {
   class FakeWebContents {
     handlers = new Map<string, (...args: unknown[]) => void>()
     loadURL = vi.fn(async () => undefined)
+    getURL = vi.fn(() => '')
     setWindowOpenHandler = vi.fn()
     session = {
       setPermissionRequestHandler: vi.fn(),
@@ -34,6 +35,7 @@ interface TestView {
   webContents: {
     handlers: Map<string, (...args: unknown[]) => void>
     loadURL: ReturnType<typeof vi.fn>
+    getURL: ReturnType<typeof vi.fn>
     setWindowOpenHandler: ReturnType<typeof vi.fn>
     session: {
       setPermissionRequestHandler: ReturnType<typeof vi.fn>
