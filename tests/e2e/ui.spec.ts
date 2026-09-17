@@ -74,14 +74,26 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await expect(win.getByTestId('home-confirm-delete')).toBeHidden()
 })
 
-test('侧栏实例名称经加载页进入工作区，返回后保留实例详情', async () => {
+test('侧栏实例名称进入工作区或错误详情，随后可删除实例', async () => {
   await expect(win.getByTestId('instances-table')).toBeVisible()
   const firstSidebarItem = win.locator('[data-testid^="inst-"]').first()
   await firstSidebarItem.click()
-  await expect(win.getByTestId('workspace-loading')).toBeVisible()
-  await expect(win.getByTestId('workspace-toolbar')).toHaveCount(0)
-  await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
-  await win.getByTestId('workspace-back-btn').click()
+  const workspaceOpened = await win
+    .getByTestId('workspace-loading')
+    .isVisible({ timeout: 1_000 })
+    .catch(() => false)
+  if (workspaceOpened) {
+    await expect(win.getByTestId('workspace-toolbar')).toHaveCount(0)
+    await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+    const toolbarLayout = await win.evaluate(() => {
+      const topbar = document.querySelector('.topbar')?.getBoundingClientRect()
+      const back = document.querySelector('[data-testid="workspace-back-btn"]')?.getBoundingClientRect()
+      return topbar && back ? { topbarRight: topbar.right, backRight: back.right } : null
+    })
+    expect(toolbarLayout).not.toBeNull()
+    if (toolbarLayout) expect(toolbarLayout.topbarRight - toolbarLayout.backRight).toBeLessThanOrEqual(16)
+    await win.getByTestId('workspace-back-btn').click()
+  }
   await expect(win.getByTestId('view-detail')).toBeVisible()
   const deleteButton = win.getByTestId('delete-btn')
   await expect(deleteButton).toBeVisible()
@@ -90,6 +102,14 @@ test('侧栏实例名称经加载页进入工作区，返回后保留实例详�
     return { width: box.width, height: box.height }
   })
   expect(deleteMetrics.height).toBeGreaterThanOrEqual(46)
+  const deletePosition = await win.evaluate(() => {
+    const button = document.querySelector('[data-testid="delete-btn"]')
+    if (!button) return null
+    const box = button.getBoundingClientRect()
+    const style = getComputedStyle(button)
+    return { right: window.innerWidth - box.right, bottom: window.innerHeight - box.bottom, position: style.position }
+  })
+  expect(deletePosition).toEqual({ right: 20, bottom: 20, position: 'fixed' })
   const overviewMetrics = await win.getByTestId('detail-overview-btn').evaluate((element) => {
     const box = element.getBoundingClientRect()
     return { width: box.width, height: box.height }

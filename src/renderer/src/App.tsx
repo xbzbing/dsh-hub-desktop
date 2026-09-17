@@ -114,7 +114,9 @@ export default function App() {
           <span className="tb-sub" data-testid="tb-sub">
             {workspaceOpen ? workspaceAddress ?? selectedInstance?.name ?? t('common.unknown') : selectedStatus?.detail ?? t('nav.instanceCount', { n: instances.length })}
           </span>
-          {workspaceOpen && (
+        </div>
+        {workspaceOpen && (
+          <div className="tb-right">
             <button
               className="workspace-back"
               onClick={() => {
@@ -123,10 +125,10 @@ export default function App() {
               }}
               data-testid="workspace-back-btn"
             >
-              <Icon name="back" /> {t('common.backToOverview')}
+              <Icon name="back" /> {t('detail.instanceDetail')}
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
       <Sidebar />
       <main ref={contentRef} className={`content${workspaceOpen ? ' workspace-active' : ''}`}>
