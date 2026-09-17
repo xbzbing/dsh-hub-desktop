@@ -8,7 +8,8 @@ describe('settings（非敏感偏好）', () => {
       theme: 'system',
       tray: false,
       autoStart: false,
-      notifications: true
+      notifications: true,
+      workspaceCacheSize: 5
     })
   })
 
@@ -29,7 +30,8 @@ describe('settings（非敏感偏好）', () => {
       theme: 'dark',
       tray: true,
       autoStart: true,
-      notifications: false
+      notifications: false,
+      workspaceCacheSize: 7
     }
     expect(normalizeSettings(input)).toEqual(input)
   })
@@ -40,14 +42,16 @@ describe('settings（非敏感偏好）', () => {
       theme: 'rainbow', // 非法
       tray: 'yes', // 非法
       autoStart: true,
-      notifications: false
+      notifications: false,
+      workspaceCacheSize: 5
     })
     expect(normalized).toEqual({
       language: 'en', // 保留
       theme: 'system', // 回落默认
       tray: false, // 回落默认
       autoStart: true, // 保留
-      notifications: false // 保留
+      notifications: false, // 保留
+      workspaceCacheSize: 5 // 缺失回落默认
     })
   })
 

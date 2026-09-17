@@ -28,6 +28,7 @@ import {
   type VaultPolicy,
   type VaultStatusSnapshot,
   type InstanceSummary,
+  type InstanceRuntimeStatus,
   type IpcResult,
   type LocalDshSnapshot,
   type WorkspaceViewBounds
@@ -167,7 +168,7 @@ function externalAccessUrl(token: string, port: number): string {
   return `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`
 }
 
-function toSummary(record: InstanceRecord): InstanceSummary {
+function toSummary(record: InstanceRecord, runtimeStatus?: InstanceRuntimeStatus): InstanceSummary {
   const address =
     record.transport === 'local'
       ? `127.0.0.1:${record.port ?? '—'}`
@@ -180,6 +181,7 @@ function toSummary(record: InstanceRecord): InstanceSummary {
     transport: record.transport,
     authMode: record.authMode,
     address,
+    ...(runtimeStatus ? { runtimeStatus } : {}),
     updatedAt: record.updatedAt
   }
 }
@@ -210,8 +212,16 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
 
   // —— 实例注册表 CRUD ——
 
+  function statusFor(record: InstanceRecord): InstanceRuntimeStatus | undefined {
+    return record.transport === 'ssh'
+      ? deps.tunnels.statusOf(record.id)?.status
+      : record.transport === 'http'
+        ? deps.http.statusOf(record.id)?.status
+        : deps.runtime.statusOf(record.id)?.status
+  }
+
   ipcMain.handle(INSTANCE_IPC.list, (): Promise<IpcResult<InstanceSummary[]>> =>
-    wrap(() => store.list().then((records) => records.map(toSummary)))
+    wrap(() => store.list().then((records) => records.map((record) => toSummary(record, statusFor(record)))))
   )
 
   ipcMain.handle(INSTANCE_IPC.get, (_event, id: unknown): Promise<IpcResult<InstanceRecord | null>> =>

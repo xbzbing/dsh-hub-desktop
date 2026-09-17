@@ -15,10 +15,13 @@ interface Entry {
   instanceId: string
   originUrl: string
   view: WebContentsView
+  lastUsed: number
 }
 
 export interface WorkspaceHost {
   prepare(instanceId: string, url: string): WorkspaceView
+  /** 调整已缓存实例视图上限；超出的最久未使用非活动视图立即回收。 */
+  setCacheLimit(limit: number): void
   setBounds(bounds: WorkspaceViewBounds): void
   hide(): void
   close(instanceId: string): void
@@ -33,6 +36,23 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
   const entries = new Map<string, Entry>()
   let activeId: string | null = null
   let activeBounds: WorkspaceViewBounds | null = null
+  let cacheLimit = 5
+  let useSequence = 0
+
+  function touch(entry: Entry): void {
+    useSequence += 1
+    entry.lastUsed = useSequence
+  }
+
+  function trimCache(): void {
+    while (entries.size > cacheLimit) {
+      const oldest = [...entries.values()]
+        .filter((entry) => entry.instanceId !== activeId)
+        .sort((a, b) => a.lastUsed - b.lastUsed)[0]
+      if (!oldest) return
+      close(oldest.instanceId)
+    }
+  }
 
   function configure(entry: Entry): void {
     const { webContents } = entry.view
@@ -56,6 +76,7 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
       entry = {
         instanceId,
         originUrl: url,
+        lastUsed: 0,
         view: new WebContentsView({
           webPreferences: {
             partition: `persist:inst-${instanceId}`,
@@ -73,9 +94,11 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
     } else {
       entry.originUrl = url
     }
+    touch(entry)
     for (const candidate of entries.values()) candidate.view.setVisible(candidate.instanceId === instanceId)
     if (activeBounds) entry.view.setBounds(activeBounds)
     activeId = instanceId
+    trimCache()
     return {
       loadURL: (target) => entry.view.webContents.loadURL(target),
       webContents: entry.view.webContents
@@ -98,6 +121,11 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
     if (activeId === instanceId) activeId = null
   }
 
+  function setCacheLimit(limit: number): void {
+    cacheLimit = Math.max(1, Math.floor(limit))
+    trimCache()
+  }
+
   function setBounds(bounds: WorkspaceViewBounds): void {
     activeBounds = bounds
     if (activeId === null) return
@@ -110,6 +138,7 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
 
   return {
     prepare,
+    setCacheLimit,
     setBounds,
     hide,
     close,

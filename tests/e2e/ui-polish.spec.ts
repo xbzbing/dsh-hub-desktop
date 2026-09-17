@@ -128,7 +128,12 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   // 截图目验:展开态
   await win.screenshot({ path: join(SHOT_DIR, 'shell-expanded.png'), animations: 'disabled' })
 
-  // 折叠态(⌘B):64px 栏 + 全宽顶栏,无红绿灯冲突
+  // 折叠态(⌘B):64px 栏 + 全宽顶栏；展开/收起控件固定在侧栏底部，避免与 Logo 冲突。
+  const collapseBefore = await win.getByTestId('sidebar-collapse-btn').boundingBox()
+  const sidebarBefore = await win.getByTestId('sidebar').boundingBox()
+  expect(collapseBefore).not.toBeNull()
+  expect(sidebarBefore).not.toBeNull()
+  if (collapseBefore && sidebarBefore) expect(collapseBefore.y).toBeGreaterThan(sidebarBefore.y + sidebarBefore.height / 2)
   await win.keyboard.press('Meta+b')
   await win.waitForTimeout(300)
   await win.screenshot({ path: join(SHOT_DIR, 'shell-rail.png'), animations: 'disabled' })
@@ -136,6 +141,11 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
     () => getComputedStyle(document.querySelector('[data-testid="app-shell"]') as Element).gridTemplateColumns
   )
   expect(railCols.split(' ')[0]).toBe('64px')
+  const collapseAfter = await win.getByTestId('sidebar-collapse-btn').boundingBox()
+  const brandAfter = await win.getByTestId('brand').boundingBox()
+  expect(collapseAfter).not.toBeNull()
+  expect(brandAfter).not.toBeNull()
+  if (collapseAfter && brandAfter) expect(collapseAfter.y).toBeGreaterThan(brandAfter.y + brandAfter.height)
   await win.keyboard.press('Meta+b')
   await win.waitForTimeout(300)
 })

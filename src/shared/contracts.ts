@@ -448,6 +448,8 @@ export interface InstanceSummary {
   authMode: AuthMode
   /** 展示用地址一次算好(避免渲染层为每行再发 get) */
   address: string
+  /** 列表快照携带主进程已知的当前运行态，避免 renderer 重载后退回灰色 idle。 */
+  runtimeStatus?: InstanceRuntimeStatus
   updatedAt: string
 }
 

@@ -21,7 +21,9 @@ export const SettingsSchema = z.object({
   /** 开机自启 */
   autoStart: z.boolean().default(false),
   /** 实例状态变化弹系统通知 */
-  notifications: z.boolean().default(true)
+  notifications: z.boolean().default(true),
+  /** 内嵌工作区 WebContentsView 的 LRU 缓存上限。 */
+  workspaceCacheSize: z.number().int().min(1).max(10).default(5)
 })
 
 export type Settings = z.infer<typeof SettingsSchema>
@@ -61,6 +63,7 @@ export function normalizeSettings(value: unknown): Settings {
     theme: pick('theme'),
     tray: pick('tray'),
     autoStart: pick('autoStart'),
-    notifications: pick('notifications')
+    notifications: pick('notifications'),
+    workspaceCacheSize: pick('workspaceCacheSize')
   }
 }

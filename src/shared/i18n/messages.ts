@@ -175,6 +175,11 @@ export const MESSAGES = {
   'settings.tray': { zh: '关闭窗口时最小化到托盘', en: 'Minimize to tray when the window closes' },
   'settings.autoStart': { zh: '开机自启', en: 'Launch at login' },
   'settings.notifications': { zh: '实例状态通知', en: 'Instance status notifications' },
+  'settings.workspaceCache': { zh: '工作区缓存数量', en: 'Workspace cache size' },
+  'settings.workspaceCacheHint': {
+    zh: '保留最近使用的工作区；切换时可减少重新加载',
+    en: 'Keeps recently used workspaces ready for faster switching'
+  },
   'settings.dataDir': { zh: '数据目录', en: 'Data directory' },
   // 数据目录提供「打开」控件。
   'settings.openDataDir': { zh: '打开', en: 'Open' },

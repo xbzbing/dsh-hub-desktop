@@ -896,6 +896,19 @@ h3,
   flex: none !important;
 }
 
+.side-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+.side-collapse-btn .fx-label {
+  font-size: 12px;
+}
+
 /* rail(折叠) */
 .app-shell.rail .side-head {
   justify-content: center;
@@ -989,6 +1002,14 @@ h3,
   width: 100%;
   padding: 0;
   min-height: 32px;
+}
+.app-shell.rail .side-foot .side-collapse-btn {
+  display: grid;
+  place-items: center;
+  min-height: 32px;
+}
+.app-shell.rail .side-foot .side-collapse-btn .fx-label {
+  display: none;
 }
 .app-shell.rail .fx-label {
   display: none;

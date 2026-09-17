@@ -202,9 +202,10 @@ describe('设置跨版本升级路径', () => {
       theme: 'dark',
       tray: true,
       autoStart: true,
-      notifications: false
+      notifications: false,
+      workspaceCacheSize: 5
     })
-    for (const [key, value] of Object.entries(settings)) {
+    for (const [key, value] of Object.entries(settings).filter(([key]) => key !== 'workspaceCacheSize')) {
       expect(value, `字段 ${key} 恰好等于默认值,夹具失去检出能力`).not.toEqual(
         DEFAULT_SETTINGS[key as keyof typeof DEFAULT_SETTINGS]
       )
@@ -253,7 +254,8 @@ describe('设置跨版本升级路径', () => {
       notifications: false,
       // 'neon' / 'yes' 不是合法取值 → 各自回落默认值,而不是整份重置
       theme: 'system',
-      autoStart: false
+      autoStart: false,
+      workspaceCacheSize: 5
     })
     // 逐字段收敛是**静默**的(设置坏了不该拦住启动),不产出噪音错误
     expect(errorSeen).toBeNull()

@@ -115,13 +115,27 @@ export default function SettingsView(): ReactNode {
           <span>{t('settings.autoStart')}</span>
         </label>
         <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+          <span style={{ flex: 1 }}>
+            <span>{t('settings.workspaceCache')}</span>
+            <span className="meta" style={{ display: 'block', marginTop: 2 }}>
+              {t('settings.workspaceCacheHint')}
+            </span>
+          </span>
           <input
-            type="checkbox"
-            data-testid="settings-notifications"
-            checked={settings.notifications}
-            onChange={(event) => apply({ notifications: event.target.checked })}
+            className="input"
+            type="number"
+            min={1}
+            max={10}
+            step={1}
+            value={settings.workspaceCacheSize}
+            aria-label={t('settings.workspaceCache')}
+            data-testid="settings-workspace-cache-size"
+            onChange={(event) => {
+              const value = Number(event.target.value)
+              if (Number.isInteger(value) && value >= 1 && value <= 10) apply({ workspaceCacheSize: value })
+            }}
+            style={{ width: 70 }}
           />
-          <span>{t('settings.notifications')}</span>
         </label>
       </div>
 

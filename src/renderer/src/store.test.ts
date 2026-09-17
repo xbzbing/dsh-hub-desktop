@@ -11,7 +11,8 @@ const DEFAULTS: Settings = {
   theme: 'system',
   tray: false,
   autoStart: false,
-  notifications: true
+  notifications: true,
+  workspaceCacheSize: 5
 }
 
 type SettingsResult = { ok: true; value: Settings } | { ok: false; message: string }
@@ -199,9 +200,56 @@ describe('store settings', () => {
     expect(useAppStore.getState().theme).toBe('dark')
   })
 
-  /**
-   * applyStatus 创建新的状态对象，使 Zustand 订阅者接收到状态更新。
-   */
+  it('刷新列表用主进程运行态快照恢复已连接状态，避免侧栏回退为灰色', async () => {
+    const useAppStore = await freshStore()
+    settingsValue = { ...DEFAULTS }
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: {
+        ...window.dshHub,
+        instances: {
+          list: async () => ({
+            ok: true as const,
+            value: [
+              {
+                id: 'running-instance',
+                name: '运行中实例',
+                transport: 'local' as const,
+                authMode: 'auto' as const,
+                address: '127.0.0.1:3080',
+                runtimeStatus: 'running' as const,
+                updatedAt: '2026-09-16T00:00:00.000Z'
+              }
+            ]
+          })
+        }
+      }
+    })
+
+    await useAppStore.getState().refreshList()
+    expect(toStatusInfo(useAppStore.getState().statuses['running-instance']?.status).dotClass).toBe('s-connected')
+  })
+
+  it('打开向导时隐藏工作区，关闭后恢复同一已缓存工作区', async () => {
+    const useAppStore = await freshStore()
+    const hideView = vi.fn()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView } }
+    })
+    useAppStore.setState({ selection: 'instance-1', workspaceOpen: true })
+
+    useAppStore.getState().setWizardOpen(true)
+    expect(hideView).toHaveBeenCalledOnce()
+    expect(useAppStore.getState().workspaceSuspendedForWizard).toBe(true)
+
+    useAppStore.getState().setWizardOpen(false)
+    await vi.waitFor(() => expect(openView).toHaveBeenCalledWith('instance-1'))
+    expect(useAppStore.getState().workspaceOpen).toBe(true)
+  })
+
+
   it('选中实例或回到总览都会退出设置页（设置页不能困住导航）', async () => {
     const useAppStore = await freshStore()
     useAppStore.getState().setSettingsOpen(true)

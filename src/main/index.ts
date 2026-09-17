@@ -389,6 +389,9 @@ void app.whenReady().then(() => {
 
   const applyNativeSettings = (current: Settings, changedKeys: readonly (keyof Settings)[]): void => {
     nativeApplier.apply(current, { changedKeys })
+    if (changedKeys.includes('workspaceCacheSize')) {
+      workspaceHost.setCacheLimit(current.workspaceCacheSize)
+    }
   }
 
   // 这里只注入「偏好/语言」两个取值端口(三审 Finding 2)
@@ -423,6 +426,7 @@ void app.whenReady().then(() => {
       status: tr('tray.status', { count: runningInstanceCount() })
     }
   }
+  workspaceHost.setCacheLimit(settings.read().workspaceCacheSize)
   nativeApplier.apply(settings.read(), { startup: true })
   audit = createAuditLog({ dir: join(dataRoot, 'audit') })
   if (!safeStorageAvailable) {

@@ -58,14 +58,6 @@ export default function Sidebar(): ReactNode {
             <em>{t('nav.brandTagline')}</em>
           </span>
         </button>
-        <button
-          className="collapse-btn"
-          aria-label={rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
-          title={`${rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')} (⌘B)`}
-          onClick={toggleRail}
-        >
-          <Icon name={rail ? 'expand' : 'collapse'} />
-        </button>
       </div>
       <div className="side-tools">
         <label className="search">
@@ -137,6 +129,16 @@ export default function Sidebar(): ReactNode {
             <Icon name={theme === 'light' ? 'moon' : 'sun'} />
           </button>
         </div>
+        <button
+          className="collapse-btn side-collapse-btn"
+          aria-label={rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+          title={`${rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')} (⌘B)`}
+          onClick={toggleRail}
+          data-testid="sidebar-collapse-btn"
+        >
+          <Icon name={rail ? 'expand' : 'collapse'} />
+          <span className="fx-label">{rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')}</span>
+        </button>
       </div>
     </aside>
   )

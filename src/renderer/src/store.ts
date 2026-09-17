@@ -34,6 +34,8 @@ interface AppState {
   workspaceOpen: boolean
   /** 正在检测并打开实例工作区；完成前保持加载中间页而不是切换详情。 */
   workspaceOpening: boolean
+  /** 向导暂时遮挡了主进程工作区；关闭向导后恢复已缓存视图。 */
+  workspaceSuspendedForWizard: boolean
   setWorkspaceOpen: (open: boolean) => void
   rail: boolean
   theme: 'light' | 'dark'
@@ -119,6 +121,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   selection: null,
   workspaceOpen: false,
   workspaceOpening: false,
+  workspaceSuspendedForWizard: false,
   rail: false,
   theme: initialTheme(),
   wizardOpen: false,
@@ -189,7 +192,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (!bridge) return
     const result = await bridge.instances.list()
     if (result.ok) {
-      set({ instances: result.value })
+      const snapshotStatuses = result.value.reduce<Record<string, InstanceStatusEvent>>((statuses, instance) => {
+        if (instance.runtimeStatus) {
+          statuses[instance.id] = { id: instance.id, status: instance.runtimeStatus, at: instance.updatedAt }
+        }
+        return statuses
+      }, {})
+      // 推送事件优先于列表快照，避免列表读取期间的旧快照覆盖最新状态。
+      set((state) => ({ instances: result.value, statuses: { ...snapshotStatuses, ...state.statuses } }))
     }
   },
 
@@ -282,7 +292,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
     })
   },
 
-  setWizardOpen: (open) => set({ wizardOpen: open }),
+  setWizardOpen: (open) => {
+    const state = get()
+    if (open) {
+      const suspendWorkspace = state.workspaceOpen && state.selection !== null
+      if (suspendWorkspace) void window.dshHub?.runtime?.hideView()
+      set({ wizardOpen: true, workspaceSuspendedForWizard: suspendWorkspace })
+      return
+    }
+
+    const resumeId = state.workspaceSuspendedForWizard ? state.selection : null
+    set({ wizardOpen: false, workspaceSuspendedForWizard: false })
+    if (!resumeId) return
+    void window.dshHub?.runtime.openView(resumeId).then((result) => {
+      if (result?.ok && get().selection === resumeId && !get().wizardOpen) set({ workspaceOpen: true })
+    })
+  },
   setSettingsOpen: (open) => {
     if (open) void window.dshHub?.runtime?.hideView()
     set({ settingsOpen: open, workspaceOpen: false, workspaceOpening: false, ...(open ? { selection: null } : {}) })

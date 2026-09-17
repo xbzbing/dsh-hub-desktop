@@ -112,6 +112,35 @@ describe('createWorkspaceHost', () => {
     expect(allowed.preventDefault).not.toHaveBeenCalled()
   })
 
+  it('按 LRU 保留有限数量的非活动工作区视图', () => {
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never)
+    host.setCacheLimit(2)
+    host.prepare('11111111-1111-4111-8111-111111111111', 'http://127.0.0.1:3080/')
+    host.prepare('22222222-2222-4222-8222-222222222222', 'http://127.0.0.1:3081/')
+    host.prepare('33333333-3333-4333-8333-333333333333', 'http://127.0.0.1:3082/')
+
+    expect(fakeViews()).toHaveLength(3)
+    expect(hub.contentView.removeChildView).toHaveBeenCalledWith(fakeViews()[0])
+    expect(fakeViews()[0]?.webContents.close).toHaveBeenCalled()
+    expect(fakeViews()[1]?.webContents.close).not.toHaveBeenCalled()
+    expect(fakeViews()[2]?.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('降低缓存上限时不回收当前可见工作区', () => {
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never)
+    host.setCacheLimit(3)
+    host.prepare('11111111-1111-4111-8111-111111111111', 'http://127.0.0.1:3080/')
+    host.prepare('22222222-2222-4222-8222-222222222222', 'http://127.0.0.1:3081/')
+    host.prepare('33333333-3333-4333-8333-333333333333', 'http://127.0.0.1:3082/')
+
+    host.setCacheLimit(1)
+    expect(fakeViews()[0]?.webContents.close).toHaveBeenCalled()
+    expect(fakeViews()[1]?.webContents.close).toHaveBeenCalled()
+    expect(fakeViews()[2]?.webContents.close).not.toHaveBeenCalled()
+  })
+
   it('hides and destroys guest views without exposing them to the renderer', () => {
     const hub = hubWindow()
     const host = createWorkspaceHost(() => hub as never)
