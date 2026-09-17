@@ -134,6 +134,17 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   expect(collapseBefore).not.toBeNull()
   expect(sidebarBefore).not.toBeNull()
   if (collapseBefore && sidebarBefore) expect(collapseBefore.y).toBeGreaterThan(sidebarBefore.y + sidebarBefore.height / 2)
+  // 收起按钮与设置/主题同排(位于 .side-foot .row 内),不再独占一行
+  const collapseInRow = await win.evaluate(
+    () => Boolean(document.querySelector('[data-testid="sidebar-collapse-btn"]')?.closest('.side-foot .row'))
+  )
+  expect(collapseInRow).toBe(true)
+  // 展开态 logo 保持设计尺寸 28×28(此前 rail 下被 flex:0 压成 16px)
+  const expandedMark = await win.evaluate(() => {
+    const mark = document.querySelector('[data-testid="brand"] .brand-mark') as HTMLElement | null
+    return mark ? Math.round(mark.getBoundingClientRect().width) : null
+  })
+  expect(expandedMark).toBe(28)
   await win.keyboard.press('Meta+b')
   await win.waitForTimeout(300)
   await win.screenshot({ path: join(SHOT_DIR, 'shell-rail.png'), animations: 'disabled' })
@@ -146,6 +157,13 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   expect(collapseAfter).not.toBeNull()
   expect(brandAfter).not.toBeNull()
   if (collapseAfter && brandAfter) expect(collapseAfter.y).toBeGreaterThan(brandAfter.y + brandAfter.height)
+  // 折叠态 logo 不得小于展开态(此前被压缩到 16px)
+  const railMark = await win.evaluate(() => {
+    const mark = document.querySelector('[data-testid="brand"] .brand-mark') as HTMLElement | null
+    return mark ? Math.round(mark.getBoundingClientRect().width) : null
+  })
+  expect(railMark).not.toBeNull()
+  if (railMark !== null && expandedMark !== null) expect(Math.abs(railMark - expandedMark)).toBeLessThanOrEqual(3)
   await win.keyboard.press('Meta+b')
   await win.waitForTimeout(300)
 })

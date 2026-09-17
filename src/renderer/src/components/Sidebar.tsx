@@ -128,17 +128,16 @@ export default function Sidebar(): ReactNode {
           >
             <Icon name={theme === 'light' ? 'moon' : 'sun'} />
           </button>
+          <button
+            className="btn btn-ghost btn-sm icon-btn collapse-btn"
+            aria-label={rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+            title={`${rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')} (⌘B)`}
+            onClick={toggleRail}
+            data-testid="sidebar-collapse-btn"
+          >
+            <Icon name={rail ? 'expand' : 'collapse'} />
+          </button>
         </div>
-        <button
-          className="collapse-btn side-collapse-btn"
-          aria-label={rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
-          title={`${rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')} (⌘B)`}
-          onClick={toggleRail}
-          data-testid="sidebar-collapse-btn"
-        >
-          <Icon name={rail ? 'expand' : 'collapse'} />
-          <span className="fx-label">{rail ? t('nav.expandSidebar') : t('nav.collapseSidebar')}</span>
-        </button>
       </div>
     </aside>
   )
