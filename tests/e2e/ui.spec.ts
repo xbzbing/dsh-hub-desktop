@@ -43,9 +43,12 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await expect(win.getByTestId('type-local')).toHaveAttribute('aria-pressed', 'true')
   await win.getByRole('button', { name: '下一步' }).click()
 
-  // 第 2 步:配置
+  // 第 2 步:空名称先显示校验错误；输入名称后错误应立即消失。
   await expect(win.getByTestId('wizard-step-2')).toBeVisible()
+  await win.getByRole('button', { name: '下一步' }).click()
+  await expect(win.getByText('请填写实例名称')).toBeVisible()
   await win.getByTestId('wizard-name').fill('E2E 演示实例')
+  await expect(win.getByText('请填写实例名称')).toBeHidden()
   await win.getByRole('button', { name: '下一步' }).click()
 
   // 第 3 步:确认并创建

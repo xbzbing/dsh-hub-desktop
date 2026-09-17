@@ -57,7 +57,11 @@ export default function Wizard(): ReactNode {
   const [form, setForm] = useState<WizardForm>(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
   const [localDsh, setLocalDsh] = useState<{ command: string; version: string } | null>(null)
-  const [externalPort, setExternalPort] = useState<number | null>(null)
+  const [externalWorkspace, setExternalWorkspace] = useState<{
+    pid: number
+    port: number
+    patch: string | null
+  } | null>(null)
   const [useExistingExternal, setUseExistingExternal] = useState(false)
   const [localProbeDone, setLocalProbeDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -77,7 +81,15 @@ export default function Wizard(): ReactNode {
       ([runtime, external]) => {
         if (!cancelled) {
           setLocalDsh(runtime?.ok ? runtime.value : null)
-          setExternalPort(external?.ok ? (external.value.find((item) => item.port !== null)?.port ?? null) : null)
+          setExternalWorkspace(
+            external?.ok
+              ? (external.value.find((item) => item.port !== null) as {
+                  pid: number
+                  port: number
+                  patch: string | null
+                } | undefined) ?? null
+              : null
+          )
           setLocalProbeDone(true)
         }
       }
@@ -89,7 +101,9 @@ export default function Wizard(): ReactNode {
 
 
   const set = (key: keyof WizardForm) => (event: { target: { value: string } }) => {
-    setForm((current) => ({ ...current, [key]: event.target.value }))
+    const value = event.target.value
+    setForm((current) => ({ ...current, [key]: value }))
+    if (key === 'name' && value.trim() !== '') setError(null)
   }
 
   const formError = (): string | null => {
@@ -261,11 +275,11 @@ export default function Wizard(): ReactNode {
 
           {transport === 'local' && (
             <>
-              {externalPort !== null && (
+              {externalWorkspace && (
                 <div className="note n-info mt12" data-testid="wizard-external-dsh">
                   <Icon name="info" />
                   <div>
-                    <b>{t('wizard.externalDetected', { port: externalPort })}</b>
+                    <b>{t('wizard.externalDetected', { port: externalWorkspace.port })}</b>
                     <label className="check mt8">
                       <input
                         type="checkbox"
@@ -425,24 +439,54 @@ export default function Wizard(): ReactNode {
               <dd>{form.name}</dd>
               <dt>{t('wizard.dtTransport')}</dt>
               <dd>
-                {t(TYPE_INFO[transport].labelKey)}
+                {transport === 'local' && useExistingExternal
+                  ? t('wizard.currentWorkspace')
+                  : t(TYPE_INFO[transport].labelKey)}
                 {transport === 'ssh' && form.username ? ` · ${form.username}@${form.host}` : ''}
               </dd>
               <dt>{t('wizard.dtAddress')}</dt>
               <dd className="num">
                 {transport === 'local'
-                  ? t('wizard.autoPort')
+                  ? useExistingExternal && externalWorkspace
+                    ? `127.0.0.1:${externalWorkspace.port}`
+                    : t('wizard.autoPort')
                   : transport === 'ssh'
                     ? `${form.host}:${form.remotePort}`
                     : form.endpointUrl}
               </dd>
+              {transport === 'local' && useExistingExternal && externalWorkspace && (
+                <>
+                  <dt>PID</dt>
+                  <dd className="num">{externalWorkspace.pid}</dd>
+                  <dt>{t('detail.externalPatch')}</dt>
+                  <dd className="num">
+                    {externalWorkspace.patch
+                      ? t('wizard.externalPatch', { patch: externalWorkspace.patch })
+                      : t('wizard.externalNoPatch')}
+                  </dd>
+                </>
+              )}
             </dl>
           </div>
           <div className="note n-info mt12">
-            <Icon name={transport === 'local' ? 'check' : transport === 'ssh' ? 'shield' : 'info'} />
+            <Icon
+              name={
+                transport === 'local'
+                  ? useExistingExternal
+                    ? 'info'
+                    : 'check'
+                  : transport === 'ssh'
+                    ? 'shield'
+                    : 'info'
+              }
+            />
             <span>
               {transport === 'local'
-                ? t('wizard.noteLocal')
+                ? useExistingExternal
+                  ? t('wizard.connectExistingNote')
+                  : localDsh
+                    ? t('wizard.createNewNote')
+                    : t('wizard.noteLocal')
                 : transport === 'ssh'
                   ? t('wizard.noteSsh')
                   : t('wizard.noteHttp')}
