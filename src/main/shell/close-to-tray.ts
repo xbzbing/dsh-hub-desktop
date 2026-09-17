@@ -18,6 +18,8 @@ export interface CloseToTrayDeps {
   settings(): Pick<Settings, 'tray'> | null
   /** 托盘**确实存在**(注意:不是「偏好开着」) */
   trayAvailable(): boolean
+  /** 正在退出时必须放行 close，不能再隐藏窗口。 */
+  isQuitting(): boolean
   hideWindow(): void
 }
 
@@ -26,6 +28,8 @@ export interface CloseToTrayDeps {
  * @returns true 表示已拦截关闭并隐藏到托盘;false 表示放行(真正关闭窗口)
  */
 export function handleWindowClose(event: CloseEventLike, deps: CloseToTrayDeps): boolean {
+  // 托盘菜单的「退出」会触发所有窗口的 close；此时不能再把窗口藏回托盘。
+  if (deps.isQuitting()) return false
   const current = deps.settings()
   // 偏好未装配时不做任何拦截(启动早期的关闭必须能真的关掉)
   if (!current) return false

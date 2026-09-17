@@ -6,12 +6,12 @@ import { handleWindowClose } from './close-to-tray'
  * **硬编码成 `true`**。纯函数测试覆盖不了它(纯函数本身没错),本文件覆盖接线:
  * 「托盘是否存在」必须实时查询,且只在真的该隐藏时才拦截关闭。
  */
-function setup(settings: { tray: boolean } | null, trayAvailable: boolean) {
+function setup(settings: { tray: boolean } | null, trayAvailable: boolean, quitting = false) {
   const preventDefault = vi.fn()
   const hideWindow = vi.fn()
   const handled = handleWindowClose(
     { preventDefault },
-    { settings: () => settings, trayAvailable: () => trayAvailable, hideWindow }
+    { settings: () => settings, trayAvailable: () => trayAvailable, isQuitting: () => quitting, hideWindow }
   )
   return { handled, preventDefault, hideWindow }
 }
@@ -45,11 +45,18 @@ describe('handleWindowClose（close-to-tray 接线）', () => {
     expect(preventDefault).not.toHaveBeenCalled()
   })
 
+  it('正在退出时放行关闭，避免托盘退出又把窗口隐藏回去', () => {
+    const { handled, preventDefault, hideWindow } = setup({ tray: true }, true, true)
+    expect(handled).toBe(false)
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(hideWindow).not.toHaveBeenCalled()
+  })
+
   it('托盘存在性必须**实时查询**,不能用常量代替(「写死 trayAvailable」的锚点)', () => {
     const trayAvailable = vi.fn(() => false)
     handleWindowClose(
       { preventDefault: vi.fn() },
-      { settings: () => ({ tray: true }), trayAvailable, hideWindow: vi.fn() }
+      { settings: () => ({ tray: true }), trayAvailable, isQuitting: () => false, hideWindow: vi.fn() }
     )
     expect(trayAvailable).toHaveBeenCalledTimes(1)
   })

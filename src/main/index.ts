@@ -161,9 +161,8 @@ function showHubWindow(): void {
   }
 }
 
-/** 从托盘退出(绕过「关闭即隐藏」) */
+/** 从托盘退出：`before-quit` 先标记退出，再放行窗口关闭。 */
 function quitApp(): void {
-  quitting = true
   app.quit()
 }
 
@@ -258,6 +257,7 @@ function createWindow(): BrowserWindow {
       settings: () => settingsRef?.read() ?? null,
       // 「托盘是否存在」由端口自己回答(存在性的唯一真理源),这里不做二次判断
       trayAvailable: () => nativePorts?.trayExists() === true,
+      isQuitting: () => quitting,
       hideWindow: () => win.hide()
     })
   })
@@ -650,8 +650,10 @@ void app.whenReady().then(() => {
 })
 
 app.on('before-quit', (event) => {
-  if (quitting || (!runtime && !tunnels && !httpEndpoints)) return
+  // 所有退出路径(即使尚未初始化运行时)都必须先置位，防止 window close 回退为隐藏到托盘。
+  if (quitting) return
   quitting = true
+  if (!runtime && !tunnels && !httpEndpoints) return
   event.preventDefault()
   const recycling: Array<Promise<void>> = []
   if (runtime) {
