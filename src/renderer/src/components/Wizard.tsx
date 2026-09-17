@@ -50,6 +50,7 @@ export default function Wizard(): ReactNode {
   const t = useAppStore((state) => state.t)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
   const refreshList = useAppStore((state) => state.refreshList)
+  const instances = useAppStore((state) => state.instances)
   const openWorkspace = useAppStore((state) => state.openWorkspace)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
   const toast = useAppStore((state) => state.toast)
@@ -108,8 +109,16 @@ export default function Wizard(): ReactNode {
     if (key === 'name' && value.trim() !== '') setError(null)
   }
 
+  const reusableExternalInstance =
+    transport === 'local' && useExistingExternal && externalWorkspace
+      ? instances.find(
+          (instance) => instance.transport === 'local' && instance.address === `127.0.0.1:${externalWorkspace.port}`
+        )
+      : undefined
+  const configuredName = reusableExternalInstance?.name ?? form.name
+
   const formError = (): string | null => {
-    if (!form.name.trim()) return t('wizard.errName')
+    if (!form.name.trim() && !reusableExternalInstance) return t('wizard.errName')
     if (transport === 'local' && useExistingExternal && !form.externalAccess.trim()) {
       return t('wizard.errExternalAccess')
     }
@@ -128,6 +137,28 @@ export default function Wizard(): ReactNode {
     const bridge = window.dshHub
     if (!bridge) return
     const name = form.name.trim()
+    const existingExternalInstance = reusableExternalInstance
+    if (existingExternalInstance) {
+      setBusy(true)
+      setError(null)
+      if (!externalWorkspace) {
+        setError(t('wizard.errExternalAccess'))
+        return
+      }
+      const adopted = await bridge.runtime.adoptExternal(
+        existingExternalInstance.id,
+        externalWorkspace.pid,
+        form.externalAccess.trim()
+      )
+      setBusy(false)
+      if (!adopted.ok) {
+        setError(adopted.message)
+        return
+      }
+      setWizardOpen(false)
+      void openWorkspace(existingExternalInstance.id)
+      return
+    }
     const input: CreateInstanceInput =
       transport === 'local'
         ? {
@@ -277,8 +308,9 @@ export default function Wizard(): ReactNode {
               className="input"
               id="wizard-name"
               placeholder={t('wizard.namePlaceholder')}
-              value={form.name}
+              value={configuredName}
               onChange={set('name')}
+              disabled={reusableExternalInstance !== undefined}
               data-testid="wizard-name"
             />
             <span className="hint">{t('wizard.nameHint')}</span>
@@ -305,6 +337,7 @@ export default function Wizard(): ReactNode {
                         <input
                           className="input num"
                           id="wizard-external-access"
+                          type="password"
                           value={form.externalAccess}
                           onChange={set('externalAccess')}
                           autoComplete="off"
@@ -461,7 +494,7 @@ export default function Wizard(): ReactNode {
           <div className="inset mt12">
             <dl className="kv">
               <dt>{t('wizard.dtName')}</dt>
-              <dd>{form.name}</dd>
+              <dd>{configuredName}</dd>
               <dt>{t('wizard.dtTransport')}</dt>
               <dd>
                 {transport === 'local' && useExistingExternal

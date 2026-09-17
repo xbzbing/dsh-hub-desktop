@@ -1462,8 +1462,8 @@ h3,
   background: var(--hover);
 }
 .type-card[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--info);
+  background: var(--info-soft);
 }
 .type-card .tc-icon {
   width: 26px;

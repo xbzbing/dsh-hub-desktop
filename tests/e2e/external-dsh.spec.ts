@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { _electron as electron, expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 /**
@@ -127,6 +127,63 @@ test('HTTP 实例未启动也能直接打开视图', async () => {
   await expect(openBtn).toBeEnabled()
   await win.screenshot({ path: join(SHOT_DIR, 'http-open-without-start.png'), animations: 'disabled' })
 })
+
+test('重启后接管同一外部 dsh 会复用端口实例，不保存 token 或新建实例', async () => {
+  await win.getByTestId('new-instance-btn').click()
+  await win.getByRole('button', { name: '下一步' }).click()
+  const external = win.getByTestId('wizard-external-dsh')
+  await expect(external).toBeVisible({ timeout: 10_000 })
+  await win.getByTestId('wizard-name').fill('重启后复用实例')
+  await external.getByRole('checkbox').check()
+  await win.getByTestId('wizard-external-access').fill('test-restart-token')
+  await win.getByRole('button', { name: '下一步' }).click()
+  await win.getByTestId('wizard-create').click()
+  await expect(win.getByTestId('wizard')).toBeHidden()
+  await expect.poll(async () =>
+    win.evaluate(async () => {
+      const result = await window.dshHub.instances.list()
+      return result.ok ? result.value.filter((item) => item.name === '重启后复用实例') : []
+    })
+  ).toHaveLength(1)
+  const firstAddress = await win.evaluate(async () => {
+    const result = await window.dshHub.instances.list()
+    return result.ok ? result.value.find((item) => item.name === '重启后复用实例')?.address ?? null : null
+  })
+  expect(firstAddress).toMatch(/^127\.0\.0\.1:\d+$/)
+  const registry = await readFile(join(DATA_DIR, 'registry', 'instances.json'), 'utf8')
+  expect(registry).not.toContain('test-restart-token')
+
+  await app.close()
+  app = await electron.launch({
+    args: launchArgs,
+    env: { ...process.env, DSH_HUB_DATA_DIR: DATA_DIR }
+  })
+  win = await app.firstWindow()
+  await expect(win.getByTestId('app-shell')).toBeVisible()
+  await win.getByTestId('new-instance-btn').click()
+  await win.getByRole('button', { name: '下一步' }).click()
+  const reopenedExternal = win.getByTestId('wizard-external-dsh')
+  await expect(reopenedExternal).toBeVisible({ timeout: 10_000 })
+  await reopenedExternal.getByRole('checkbox').check()
+  await expect(win.getByTestId('wizard-name')).toHaveValue('重启后复用实例')
+  await win.getByTestId('wizard-external-access').fill('test-restart-token')
+  await win.getByRole('button', { name: '下一步' }).click()
+  await win.getByTestId('wizard-create').click()
+  await expect(win.getByTestId('wizard')).toBeHidden()
+  await expect.poll(async () =>
+    win.evaluate(async () => {
+      const result = await window.dshHub.instances.list()
+      return result.ok ? result.value.filter((item) => item.name === '重启后复用实例') : []
+    })
+  ).toHaveLength(1)
+  const restartedAddress = await win.evaluate(async () => {
+    const result = await window.dshHub.instances.list()
+    return result.ok ? result.value.find((item) => item.name === '重启后复用实例')?.address ?? null : null
+  })
+  expect(restartedAddress).toBe(firstAddress)
+  await expect(win.getByTestId('tb-sub')).toHaveText(/127\.0\.0\.1:\d+/)
+})
+
 
 test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   // 接管和断开都不应产生运行信息回写错误。

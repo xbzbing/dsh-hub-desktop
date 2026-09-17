@@ -87,6 +87,14 @@ describe('工作区标题地址', () => {
   })
 })
 
+describe('向导语义色', () => {
+  it('选择态和信息提示使用 info 语义色，而非风险色', () => {
+    const css = readFileSync(join(process.cwd(), 'src/renderer/src/styles.css'), 'utf8')
+    expect(css).toContain(".type-card[aria-pressed='true'] {\n  border-color: var(--info);\n  background: var(--info-soft);")
+    expect(css).toContain('.n-info {\n  background: var(--info-soft);')
+  })
+})
+
 
 export interface SourceFile {
   path: string
