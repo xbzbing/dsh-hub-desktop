@@ -4,8 +4,8 @@
  *
  *  | 存储项 | 默认 | 可选 |
  *  |---|---|---|
- *  | 网关密码 | **不存**(每次输入/会话期内存) | 用户勾选「记住密码」 |
- *  | 会话 Cookie `dsh_auth` | 内存;重启后重登失败再弹登录 | 勾选「记住登录态」 |
+ *  | 网关密码 | 用户确认登录后默认保存 | 取消「记住密码」 |
+ *  | 会话 Cookie `dsh_auth` | 默认保存 | 取消「复用会话」 |
  *  | TOTP 密钥 | **永不存储**(密钥在用户认证器里) | — |
  *
  * 硬性约定:
@@ -108,8 +108,8 @@ export interface VaultPolicy {
 }
 
 export const DEFAULT_VAULT_POLICY: VaultPolicy = {
-  rememberPassword: false,
-  rememberSession: false
+  rememberPassword: true,
+  rememberSession: true
 }
 
 /** 落盘格式(版本化,便于后续迁移) */
@@ -131,8 +131,13 @@ function isVaultFile(value: unknown): value is VaultFile {
   return candidate.version === 1 && typeof candidate.items === 'object' && candidate.items !== null
 }
 
+const DISABLED_VAULT_POLICY: VaultPolicy = {
+  rememberPassword: false,
+  rememberSession: false
+}
+
 function normalizePolicy(value: unknown): VaultPolicy {
-  if (typeof value !== 'object' || value === null) return { ...DEFAULT_VAULT_POLICY }
+  if (typeof value !== 'object' || value === null) return { ...DISABLED_VAULT_POLICY }
   const candidate = value as Partial<VaultPolicy>
   return {
     rememberPassword: candidate.rememberPassword === true,
@@ -231,7 +236,12 @@ export function createVault(options: VaultOptions): Vault {
       }
     }
     for (const [id, value] of policy) {
-      if (value.rememberPassword || value.rememberSession) payload.policy![id] = value
+      if (
+        value.rememberPassword !== DEFAULT_VAULT_POLICY.rememberPassword ||
+        value.rememberSession !== DEFAULT_VAULT_POLICY.rememberSession
+      ) {
+        payload.policy![id] = value
+      }
     }
     return `${JSON.stringify(payload)}\n`
   }
@@ -262,7 +272,7 @@ export function createVault(options: VaultOptions): Vault {
    * 在模块内强制而非依赖调用方约定 —— 少一处调用方疏漏就少一条凭据落盘路径。
    */
   function requireOptIn(instanceId: string, field: keyof VaultPolicy): void {
-    if (!(policy.get(instanceId)?.[field] ?? false)) {
+    if (!(policy.get(instanceId) ?? DEFAULT_VAULT_POLICY)[field]) {
       throw new Error(`未勾选「${field}」,拒绝写入 vault`)
     }
   }
@@ -424,8 +434,13 @@ export function createVault(options: VaultOptions): Vault {
 
     async clearAll() {
       load()
+      // 新实例默认保存；清除动作本身仍必须阻止现有实例在下一次登录时立刻重新写入。
+      const affectedIds = new Set([...items.keys(), ...policy.keys()])
       items.clear()
       policy.clear()
+      for (const instanceId of affectedIds) {
+        policy.set(instanceId, { rememberPassword: false, rememberSession: false })
+      }
       await persist()
     },
 
@@ -442,10 +457,14 @@ export function createVault(options: VaultOptions): Vault {
       if (!normalized.rememberPassword && entry?.password !== undefined) delete entry.password
       if (!normalized.rememberSession && entry?.session !== undefined) delete entry.session
       dropIfEmpty(instanceId)
-      if (normalized.rememberPassword || normalized.rememberSession) {
-        policy.set(instanceId, normalized)
-      } else {
+      // 仅保存与默认策略不同的显式选择；这样新实例默认勾选，而取消勾选仍可跨重启保留。
+      if (
+        normalized.rememberPassword === DEFAULT_VAULT_POLICY.rememberPassword &&
+        normalized.rememberSession === DEFAULT_VAULT_POLICY.rememberSession
+      ) {
         policy.delete(instanceId)
+      } else {
+        policy.set(instanceId, normalized)
       }
       await persist()
     },

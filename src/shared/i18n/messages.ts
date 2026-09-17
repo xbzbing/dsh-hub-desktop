@@ -150,8 +150,8 @@ export const MESSAGES = {
     en: 'Remember password (stored in the system keychain; unchecking deletes it immediately)'
   },
   'vault.rememberSession': {
-    zh: '记住登录态（重启后静默复用会话；取消勾选会立即删除已存会话）',
-    en: 'Remember sign-in (reuse the session after a restart; unchecking deletes it immediately)'
+    zh: '记住登录态：复用会话',
+    en: 'Remember sign-in: reuse session'
   },
   'vault.clear': { zh: '清除已记住的凭据', en: 'Clear remembered credentials' },
   'vault.remembered': { zh: '该实例已记住凭据', en: 'Credentials are remembered for this instance' },

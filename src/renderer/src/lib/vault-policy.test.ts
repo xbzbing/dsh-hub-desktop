@@ -28,14 +28,14 @@ describe('vault-policy', () => {
     // 使用 rememberedInstances 不能推导策略。
   })
 
-  it('未设策略的实例返回兜底值;快照为 null 同样返回兜底值', () => {
+  it('未设策略的实例默认勾选;快照为 null 同样返回默认值', () => {
     expect(effectivePolicy(snapshot({}), 'i1')).toEqual({
-      rememberPassword: false,
-      rememberSession: false
+      rememberPassword: true,
+      rememberSession: true
     })
     expect(effectivePolicy(null, 'i1')).toEqual({
-      rememberPassword: false,
-      rememberSession: false
+      rememberPassword: true,
+      rememberSession: true
     })
   })
 

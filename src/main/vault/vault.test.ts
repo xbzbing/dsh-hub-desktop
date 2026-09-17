@@ -48,22 +48,26 @@ async function optIn(
 }
 
 describe('vault（ 凭据存储策略）', () => {
-  it('默认不存任何东西,且默认策略是「都不记住」', async () => {
+  it('默认不存条目，但默认策略会保存密码并复用会话', async () => {
     const vault = createVault({ filePath, crypto: fakeCrypto() })
     expect(vault.status()).toEqual({ available: true, degraded: false, instanceCount: 0 })
-    expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
-    expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(vault.getPolicy('i1')).toEqual({ rememberPassword: true, rememberSession: true })
+    expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: true, rememberSession: true })
     expect(vault.getPassword('i1')).toBeNull()
     expect(vault.getSession('i1')).toBeNull()
     expect(vault.rememberedIds()).toEqual([])
   })
 
-  it('未勾选时拒绝落盘(显式勾选是硬性前置条件,不依赖调用方自觉)', async () => {
+  it('默认策略可保存凭据；显式取消后拒绝落盘', async () => {
     const vault = createVault({ filePath, crypto: fakeCrypto() })
+    await vault.rememberPassword('i-default', 'hunter2')
+    expect(vault.getPassword('i-default')).toBe('hunter2')
+    await vault.setPolicy('i1', { rememberPassword: false, rememberSession: false })
     await expect(vault.rememberPassword('i1', 'hunter2')).rejects.toThrow()
     await expect(vault.rememberSession('i1', SESSION)).rejects.toThrow()
-    expect(vault.rememberedIds()).toEqual([])
-    await expect(readFile(filePath, 'utf8')).rejects.toThrow()
+    expect(vault.rememberedIds()).toEqual(['i-default'])
+    const persisted = await readFile(filePath, 'utf8')
+    expect(persisted).toContain('i-default')
   })
 
   it('勾选后:密码 记住 → 读回 → 清除', async () => {
@@ -142,7 +146,7 @@ describe('vault（ 凭据存储策略）', () => {
     await vault.setPolicy('i1', { rememberPassword: false, rememberSession: false })
     expect(vault.getSession('i1')).toBeNull()
     expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
-    expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: true, rememberSession: true })
     expect(vault.rememberedIds()).toEqual([])
 
     // 落盘文件里也不再有密文
@@ -291,20 +295,18 @@ describe('vault（ 凭据存储策略）', () => {
     expect(reopened.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
     expect(reopened.getPolicy('i2')).toEqual({ rememberPassword: false, rememberSession: false })
     expect(reopened.getPolicy('i3')).toEqual({ rememberPassword: false, rememberSession: false })
-    // 从未存在过的实例同样拿到默认值
-    expect(reopened.getPolicy('i4')).toEqual({ rememberPassword: false, rememberSession: false })
-    // 垃圾值收敛后没有任何实例被视为「已勾选」;下一次显式写入会把全 false 的
-    // policy 条目从落盘文件清掉(persist 只写 rememberPassword||rememberSession 为真的条目)。
-    // (顺带验证收敛后的 vault 仍走 opt-in 硬闸:未勾选的 i9 直接写密码会被拒 —— requireOptIn)
+    // 从未存在过的实例使用默认勾选策略。
+    expect(reopened.getPolicy('i4')).toEqual({ rememberPassword: true, rememberSession: true })
+    // 垃圾值收敛为显式禁用策略;下一次写入会把它们保留在落盘文件中，避免重启后恢复默认。
     await reopened.setPolicy('i9', BOTH)
     await reopened.rememberPassword('i9', 'p9')
     const convergedFile = JSON.parse(await readFile(filePath, 'utf8')) as {
       policy: Record<string, unknown>
     }
-    expect(convergedFile.policy['i1']).toBeUndefined()
-    expect(convergedFile.policy['i2']).toBeUndefined()
-    expect(convergedFile.policy['i3']).toBeUndefined()
-    expect(Object.keys(convergedFile.policy ?? {})).toEqual(['i9'])
+    expect(convergedFile.policy['i1']).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(convergedFile.policy['i2']).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(convergedFile.policy['i3']).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(Object.keys(convergedFile.policy ?? {}).sort()).toEqual(['i1', 'i2', 'i3'])
   })
 
   it('空密码/空会话被拒绝(即便已勾选)', async () => {
@@ -324,20 +326,20 @@ describe('vault（ 凭据存储策略）', () => {
     await vault.forgetInstance('i1')
     expect(vault.getPassword('i1')).toBeNull()
     expect(vault.getSession('i1')).toBeNull()
-    expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
-    expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: false, rememberSession: false })
+    expect(vault.getPolicy('i1')).toEqual({ rememberPassword: true, rememberSession: true })
+    expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: true, rememberSession: true })
     expect(vault.getPassword('i2')).toBe('p2')
     expect(vault.getPolicy('i2')).toEqual(BOTH)
 
     await vault.clearAll()
     expect(vault.rememberedIds()).toEqual([])
-    expect(vault.getPolicy('i2')).toEqual(DEFAULT_VAULT_POLICY)
+    expect(vault.getPolicy('i2')).toEqual({ rememberPassword: false, rememberSession: false })
     const parsed = JSON.parse(await readFile(filePath, 'utf8')) as {
       items: unknown
-      policy: unknown
+      policy: Record<string, unknown>
     }
     expect(parsed.items).toEqual({})
-    expect(parsed.policy).toEqual({})
+    expect(parsed.policy['i2']).toEqual({ rememberPassword: false, rememberSession: false })
     // 一键清除后,没重新勾选就不能再落盘
     await expect(vault.rememberPassword('i2', 'p2')).rejects.toThrow()
   })

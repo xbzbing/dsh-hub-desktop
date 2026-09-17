@@ -4,7 +4,7 @@
  */
 import type { VaultPolicy, VaultStatusSnapshot } from '@shared/contracts'
 
-export const NO_POLICY: VaultPolicy = { rememberPassword: false, rememberSession: false }
+export const NO_POLICY: VaultPolicy = { rememberPassword: true, rememberSession: true }
 
 /** 快照尚未到达:此时**禁止**任何提交(否则会以兜底值覆盖真实策略) */
 export function policyReady(status: VaultStatusSnapshot | null): boolean {

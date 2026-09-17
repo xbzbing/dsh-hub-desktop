@@ -576,9 +576,8 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     const status = deps.vault.status()
     const remembered = deps.vault.rememberedIds()
     const policies: Record<string, VaultPolicy> = {}
-    for (const id of deps.vault.policyIds()) {
-      const policy = deps.vault.getPolicy(id)
-      if (policy.rememberPassword || policy.rememberSession) policies[id] = policy
+    for (const id of new Set([...remembered, ...deps.vault.policyIds()])) {
+      policies[id] = deps.vault.getPolicy(id)
     }
     return {
       available: status.available,
