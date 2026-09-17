@@ -39,14 +39,16 @@ async function fakeInstallArtifacts(runtimesDir: string, version: string): Promi
 
 describe('createRuntimeInstaller', () => {
   it('listAvailableVersions 解析 npm view 输出(剔除非字符串/含斜杠项)', async () => {
-    const run = vi.fn(async () =>
-      okRun(JSON.stringify(['0.1.2-rc.1', '0.1.5-rc.1', '0.1.5-rc.2', { bad: 1 }, 'x/y']))
-    )
+    const run = vi.fn(async (cmd: string) => {
+      // resolveNpmPath 会先调 which/where 探测 npm 路径
+      if (cmd === 'which' || cmd === 'where') return okRun('/usr/local/bin/npm')
+      return okRun(JSON.stringify(['0.1.2-rc.1', '0.1.5-rc.1', '0.1.5-rc.2', { bad: 1 }, 'x/y']))
+    })
     const installer = createRuntimeInstaller({ runtimesDir: tmpDir(), cacheDir: tmpDir(), run })
     const versions = await installer.listAvailableVersions()
     expect(versions).toEqual(['0.1.2-rc.1', '0.1.5-rc.1', '0.1.5-rc.2'])
     expect(run).toHaveBeenCalledWith(
-      'npm',
+      '/usr/local/bin/npm',
       expect.arrayContaining(['view', '@deepseek-ai/dsh', 'versions', '--json']),
       expect.anything()
     )

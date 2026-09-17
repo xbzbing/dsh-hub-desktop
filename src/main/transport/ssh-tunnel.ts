@@ -526,9 +526,11 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       startingIds.add(id)
       cancelRequested.delete(id)
       latestInstances.set(id, instance)
+      let allocatedPort: number | null = null
       try {
         emit(id, 'starting', { detail: '分配本地端口' })
         const localPort = await allocLocalPort(instance)
+        allocatedPort = localPort
         if (cancelRequested.delete(id)) {
           reservedPorts.delete(localPort)
           emit(id, 'stopped', { detail: '已取消启动' })
@@ -607,6 +609,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         entry.child = child
         await waitForReady(entry)
       } catch (error) {
+        if (allocatedPort !== null) reservedPorts.delete(allocatedPort)
         emit(id, 'error', {
           detail: error instanceof Error ? error.message : String(error)
         })

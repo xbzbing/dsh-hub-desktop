@@ -151,8 +151,14 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const listeners = new Set<(event: InstanceStatusEvent) => void>()
   /** 启动阶段串行队列：同一时刻只让一个实例走完「安装 → 分配端口 → spawn → 就绪」 */
   let startChain: Promise<unknown> = Promise.resolve()
-  /** 在排队期间被 stop 的实例：轮到它启动时直接放弃 */
-  const cancelRequested = new Set<string>()
+  /**
+   * Generation-based cancellation: each start() call captures a generation number;
+   * stop() records the current generation as the cancellation point.
+   * A queued task is cancelled only if cancelGeneration >= its own generation,
+   * so a new start after stop correctly proceeds while old queued starts stay cancelled.
+   */
+  const cancelGeneration = new Map<string, number>()
+  const instanceGeneration = new Map<string, number>()
 
   function enqueueStart<T>(task: () => Promise<T>): Promise<T> {
     const next = startChain.then(task, task)
@@ -329,7 +335,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     async start(instance) {
       const id = instance.id
       const existing = entries.get(id)
-      if (existing) {
+      if (existing && !existing.stopping) {
         // 重复 start 只重播一次当前状态,不重复 spawn
         emit(id, existing.ready ? 'running' : 'starting', {
           version: existing.version,
@@ -341,7 +347,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         return
       }
 
-      cancelRequested.delete(id) // 新的启动请求取消之前排队的停止请求
+      // 新的启动请求：递增 generation（不删除旧 cancel，旧 queued task 检查自己的 generation）
+      const gen = (instanceGeneration.get(id) ?? 0) + 1
+      instanceGeneration.set(id, gen)
       try {
         emit(id, 'starting', { detail: '解析运行时来源' })
         // 探测与决策在启动队列外完成(纯读);hub 清单与 PATH 探测并行,互不拖慢。
@@ -357,7 +365,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           hubInstalled,
           pathRuntime
         })
-        if (cancelRequested.delete(id)) {
+        if ((cancelGeneration.get(id) ?? -1) >= gen) {
           emit(id, 'stopped', { detail: '已取消启动' })
           return
         }
@@ -386,7 +394,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             })
             return
           }
-          if (cancelRequested.delete(id)) return
+          if ((cancelGeneration.get(id) ?? -1) >= gen) return
           version = target
           runtimeSource = 'hub'
           scriptPath = options.installer.resolveEntry(target)
@@ -398,7 +406,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             // 队列内二次查重:同一 tick 并发 start(双击启动 / 向导自动启动与手动启动竞速)
             // 时,第一次查重发生在首个 await 之前会双双通过,前一个任务可能已把该实例拉起
             const already = entries.get(id)
-            if (already) {
+            if (already && !already.stopping) {
               emit(id, already.ready ? 'running' : 'starting', {
                 version: already.version,
                 runtimeSource: already.runtimeSource,
@@ -408,7 +416,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
               })
               return 'duplicate'
             }
-            if (cancelRequested.delete(id)) return 'cancelled'
+            // Generation-based cancel: 取消点 >= 本任务的 generation 时取消
+            if ((cancelGeneration.get(id) ?? -1) >= gen) return 'cancelled'
             emit(id, 'starting', {
               version,
               runtimeSource,
@@ -419,7 +428,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             })
             // path 来源运行的是用户本机安装,不需要(也不许)往应用隔离目录安装
             if (runtimeSource === 'hub') await options.installer.ensureInstalled(version)
-            if (cancelRequested.delete(id)) return 'cancelled'
+            if ((cancelGeneration.get(id) ?? -1) >= gen) return 'cancelled'
 
             // 优先实例记录里用户选定的端口(向导高级设置);被占则向上递增,启动后仍回写实际端口。
             // 用户端口可能落在 hub 默认区间(30000-30999)之外(如 dsh 自身默认 52300):
@@ -452,7 +461,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
               ...nodeInvocation.args,
               scriptPath,
               '--profile',
-              profile,
+              instance.profile ?? profile,
               '--host',
               '127.0.0.1',
               '--port',
@@ -539,7 +548,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           // 兜底:stop() 若落在「最后一次取消检查 → entries.set」之间(findFreePort/mkdir
           // 都是 await),它只登记了取消意图而看不到条目;这里必须补杀,否则子进程成为
           // 无主孤儿(before-quit 的 stopAll 也扫不到),继续占用端口与 DSH_HOME
-          if (cancelRequested.delete(id)) {
+          if ((cancelGeneration.get(id) ?? -1) >= gen) {
             entry.stopping = true
             if (entry.timer) {
               clearTimeout(entry.timer)
@@ -571,7 +580,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       const entry = entries.get(id)
       // 无论有无条目都登记取消意图:排队中尚未 spawn 的重复 start 也会被一并取消,
       // 否则「start→start→stop」序列下,后一个排队任务会在停止后把实例重新拉起
-      cancelRequested.add(id)
+      // Generation-based:记录当前 generation 作为取消点
+      cancelGeneration.set(id, instanceGeneration.get(id) ?? 0)
       if (!entry) {
         emit(id, 'stopped', { detail: '实例未在运行' })
         return
@@ -596,7 +606,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         killTree(entry, 'SIGKILL')
         await waitForExit(entry, 1_000)
       }
-      entries.delete(id)
+      // 身份守卫:stop 期间可能有新 start 替换了条目,只删除自己持有的旧条目
+      if (entries.get(id) === entry) entries.delete(id)
       // 必须显式放行启动队列:正常停止由 exit handler 的 settle 兜住,但子进程若处于
       // SIGKILL 也无效的 D 态/僵尸,exit 事件永不触发 → 停在 spawnSettledPromise 的
       // 队列任务永不返回,之后所有实例的 start 全部永久排队(settled 标志保证此处重复无害)

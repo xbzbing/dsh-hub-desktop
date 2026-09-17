@@ -909,6 +909,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/transport/http-endpoint.ts', "? '按配置跳过登录认证'"),
   debt('src/main/local-runtime/local-runtime.ts', '? `分配端口并启动进程（端口 ${preferredPort}）`'),
   debt('src/main/local-runtime/runtime-installer.ts', "`安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${result.stderr.trim() || '无 stderr'}`"),
+  debt('src/main/local-runtime/runtime-installer.ts', "throw new Error('npm 不可用：系统 PATH 和常见安装位置均未找到 npm')"),
   debt('src/main/local-runtime/local-runtime.ts', "detail: '实例已在运行，忽略重复启动'"),
   debt('src/main/transport/ssh-tunnel.ts', "detail: '隧道已在运行，忽略重复启动'"),
   debt('src/main/transport/ssh-tunnel.ts', 'detail: `SSH 隧道已就绪（127.0.0.1:${entry.localPort} → ${entry.remoteLabel}）`'),

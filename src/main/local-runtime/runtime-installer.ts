@@ -7,6 +7,63 @@ import { execFile } from 'node:child_process'
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
+/**
+ * 解析 npm 可执行文件路径，按优先级尝试：
+ * 1. node_modules 里 require.resolve（开发环境/有 npm 依赖时）
+ * 2. 系统 PATH 上的 npm（which/where 可定位）
+ * 3. 常见全局安装位置
+ * 返回 null 表示所有路径均不可用。
+ */
+export async function resolveNpmPath(
+  run: CommandRunner = runCommand
+): Promise<string | null> {
+  // ① node_modules resolve（开发环境 / npm 作为依赖存在时）
+  try {
+    // npm-cli.js 是 npm 的入口脚本
+    const resolved = require.resolve('npm/bin/npm-cli.js')
+    if (resolved) return resolved
+  } catch {
+    // require.resolve 失败(找不到 npm 模块)：继续尝试系统路径
+  }
+
+  // ② 系统 PATH 上的 which/where
+  try {
+    const which = process.platform === 'win32' ? 'where' : 'which'
+    const result = await run(which, ['npm'])
+    if (result.code === 0) {
+      const first = result.stdout.split('\n')[0]?.trim()
+      if (first && first.length > 0) return first
+    }
+  } catch {
+    // which/where 不存在：继续尝试候选路径
+  }
+
+  // ③ 常见全局安装位置（GUI 启动时 PATH 可能残缺）
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          join(process.env['APPDATA'] || '', 'npm', 'npm.cmd'),
+          join(process.env['ProgramFiles'] || '', 'nodejs', 'npm.cmd')
+        ]
+      : [
+          '/usr/local/bin/npm',
+          '/usr/bin/npm',
+          join(process.env['HOME'] || '', '.nvm', 'current', 'bin', 'npm'),
+          join(process.env['HOME'] || '', '.local', 'bin', 'npm'),
+          join(process.env['HOME'] || '', '.volt', 'bin', 'npm')
+        ]
+  for (const candidate of candidates) {
+    try {
+      const info = await import('node:fs/promises').then((fs) => fs.stat(candidate))
+      if (info.isFile()) return candidate
+    } catch {
+      // 路径不存在：跳过
+    }
+  }
+
+  return null
+}
+
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
 
 /** 版本号只允许这些字符，避免拼接目录名被穿越（runtime-source 的 PATH 探测同样复用） */
@@ -120,11 +177,27 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     return next
   }
 
+  // 缓存 npm 路径解析结果(只解析一次,避免重复探测)
+  let resolvedNpm: string | null = null
+  let npmResolved = false
+
+  async function getNpmPath(): Promise<string> {
+    if (!npmResolved) {
+      resolvedNpm = await resolveNpmPath(run)
+      npmResolved = true
+    }
+    if (resolvedNpm === null) {
+      throw new Error('npm 不可用：系统 PATH 和常见安装位置均未找到 npm')
+    }
+    return resolvedNpm
+  }
+
   async function npmView(args: string[]): Promise<CommandResult> {
     // 所有 npm 调用统一走应用私有 cache：用户级 ~/.npm 可能有权限问题(如 root 残留)，
     // 且避免污染用户缓存；调用本身经串行队列(见 enqueueSerial),避免并发 npm 争抢 cacache 锁
+    const npmPath = await getNpmPath()
     return run(
-      'npm',
+      npmPath,
       ['view', DSH_PACKAGE_NAME, ...args, '--cache', options.cacheDir, ...registryArgs],
       { env: { npm_config_cache: options.cacheDir } }
     )
@@ -259,8 +332,9 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       detail: `安装 ${DSH_PACKAGE_NAME}@${version}`
     })
 
+    const npmPath = await getNpmPath()
     const result = await run(
-      'npm',
+      npmPath,
       [
         'install',
         '--prefix',

@@ -1118,3 +1118,56 @@ describe('C1 凭据脱敏', () => {
     expect(errorEvent!.detail).not.toContain('SUPER_SECRET')
   })
 })
+
+describe('R2 stopping+start 处理', () => {
+  it('实例正在停止时收到新 start → 新启动排队执行（不被忽略）', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999500 - children.length
+      child.killCall = []
+      child.kill = vi.fn((signal?: NodeJS.Signals) => {
+        child.killCall.push(signal ?? 'SIGTERM')
+        if (signal === 'SIGKILL') setImmediate(() => child.emit('exit', 0, 'SIGKILL'))
+        return true
+      }) as never
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    const manager = createLocalRuntime({
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      stopGraceMs: 30
+    })
+    const instance = localInstance()
+    const first = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
+    children[0]?.stdout.write(readyLine())
+    await first
+    await waitForStatus(manager, instance.id, 'running')
+
+    // 开始停止：entry.stopping = true 但还没删除
+    const stopping = manager.stop(instance.id)
+    // 在停止过程中立即 start
+    const second = manager.start(instance)
+
+    // 等第二个 spawn 发生
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(2))
+    // 给第二个子进程就绪行
+    children[1]?.stdout.write(readyLine())
+
+    // 两者都应正常完成
+    await stopping
+    await second
+    await waitForStatus(manager, instance.id, 'running')
+
+    // 第二代进程被拉起
+    expect(manager.runningIds()).toEqual([instance.id])
+  })
+})
