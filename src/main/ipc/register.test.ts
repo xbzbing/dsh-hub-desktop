@@ -210,6 +210,7 @@ describe('registerIpc', () => {
       'instances:openView',
       'instances:updateViewBounds',
       'instances:hideView',
+      'instances:probeLocalDsh',
       'instances:scanExternal',
       'instances:adoptExternal',
       'ssh:keyPreview',
@@ -679,6 +680,27 @@ describe('registerIpc', () => {
     const pendingLocal = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
     expect(pendingLocal.ok).toBe(true)
     expect(runtimeFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: local.value.id }))
+  })
+
+  it('本机已有 dsh web 时创建实例会绑定其端口，而非额外启动新进程', async () => {
+    externalDshFake.scan.mockResolvedValue([
+      { pid: 84758, port: 52300, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
+    ])
+    const created = (await invoke('instances:create', { ...VALID_LOCAL, useExistingExternal: true })) as {
+      ok: boolean
+      value: { id: string; port: number | null }
+    }
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(created.value.port).toBe(52300)
+
+    const opened = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    expect(openInstanceView).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.value.id }),
+      'http://127.0.0.1:52300'
+    )
+    expect(runtimeFake.start).not.toHaveBeenCalled()
   })
 
   it('scanExternal:无参数、只读投影、缺省装配返回空列表', async () => {

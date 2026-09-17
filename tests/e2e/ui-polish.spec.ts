@@ -185,7 +185,7 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
     await expect(win.getByTestId('app-shell')).toBeVisible()
     await win.waitForTimeout(400)
 
-    await win.getByTestId(`inst-${created.id}`).click()
+    await win.getByTestId('instances-table').getByText('OTP 网关实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
 
     // #2:未登录态 —— 按钮是「登录」且没有「登出」
@@ -236,7 +236,7 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
   // 无 OTP 变体:首登 200 直连 —— 不出现 TOTP 页(「实例未设置 OTP 可跳过」)
   const direct = await startFakeGateway(false)
   try {
-    const created2 = await win.evaluate(async (p) => {
+    await win.evaluate(async (p) => {
       const r = await window.dshHub.instances.create({
         transport: 'http',
         name: '无 OTP 网关实例',
@@ -251,7 +251,7 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
     await win.waitForTimeout(400)
-    await win.getByTestId(`inst-${created2}`).click()
+    await win.getByTestId('instances-table').getByText('无 OTP 网关实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
     await win.getByTestId('login-btn').click()
     await expect(win.getByTestId('auth-panel')).toBeVisible()

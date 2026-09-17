@@ -217,6 +217,20 @@ describe('store settings', () => {
     expect(useAppStore.getState().settingsOpen).toBe(false)
   })
 
+  it('打开工作区成功时保留 selection 并显示内嵌工作区', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.getState().select('instance-1')
+    await useAppStore.getState().openWorkspace('instance-1')
+    expect(openView).toHaveBeenCalledWith('instance-1')
+    expect(useAppStore.getState().selection).toBe('instance-1')
+    expect(useAppStore.getState().workspaceOpen).toBe(true)
+  })
+
   it('applyStatus 每次事件都换 statuses 引用(订阅者才会重渲染),圆点随之实时变化', async () => {
     const useAppStore = await freshStore()
     const before = useAppStore.getState().statuses

@@ -75,7 +75,15 @@ test('明文警告显示为短标签，完整详情通过 data-tip 提供', asyn
 })
 
 test('本地实例可编辑，端口留空时回到自动分配', async () => {
-  await win.getByText('可编辑本地实例').first().click()
+  const workspaceBack = win.getByTestId('workspace-back-btn')
+  if (await workspaceBack.isVisible()) await workspaceBack.click()
+  await win.getByTestId('brand').click()
+  await expect(win.getByTestId('instances-table')).toBeVisible()
+  await win.getByTestId('instances-table').getByText('可编辑本地实例', { exact: true }).click()
+  const workspaceBackAfterSelection = win.getByTestId('workspace-back-btn')
+  await expect(workspaceBackAfterSelection).toBeVisible()
+  await workspaceBackAfterSelection.click()
+  await expect(workspaceBackAfterSelection).toBeHidden()
   await expect(win.getByTestId('view-detail')).toBeVisible()
 
   // 编辑入口必须可用。

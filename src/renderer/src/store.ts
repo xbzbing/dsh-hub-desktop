@@ -65,6 +65,8 @@ interface AppState {
       `ensureRecord` 只在缓存缺失时拉取,会把陈旧记录留在 store 里 */
   reloadRecord: (id: string) => Promise<void>
   select: (id: string | null) => void
+  /** 选择实例后打开其工作区；失败时保留详情，提示用户原因。 */
+  openWorkspace: (id: string) => Promise<void>
   toggleRail: () => void
   toggleTheme: () => void
   setWizardOpen: (open: boolean) => void
@@ -242,6 +244,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
   select: (id) => {
     void window.dshHub?.runtime?.hideView()
     set({ selection: id, workspaceOpen: false, settingsOpen: false })
+  },
+
+  openWorkspace: async (id) => {
+    void window.dshHub?.runtime?.hideView()
+    set({ selection: id, workspaceOpen: false, settingsOpen: false })
+    const result = await window.dshHub?.runtime.openView(id)
+    if (result?.ok) {
+      set({ workspaceOpen: true })
+      return
+    }
+    if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
   },
 
   setWorkspaceOpen: (open) => set({ workspaceOpen: open }),

@@ -13,6 +13,7 @@ export default function Sidebar(): ReactNode {
   const rail = useAppStore((state) => state.rail)
   const theme = useAppStore((state) => state.theme)
   const select = useAppStore((state) => state.select)
+  const openWorkspace = useAppStore((state) => state.openWorkspace)
   const toggleRail = useAppStore((state) => state.toggleRail)
   const toggleTheme = useAppStore((state) => state.toggleTheme)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
@@ -97,13 +98,13 @@ export default function Sidebar(): ReactNode {
                 </span>
               </div>
               {group.items.map((item) => (
-                <InstanceItem key={item.id} id={item.id} onClick={select} selected={selection === item.id} />
+                <InstanceItem key={item.id} id={item.id} onClick={openWorkspace} selected={selection === item.id} />
               ))}
             </div>
           ))
         ) : (
           filtered.map((item) => (
-            <InstanceItem key={item.id} id={item.id} onClick={select} selected={selection === item.id} />
+            <InstanceItem key={item.id} id={item.id} onClick={openWorkspace} selected={selection === item.id} />
           ))
         )}
       </nav>
@@ -144,7 +145,7 @@ export default function Sidebar(): ReactNode {
 function InstanceItem(props: {
   id: string
   selected: boolean
-  onClick: (id: string | null) => void
+  onClick: (id: string) => void
 }): ReactNode {
   const t = useAppStore((state) => state.t)
   const statuses = useAppStore((state) => state.statuses)

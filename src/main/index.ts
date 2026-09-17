@@ -440,10 +440,11 @@ void app.whenReady().then(() => {
     ...(npmRegistry ? { registry: npmRegistry } : {})
   })
   // 确认用原生对话框(始终可用,含托盘启动场景;文案无凭据);拒绝则该次启动取消。
+  const pathProbe = createPathProbe()
   runtime = createLocalRuntime({
     installer,
     dataRoot,
-    pathProbe: createPathProbe(),
+    pathProbe,
     confirmDownload: (version) =>
       dialog
         .showMessageBox({
@@ -563,6 +564,7 @@ void app.whenReady().then(() => {
     http: httpEndpoints,
     auth,
     externalDsh: createExternalDshScanner(),
+    pathProbe,
     vault: vault as Vault,
     settings,
     audit: auditWrite,

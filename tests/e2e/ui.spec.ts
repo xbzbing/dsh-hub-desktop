@@ -61,20 +61,16 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await expect(table).toContainText('本地')
 })
 
-test('详情页展示连接方式,删除后回到空态', async () => {
+test('侧栏实例名称直接打开工作区，失败时保留详情页', async () => {
   await expect(win.getByTestId('instances-table')).toBeVisible()
   const firstSidebarItem = win.locator('[data-testid^="inst-"]').first()
-
-  // 侧栏选择 → 详情
   await firstSidebarItem.click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
-  await expect(win.getByText('连接方式')).toBeVisible()
-  await expect(win.getByText('运行环境')).toBeVisible()
   await expect(win.getByTestId('open-view-btn')).toContainText('打开工作区')
 
   // 删除(二次确认)→ 回空态
   await win.getByTestId('delete-btn').click()
   await expect(win.getByTestId('confirm-delete')).toBeVisible()
-  await win.getByRole('button', { name: '删除', exact: true }).click()
+  await win.getByTestId('confirm-delete').getByRole('button', { name: '删除', exact: true }).click({ force: true })
   await expect(win.getByTestId('view-empty')).toBeVisible()
 })

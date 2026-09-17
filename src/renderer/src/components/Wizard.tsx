@@ -48,6 +48,7 @@ export default function Wizard(): ReactNode {
   const t = useAppStore((state) => state.t)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
   const refreshList = useAppStore((state) => state.refreshList)
+  const openWorkspace = useAppStore((state) => state.openWorkspace)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
   const toast = useAppStore((state) => state.toast)
 
@@ -55,6 +56,10 @@ export default function Wizard(): ReactNode {
   const [transport, setTransport] = useState<'local' | 'ssh' | 'http'>('local')
   const [form, setForm] = useState<WizardForm>(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
+  const [localDsh, setLocalDsh] = useState<{ command: string; version: string } | null>(null)
+  const [externalPort, setExternalPort] = useState<number | null>(null)
+  const [useExistingExternal, setUseExistingExternal] = useState(false)
+  const [localProbeDone, setLocalProbeDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -64,6 +69,24 @@ export default function Wizard(): ReactNode {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [setWizardOpen])
+
+  useEffect(() => {
+    if (step !== 2 || transport !== 'local' || localProbeDone) return
+    let cancelled = false
+    void Promise.all([window.dshHub?.runtime.probeLocalDsh(), window.dshHub?.runtime.scanExternal()]).then(
+      ([runtime, external]) => {
+        if (!cancelled) {
+          setLocalDsh(runtime?.ok ? runtime.value : null)
+          setExternalPort(external?.ok ? (external.value.find((item) => item.port !== null)?.port ?? null) : null)
+          setLocalProbeDone(true)
+        }
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [step, transport, localProbeDone])
+
 
   const set = (key: keyof WizardForm) => (event: { target: { value: string } }) => {
     setForm((current) => ({ ...current, [key]: event.target.value }))
@@ -91,6 +114,7 @@ export default function Wizard(): ReactNode {
         ? {
             transport: 'local',
             name,
+            ...(useExistingExternal ? { useExistingExternal: true } : {}),
             ...(form.version.trim() !== '' ? { dshVersion: form.version.trim() } : {}),
             ...(form.port.trim() !== '' ? { port: Number(form.port) } : {})
           }
@@ -120,6 +144,10 @@ export default function Wizard(): ReactNode {
     setWizardOpen(false)
     toast('ok', t('wizard.created', { name: result.value.name }))
     void refreshList()
+    if (transport === 'local' && useExistingExternal) {
+      void openWorkspace(result.value.id)
+      return
+    }
     // 启动成功后由状态事件打开工作区；失败或停止时移除待打开记录。
     setPendingOpen(result.value.id)
     const started = await bridge.runtime.start(result.value.id)
@@ -232,31 +260,75 @@ export default function Wizard(): ReactNode {
           </div>
 
           {transport === 'local' && (
-            <details className="adv mt12">
-              <summary>{t('wizard.advanced')}</summary>
-              <div className="grid-2 mt8">
-                <div className="field">
-                  <label htmlFor="wizard-version">{t('wizard.versionLabel')}</label>
-                  <input
-                    className="input num"
-                    id="wizard-version"
-                    placeholder={t('wizard.versionPlaceholder')}
-                    value={form.version}
-                    onChange={set('version')}
-                  />
+            <>
+              {externalPort !== null && (
+                <div className="note n-info mt12" data-testid="wizard-external-dsh">
+                  <Icon name="info" />
+                  <div>
+                    <b>{t('wizard.externalDetected', { port: externalPort })}</b>
+                    <label className="check mt8">
+                      <input
+                        type="checkbox"
+                        checked={useExistingExternal}
+                        onChange={(event) => setUseExistingExternal(event.target.checked)}
+                      />
+                      {t('wizard.useExistingExternal')}
+                    </label>
+                  </div>
                 </div>
-                <div className="field">
-                  <label htmlFor="wizard-port">{t('wizard.portLabel')}</label>
-                  <input
-                    className="input num"
-                    id="wizard-port"
-                    placeholder={t('wizard.portPlaceholder')}
-                    value={form.port}
-                    onChange={set('port')}
-                  />
+              )}
+              {localDsh && !useExistingExternal && (
+                <div className="note n-info mt12" data-testid="wizard-local-dsh">
+                  <Icon name="check" />
+                  <div>
+                    <b>{t('wizard.localDetected', { version: localDsh.version })}</b>
+                    <span className="meta">{t('wizard.localDetectedPath')}</span>
+                  </div>
                 </div>
-              </div>
-            </details>
+              )}
+              {!localDsh && !useExistingExternal && (
+                <details className="adv mt12">
+                  <summary>{t('wizard.advanced')}</summary>
+                  <div className="grid-2 mt8">
+                    <div className="field">
+                      <label htmlFor="wizard-version">{t('wizard.versionLabel')}</label>
+                      <input
+                        className="input num"
+                        id="wizard-version"
+                        placeholder={t('wizard.versionPlaceholder')}
+                        value={form.version}
+                        onChange={set('version')}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="wizard-port">{t('wizard.portLabel')}</label>
+                      <input
+                        className="input num"
+                        id="wizard-port"
+                        placeholder={t('wizard.portPlaceholder')}
+                        value={form.port}
+                        onChange={set('port')}
+                      />
+                    </div>
+                  </div>
+                </details>
+              )}
+              {(localDsh || useExistingExternal) && !useExistingExternal && (
+                <details className="adv mt12">
+                  <summary>{t('wizard.advanced')}</summary>
+                  <div className="field mt8">
+                    <label htmlFor="wizard-port">{t('wizard.portLabel')}</label>
+                    <input
+                      className="input num"
+                      id="wizard-port"
+                      placeholder={t('wizard.portPlaceholder')}
+                      value={form.port}
+                      onChange={set('port')}
+                    />
+                  </div>
+                </details>
+              )}
+            </>
           )}
 
           {transport === 'ssh' && (

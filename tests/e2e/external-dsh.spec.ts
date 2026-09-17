@@ -82,7 +82,7 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
 
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
-    await win.getByTestId(`inst-${created}`).click()
+    await win.getByTestId('instances-table').getByText('远程登录重定向', { exact: true }).click()
     await expect(win.getByTestId('open-view-btn')).toBeEnabled()
     await win.getByTestId('open-view-btn').click()
     await expect.poll(async () =>
@@ -117,7 +117,7 @@ test('HTTP 实例未启动也能直接打开视图', async () => {
   expect(created).not.toBeNull()
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
-  await win.getByTestId(`inst-${created}`).click()
+  await win.getByTestId('instances-table').getByText('免启动 http', { exact: true }).click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
 
   // 关键:没有点过「启动」,开窗按钮必须可用
@@ -143,7 +143,7 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   expect(created).not.toBeNull()
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
-  await win.getByTestId(`inst-${created}`).click()
+  await win.getByTestId('instances-table').getByText('接管本地实例', { exact: true }).click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
 
   // 详情页出现「本机已在运行的 dsh web」卡片(只读探测命中假 dsh web)

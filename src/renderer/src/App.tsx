@@ -90,6 +90,7 @@ export default function App() {
   }, [setWizardOpen, toggleRail])
 
   const selectedStatus = selection ? statuses[selection] : undefined
+  const selectedInstance = selection ? instances.find((instance) => instance.id === selection) : undefined
   const title = t('nav.overview')
 
   return (
@@ -100,9 +101,11 @@ export default function App() {
           <span className="tb-title" data-testid="tb-title">
             {settingsOpen
               ? t('settings.title')
-              : selection
-                ? t('detail.instanceDetail')
-                : title}
+              : workspaceOpen && selectedInstance
+                ? selectedInstance.name
+                : selection
+                  ? t('detail.instanceDetail')
+                  : title}
           </span>
           <span className="tb-sub" data-testid="tb-sub">
             {selectedStatus?.detail ?? t('nav.instanceCount', { n: instances.length })}

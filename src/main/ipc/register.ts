@@ -29,6 +29,7 @@ import {
   type VaultStatusSnapshot,
   type InstanceSummary,
   type IpcResult,
+  type LocalDshSnapshot,
   type WorkspaceViewBounds
 } from '@shared/contracts'
 import { detectDraftEndpoint } from '../transport/http-endpoint'
@@ -39,6 +40,7 @@ import type { PromptBroker } from '../ssh/prompt-broker'
 import type { AuthRegistry } from '../auth/auth-registry'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { ExternalDshScanner } from '../local-runtime/external-dsh'
+import type { PathProbe } from '../local-runtime/runtime-source'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 import { DataDirOpenError } from '../shell/open-data-dir'
@@ -54,6 +56,8 @@ export interface IpcDeps {
    * 缺省不装配(单测)→ scan 返回空列表、adopt 一律 invalid-state。
    */
   externalDsh?: ExternalDshScanner
+  /** 只读探测本机可执行 dsh，供创建向导选择是否使用。 */
+  pathProbe?: PathProbe
   tunnels: SshTunnelManager
   /**
    * 打开实例视图窗口（electron 侧实现，便于 register 单测注入假实现）。
@@ -168,7 +172,15 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   )
 
   ipcMain.handle(INSTANCE_IPC.create, (_event, input: unknown): Promise<IpcResult<InstanceRecord>> =>
-    wrap(() => store.create(CreateInstanceInputSchema.parse(input)))
+    wrap(async () => {
+      const parsed = CreateInstanceInputSchema.parse(input)
+      if (parsed.transport !== 'local') return store.create(parsed)
+      const { useExistingExternal, ...recordInput } = parsed
+      if (useExistingExternal !== true || !deps.externalDsh) return store.create(recordInput)
+      const external = await deps.externalDsh.scan()
+      const running = external.find((item) => item.port !== null)
+      return store.create(running && running.port !== null ? { ...recordInput, port: running.port } : recordInput)
+    })
   )
 
   ipcMain.handle(
@@ -264,7 +276,8 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       // 已运行的本机 dsh 可直接打开工作区，不改变实例的运行来源或进程所有权。
       // 用户选择「接管」时才会把外部进程关联到实例。
       const external = deps.externalDsh ? (await deps.externalDsh.scan()) ?? [] : []
-      const target = external.find((item) => item.port !== null)
+      const target = external.find((item) => item.port === instance.port) ??
+        (instance.port === null ? external.find((item) => item.port !== null) : undefined)
       if (target && target.port !== null) {
         await deps.openInstanceView(instance, `http://127.0.0.1:${target.port}`)
         return
@@ -295,6 +308,13 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         if (openViewTasks.get(instanceId) === task) openViewTasks.delete(instanceId)
       }
       return null
+    })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.probeLocalDsh, (): Promise<IpcResult<LocalDshSnapshot | null>> =>
+    wrap(async () => {
+      const found = await deps.pathProbe?.probe()
+      return found ? { command: found.command, version: found.version } : null
     })
   )
 
