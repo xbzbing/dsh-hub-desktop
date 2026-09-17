@@ -233,7 +233,7 @@ export const MESSAGES = {
   'wizard.createNewNote': { zh: '将使用本机 dsh 创建新的隔离实例。', en: 'This creates a new isolated instance using local dsh.' },
   'wizard.useExistingExternal': { zh: '连接当前运行的工作区', en: 'Connect to the running workspace' },
   'wizard.externalAccessLabel': { zh: '访问 token 或完整链接', en: 'Access token or full URL' },
-  'wizard.externalAccessHint': { zh: '粘贴 dsh web 输出的完整 URL，或仅粘贴其中的 token。该值只用于本次接管，不会保存。', en: 'Paste the full URL printed by dsh web, or just its token. It is used only for this adoption and is never saved.' },
+  'wizard.externalAccessHint': { zh: '粘贴 dsh web 输出的完整 URL，或仅粘贴其中的 token。验证成功后会加密保存在本机，dsh 重启并更换 token 后可在实例详情中更新。', en: 'Paste the full URL printed by dsh web, or just its token. After verification it is encrypted on this machine; update it in the instance details if dsh restarts with a new token.' },
   'wizard.errExternalAccess': { zh: '请填写当前工作区的访问 token 或完整链接', en: 'Enter the current workspace access token or full URL' },
   'wizard.createNewLocal': { zh: '创建新的本机实例', en: 'Create a new local instance' },
   'wizard.portLabel': { zh: '端口', en: 'Port' },
@@ -316,6 +316,10 @@ export const MESSAGES = {
   'detail.adopting': { zh: '接管中…', en: 'Adopting…' },
   'detail.adopted': { zh: '已接管外部 dsh web', en: 'Adopted external dsh web' },
   'detail.adoptFailed': { zh: '接管失败', en: 'Adopt failed' },
+  'detail.externalTokenTitle': { zh: '本机 dsh 访问 token', en: 'Local dsh access token' },
+  'detail.externalTokenBody': { zh: '其他进程重启 dsh 后，访问 token 可能变化。粘贴最新 token 或完整链接后重新连接。', en: 'The access token can change when another process restarts dsh. Paste the latest token or full URL, then reconnect.' },
+  'detail.externalTokenUpdate': { zh: '更新 token 并连接', en: 'Update token and connect' },
+  'detail.externalTokenUpdating': { zh: '正在更新…', en: 'Updating…' },
   'detail.externalDataDir': {
     zh: '（外部进程，由你自己管理）',
     en: '(external process, managed by you)'

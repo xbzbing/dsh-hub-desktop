@@ -39,6 +39,8 @@ export default function DetailView(): ReactNode {
   >([])
   const [adopting, setAdopting] = useState<number | null>(null)
   const [externalAccess, setExternalAccess] = useState<Record<number, string>>({})
+  const [showExternalTokenEditor, setShowExternalTokenEditor] = useState(false)
+  const [externalToken, setExternalToken] = useState('')
 
   useEffect(() => {
     if (selection) void ensureRecord(selection)
@@ -58,6 +60,7 @@ export default function DetailView(): ReactNode {
   // 注意 `display` 在下方早期 return 之后才声明,这里按 status 直接判定;
   // 用局部常量做依赖,避免把整个 record 对象拖进依赖数组。
   const runningNow = status?.status === 'running'
+  const externalRuntime = status?.runtimeSource === 'external'
   const recordId = record?.id
   const recordTransport = record?.transport
   useEffect(() => {
@@ -119,6 +122,39 @@ export default function DetailView(): ReactNode {
     toast('ok', t('detail.deleted', { name: record.name }))
     select(null)
     void refreshList()
+  }
+
+  const updateExternalToken = async (): Promise<void> => {
+    const bridge = window.dshHub
+    if (!bridge || record.transport !== 'local') return
+    const token = externalToken.trim()
+    if (token === '') {
+      toast('err', t('detail.adoptFailed'), t('wizard.errExternalAccess'))
+      return
+    }
+    const scanned = await bridge.runtime.scanExternal()
+    if (!scanned.ok) {
+      toast('err', t('detail.adoptFailed'), scanned.message)
+      return
+    }
+    const targetPort = status?.port ?? record.port
+    const candidate = scanned.value.find((item) => item.port === targetPort) ?? (scanned.value.length === 1 ? scanned.value[0] : undefined)
+    if (!candidate) {
+      toast('err', t('detail.adoptFailed'), t('detail.externalTokenBody'))
+      return
+    }
+    setAdopting(candidate.pid)
+    const result = await bridge.runtime.adoptExternal(record.id, candidate.pid, token)
+    setAdopting(null)
+    if (!result.ok) {
+      toast('err', t('detail.adoptFailed'), result.message)
+      return
+    }
+    setExternalToken('')
+    setShowExternalTokenEditor(false)
+    const opened = await bridge.runtime.openView(record.id)
+    if (opened.ok) setWorkspaceOpen(true)
+    else toast('err', t('detail.openViewFailed'), opened.message)
   }
 
   return (
@@ -273,7 +309,10 @@ export default function DetailView(): ReactNode {
                 // 此调用负责准备运行时并在就绪后导航，避免状态事件触发第二次导航。
                 void window.dshHub?.runtime.openView(record.id).then((result) => {
                   if (result?.ok) setWorkspaceOpen(true)
-                  else if (result) toast('err', t('detail.openViewFailed'), result.message)
+                  else if (result) {
+                    if (record.transport === 'local') setShowExternalTokenEditor(true)
+                    toast('err', t('detail.openViewFailed'), result.message)
+                  }
                 })
               }}
               disabled={display === 'connecting'}
@@ -292,6 +331,39 @@ export default function DetailView(): ReactNode {
             </button>
           </div>
         </div>
+
+        {record.transport === 'local' && (externalRuntime || showExternalTokenEditor) && (
+          <div className="card mt12" data-testid="external-token-editor">
+            <div className="card-head">
+              <h3>{t('detail.externalTokenTitle')}</h3>
+            </div>
+            <p className="meta" style={{ marginBottom: 10 }}>
+              {t('detail.externalTokenBody')}
+            </p>
+            <div className="row" style={{ alignItems: 'flex-end' }}>
+              <label className="field" style={{ flex: 1 }}>
+                <span>{t('wizard.externalAccessLabel')}</span>
+                <input
+                  className="input num"
+                  value={externalToken}
+                  onChange={(event) => setExternalToken(event.target.value)}
+                  autoComplete="off"
+                  type="password"
+                  data-testid="external-token-input"
+                />
+              </label>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => void updateExternalToken()}
+                disabled={adopting !== null}
+                data-testid="external-token-update-btn"
+              >
+                <Icon name="external" />
+                {adopting !== null ? t('detail.externalTokenUpdating') : t('detail.externalTokenUpdate')}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 显示尚未由 Hub 管理的本地 dsh web 进程，供用户接管。 */}
         {record.transport === 'local' && externalDsh.length > 0 && (
@@ -343,6 +415,10 @@ export default function DetailView(): ReactNode {
                           toast('err', t('detail.adoptFailed'), result.message)
                         } else {
                           toast('ok', t('detail.adopted'), `127.0.0.1:${item.port}`)
+                          void window.dshHub?.runtime.openView(record.id).then((opened) => {
+                            if (opened?.ok) setWorkspaceOpen(true)
+                            else if (opened) toast('err', t('detail.openViewFailed'), opened.message)
+                          })
                         }
                       })
                       .finally(() => setAdopting(null))

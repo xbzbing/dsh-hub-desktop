@@ -704,7 +704,7 @@ describe('registerIpc', () => {
     expect(runtimeFake.start).not.toHaveBeenCalled()
   })
 
-  it('保存的外部 token 无效时清除它并要求用户重新输入', async () => {
+  it('保存的外部 token 无效时清除它并要求重新输入', async () => {
     const local = (await invoke('instances:create', { ...VALID_LOCAL, port: 3080 })) as {
       ok: boolean
       value: { id: string }
@@ -717,9 +717,48 @@ describe('registerIpc', () => {
     const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean; code?: string; message?: string }
     expect(opened.ok).toBe(false)
     expect(opened.code).toBe('invalid-state')
-    expect(opened.message).toContain('重新输入')
+    expect(opened.message).toContain('实例详情中更新')
     expect(vaultFake['forgetExternalAccessToken']).toHaveBeenCalledWith(local.value.id)
     expect(openInstanceView).not.toHaveBeenCalled()
+  })
+
+  it('接管的外部 dsh 重启后断开旧接管，并提示在详情页更新访问 token', async () => {
+    const local = (await invoke('instances:create', { ...VALID_LOCAL, port: 3080 })) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    vaultFake['getExternalAccessToken']!.mockReturnValue('old-token')
+    externalDshFake.scan.mockResolvedValueOnce([
+      { pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }
+    ])
+    await expect(invoke('instances:openView', local.value.id)).resolves.toEqual({ ok: true, value: null })
+
+    externalDshFake.scan.mockResolvedValueOnce([
+      { pid: 84759, port: 3080, patch: null, command: 'node /x/dsh web' }
+    ])
+    const reopened = (await invoke('instances:openView', local.value.id)) as {
+      ok: boolean
+      code?: string
+      message?: string
+    }
+
+    expect(reopened).toEqual({
+      ok: false,
+      code: 'invalid-state',
+      message: '本机 dsh 已重启，请在实例详情中更新访问 token'
+    })
+    expect(runtimeFake.stop).toHaveBeenCalledWith(local.value.id)
+
+    externalDshFake.scan.mockResolvedValue([
+      { pid: 84759, port: 3080, patch: null, command: 'node /x/dsh web' }
+    ])
+    currentStatus = { id: local.value.id, status: 'running', runtimeSource: 'external', at: '2026-09-17T00:00:00.000Z' }
+    await expect(invoke('instances:adoptExternal', local.value.id, 84759, 'new-token')).resolves.toEqual({
+      ok: true,
+      value: null
+    })
+    expect(vaultFake['rememberExternalAccessToken']).toHaveBeenCalledWith(local.value.id, 'new-token')
   })
 
   it('本机已有 dsh web 时创建实例会绑定其端口，而非额外启动新进程', async () => {
@@ -868,6 +907,7 @@ describe('registerIpc', () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
     currentStatus = { id: local.value.id, status: 'running', at: '2026-09-17T00:00:00.000Z' }
+    runtimeFake.runningIds.mockReturnValue([local.value.id])
     externalDshFake.scan.mockResolvedValue([
       { pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }
     ])
@@ -878,6 +918,53 @@ describe('registerIpc', () => {
     expect(adopted.ok).toBe(false)
     expect(adopted.code).toBe('invalid-state')
     expect(runtimeFake.adopt).not.toHaveBeenCalled()
+  })
+
+  it('已接管的外部 dsh 可用新 token 重新接管，但 hub 启动的实例仍被拒绝', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!local.ok) throw new Error('创建失败')
+    currentStatus = {
+      id: local.value.id,
+      status: 'running',
+      runtimeSource: 'external',
+      at: '2026-09-17T00:00:00.000Z'
+    }
+    externalDshFake.scan.mockResolvedValue([
+      { pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }
+    ])
+    runtimeFake.runningIds.mockReturnValue([local.value.id])
+
+    await expect(invoke('instances:adoptExternal', local.value.id, 84758, 'rotated-token')).resolves.toEqual({
+      ok: true,
+      value: null
+    })
+    expect(runtimeFake.stop).toHaveBeenCalledWith(local.value.id)
+    expect(runtimeFake.adopt).toHaveBeenCalledWith(expect.objectContaining({ id: local.value.id }), {
+      pid: 84758,
+      port: 3080,
+      patch: null
+    })
+  })
+
+  it('意外退出留下 error 状态时，仍可用新 token 接管重启的外部 dsh', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!local.ok) throw new Error('创建失败')
+    currentStatus = { id: local.value.id, status: 'error', at: '2026-09-17T00:00:00.000Z' }
+    runtimeFake.runningIds.mockReturnValue([])
+    externalDshFake.scan.mockResolvedValue([
+      { pid: 84759, port: 3080, patch: null, command: 'node /x/dsh web' }
+    ])
+
+    await expect(invoke('instances:adoptExternal', local.value.id, 84759, 'new-token')).resolves.toEqual({
+      ok: true,
+      value: null
+    })
+    expect(runtimeFake.stop).not.toHaveBeenCalled()
+    expect(runtimeFake.adopt).toHaveBeenCalledWith(expect.objectContaining({ id: local.value.id }), {
+      pid: 84759,
+      port: 3080,
+      patch: null
+    })
   })
 
   it('adoptExternal 边界:pid 不存在 / 端口未知 / 非本地实例 / 非法 pid 都被拒', async () => {

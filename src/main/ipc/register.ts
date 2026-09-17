@@ -357,7 +357,9 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         const match = external.find((item) => item.pid === savedAccess.pid && item.port === savedAccess.port)
         if (!match) {
           externalAccessUrls.delete(instanceId)
-          throw new InstanceStoreError('not-found', '已接管的本机 dsh web 已停止')
+          await deps.runtime.stop(instanceId)
+          await deps.vault.forgetExternalAccessToken(instanceId)
+          throw new InstanceStoreError('invalid-state', '本机 dsh 已重启，请在实例详情中更新访问 token')
         }
         await deps.openInstanceView(instance, savedAccess.url)
         return
@@ -367,12 +369,12 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       if (match && match.port !== null) {
         const token = deps.vault.getExternalAccessToken(instanceId)
         if (!token) {
-          throw new InstanceStoreError('invalid-state', '需要输入该本机 dsh 的访问 token')
+          throw new InstanceStoreError('invalid-state', '本机 dsh 需要访问 token，请在实例详情中更新')
         }
         const accessUrl = externalAccessUrl(token, match.port)
         if (!(await (deps.verifyExternalAccess ?? defaultVerifyExternalAccess)(accessUrl))) {
           await deps.vault.forgetExternalAccessToken(instanceId)
-          throw new InstanceStoreError('invalid-state', '已保存的访问 token 无效，请重新输入')
+          throw new InstanceStoreError('invalid-state', '本机 dsh 的访问 token 已失效，请在实例详情中更新')
         }
         await deps.runtime.adopt(instance, { pid: match.pid, port: match.port, patch: match.patch })
         externalAccessUrls.set(instanceId, { pid: match.pid, port: match.port, url: accessUrl })
@@ -456,15 +458,21 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         if (match.port === null) {
           throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')
         }
-        if (deps.runtime.statusOf(instanceId) !== null) {
-          throw new InstanceStoreError('invalid-state', '实例已在运行，不能接管其他本机 dsh web')
+        const currentRuntime = deps.runtime.statusOf(instanceId)
+        if (deps.runtime.runningIds().includes(instanceId)) {
+          if (currentRuntime?.runtimeSource !== 'external') {
+            throw new InstanceStoreError('invalid-state', '实例已在运行，不能接管其他本机 dsh web')
+          }
+          // 仅解除旧的外部接管，不会终止用户自己的 dsh；随后用最新 token 重新验证并接管。
+          await deps.runtime.stop(instanceId)
+          externalAccessUrls.delete(instanceId)
         }
         const rawAccess = typeof access === 'string' ? access.trim() : ''
         const usingStoredToken = rawAccess === ''
         const token = usingStoredToken
           ? deps.vault.getExternalAccessToken(instanceId)
           : externalAccessToken(access, match.port)
-        if (!token) throw new InstanceStoreError('invalid-state', '需要输入该本机 dsh 的访问 token')
+        if (!token) throw new InstanceStoreError('invalid-state', '本机 dsh 需要访问 token，请在实例详情中更新')
         const accessUrl = externalAccessUrl(token, match.port)
         if (!(await (deps.verifyExternalAccess ?? defaultVerifyExternalAccess)(accessUrl))) {
           if (usingStoredToken) await deps.vault.forgetExternalAccessToken(instanceId)

@@ -539,7 +539,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             } else {
               entry.stopping = true // 兜底:防止在途 handleReady 续体继续以「运行中」发布
               emit(id, 'error', {
-                detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`
+                detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）`
               })
             }
             entry.settleSpawn?.()

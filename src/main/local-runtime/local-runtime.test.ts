@@ -170,7 +170,7 @@ describe('createLocalRuntime', () => {
     expect(manager.runningIds()).toEqual([])
   })
 
-  it('进程在就绪前意外退出 → error(带退出码与日志)', async () => {
+  it('进程在就绪前意外退出 → error(仅显示退出码)', async () => {
     const child = new EventEmitter() as unknown as FakeChild
     child.stdout = new PassThrough()
     child.stderr = new PassThrough()
@@ -199,7 +199,7 @@ describe('createLocalRuntime', () => {
     await waitForStatus(manager, instance.id, 'error')
 
     expect(manager.statusOf(instance.id)?.detail).toContain('code=1')
-    expect(manager.statusOf(instance.id)?.detail).toContain('port already in use')
+    expect(manager.statusOf(instance.id)?.detail).not.toContain('port already in use')
   })
 
   it('stop:SIGTERM → 子进程退出 → stopped;未退出 → SIGKILL 兜底', async () => {
@@ -1081,7 +1081,7 @@ describe('C1 凭据脱敏', () => {
     )
   })
 
-  it('进程意外退出:日志中的 URL token 在 detail 中被脱敏', async () => {
+  it('进程意外退出不会将日志写入详情', async () => {
     const child = new EventEmitter() as unknown as FakeChild
     child.stdout = new PassThrough()
     child.stderr = new PassThrough()
@@ -1104,18 +1104,18 @@ describe('C1 凭据脱敏', () => {
 
     const instance = localInstance()
     const starting = manager.start(instance)
-    await vi.waitFor(() => child.stdout)
-    // 先输出一行含 token 的日志
-    child.stdout.write('dsh web: http://127.0.0.1:40000/?token=SUPER_SECRET\n')
-    // 进程退出:exit handler 会把日志尾巴放进 detail
+    await vi.waitFor(() => expect(manager.runningIds()).toContain(instance.id))
+    // 先输出一行日志。
+    child.stdout.write('diagnostic: external runtime stopped\n')
+    // 进程退出:详情不能拼接日志尾巴（日志另供内部诊断）。
     child.emit('exit', 1, null)
     await starting
     await waitForStatus(manager, instance.id, 'error')
 
-    const errorEvent = events.find((e) => e.status === 'error')
+    const errorEvent = events.findLast((event) => event.status === 'error')
     expect(errorEvent).toBeDefined()
-    // detail 中的 URL token 必须脱敏
-    expect(errorEvent!.detail).not.toContain('SUPER_SECRET')
+    // 详情只给出简洁状态，绝不拼接 token 或其他日志内容。
+    expect(errorEvent!.detail).toBe('进程意外退出（code=1 signal=null）')
   })
 })
 

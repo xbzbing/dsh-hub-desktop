@@ -212,8 +212,6 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
 
   await card.locator('[data-testid^="external-access-"]').first().fill('external-token')
   await card.locator('[data-testid^="adopt-btn-"]:not([disabled])').first().click()
-  await expect(win.getByTestId('open-view-btn')).toBeEnabled()
-  await win.getByTestId('open-view-btn').click()
   await expect.poll(async () =>
     app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0]?.contentView.children.map((child) =>
@@ -221,6 +219,10 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
       ) ?? []
     )
   ).toContainEqual(expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+/))
+  await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+  await win.getByTestId('workspace-back-btn').click()
+  await expect(win.getByTestId('view-detail')).toBeVisible()
+  await expect(win.getByTestId('external-token-editor')).toBeVisible()
   expect(fakeDsh?.killed).toBe(false)
 
   // 接管和断开都不应产生运行信息回写错误。
