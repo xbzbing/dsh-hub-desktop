@@ -925,20 +925,6 @@ h3,
 .app-shell.rail .side-tools {
   display: none;
 }
-.app-shell.rail .rail-btn {
-  display: grid;
-  place-items: center;
-  align-self: center;
-  width: 46px;
-  height: 30px;
-  margin: 6px 0 2px;
-  border-radius: 8px;
-  color: var(--muted);
-}
-.app-shell.rail .rail-btn:hover {
-  background: var(--hover);
-  color: var(--fg);
-}
 .app-shell.rail .side-scroll {
   padding: 2px 0 12px;
 }
@@ -1018,8 +1004,7 @@ h3,
   display: grid;
   place-items: center;
 }
-.fx-icon,
-.rail-btn {
+.fx-icon {
   display: none;
 }
 
