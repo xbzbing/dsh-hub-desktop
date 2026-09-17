@@ -308,8 +308,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get()
     if (open) {
       const suspendWorkspace = state.workspaceOpen && state.selection !== null
-      if (suspendWorkspace) void window.dshHub?.runtime?.hideView()
-      set({ wizardOpen: true, workspaceSuspendedForWizard: suspendWorkspace })
+      if (suspendWorkspace) {
+        // WebContentsView 是独立于 React DOM 的原生子视图；确认隐藏后才挂载向导，
+        // 否则它会覆盖新建实例弹窗。
+        set({ workspaceOpen: false, workspaceOpening: false, workspaceSuspendedForWizard: true })
+        void Promise.resolve(window.dshHub?.runtime?.hideView()).finally(() => {
+          if (!get().wizardOpen) set({ wizardOpen: true })
+        })
+        return
+      }
+      set({ wizardOpen: true, workspaceSuspendedForWizard: false })
       return
     }
 

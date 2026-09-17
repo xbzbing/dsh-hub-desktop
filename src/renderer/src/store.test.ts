@@ -230,9 +230,15 @@ describe('store settings', () => {
     expect(toStatusInfo(useAppStore.getState().statuses['running-instance']?.status).dotClass).toBe('s-connected')
   })
 
-  it('打开向导时隐藏工作区，关闭后恢复同一已缓存工作区', async () => {
+  it('打开向导前先隐藏工作区，避免原生视图覆盖弹窗；关闭后恢复同一缓存视图', async () => {
     const useAppStore = await freshStore()
-    const hideView = vi.fn()
+    let resolveHide: (() => void) | undefined
+    const hideView = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveHide = resolve
+        })
+    )
     const openView = vi.fn(async () => ({ ok: true as const, value: null }))
     vi.stubGlobal('window', {
       ...window,
@@ -242,7 +248,12 @@ describe('store settings', () => {
 
     useAppStore.getState().setWizardOpen(true)
     expect(hideView).toHaveBeenCalledOnce()
+    expect(useAppStore.getState().wizardOpen).toBe(false)
+    expect(useAppStore.getState().workspaceOpen).toBe(false)
     expect(useAppStore.getState().workspaceSuspendedForWizard).toBe(true)
+
+    resolveHide?.()
+    await vi.waitFor(() => expect(useAppStore.getState().wizardOpen).toBe(true))
 
     useAppStore.getState().setWizardOpen(false)
     await vi.waitFor(() => expect(openView).toHaveBeenCalledWith('instance-1'))

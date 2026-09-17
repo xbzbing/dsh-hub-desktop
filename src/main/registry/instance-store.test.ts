@@ -90,12 +90,19 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(record.port).toBeNull()
     expect(record.dshVersion).toBeNull()
     expect(record.launcher).toBeNull()
+    expect(record.useDefaultSpace).toBe(false)
     expect(record.createdAt).toBe(record.updatedAt)
     expect(new Date(record.createdAt).getTime()).not.toBeNaN()
 
     const file = (await readRegistryFile()) as { schemaVersion: number; instances: unknown[] }
     expect(file.schemaVersion).toBe(1)
     expect(file.instances).toHaveLength(1)
+  })
+
+  it('local 保存公共空间选择', async () => {
+    const record = asLocal(await store.create(localInput({ useDefaultSpace: true })))
+    expect(record.useDefaultSpace).toBe(true)
+    expect(asLocal(await store.update(record.id, { useDefaultSpace: false })).useDefaultSpace).toBe(false)
   })
 
   it('local 保存并更新受限的启动器', async () => {

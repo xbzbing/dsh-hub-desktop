@@ -23,6 +23,7 @@ function localInstance(overrides: Partial<LocalInstance> = {}): LocalInstance {
     port: null,
     profile: null,
     launcher: null,
+    useDefaultSpace: false,
     autoStart: false,
     createdAt: ISO,
     updatedAt: ISO,
@@ -193,6 +194,34 @@ describe('createLocalRuntime', () => {
           '--no-open'
         ]
       })
+    )
+  })
+
+  it('公共空间仅使用主进程提供的 ~/.dsh，不接受渲染层路径', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999989
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+    const manager = createLocalRuntime({
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      homeDir: () => '/tmp/default-space-home',
+      spawnImpl: spawnImpl as never,
+      readyTimeoutMs: 2_000
+    })
+
+    const instance = localInstance({ useDefaultSpace: true })
+    const starting = manager.start(instance)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledOnce())
+    child.stdout.write(readyLine())
+    await starting
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/tmp/default-space-home/.dsh', env: expect.objectContaining({ DSH_HOME: '/tmp/default-space-home/.dsh' }) })
     )
   })
 

@@ -95,6 +95,8 @@ export const LocalInstanceSchema = z.object({
   profile: SAFE_PROFILE_SCHEMA.nullable().default(null),
   /** 可选的 dsh/dush 启动器；null = 默认 dsh。参数由 Hub 固定构造。 */
   launcher: z.enum(['dsh', 'dush']).nullable().default(null),
+  /** true 时复用用户的 ~/.dsh，而非 Hub 的隔离实例目录。 */
+  useDefaultSpace: z.boolean().default(false),
   /** 应用启动时自动拉起 */
   autoStart: z.boolean().default(false)
 })
@@ -152,6 +154,7 @@ export const CreateInstanceInputSchema = z.discriminatedUnion('transport', [
       port: PORT_SCHEMA.optional(),
       profile: SAFE_PROFILE_SCHEMA.optional(),
       launcher: z.enum(['dsh', 'dush']).optional(),
+      useDefaultSpace: z.boolean().optional(),
       /** 创建后接管检测到的外部 dsh web；这些瞬时输入不写入注册表。 */
       useExistingExternal: z.boolean().optional(),
       externalPid: z.number().int().positive().optional(),
@@ -204,6 +207,7 @@ export const PatchInstanceSchema = z
     port: PORT_SCHEMA.nullable().optional(),
     profile: SAFE_PROFILE_SCHEMA.nullable().optional(),
     launcher: z.enum(['dsh', 'dush']).nullable().optional(),
+    useDefaultSpace: z.boolean().optional(),
     autoStart: z.boolean().optional(),
     // —— ssh ——
     host: SSH_HOST_SCHEMA.optional(),

@@ -6,6 +6,7 @@
 import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 import type { InstanceRuntimeStatus, InstanceStatusEvent, LocalInstance } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
 import { DEFAULT_PORT_RANGE_END, DEFAULT_PORT_RANGE_START, findFreePort } from './port-allocator'
@@ -54,6 +55,8 @@ export interface LocalRuntimeOptions {
   /** 端口可绑定探测（注入以便测试端口分配时序；缺省用真实 bind 探测） */
   portProbe?: PortProbe
   profile?: string
+  /** 用户主目录来源；仅用来生成固定 ~/.dsh，不接受 renderer 指定路径。 */
+  homeDir?: () => string
   readyTimeoutMs?: number
   stopGraceMs?: number
   healthTimeoutMs?: number
@@ -138,6 +141,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const probe = options.probe ?? httpHealthProbe
   const nodeInvocation = options.nodeInvocation ?? defaultNodeInvocation()
   const profile = options.profile ?? 'web'
+  const homeDir = options.homeDir ?? homedir
   const readyTimeoutMs = options.readyTimeoutMs ?? 60_000
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
@@ -460,8 +464,10 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
                   ? `分配端口并启动进程（端口 ${preferredPort}）`
                   : '分配端口并启动进程（端口区间不可用，改由 dsh 自动选择）'
             })
-          const home = join(options.dataRoot, 'homes', id)
-          await mkdir(home, { recursive: true })
+            const home = instance.useDefaultSpace
+              ? join(homeDir(), '.dsh')
+              : join(options.dataRoot, 'homes', id)
+            await mkdir(home, { recursive: true })
 
           // --profile 会直接选择 web profile，不能再附加 web 子命令；所有参数由 Hub 构造，不经 shell 解释。
           const profileArgs = ['--profile', instance.profile ?? profile]

@@ -18,6 +18,7 @@ interface WizardForm {
   profile: string
   port: string
   launcher: 'dsh' | 'dush'
+  useDefaultSpace: boolean
   host: string
   username: string
   sshPort: string
@@ -32,6 +33,7 @@ const EMPTY_FORM: WizardForm = {
   profile: '',
   port: '',
   launcher: 'dsh',
+  useDefaultSpace: false,
   host: '',
   username: '',
   sshPort: '22',
@@ -108,7 +110,7 @@ export default function Wizard(): ReactNode {
   }, [step, transport, localProbeDone])
 
 
-  const set = (key: keyof WizardForm) => (event: { target: { value: string } }) => {
+  const set = (key: Exclude<keyof WizardForm, 'useDefaultSpace'>) => (event: { target: { value: string } }) => {
     const value = event.target.value
     setForm((current) => ({ ...current, [key]: value }))
     if (key === 'name' && value.trim() !== '') setError(null)
@@ -198,7 +200,8 @@ export default function Wizard(): ReactNode {
             ...(form.version.trim() !== '' ? { dshVersion: form.version.trim() } : {}),
             ...(form.profile.trim() !== '' ? { profile: form.profile.trim() } : {}),
             ...(form.port.trim() !== '' ? { port: Number(form.port) } : {}),
-            ...(form.launcher !== 'dsh' ? { launcher: form.launcher } : {})
+            ...(form.launcher !== 'dsh' ? { launcher: form.launcher } : {}),
+            ...(form.useDefaultSpace ? { useDefaultSpace: true } : {})
           }
         : transport === 'ssh'
           ? {
@@ -426,6 +429,22 @@ export default function Wizard(): ReactNode {
                         value={form.port}
                         onChange={set('port')}
                       />
+                    </div>
+                    <div className="field" style={{ gridColumn: '1 / -1' }}>
+                      <label htmlFor="wizard-space">{t('wizard.spaceLabel')}</label>
+                      <select
+                        className="input"
+                        id="wizard-space"
+                        value={form.useDefaultSpace ? 'shared' : 'isolated'}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, useDefaultSpace: event.target.value === 'shared' }))
+                        }
+                        data-testid="wizard-space"
+                      >
+                        <option value="isolated">{t('wizard.spaceIsolated')}</option>
+                        <option value="shared">{t('wizard.spaceShared')}</option>
+                      </select>
+                      <span className="hint">{t('wizard.spaceHint')}</span>
                     </div>
                   </div>
                 </details>
