@@ -92,6 +92,16 @@ export function addressOf(record: InstanceRecord): string {
   }
 }
 
+/** 标题栏只展示可扫描的 endpoint 主机/端口，避免路径和认证探测详情占满空间。 */
+export function compactWorkspaceAddress(address: string): string {
+  try {
+    const url = new URL(address)
+    return url.host || address
+  } catch {
+    return address.length > 64 ? `${address.slice(0, 61)}…` : address
+  }
+}
+
 /**
  * 运行时长(毫秒)→ 人类可读。
  * 文案通过翻译器生成，避免在此硬编码语言文本。

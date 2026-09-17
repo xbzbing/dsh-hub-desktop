@@ -58,6 +58,9 @@ test('明文警告显示为短标签，完整详情通过 data-tip 提供', asyn
   // 侧栏选中 http 实例(播种的第二个)
   await win.getByTestId('instances-table').isVisible()
   await win.getByText('明文远端实例').first().click()
+  await expect(win.getByTestId('workspace-loading')).toBeVisible()
+  await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+  await win.getByTestId('workspace-back-btn').click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
 
   const pill = win.getByTestId('cleartext-warning')

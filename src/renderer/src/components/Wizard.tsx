@@ -540,6 +540,7 @@ function TypeCard(props: {
   return (
     <button
       className="type-card"
+      data-transport={props.transport}
       aria-pressed={props.pressed}
       onClick={props.onClick}
       data-testid={`type-${props.transport}`}

@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { STATUS_INFO, toDisplayStatus, toStatusInfo } from './format'
+import { STATUS_INFO, compactWorkspaceAddress, toDisplayStatus, toStatusInfo } from './format'
 import type { DisplayStatus } from './format'
 
 /**
@@ -75,7 +75,18 @@ describe('状态 → 展示圆点映射', () => {
   })
 })
 
-// ───────────────────── 状态圆点 className 检查 ─────────────────────
+describe('工作区标题地址', () => {
+  it('远程端点仅显示简短的主机与端口，不能显示认证探测详情', () => {
+    expect(compactWorkspaceAddress('https://dsh.crazydb.com:8443/workspaces/team-a?ignored=value')).toBe(
+      'dsh.crazydb.com:8443'
+    )
+  })
+
+  it('本地地址保留端口，不能让长路径撑开标题栏', () => {
+    expect(compactWorkspaceAddress('http://127.0.0.1:3080/deep/path')).toBe('127.0.0.1:3080')
+  })
+})
+
 
 export interface SourceFile {
   path: string

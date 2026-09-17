@@ -32,6 +32,8 @@ interface AppState {
   selection: string | null
   /** 当前是否有主进程托管的内嵌工作区覆盖内容区。 */
   workspaceOpen: boolean
+  /** 正在检测并打开实例工作区；完成前保持加载中间页而不是切换详情。 */
+  workspaceOpening: boolean
   setWorkspaceOpen: (open: boolean) => void
   rail: boolean
   theme: 'light' | 'dark'
@@ -116,6 +118,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   statuses: {},
   selection: null,
   workspaceOpen: false,
+  workspaceOpening: false,
   rail: false,
   theme: initialTheme(),
   wizardOpen: false,
@@ -243,12 +246,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 改了 selection，App 却始终渲染 SettingsView，用户被困在设置页。
   select: (id) => {
     void window.dshHub?.runtime?.hideView()
-    set({ selection: id, workspaceOpen: false, settingsOpen: false })
+    set({ selection: id, workspaceOpen: false, workspaceOpening: false, settingsOpen: false })
   },
 
   openWorkspace: async (id) => {
     void window.dshHub?.runtime?.hideView()
-    set({ selection: id, workspaceOpen: false, settingsOpen: false })
+    set({ selection: id, workspaceOpen: false, workspaceOpening: true, settingsOpen: false })
     const result = await window.dshHub?.runtime.openView(id)
     if (result?.ok) {
       // 删除、总览或另一实例切换可能在等待 IPC 时发生；陈旧完成不得重新覆盖当前视图。
@@ -256,13 +259,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
         void window.dshHub?.runtime?.hideView()
         return
       }
-      set({ workspaceOpen: true })
+      set({ workspaceOpen: true, workspaceOpening: false })
       return
     }
+    if (get().selection === id) set({ workspaceOpening: false })
     if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
   },
 
-  setWorkspaceOpen: (open) => set({ workspaceOpen: open }),
+  setWorkspaceOpen: (open) => set({ workspaceOpen: open, workspaceOpening: false }),
 
   toggleRail: () => set((state) => ({ rail: !state.rail })),
 
@@ -281,7 +285,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setWizardOpen: (open) => set({ wizardOpen: open }),
   setSettingsOpen: (open) => {
     if (open) void window.dshHub?.runtime?.hideView()
-    set({ settingsOpen: open, workspaceOpen: false, ...(open ? { selection: null } : {}) })
+    set({ settingsOpen: open, workspaceOpen: false, workspaceOpening: false, ...(open ? { selection: null } : {}) })
   },
 
   setPendingOpen: (id) => set((state) => ({ pendingOpen: [...state.pendingOpen, id] })),

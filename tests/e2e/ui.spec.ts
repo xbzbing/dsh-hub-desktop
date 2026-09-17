@@ -64,10 +64,14 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await expect(table).toContainText('本地')
 })
 
-test('侧栏实例名称直接打开工作区，失败时保留详情页', async () => {
+test('侧栏实例名称经加载页进入工作区，返回后保留实例详情', async () => {
   await expect(win.getByTestId('instances-table')).toBeVisible()
   const firstSidebarItem = win.locator('[data-testid^="inst-"]').first()
   await firstSidebarItem.click()
+  await expect(win.getByTestId('workspace-loading')).toBeVisible()
+  await expect(win.getByTestId('workspace-toolbar')).toHaveCount(0)
+  await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+  await win.getByTestId('workspace-back-btn').click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
   await expect(win.getByTestId('open-view-btn')).toContainText('打开工作区')
 

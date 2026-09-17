@@ -217,18 +217,49 @@ describe('store settings', () => {
     expect(useAppStore.getState().settingsOpen).toBe(false)
   })
 
-  it('打开工作区成功时保留 selection 并显示内嵌工作区', async () => {
+  it('打开工作区成功时先显示加载状态，再保留 selection 并显示内嵌工作区', async () => {
     const useAppStore = await freshStore()
-    const openView = vi.fn(async () => ({ ok: true, value: null }))
+    let resolveOpen: ((value: { ok: true; value: null }) => void) | undefined
+    const openView = vi.fn(
+      () =>
+        new Promise<{ ok: true; value: null }>((resolve) => {
+          resolveOpen = resolve
+        })
+    )
     vi.stubGlobal('window', {
       ...window,
       dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
     })
     useAppStore.getState().select('instance-1')
-    await useAppStore.getState().openWorkspace('instance-1')
-    expect(openView).toHaveBeenCalledWith('instance-1')
+    const opening = useAppStore.getState().openWorkspace('instance-1')
     expect(useAppStore.getState().selection).toBe('instance-1')
+    expect(useAppStore.getState().workspaceOpening).toBe(true)
+    expect(useAppStore.getState().workspaceOpen).toBe(false)
+
+    resolveOpen?.({ ok: true, value: null })
+    await opening
+    expect(openView).toHaveBeenCalledWith('instance-1')
+    expect(useAppStore.getState().workspaceOpening).toBe(false)
     expect(useAppStore.getState().workspaceOpen).toBe(true)
+  })
+
+  it('工作区打开失败后退出加载状态并保留实例详情', async () => {
+    const useAppStore = await freshStore()
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: {
+        ...window.dshHub,
+        runtime: {
+          openView: vi.fn(async () => ({ ok: false, code: 'invalid-state', message: '连接失败' })),
+          hideView: vi.fn()
+        }
+      }
+    })
+
+    await useAppStore.getState().openWorkspace('instance-1')
+    expect(useAppStore.getState().selection).toBe('instance-1')
+    expect(useAppStore.getState().workspaceOpening).toBe(false)
+    expect(useAppStore.getState().workspaceOpen).toBe(false)
   })
 
   it('applyStatus 每次事件都换 statuses 引用(订阅者才会重渲染),圆点随之实时变化', async () => {

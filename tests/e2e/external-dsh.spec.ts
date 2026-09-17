@@ -93,6 +93,8 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
         return workspace?.webContents?.getURL() ?? ''
       })
     ).toContain('/login')
+    await expect(win.getByTestId('tb-title')).toHaveText('远程登录重定向')
+    await expect(win.getByTestId('tb-sub')).toHaveText('dsh.crazydb.com')
     await win.getByRole('button', { name: '关闭' }).click()
     await win.waitForTimeout(300)
     const log = mainErrors.join('')

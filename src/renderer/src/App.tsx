@@ -9,7 +9,8 @@ import Toasts from './components/Toasts'
 import SshDialogs from './components/SshDialogs'
 import AuthPanel from './components/AuthPanel'
 import SettingsView from './components/SettingsView'
-import WorkspaceToolbar from './components/WorkspaceToolbar'
+import { compactWorkspaceAddress } from './lib/format'
+import { Icon } from './lib/icons'
 
 const BRIDGE = window.dshHub
 
@@ -29,8 +30,9 @@ export default function App() {
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
   const statuses = useAppStore((state) => state.statuses)
   const workspaceOpen = useAppStore((state) => state.workspaceOpen)
+  const workspaceOpening = useAppStore((state) => state.workspaceOpening)
+  const setWorkspaceOpen = useAppStore((state) => state.setWorkspaceOpen)
   const contentRef = useRef<HTMLElement | null>(null)
-  const workspaceToolbarRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!BRIDGE) return
@@ -52,21 +54,18 @@ export default function App() {
   useLayoutEffect(() => {
     if (!workspaceOpen || !contentRef.current) return
     const element = contentRef.current
-    const toolbar = workspaceToolbarRef.current
     const updateBounds = (): void => {
       const rect = element.getBoundingClientRect()
-      const toolbarHeight = toolbar?.getBoundingClientRect().height ?? 0
       void window.dshHub?.runtime.updateViewBounds({
         x: Math.round(rect.left),
-        y: Math.round(rect.top + toolbarHeight),
+        y: Math.round(rect.top),
         width: Math.round(rect.width),
-        height: Math.max(0, Math.round(rect.height - toolbarHeight))
+        height: Math.max(0, Math.round(rect.height))
       })
     }
     updateBounds()
     const observer = new ResizeObserver(updateBounds)
     observer.observe(element)
-    if (toolbar) observer.observe(toolbar)
     window.addEventListener('resize', updateBounds)
     return () => {
       observer.disconnect()
@@ -91,6 +90,9 @@ export default function App() {
 
   const selectedStatus = selection ? statuses[selection] : undefined
   const selectedInstance = selection ? instances.find((instance) => instance.id === selection) : undefined
+  const workspaceAddress = workspaceOpen && selectedInstance
+    ? compactWorkspaceAddress(selectedInstance.address)
+    : undefined
   const title = t('nav.overview')
 
   return (
@@ -103,21 +105,40 @@ export default function App() {
               ? t('settings.title')
               : workspaceOpen && selectedInstance
                 ? selectedInstance.name
-                : selection
-                  ? t('detail.instanceDetail')
-                  : title}
+                : workspaceOpening
+                  ? t('detail.openingWorkspace')
+                  : selection
+                    ? t('detail.instanceDetail')
+                    : title}
           </span>
           <span className="tb-sub" data-testid="tb-sub">
-            {selectedStatus?.detail ?? t('nav.instanceCount', { n: instances.length })}
+            {workspaceOpen ? workspaceAddress ?? selectedInstance?.name ?? t('common.unknown') : selectedStatus?.detail ?? t('nav.instanceCount', { n: instances.length })}
           </span>
+          {workspaceOpen && (
+            <button
+              className="workspace-back"
+              onClick={() => {
+                void window.dshHub?.runtime.hideView()
+                setWorkspaceOpen(false)
+              }}
+              data-testid="workspace-back-btn"
+            >
+              <Icon name="back" /> {t('common.backToOverview')}
+            </button>
+          )}
         </div>
       </div>
       <Sidebar />
       <main ref={contentRef} className={`content${workspaceOpen ? ' workspace-active' : ''}`}>
-        {workspaceOpen && <WorkspaceToolbar ref={workspaceToolbarRef} />}
         <div className="content-scroll" data-testid="content-scroll">
           {settingsOpen ? (
             <SettingsView />
+          ) : workspaceOpening ? (
+            <section className="workspace-loading" aria-busy="true" aria-live="polite" data-testid="workspace-loading">
+              <Icon name="refresh" />
+              <h2>{t('detail.openingWorkspace')}</h2>
+              <p>{selectedInstance?.name ?? t('common.loading')}</p>
+            </section>
           ) : selection !== null && loaded ? (
             <DetailView />
           ) : !loaded ? (
