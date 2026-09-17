@@ -105,6 +105,14 @@ describe('打包与发布配置', () => {
     expect(yml).not.toMatch(/-\s*docs\/\*\*/)
   })
 
+  it('使用设计稿生成的 macOS 与 Windows 应用图标', () => {
+    expect(yml).toMatch(/^\s*icon:\s*build\/icon\.icns\s*$/m)
+    expect(yml).toMatch(/^\s*icon:\s*build\/icon\.ico\s*$/m)
+    expect(existsSync(join(ROOT, 'design', 'dsh-hub-logo.svg'))).toBe(true)
+    expect(existsSync(join(ROOT, 'build', 'icon.icns'))).toBe(true)
+    expect(existsSync(join(ROOT, 'build', 'icon.ico'))).toBe(true)
+  })
+
   it('零运行时依赖', () => {
     expect(Object.keys(pkg.dependencies ?? {})).toEqual([])
   })

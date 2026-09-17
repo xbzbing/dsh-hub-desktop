@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Transport } from '@shared/contracts'
 import { Icon } from '../lib/icons'
+import logoUrl from '../../../../design/dsh-hub-logo.svg'
 import { STATUS_INFO, TYPE_INFO, toDisplayStatus } from '../lib/format'
 import { useAppStore } from '../store'
 
@@ -51,7 +52,7 @@ export default function Sidebar(): ReactNode {
           data-testid="brand"
         >
           <span className="brand-mark">
-            <Icon name="hub" />
+            <img src={logoUrl} alt="" />
           </span>
           <span className="brand-text">
             <b>DSH Hub</b>
