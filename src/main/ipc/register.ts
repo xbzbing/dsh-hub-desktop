@@ -683,6 +683,8 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       // 「登出 → 任何探测」会立刻用已存密码复活会话。手动登录成功才解除。
       logoutSuppressed.add(instanceId)
       await deps.clearPartitionSession?.(instanceId)
+      // 登出时忘掉 vault 中的会话:否则重启后 restoreSessionFromVault 会恢复已失效的登录态
+      await deps.vault.forgetSession(instanceId).catch(() => undefined)
       deps.audit?.({ instanceId, event: 'session-revoked', result: 'logout' })
       deps.audit?.({ instanceId, event: 'cookie-cleared', result: 'logout' })
       return snapshot
@@ -719,6 +721,10 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         const dropSession = parsed?.session ?? true
         if (dropPassword) await deps.vault.forgetPassword(instanceId)
         if (dropSession) await deps.vault.forgetSession(instanceId)
+        // 清除外部访问 token:忘记凭据时一并清理,避免残留的 token 导致下次接管时
+        // 用已失效的 token 尝试连接(会报「token 无效」而非正常的重新输入流程)
+        externalAccessUrls.delete(instanceId)
+        await deps.vault.forgetExternalAccessToken(instanceId)
         // 忘记凭据即取消勾选:否则下一次登录又会把它写回来
         const policy = deps.vault.getPolicy(instanceId)
         const next: VaultPolicy = {
