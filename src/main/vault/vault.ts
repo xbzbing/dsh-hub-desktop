@@ -70,6 +70,12 @@ export interface Vault {
   getPassword(instanceId: string): string | null
   forgetPassword(instanceId: string): Promise<void>
 
+  /** 外部本机 dsh 的 BrowserAuth token；始终加密存储，不复用网关密码字段。 */
+  hasExternalAccessToken(instanceId: string): boolean
+  rememberExternalAccessToken(instanceId: string, token: string): Promise<void>
+  getExternalAccessToken(instanceId: string): string | null
+  forgetExternalAccessToken(instanceId: string): Promise<void>
+
   hasSession(instanceId: string): boolean
   rememberSession(instanceId: string, session: StoredSession): Promise<void>
   getSession(instanceId: string): StoredSession | null
@@ -109,6 +115,8 @@ export const DEFAULT_VAULT_POLICY: VaultPolicy = {
 /** 落盘格式(版本化,便于后续迁移) */
 interface VaultItem {
   password?: string
+  /** 外部本机 dsh BrowserAuth token 的密文。 */
+  externalAccessToken?: string
   session?: string
 }
 interface VaultFile {
@@ -168,8 +176,11 @@ export function createVault(options: VaultOptions): Vault {
         if (typeof raw !== 'object' || raw === null) continue
         const entry: VaultItem = {}
         if (typeof raw.password === 'string') entry.password = raw.password
+        if (typeof raw.externalAccessToken === 'string') entry.externalAccessToken = raw.externalAccessToken
         if (typeof raw.session === 'string') entry.session = raw.session
-        if (entry.password !== undefined || entry.session !== undefined) items.set(id, entry)
+        if (entry.password !== undefined || entry.externalAccessToken !== undefined || entry.session !== undefined) {
+          items.set(id, entry)
+        }
       }
       for (const [id, raw] of Object.entries(parsed.policy ?? {})) {
         policy.set(id, normalizePolicy(raw))
@@ -213,8 +224,11 @@ export function createVault(options: VaultOptions): Vault {
     for (const [id, entry] of items) {
       const next: VaultItem = {}
       if (entry.password !== undefined) next.password = entry.password
+      if (entry.externalAccessToken !== undefined) next.externalAccessToken = entry.externalAccessToken
       if (entry.session !== undefined) next.session = entry.session
-      if (next.password !== undefined || next.session !== undefined) payload.items[id] = next
+      if (next.password !== undefined || next.externalAccessToken !== undefined || next.session !== undefined) {
+        payload.items[id] = next
+      }
     }
     for (const [id, value] of policy) {
       if (value.rememberPassword || value.rememberSession) payload.policy![id] = value
@@ -263,7 +277,7 @@ export function createVault(options: VaultOptions): Vault {
 
   function dropIfEmpty(instanceId: string): void {
     const entry = items.get(instanceId)
-    if (entry && entry.password === undefined && entry.session === undefined) {
+    if (entry && entry.password === undefined && entry.externalAccessToken === undefined && entry.session === undefined) {
       items.delete(instanceId)
     }
   }
@@ -281,6 +295,7 @@ export function createVault(options: VaultOptions): Vault {
       onError(error)
       const entry = items.get(instanceId)
       if (entry?.password === payload) delete entry.password
+      if (entry?.externalAccessToken === payload) delete entry.externalAccessToken
       if (entry?.session === payload) delete entry.session
       dropIfEmpty(instanceId)
       return null
@@ -322,6 +337,33 @@ export function createVault(options: VaultOptions): Vault {
       const entry = items.get(instanceId)
       if (!entry) return
       delete entry.password
+      dropIfEmpty(instanceId)
+      await persist()
+    },
+
+    hasExternalAccessToken(instanceId) {
+      load()
+      return items.get(instanceId)?.externalAccessToken !== undefined
+    },
+
+    async rememberExternalAccessToken(instanceId, token) {
+      if (token === '') throw new Error('空访问 token 不写入 vault')
+      load()
+      entryFor(instanceId).externalAccessToken = encode(token)
+      await persist()
+    },
+
+    getExternalAccessToken(instanceId) {
+      load()
+      const payload = items.get(instanceId)?.externalAccessToken
+      return payload === undefined ? null : readField(instanceId, payload)
+    },
+
+    async forgetExternalAccessToken(instanceId) {
+      load()
+      const entry = items.get(instanceId)
+      if (!entry) return
+      delete entry.externalAccessToken
       dropIfEmpty(instanceId)
       await persist()
     },

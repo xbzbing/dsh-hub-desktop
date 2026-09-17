@@ -50,6 +50,11 @@ import { SettingsSchema } from '@shared/settings'
 import type { Settings } from '@shared/settings'
 import type { AuditEntry } from '../audit/audit-log'
 
+async function defaultVerifyExternalAccess(url: string): Promise<boolean> {
+  const response = await fetch(url, { redirect: 'manual' })
+  return response.status !== 401 && response.status !== 403
+}
+
 export interface IpcDeps {
   runtime: LocalRuntimeManager
   /**
@@ -75,6 +80,8 @@ export interface IpcDeps {
   /**
    * 才在登录成功时写入,勾选取消即忘掉。
    */
+  /** 用户显式提供的外部本机 dsh token 必须通过本机端点验收后才持久化。 */
+  verifyExternalAccess?: (url: string) => Promise<boolean>
   vault: Vault
   settings: SettingsStore
   /**
@@ -126,11 +133,11 @@ function parseId(id: unknown): string {
  * 将用户提供的 token 或 dsh 输出的完整地址收敛为已验证的回环 URL。
  * token 只由主进程保存在当前会话中，不能进入注册表、状态事件或日志。
  */
-function externalAccessUrl(raw: unknown, port: number): string {
+function externalAccessToken(raw: unknown, port: number): string {
   const access = z.string().trim().min(1).max(4096).parse(raw)
   if (!access.includes('://')) {
     if (/\s/.test(access)) throw new InstanceStoreError('invalid-input', '访问 token 不能包含空白')
-    return `http://127.0.0.1:${port}/?token=${encodeURIComponent(access)}`
+    return access
   }
   let url: URL
   try {
@@ -144,13 +151,20 @@ function externalAccessUrl(raw: unknown, port: number): string {
     url.port !== String(port) ||
     url.username !== '' ||
     url.password !== '' ||
-    url.hash !== '' ||
-    url.searchParams.get('token') === null ||
-    url.searchParams.get('token') === ''
+    url.hash !== ''
   ) {
     throw new InstanceStoreError('invalid-input', '访问链接必须匹配已检测的本机 dsh 端口并包含 token')
   }
-  return url.toString()
+  const token = url.searchParams.get('token')
+  if (token === null || token === '') {
+    throw new InstanceStoreError('invalid-input', '访问链接必须匹配已检测的本机 dsh 端口并包含 token')
+  }
+  return token
+}
+
+/** 将 token 拼入已由主进程重新扫描确认的回环端口。 */
+function externalAccessUrl(token: string, port: number): string {
+  return `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`
 }
 
 function toSummary(record: InstanceRecord): InstanceSummary {
@@ -216,10 +230,15 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       const match = found.find((item) => item.pid === pid)
       if (!match) throw new InstanceStoreError('not-found', `未找到 pid ${pid} 的 dsh web 进程`)
       if (match.port === null) throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')
-      const accessUrl = externalAccessUrl(externalAccess, match.port)
+      const token = externalAccessToken(externalAccess, match.port)
+      const accessUrl = externalAccessUrl(token, match.port)
+      if (!(await (deps.verifyExternalAccess ?? defaultVerifyExternalAccess)(accessUrl))) {
+        throw new InstanceStoreError('invalid-state', '访问 token 无效，请重新输入')
+      }
       const record = await store.create({ ...recordInput, port: match.port })
       if (record.transport !== 'local') throw new Error('本机实例创建结果无效')
       externalAccessUrls.set(record.id, { pid: match.pid, port: match.port, url: accessUrl })
+      await deps.vault.rememberExternalAccessToken(record.id, token)
       await deps.runtime.adopt(record, { pid: match.pid, port: match.port, patch: match.patch })
       return record
     })
@@ -240,6 +259,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         // 否则 dsh/ssh 进程继续存活(独占端口与 DSH_HOME),窗口也无 stopped 事件可回收
         const record = await store.get(instanceId)
         externalAccessUrls.delete(instanceId)
+        await deps.vault.forgetExternalAccessToken(instanceId)
         if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
         else if (record?.transport === 'http') await deps.http.stop(instanceId)
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
@@ -332,7 +352,23 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         await deps.openInstanceView(instance, savedAccess.url)
         return
       }
-      // 已运行的本机 dsh 可直接打开工作区，不改变实例的运行来源或进程所有权。
+      const external = deps.externalDsh ? await deps.externalDsh.scan() : []
+      const match = external.find((item) => item.port === instance.port)
+      if (match && match.port !== null) {
+        const token = deps.vault.getExternalAccessToken(instanceId)
+        if (!token) {
+          throw new InstanceStoreError('invalid-state', '需要输入该本机 dsh 的访问 token')
+        }
+        const accessUrl = externalAccessUrl(token, match.port)
+        if (!(await (deps.verifyExternalAccess ?? defaultVerifyExternalAccess)(accessUrl))) {
+          await deps.vault.forgetExternalAccessToken(instanceId)
+          throw new InstanceStoreError('invalid-state', '已保存的访问 token 无效，请重新输入')
+        }
+        await deps.runtime.adopt(instance, { pid: match.pid, port: match.port, patch: match.patch })
+        externalAccessUrls.set(instanceId, { pid: match.pid, port: match.port, url: accessUrl })
+        await deps.openInstanceView(instance, accessUrl)
+        return
+      }
       await deps.runtime.start(instance)
       const ready = deps.runtime.statusOf(instanceId)
       if (ready?.status === 'running' && ready.url) {
@@ -413,13 +449,24 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         if (deps.runtime.statusOf(instanceId) !== null) {
           throw new InstanceStoreError('invalid-state', '实例已在运行，不能接管其他本机 dsh web')
         }
-        const accessUrl = externalAccessUrl(access, match.port)
+        const rawAccess = typeof access === 'string' ? access.trim() : ''
+        const usingStoredToken = rawAccess === ''
+        const token = usingStoredToken
+          ? deps.vault.getExternalAccessToken(instanceId)
+          : externalAccessToken(access, match.port)
+        if (!token) throw new InstanceStoreError('invalid-state', '需要输入该本机 dsh 的访问 token')
+        const accessUrl = externalAccessUrl(token, match.port)
+        if (!(await (deps.verifyExternalAccess ?? defaultVerifyExternalAccess)(accessUrl))) {
+          if (usingStoredToken) await deps.vault.forgetExternalAccessToken(instanceId)
+          throw new InstanceStoreError('invalid-state', '访问 token 无效，请重新输入')
+        }
         await deps.runtime.adopt(instance, {
           pid: match.pid,
           port: match.port,
           patch: match.patch
         })
         externalAccessUrls.set(instanceId, { pid: match.pid, port: match.port, url: accessUrl })
+        if (!usingStoredToken) await deps.vault.rememberExternalAccessToken(instanceId, token)
         deps.audit?.({ instanceId, event: 'connect', result: 'adopt-external' })
         return null
       })

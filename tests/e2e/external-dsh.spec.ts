@@ -34,7 +34,7 @@ test.beforeAll(async () => {
 
   const script = [
     "const http = require('node:http')",
-    "http.createServer((_, res) => res.end('<html><body><h1 id=\"external-dsh\">外部 dsh web</h1></body></html>'))",
+    `http.createServer((req, res) => { const token = new URL(req.url, 'http://127.0.0.1').searchParams.get('token'); if (!['external-token', 'test-restart-token'].includes(token ?? '')) { res.writeHead(401); res.end('dsh web authentication required'); return } res.end('<html><body><h1 id="external-dsh">外部 dsh web</h1></body></html>') })`,
     ".listen(0, '127.0.0.1', function () { console.log(this.address().port); setTimeout(() => {}, 600000) })"
   ].join('\n')
   fakeDsh = spawn(
@@ -128,7 +128,7 @@ test('HTTP 实例未启动也能直接打开视图', async () => {
   await win.screenshot({ path: join(SHOT_DIR, 'http-open-without-start.png'), animations: 'disabled' })
 })
 
-test('重启后接管同一外部 dsh 会复用端口实例，不保存 token 或新建实例', async () => {
+test('重启后接管同一外部 dsh 会复用端口实例和已保存 token，不新建实例', async () => {
   await win.getByTestId('new-instance-btn').click()
   await win.getByRole('button', { name: '下一步' }).click()
   const external = win.getByTestId('wizard-external-dsh')
@@ -166,7 +166,7 @@ test('重启后接管同一外部 dsh 会复用端口实例，不保存 token �
   await expect(reopenedExternal).toBeVisible({ timeout: 10_000 })
   await reopenedExternal.getByRole('checkbox').check()
   await expect(win.getByTestId('wizard-name')).toHaveValue('重启后复用实例')
-  await win.getByTestId('wizard-external-access').fill('test-restart-token')
+  await expect(win.getByTestId('wizard-external-access')).toHaveValue('')
   await win.getByRole('button', { name: '下一步' }).click()
   await win.getByTestId('wizard-create').click()
   await expect(win.getByTestId('wizard')).toBeHidden()
@@ -211,7 +211,7 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   await win.screenshot({ path: join(SHOT_DIR, 'external-dsh-detected.png'), animations: 'disabled' })
 
   await card.locator('[data-testid^="external-access-"]').first().fill('external-token')
-  await card.locator('[data-testid^="adopt-btn-"]:not([disabled])').click()
+  await card.locator('[data-testid^="adopt-btn-"]:not([disabled])').first().click()
   await expect(win.getByTestId('open-view-btn')).toBeEnabled()
   await win.getByTestId('open-view-btn').click()
   await expect.poll(async () =>

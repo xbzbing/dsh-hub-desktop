@@ -74,6 +74,7 @@ let promptsFake: {
   cancelAll: ReturnType<typeof vi.fn>
 }
 let currentStatus: InstanceStatusEvent | null
+let verifyExternalAccess: ReturnType<typeof vi.fn>
 
 beforeEach(async () => {
   await mkdir(TEST_BASE, { recursive: true })
@@ -84,6 +85,7 @@ beforeEach(async () => {
     return undefined as never
   })
   currentStatus = null
+  verifyExternalAccess = vi.fn(async () => true)
   runtimeFake = {
     onStatus: vi.fn(() => () => undefined),
     statusOf: vi.fn(() => currentStatus),
@@ -126,13 +128,17 @@ beforeEach(async () => {
     getPolicy: vi.fn(() => ({ rememberPassword: false, rememberSession: false })),
     setPolicy: vi.fn(async () => undefined),
     rememberPassword: vi.fn(async () => undefined),
+    rememberExternalAccessToken: vi.fn(async () => undefined),
     rememberSession: vi.fn(async () => undefined),
     forgetPassword: vi.fn(async () => undefined),
+    forgetExternalAccessToken: vi.fn(async () => undefined),
     forgetSession: vi.fn(async () => undefined),
     forgetInstance: vi.fn(async () => undefined),
     clearAll: vi.fn(async () => undefined),
     hasPassword: vi.fn(() => false),
     getPassword: vi.fn(() => null),
+    hasExternalAccessToken: vi.fn(() => false),
+    getExternalAccessToken: vi.fn(() => null),
     hasSession: vi.fn(() => false),
     getSession: vi.fn(() => null),
     rememberedIds: vi.fn(() => []),
@@ -173,6 +179,7 @@ beforeEach(async () => {
     http: httpFake as unknown as HttpEndpointManager,
     auth: authFake as never,
     externalDsh: externalDshFake as never,
+    verifyExternalAccess: verifyExternalAccess as (url: string) => Promise<boolean>,
     vault: vaultFake as never,
     settings: settingsFake as never,
     audit: auditSpy,
@@ -678,6 +685,43 @@ describe('registerIpc', () => {
     expect(runtimeFake.start).toHaveBeenCalledWith(expect.objectContaining({ id: local.value.id }))
   })
 
+  it('重启后的本机实例从保险库读取 token，验证后自动打开已接管的端口', async () => {
+    const local = (await invoke('instances:create', { ...VALID_LOCAL, port: 3080 })) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+    vaultFake['getExternalAccessToken']!.mockReturnValue('saved-token')
+
+    const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    expect(verifyExternalAccess).toHaveBeenCalledWith('http://127.0.0.1:3080/?token=saved-token')
+    expect(openInstanceView).toHaveBeenCalledWith(
+      expect.objectContaining({ id: local.value.id }),
+      'http://127.0.0.1:3080/?token=saved-token'
+    )
+    expect(runtimeFake.start).not.toHaveBeenCalled()
+  })
+
+  it('保存的外部 token 无效时清除它并要求用户重新输入', async () => {
+    const local = (await invoke('instances:create', { ...VALID_LOCAL, port: 3080 })) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+    vaultFake['getExternalAccessToken']!.mockReturnValue('expired-token')
+    verifyExternalAccess.mockResolvedValueOnce(false)
+
+    const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean; code?: string; message?: string }
+    expect(opened.ok).toBe(false)
+    expect(opened.code).toBe('invalid-state')
+    expect(opened.message).toContain('重新输入')
+    expect(vaultFake['forgetExternalAccessToken']).toHaveBeenCalledWith(local.value.id)
+    expect(openInstanceView).not.toHaveBeenCalled()
+  })
+
   it('本机已有 dsh web 时创建实例会绑定其端口，而非额外启动新进程', async () => {
     externalDshFake.scan.mockResolvedValue([
       { pid: 84758, port: 52300, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
@@ -756,6 +800,40 @@ describe('registerIpc', () => {
     })
   })
 
+  it('接管时可复用已保存的外部 token，渲染层无需再次提交凭据', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+    vaultFake['getExternalAccessToken']!.mockReturnValue('saved-token')
+
+    const adopted = (await invoke('instances:adoptExternal', local.value.id, 84758, '')) as { ok: boolean }
+    expect(adopted.ok).toBe(true)
+    expect(verifyExternalAccess).toHaveBeenCalledWith('http://127.0.0.1:3080/?token=saved-token')
+    expect(vaultFake['rememberExternalAccessToken']).not.toHaveBeenCalled()
+  })
+
+  it('外部 dsh 接管验证 token 后保存，失效 token 会被清除并要求重新输入', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+
+    const saved = (await invoke('instances:adoptExternal', local.value.id, 84758, 'valid-token')) as { ok: boolean }
+    expect(saved.ok).toBe(true)
+    expect(verifyExternalAccess).toHaveBeenCalledWith('http://127.0.0.1:3080/?token=valid-token')
+    expect(vaultFake['rememberExternalAccessToken']).toHaveBeenCalledWith(local.value.id, 'valid-token')
+
+    currentStatus = null
+    verifyExternalAccess.mockResolvedValueOnce(false)
+    const rejected = (await invoke('instances:adoptExternal', local.value.id, 84758, 'invalid-token')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(rejected.ok).toBe(false)
+    expect(rejected.code).toBe('invalid-state')
+    expect(vaultFake['forgetExternalAccessToken']).not.toHaveBeenCalled()
+  })
+
+
   it('接管外部 dsh 的 token 只用于匹配 PID 的回环 URL，拒绝远程或错误端口', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
@@ -784,6 +862,7 @@ describe('registerIpc', () => {
     expect(wrongPort.ok).toBe(false)
     expect(wrongPort.code).toBe('invalid-input')
   })
+
 
   it('不允许运行中的实例覆盖已接管外部 dsh 的访问会话', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }

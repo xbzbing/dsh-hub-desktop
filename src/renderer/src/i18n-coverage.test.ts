@@ -889,6 +889,10 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '访问链接无法解析')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('not-found', '已接管的本机 dsh web 已停止')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '实例已在运行，不能接管其他本机 dsh web')"),
+  debt('src/main/ipc/register.ts', "if (!token) throw new InstanceStoreError('invalid-state', '需要输入该本机 dsh 的访问 token')"),
+  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '需要输入该本机 dsh 的访问 token')"),
+  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '已保存的访问 token 无效，请重新输入')"),
+  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '访问 token 无效，请重新输入')"),
   debt('src/main/workspace-host.ts', "if (!win || win.isDestroyed()) throw new Error('工作区主窗口不可用')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('not-found', `未找到 pid ${targetPid} 的 dsh web 进程`)"),
@@ -1067,6 +1071,7 @@ const NON_RENDERER_COPY_DEBT_INTERNAL: readonly DebtEntry[] = [
   // —— 普通 Error(message 为中文):IPC 边界统一换成稳定码的固定文案(register.ts wrap 的 internal),明细只进主进程日志;或被调用方 catch 后只 console.error ——
   debt('src/main/ssh/key-preview.ts', "else reject(error ?? new Error('ssh -G 未返回任何配置'))"),
   debt('src/main/vault/vault.ts', "if (password === '') throw new Error('空密码不写入 vault')"),
+  debt('src/main/vault/vault.ts', "if (token === '') throw new Error('空访问 token 不写入 vault')"),
   debt('src/main/vault/vault.ts', "if (session.value === '') throw new Error('空会话不写入 vault')"),
   debt('src/main/vault/vault.ts', 'throw new Error(`未勾选「${field}」,拒绝写入 vault`)'),
 

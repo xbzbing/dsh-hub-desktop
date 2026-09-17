@@ -119,7 +119,12 @@ export default function Wizard(): ReactNode {
 
   const formError = (): string | null => {
     if (!form.name.trim() && !reusableExternalInstance) return t('wizard.errName')
-    if (transport === 'local' && useExistingExternal && !form.externalAccess.trim()) {
+    if (
+      transport === 'local' &&
+      useExistingExternal &&
+      !reusableExternalInstance &&
+      !form.externalAccess.trim()
+    ) {
       return t('wizard.errExternalAccess')
     }
     if (transport === 'ssh') {

@@ -118,6 +118,18 @@ describe('vault（ 凭据存储策略）', () => {
     expect(second.getPolicy('i1')).toEqual(BOTH)
   })
 
+  it('外部本机 dsh token 加密落盘并在重启后可读，且不依赖网关密码策略', async () => {
+    const first = createVault({ filePath, crypto: fakeCrypto() })
+    await first.rememberExternalAccessToken('i1', 'external-token')
+    expect(first.getExternalAccessToken('i1')).toBe('external-token')
+    expect((await readFile(filePath, 'utf8'))).not.toContain('external-token')
+
+    const restarted = createVault({ filePath, crypto: fakeCrypto() })
+    expect(restarted.getExternalAccessToken('i1')).toBe('external-token')
+    await restarted.forgetExternalAccessToken('i1')
+    expect(restarted.getExternalAccessToken('i1')).toBeNull()
+  })
+
   it('取消勾选必须真的忘掉(不只是停止「继续记住」)', async () => {
     const vault = await optIn()
     await vault.rememberPassword('i1', 'hunter2')

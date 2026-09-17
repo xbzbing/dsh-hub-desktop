@@ -325,6 +325,7 @@ export default function DetailView(): ReactNode {
                       setExternalAccess((current) => ({ ...current, [item.pid]: event.target.value }))
                     }
                     autoComplete="off"
+                    type="password"
                     aria-label={t('wizard.externalAccessLabel')}
                     data-testid={`external-access-${item.pid}`}
                   />
@@ -332,7 +333,7 @@ export default function DetailView(): ReactNode {
                 <button
                   className="btn btn-primary btn-sm"
                   data-testid={`adopt-btn-${item.pid}`}
-                  disabled={adopting !== null || !(externalAccess[item.pid]?.trim())}
+                  disabled={adopting !== null}
                   onClick={() => {
                     setAdopting(item.pid)
                     void window.dshHub?.runtime
