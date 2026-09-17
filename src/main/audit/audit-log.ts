@@ -11,7 +11,7 @@
  * 3. **写失败绝不冒泡进业务流**:失败经 `onError` 上报,审计不可用不该让登录失败;
  * 4. 清理只删**严格匹配** `audit.log.<YYYY-MM-DD>` 的文件,目录里其它文件一律不碰。
  */
-import { appendFile, link, mkdir, readdir, stat, unlink } from 'node:fs/promises'
+import { appendFile, link, mkdir, readdir, readFile, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** 当日活动文件名 */
@@ -131,6 +131,27 @@ export function createAuditLog(options: AuditLogOptions): AuditLog {
   /** 串行化:并发 append 交错会让轮转与写入互相踩(轮转需在写前完成) */
   let tail: Promise<void> = Promise.resolve()
 
+  /**
+   * 从活动文件末尾读取最后一条记录的日期,用于恢复 liveDay。
+   * 重启后若不恢复,当天的记录会与前一天的记录混在同一文件里(轮转被跳过)。
+   */
+  async function probeLiveDay(): Promise<string | null> {
+    try {
+      const content = await readFile(logPath(), 'utf8')
+      // 从末尾找最后一条 JSONL 行(避免读取整个大文件)
+      const lastNewline = content.lastIndexOf('\n', content.length - 2)
+      const lastLine = (lastNewline >= 0 ? content.slice(lastNewline + 1) : content).trim()
+      if (lastLine === '') return null
+      const record = JSON.parse(lastLine) as { ts?: string }
+      if (typeof record.ts !== 'string') return null
+      // ts 是 ISO-8601 UTC,用本地日解析(与 localDay 一致)
+      const date = new Date(record.ts)
+      return localDay(date)
+    } catch {
+      return null
+    }
+  }
+
   const logPath = (): string => join(dir, AUDIT_LOG_NAME)
 
   /** 轮转:把上一个写入日的活动文件改名为其归属日的归档 */
@@ -153,6 +174,8 @@ export function createAuditLog(options: AuditLogOptions): AuditLog {
 
   async function appendLine(record: AuditRecord): Promise<void> {
     const today = localDay(new Date(now()))
+    // 首次写入时从已有文件恢复 liveDay:重启后若不恢复,当天记录会与前一天混在同一文件
+    if (liveDay === null) liveDay = await probeLiveDay()
     await mkdir(dir, { recursive: true })
     await rotateIfNeeded(today)
     await appendFile(logPath(), `${JSON.stringify(record)}\n`, { mode: 0o600 })
