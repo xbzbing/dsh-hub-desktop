@@ -22,6 +22,7 @@ function localInstance(overrides: Partial<LocalInstance> = {}): LocalInstance {
     dshVersion: null,
     port: null,
     profile: null,
+    launcher: null,
     autoStart: false,
     createdAt: ISO,
     updatedAt: ISO,
@@ -134,6 +135,21 @@ describe('createLocalRuntime', () => {
     expect(status?.version).toBe('0.1.5-rc.1')
     expect(probe).toHaveBeenCalledWith('http://127.0.0.1:31234/?token=abc', expect.any(Number))
     // #2 后的进度序列:解析来源 → 需下载待确认 → 准备运行时 → 分配端口 → running
+    expect(spawnImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: process.execPath,
+        args: expect.arrayContaining(['--profile', 'web', '--host', '127.0.0.1', '--no-open'])
+      })
+    )
+    expect(spawnImpl.mock.calls[0]?.[0].args.slice(-7)).toEqual([
+      '--profile',
+      'web',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      expect.stringMatching(/^\d+$/),
+      '--no-open'
+    ])
     expect(events.map((event) => event.status)).toEqual([
       'starting',
       'starting',
@@ -141,6 +157,43 @@ describe('createLocalRuntime', () => {
       'starting',
       'running'
     ])
+  })
+
+  it('选择 dush 启动器时由 Hub 固定 web、回环端口和 --no-open', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999990
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+    const manager = createLocalRuntime({
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      readyTimeoutMs: 2_000
+    })
+
+    const instance = localInstance({ launcher: 'dush' })
+    const starting = manager.start(instance)
+    child.stdout.write(readyLine())
+    await starting
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'dush',
+        args: [
+          '--profile',
+          'web',
+          '--host',
+          '127.0.0.1',
+          '--port',
+          expect.stringMatching(/^\d+$/),
+          '--no-open'
+        ]
+      })
+    )
   })
 
   it('启动超时未出就绪行 → error + 杀进程', async () => {

@@ -32,8 +32,8 @@ describe('i18n 目录（双语）', () => {
 
   it('zh 与 en 都非空且互不相同(除非故意同形)', () => {
     const identical = MESSAGE_KEYS.filter((key) => MESSAGES[key].zh === MESSAGES[key].en)
-    // 只允许品牌名与技术缩写同形
-    expect(identical.sort()).toEqual(['app.name', 'transport.ssh'])
+    // 品牌名与明确保留的技术术语可同形。
+    expect(identical.sort()).toEqual(['app.name', 'edit.profileLabel', 'transport.ssh', 'wizard.profileLabel'])
   })
 })
 

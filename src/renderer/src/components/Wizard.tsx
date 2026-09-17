@@ -15,7 +15,9 @@ const STEP_KEYS: MessageKey[] = ['wizard.stepTransport', 'wizard.stepConfig', 'w
 interface WizardForm {
   name: string
   version: string
+  profile: string
   port: string
+  launcher: 'dsh' | 'dush'
   host: string
   username: string
   sshPort: string
@@ -27,7 +29,9 @@ interface WizardForm {
 const EMPTY_FORM: WizardForm = {
   name: '',
   version: '',
+  profile: '',
   port: '',
+  launcher: 'dsh',
   host: '',
   username: '',
   sshPort: '22',
@@ -52,6 +56,7 @@ export default function Wizard(): ReactNode {
   const refreshList = useAppStore((state) => state.refreshList)
   const instances = useAppStore((state) => state.instances)
   const openWorkspace = useAppStore((state) => state.openWorkspace)
+  const select = useAppStore((state) => state.select)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
   const toast = useAppStore((state) => state.toast)
 
@@ -59,7 +64,7 @@ export default function Wizard(): ReactNode {
   const [transport, setTransport] = useState<'local' | 'ssh' | 'http'>('local')
   const [form, setForm] = useState<WizardForm>(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
-  const [localDsh, setLocalDsh] = useState<{ command: string; version: string } | null>(null)
+  const [localLaunchers, setLocalLaunchers] = useState<Array<{ launcher: 'dsh' | 'dush'; version: string }>>([])
   const [externalWorkspace, setExternalWorkspace] = useState<{
     pid: number
     port: number
@@ -83,7 +88,7 @@ export default function Wizard(): ReactNode {
     void Promise.all([window.dshHub?.runtime.probeLocalDsh(), window.dshHub?.runtime.scanExternal()]).then(
       ([runtime, external]) => {
         if (!cancelled) {
-          setLocalDsh(runtime?.ok ? runtime.value : null)
+          setLocalLaunchers(runtime?.ok ? runtime.value : [])
           setExternalWorkspace(
             external?.ok
               ? (external.value.find((item) => item.port !== null) as {
@@ -127,6 +132,14 @@ export default function Wizard(): ReactNode {
     ) {
       return t('wizard.errExternalAccess')
     }
+    if (
+      transport === 'local' &&
+      !useExistingExternal &&
+      form.profile.trim() !== '' &&
+      (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(form.profile.trim()) || form.profile.trim().split('/').includes('..'))
+    ) {
+      return t('wizard.errProfile')
+    }
     if (transport === 'ssh') {
       if (!form.host.trim()) return t('wizard.errHost')
       if (!form.username.trim()) return t('wizard.errUsername')
@@ -164,6 +177,12 @@ export default function Wizard(): ReactNode {
       void openWorkspace(existingExternalInstance.id)
       return
     }
+    const problem = formError()
+    if (problem) {
+      setError(problem)
+      setStep(2)
+      return
+    }
     const input: CreateInstanceInput =
       transport === 'local'
         ? {
@@ -177,7 +196,9 @@ export default function Wizard(): ReactNode {
                 }
               : {}),
             ...(form.version.trim() !== '' ? { dshVersion: form.version.trim() } : {}),
-            ...(form.port.trim() !== '' ? { port: Number(form.port) } : {})
+            ...(form.profile.trim() !== '' ? { profile: form.profile.trim() } : {}),
+            ...(form.port.trim() !== '' ? { port: Number(form.port) } : {}),
+            ...(form.launcher !== 'dsh' ? { launcher: form.launcher } : {})
           }
         : transport === 'ssh'
           ? {
@@ -200,11 +221,14 @@ export default function Wizard(): ReactNode {
     setBusy(false)
     if (!result.ok) {
       setError(result.message)
+      setStep(2)
       return
     }
     setWizardOpen(false)
     toast('ok', t('wizard.created', { name: result.value.name }))
     void refreshList()
+    // 创建后无论启动成功与否都先落到详情；失败时用户可立即编辑端口、配置档案或启动器。
+    select(result.value.id)
     if (transport === 'local' && useExistingExternal) {
       void openWorkspace(result.value.id)
       return
@@ -228,8 +252,9 @@ export default function Wizard(): ReactNode {
       testId="wizard"
       footer={
         <>
-          <span className="meta">
-            {step === 2 && t('wizard.nextShortcut')} {error && <span className="err">{error}</span>}
+          <span className="modal-foot-copy meta">
+            {step === 2 && t('wizard.nextShortcut')}
+            {error && <span className="err">{error}</span>}
           </span>
           <div className="right">
             {step > 1 && (
@@ -354,19 +379,24 @@ export default function Wizard(): ReactNode {
                   </div>
                 </div>
               )}
-              {localDsh && !useExistingExternal && (
-                <div className="note n-info mt12" data-testid="wizard-local-dsh">
-                  <Icon name="check" />
-                  <div>
-                    <b>{t('wizard.localDetected', { version: localDsh.version })}</b>
-                    <span className="meta">{t('wizard.localDetectedPath')}</span>
-                  </div>
-                </div>
-              )}
-              {!localDsh && !useExistingExternal && (
+              {!useExistingExternal && (
                 <details className="adv mt12">
                   <summary>{t('wizard.advanced')}</summary>
                   <div className="grid-2 mt8">
+                    <div className="field">
+                      <label htmlFor="wizard-launcher">{t('wizard.launcherLabel')}</label>
+                      <select
+                        className="input"
+                        id="wizard-launcher"
+                        value={form.launcher}
+                        onChange={set('launcher')}
+                        data-testid="wizard-launcher"
+                      >
+                        <option value="dsh">dsh{localLaunchers.find((item) => item.launcher === 'dsh') ? ` · ${localLaunchers.find((item) => item.launcher === 'dsh')?.version}` : ` · ${t('wizard.launcherMissing')}`}</option>
+                        <option value="dush" disabled={!localLaunchers.some((item) => item.launcher === 'dush')}>dush{localLaunchers.find((item) => item.launcher === 'dush') ? ` · ${localLaunchers.find((item) => item.launcher === 'dush')?.version}` : ` · ${t('wizard.launcherMissing')}`}</option>
+                      </select>
+                      {localLaunchers.length === 0 && <span className="hint">{t('wizard.launcherMissingHint')}</span>}
+                    </div>
                     <div className="field">
                       <label htmlFor="wizard-version">{t('wizard.versionLabel')}</label>
                       <input
@@ -375,6 +405,16 @@ export default function Wizard(): ReactNode {
                         placeholder={t('wizard.versionPlaceholder')}
                         value={form.version}
                         onChange={set('version')}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="wizard-profile">{t('wizard.profileLabel')}</label>
+                      <input
+                        className="input num"
+                        id="wizard-profile"
+                        placeholder={t('wizard.profilePlaceholder')}
+                        value={form.profile}
+                        onChange={set('profile')}
                       />
                     </div>
                     <div className="field">
@@ -387,21 +427,6 @@ export default function Wizard(): ReactNode {
                         onChange={set('port')}
                       />
                     </div>
-                  </div>
-                </details>
-              )}
-              {(localDsh || useExistingExternal) && !useExistingExternal && (
-                <details className="adv mt12">
-                  <summary>{t('wizard.advanced')}</summary>
-                  <div className="field mt8">
-                    <label htmlFor="wizard-port">{t('wizard.portLabel')}</label>
-                    <input
-                      className="input num"
-                      id="wizard-port"
-                      placeholder={t('wizard.portPlaceholder')}
-                      value={form.port}
-                      onChange={set('port')}
-                    />
                   </div>
                 </details>
               )}
@@ -547,7 +572,7 @@ export default function Wizard(): ReactNode {
               {transport === 'local'
                 ? useExistingExternal
                   ? t('wizard.connectExistingNote')
-                  : localDsh
+                  : localLaunchers.length > 0
                     ? t('wizard.createNewNote')
                     : t('wizard.noteLocal')
                 : transport === 'ssh'

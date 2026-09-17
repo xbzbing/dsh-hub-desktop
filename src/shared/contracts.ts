@@ -64,6 +64,14 @@ const SSH_HOST_SCHEMA = z
   .refine((value) => !value.startsWith('-'), 'SSH 主机不能以 - 开头')
   .refine(isValidSshHost, 'host[:port] 形态的端口必须在 1–65535，或主机名不含冒号')
 
+const SAFE_PROFILE_SCHEMA = z
+  .string()
+  .trim()
+  .min(1, '配置档案不能为空')
+  .max(128, '配置档案最长 128 字符')
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, '配置档案只能是相对路径，且不能以 - 开头')
+  .refine((value) => !value.split('/').includes('..'), '配置档案不能包含 ..')
+
 const instanceBaseFields = {
   id: z.uuid(),
   name: z.string().trim().min(1, '名称不能为空').max(64, '名称最长 64 字符'),
@@ -84,7 +92,9 @@ export const LocalInstanceSchema = z.object({
   /** 已分配的监听端口；null = 未分配。 */
   port: PORT_SCHEMA.nullable().default(null),
   /** 实例配置文件（相对 DSH_HOME） */
-  profile: z.string().trim().max(128).nullable().default(null),
+  profile: SAFE_PROFILE_SCHEMA.nullable().default(null),
+  /** 可选的 dsh/dush 启动器；null = 默认 dsh。参数由 Hub 固定构造。 */
+  launcher: z.enum(['dsh', 'dush']).nullable().default(null),
   /** 应用启动时自动拉起 */
   autoStart: z.boolean().default(false)
 })
@@ -140,7 +150,8 @@ export const CreateInstanceInputSchema = z.discriminatedUnion('transport', [
       transport: z.literal('local'),
       dshVersion: z.string().trim().max(64).optional(),
       port: PORT_SCHEMA.optional(),
-      profile: z.string().trim().max(128).optional(),
+      profile: SAFE_PROFILE_SCHEMA.optional(),
+      launcher: z.enum(['dsh', 'dush']).optional(),
       /** 创建后接管检测到的外部 dsh web；这些瞬时输入不写入注册表。 */
       useExistingExternal: z.boolean().optional(),
       externalPid: z.number().int().positive().optional(),
@@ -191,7 +202,8 @@ export const PatchInstanceSchema = z
     // —— local ——
     dshVersion: z.string().trim().max(64).nullable().optional(),
     port: PORT_SCHEMA.nullable().optional(),
-    profile: z.string().trim().max(128).nullable().optional(),
+    profile: SAFE_PROFILE_SCHEMA.nullable().optional(),
+    launcher: z.enum(['dsh', 'dush']).nullable().optional(),
     autoStart: z.boolean().optional(),
     // —— ssh ——
     host: SSH_HOST_SCHEMA.optional(),
@@ -469,7 +481,7 @@ export const INSTANCE_RUNTIME_IPC = {
   openView: 'instances:openView',
   updateViewBounds: 'instances:updateViewBounds',
   hideView: 'instances:hideView',
-  /** 只读探测本机可执行的 dsh，用于创建本机实例时的配置提示。 */
+  /** 只读探测本机 dsh/dush 启动器及版本，用于创建本机实例时的选择器。 */
   probeLocalDsh: 'instances:probeLocalDsh',
   /** 探测本机已运行的 dsh web 进程；返回 pid、端口和 patch 路径。 */
   scanExternal: 'instances:scanExternal',
@@ -488,8 +500,8 @@ export const WorkspaceViewBoundsSchema = z
 
 export type WorkspaceViewBounds = z.infer<typeof WorkspaceViewBoundsSchema>
 
-export interface LocalDshSnapshot {
-  command: string
+export interface LocalLauncherSnapshot {
+  launcher: 'dsh' | 'dush'
   version: string
 }
 

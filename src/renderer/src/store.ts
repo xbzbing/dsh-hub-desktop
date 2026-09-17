@@ -71,6 +71,8 @@ interface AppState {
   select: (id: string | null) => void
   /** 选择实例后打开其工作区；失败时保留详情，提示用户原因。 */
   openWorkspace: (id: string) => Promise<void>
+  /** 侧栏入口：处于错误状态的本机实例直接展示详情，避免必然失败的启动尝试。 */
+  openFromSidebar: (id: string) => void
   toggleRail: () => void
   toggleTheme: () => void
   setWizardOpen: (open: boolean) => void
@@ -213,6 +215,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const statuses = { ...state.statuses }
       if (removed) delete statuses[event.id]
       else statuses[event.id] = event
+      // 列表摘要不是详情记录的实时投影；本机运行事件已给出实际监听端口，立即更新地址。
+      const instances = state.instances.map((instance) =>
+        instance.id === event.id && instance.transport === 'local' && event.port !== undefined
+          ? { ...instance, address: `127.0.0.1:${event.port}` }
+          : instance
+      )
       // 运行后自动打开工作区；失败或停止时移除待打开记录。
       let pendingOpen = state.pendingOpen
       if (pendingOpen.includes(event.id)) {
@@ -224,7 +232,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
         }
       }
-      return { statuses, pendingOpen }
+      return { instances, statuses, pendingOpen }
     })
   },
 
@@ -268,6 +276,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
     if (get().selection === id) set({ workspaceOpening: false })
     if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
+  },
+
+  openFromSidebar: (id) => {
+    const instance = get().instances.find((item) => item.id === id)
+    const status = get().statuses[id]?.status ?? instance?.runtimeStatus
+    if (instance?.transport === 'local' && status === 'error') {
+      get().select(id)
+      return
+    }
+    void get().openWorkspace(id)
   },
 
   setWorkspaceOpen: (open) => set({ workspaceOpen: open, workspaceOpening: false }),

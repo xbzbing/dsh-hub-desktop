@@ -94,9 +94,11 @@ test('本地实例可编辑，端口留空时回到自动分配', async () => {
   // 截图时禁用动画，避免捕获到半透明的中间帧。
   await win.screenshot({ path: join(SHOT_DIR, 'edit-dialog-open.png'), animations: 'disabled' })
 
-  // 端口字段可编辑；名称修改，端口设为 30567。
+  // 端口字段可编辑；名称、启动命令修改，端口设为 30567。
   const portInput = win.getByTestId('edit-port')
   await expect(portInput).toBeVisible()
+  await expect(win.getByTestId('edit-launcher')).toBeVisible()
+  await win.getByTestId('edit-launcher').selectOption('dush')
   await portInput.fill('30567')
   await win.getByTestId('edit-name').fill('改名后的本地实例')
   await win.getByTestId('edit-save').click()
@@ -107,11 +109,12 @@ test('本地实例可编辑，端口留空时回到自动分配', async () => {
 
   // 落盘校验:注册表文件里 name + port 都更新了
   const file = JSON.parse(await readFile(REGISTRY_FILE, 'utf8')) as {
-    instances: Array<{ name: string; port: number | null }>
+    instances: Array<{ name: string; port: number | null; launcher: string | null }>
   }
   const edited = file.instances.find((item) => item.name === '改名后的本地实例')
   expect(edited).toBeDefined()
   expect(edited?.port).toBe(30567)
+  expect(edited?.launcher).toBe('dush')
 
   // 再编辑:端口清空 → null(回到自动分配)
   await win.getByTestId('edit-btn').click()

@@ -416,6 +416,13 @@ h3,
   font-size: 12px;
   min-height: 27px;
 }
+.detail-overview-btn {
+  flex: none;
+  white-space: nowrap;
+}
+.detail-overview-btn svg {
+  flex: none;
+}
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1268,8 +1275,18 @@ h3,
 }
 .modal-foot .right {
   display: flex;
+  flex: none;
   gap: 9px;
   margin-left: auto;
+}
+.modal-foot > .meta,
+.modal-foot-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.modal-foot-copy .err {
+  display: block;
+  margin-top: 3px;
 }
 .x-btn {
   display: grid;

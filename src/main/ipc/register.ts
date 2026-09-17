@@ -30,7 +30,7 @@ import {
   type InstanceSummary,
   type InstanceRuntimeStatus,
   type IpcResult,
-  type LocalDshSnapshot,
+  type LocalLauncherSnapshot,
   type WorkspaceViewBounds
 } from '@shared/contracts'
 import { detectDraftEndpoint } from '../transport/http-endpoint'
@@ -410,10 +410,19 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     })
   )
 
-  ipcMain.handle(INSTANCE_RUNTIME_IPC.probeLocalDsh, (): Promise<IpcResult<LocalDshSnapshot | null>> =>
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.probeLocalDsh, (): Promise<IpcResult<LocalLauncherSnapshot[]>> =>
     wrap(async () => {
-      const found = await deps.pathProbe?.probe()
-      return found ? { command: found.command, version: found.version } : null
+      const launchers = await Promise.all(
+        (['dsh', 'dush'] as const).map(async (launcher) => {
+          const found = deps.pathProbe?.probeLauncher
+            ? await deps.pathProbe.probeLauncher(launcher)
+            : launcher === 'dsh'
+              ? await deps.pathProbe?.probe()
+              : null
+          return found ? { launcher, version: found.version } : null
+        })
+      )
+      return launchers.filter((snapshot): snapshot is LocalLauncherSnapshot => snapshot !== null)
     })
   )
 

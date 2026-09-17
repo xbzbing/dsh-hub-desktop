@@ -29,6 +29,8 @@ export default function DetailView(): ReactNode {
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
   const toast = useAppStore((state) => state.toast)
+  const openWorkspace = useAppStore((state) => state.openWorkspace)
+  const setPendingOpen = useAppStore((state) => state.setPendingOpen)
   const setWorkspaceOpen = useAppStore((state) => state.setWorkspaceOpen)
   const userDataPath = useAppStore((state) => state.userDataPath)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -182,7 +184,11 @@ export default function DetailView(): ReactNode {
           </div>
         </div>
         <div className="row">
-          <button className="btn btn-ghost btn-sm" onClick={() => select(null)}>
+          <button
+            className="btn btn-ghost btn-sm detail-overview-btn"
+            onClick={() => select(null)}
+            data-testid="detail-overview-btn"
+          >
             <Icon name="back" /> {t('detail.overview')}
           </button>
         </div>
@@ -306,20 +312,31 @@ export default function DetailView(): ReactNode {
             <button
               className="btn btn-primary btn-sm"
               onClick={() => {
-                // 此调用负责准备运行时并在就绪后导航，避免状态事件触发第二次导航。
+                if (record.transport === 'local') {
+                  if (status?.status === 'running') {
+                    void openWorkspace(record.id)
+                    return
+                  }
+                  setPendingOpen(record.id)
+                  void window.dshHub?.runtime.start(record.id).then((result) => {
+                    if (!result?.ok) toast('err', t('detail.startFailed'), result?.message)
+                  })
+                  return
+                }
                 void window.dshHub?.runtime.openView(record.id).then((result) => {
                   if (result?.ok) setWorkspaceOpen(true)
-                  else if (result) {
-                    if (record.transport === 'local') setShowExternalTokenEditor(true)
-                    toast('err', t('detail.openViewFailed'), result.message)
-                  }
+                  else if (result) toast('err', t('detail.openViewFailed'), result.message)
                 })
               }}
               disabled={display === 'connecting'}
               data-testid="open-view-btn"
             >
               <Icon name="external" />
-              {display === 'connecting' ? t('detail.openingWorkspace') : t('detail.openWorkspace')}
+              {display === 'connecting'
+                ? t('detail.openingWorkspace')
+                : status?.status === 'running'
+                  ? t('detail.openWorkspace')
+                  : t('detail.startWorkspace')}
             </button>
             {/* transport 不可修改；端口留空时自动分配，运行中修改在下次启动生效。 */}
             <button

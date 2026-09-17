@@ -310,6 +310,109 @@ describe('store settings', () => {
     expect(useAppStore.getState().workspaceOpen).toBe(false)
   })
 
+  it('侧栏点击错误状态的本机实例时直接进入详情，不发起必然失败的打开请求', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({
+      instances: [
+        {
+          id: 'broken-local',
+          name: '损坏本机实例',
+          transport: 'local',
+          authMode: 'auto',
+          address: '127.0.0.1:3080',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      ],
+      statuses: {
+        'broken-local': {
+          id: 'broken-local',
+          status: 'error',
+          at: '2026-09-18T00:00:00.000Z',
+          detail: '进程意外退出'
+        }
+      }
+    })
+
+    useAppStore.getState().openFromSidebar('broken-local')
+    expect(useAppStore.getState().selection).toBe('broken-local')
+    expect(useAppStore.getState().workspaceOpen).toBe(false)
+    expect(useAppStore.getState().workspaceOpening).toBe(false)
+    expect(openView).not.toHaveBeenCalled()
+  })
+
+  it('侧栏点击非错误实例时仍按原流程打开工作区', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({
+      instances: [
+        {
+          id: 'ready-local',
+          name: '可用本机实例',
+          transport: 'local',
+          authMode: 'auto',
+          address: '127.0.0.1:3080',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      ]
+    })
+
+    useAppStore.getState().openFromSidebar('ready-local')
+    await vi.waitFor(() => expect(openView).toHaveBeenCalledWith('ready-local'))
+  })
+
+  it('运行中的本机实例从详情打开工作区时不重复启动', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    const start = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, start, hideView: vi.fn() } }
+    })
+
+    useAppStore.setState({
+      selection: 'running-local',
+      statuses: {
+        'running-local': { id: 'running-local', status: 'running', at: '2026-09-18T00:00:00.000Z' }
+      }
+    })
+    await useAppStore.getState().openWorkspace('running-local')
+    expect(openView).toHaveBeenCalledWith('running-local')
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('本机实例运行事件带实际端口时立即更新左侧列表地址', async () => {
+    const useAppStore = await freshStore()
+    useAppStore.setState({
+      instances: [
+        {
+          id: 'auto-port-local',
+          name: '自动端口实例',
+          transport: 'local',
+          authMode: 'auto',
+          address: '127.0.0.1:—',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      ]
+    })
+
+    useAppStore.getState().applyStatus({
+      id: 'auto-port-local',
+      status: 'running',
+      port: 30123,
+      at: '2026-09-18T00:00:01.000Z'
+    })
+    expect(useAppStore.getState().instances[0]?.address).toBe('127.0.0.1:30123')
+  })
+
   it('applyStatus 每次事件都换 statuses 引用(订阅者才会重渲染),圆点随之实时变化', async () => {
     const useAppStore = await freshStore()
     const before = useAppStore.getState().statuses

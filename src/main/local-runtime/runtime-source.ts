@@ -121,6 +121,8 @@ export function planRuntimeSource(input: PlanInput): RuntimePlan {
 export interface PathProbe {
   /** 探测 PATH 上的 dsh;失败返回 null(尽力而为) */
   probe(): Promise<PathRuntime | null>
+  /** 探测指定的固定启动器；仅接受 dsh 或 dush。 */
+  probeLauncher?(launcher: 'dsh' | 'dush'): Promise<PathRuntime | null>
 }
 
 export interface PathProbeOptions {
@@ -250,6 +252,17 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
   }
 
   return {
+    async probeLauncher(launcher): Promise<PathRuntime | null> {
+      const which = platform === 'win32' ? 'where' : 'which'
+      try {
+        const located = await run(which, [launcher])
+        if (located.code !== 0) return null
+        const command = firstLine(located.stdout)
+        return validate(command, WHICH_TIMEOUT_MS, enrichedEnv(command))
+      } catch {
+        return null
+      }
+    },
     async probe(): Promise<PathRuntime | null> {
       // ① 常规 PATH 探测(终端启动的场景:这里就命中)
       const which = platform === 'win32' ? 'where' : 'which'

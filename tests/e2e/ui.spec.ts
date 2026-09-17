@@ -48,6 +48,8 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await win.getByRole('button', { name: '下一步' }).click()
   await expect(win.getByText('请填写实例名称')).toBeVisible()
   await win.getByTestId('wizard-name').fill('E2E 演示实例')
+  await win.locator('[data-testid="wizard-step-2"] details.adv > summary').click()
+  await expect(win.getByTestId('wizard-launcher')).toHaveValue('dsh')
   await expect(win.getByText('请填写实例名称')).toBeHidden()
   await win.getByRole('button', { name: '下一步' }).click()
 
@@ -56,8 +58,11 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await expect(win.getByText('E2E 演示实例')).toBeVisible()
   await win.getByTestId('wizard-create').click()
 
-  // 向导关闭,回到总览表格
+  // 创建后先展示详情；启动失败时用户仍可立即编辑本地配置。
   await expect(win.getByTestId('wizard')).toBeHidden()
+  await expect(win.getByTestId('view-detail')).toBeVisible()
+  await expect(win.getByRole('heading', { name: 'E2E 演示实例' })).toBeVisible()
+  await win.getByTestId('detail-overview-btn').click()
   await expect(win.getByTestId('view-home')).toBeVisible()
   const table = win.getByTestId('instances-table')
   await expect(table).toContainText('E2E 演示实例')
@@ -80,6 +85,12 @@ test('侧栏实例名称经加载页进入工作区，返回后保留实例详�
     return { width: box.width, height: box.height }
   })
   expect(deleteMetrics.height).toBeGreaterThanOrEqual(46)
+  const overviewMetrics = await win.getByTestId('detail-overview-btn').evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    return { width: box.width, height: box.height }
+  })
+  expect(overviewMetrics.width).toBeGreaterThan(overviewMetrics.height)
+  await expect(win.getByTestId('detail-overview-btn')).toHaveCSS('white-space', 'nowrap')
   await expect(win.getByTestId('detail-delete-area')).toBeVisible()
 
   // 删除(二次确认)→ 回空态

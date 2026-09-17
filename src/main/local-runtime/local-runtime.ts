@@ -352,19 +352,24 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       instanceGeneration.set(id, gen)
       try {
         emit(id, 'starting', { detail: '解析运行时来源' })
-        // 探测与决策在启动队列外完成(纯读);hub 清单与 PATH 探测并行,互不拖慢。
-        const [hubInstalled, pathRuntime] = await Promise.all([
-          options.installer
-            .listInstalled()
-            .then((items) => items.map((item) => item.version))
-            .catch(() => [] as string[]),
-          options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
-        ])
-        const plan = planRuntimeSource({
-          desiredVersion: instance.dshVersion,
-          hubInstalled,
-          pathRuntime
-        })
+        const customLauncher = instance.launcher === 'dush' ? 'dush' : null
+        // dush 由用户已安装的启动器直接执行；默认 dsh 仍沿用原有的来源探测与下载策略。
+        const [hubInstalled, pathRuntime] = customLauncher
+          ? [[], null]
+          : await Promise.all([
+              options.installer
+                .listInstalled()
+                .then((items) => items.map((item) => item.version))
+                .catch(() => [] as string[]),
+              options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
+            ])
+        const plan = customLauncher
+          ? null
+          : planRuntimeSource({
+              desiredVersion: instance.dshVersion,
+              hubInstalled,
+              pathRuntime
+            })
         if ((cancelGeneration.get(id) ?? -1) >= gen) {
           emit(id, 'stopped', { detail: '已取消启动' })
           return
@@ -374,15 +379,19 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         let version: string
         let runtimeSource: 'hub' | 'path'
         let scriptPath: string
-        if (plan.kind === 'path') {
+        if (customLauncher) {
+          version = 'custom'
+          runtimeSource = 'path'
+          scriptPath = customLauncher
+        } else if (plan?.kind === 'path') {
           version = plan.version
           runtimeSource = 'path'
           scriptPath = plan.command
-        } else if (plan.kind === 'hub') {
+        } else if (plan?.kind === 'hub') {
           version = plan.version
           runtimeSource = 'hub'
           scriptPath = options.installer.resolveEntry(plan.version)
-        } else {
+        } else if (plan?.kind === 'download') {
           // download:目标版本(未固定时解析 registry latest),**必须经用户确认**
           const target = plan.version ?? (await options.installer.resolveDefaultVersion())
           emit(id, 'starting', { version: target, detail: `需要下载 dsh ${target}，等待确认` })
@@ -398,6 +407,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           version = target
           runtimeSource = 'hub'
           scriptPath = options.installer.resolveEntry(target)
+        } else {
+          throw new Error('invalid-launcher')
         }
 
         // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
@@ -452,22 +463,12 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           const home = join(options.dataRoot, 'homes', id)
           await mkdir(home, { recursive: true })
 
-          // path 来源:scriptPath = 用户 PATH 上的 dsh bin(node 包装脚本);
-          // 仍经 nodeInvocation(带 --expose-internals)执行 —— cordis-plugin-hmr
-          // 对该标志是硬依赖,node 与 electron-as-node 都需要(见 defaultNodeInvocation 注释)
+          // --profile 会直接选择 web profile，不能再附加 web 子命令；所有参数由 Hub 构造，不经 shell 解释。
+          const profileArgs = ['--profile', instance.profile ?? profile]
+          const serverArgs = ['--host', '127.0.0.1', '--port', String(preferredPort), '--no-open']
           const child = spawnImpl({
-            command: nodeInvocation.command,
-            args: [
-              ...nodeInvocation.args,
-              scriptPath,
-              '--profile',
-              instance.profile ?? profile,
-              '--host',
-              '127.0.0.1',
-              '--port',
-              String(preferredPort),
-              '--no-open'
-            ],
+            command: customLauncher ?? nodeInvocation.command,
+            args: [...(customLauncher ? [] : [...nodeInvocation.args, scriptPath]), ...profileArgs, ...serverArgs],
             env: { ...process.env, ...nodeInvocation.env, DSH_HOME: home },
             cwd: home,
             detached: true

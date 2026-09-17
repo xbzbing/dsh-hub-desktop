@@ -89,12 +89,25 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(record.autoStart).toBe(false)
     expect(record.port).toBeNull()
     expect(record.dshVersion).toBeNull()
+    expect(record.launcher).toBeNull()
     expect(record.createdAt).toBe(record.updatedAt)
     expect(new Date(record.createdAt).getTime()).not.toBeNaN()
 
     const file = (await readRegistryFile()) as { schemaVersion: number; instances: unknown[] }
     expect(file.schemaVersion).toBe(1)
     expect(file.instances).toHaveLength(1)
+  })
+
+  it('local 保存并更新受限的启动器', async () => {
+    const created = asLocal(await store.create(localInput({ launcher: 'dush' })))
+    expect(created.launcher).toBe('dush')
+
+    const updated = asLocal(await store.update(created.id, { launcher: 'dsh' }))
+    expect(updated.launcher).toBe('dsh')
+
+    await expect(store.update(created.id, { launcher: 'node server.js' } as never)).rejects.toMatchObject({
+      code: 'invalid-input'
+    })
   })
 
   it('create ssh:默认端口与 host[:port] 拆分', async () => {
