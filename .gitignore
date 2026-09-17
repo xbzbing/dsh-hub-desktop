@@ -49,3 +49,5 @@ docs/用户反馈-*.md
 
 # --- 视觉路由工具产物(截图分析) ---
 .dsh-vision-router/
+
+graphify-out
