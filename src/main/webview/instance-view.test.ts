@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createOncePerSession, isSameOriginLoginRedirect, openInstanceView } from './instance-view'
+import { createOncePerSession, isAuthenticatedTokenUrl, isSameOriginLoginRedirect, openInstanceView } from './instance-view'
 import type { InstanceViewWindow, OpenInstanceViewDeps } from './instance-view'
 
 const COOKIE = { name: 'dsh_auth', value: 'sess-token', expiresAt: null }
@@ -99,6 +99,33 @@ describe('openInstanceView（ 先注入再 loadURL 的顺序纪律）', () => {
     await expect(openInstanceView(h.deps, { ...args, cookie: null })).resolves.toBe(false)
     expect(h.loaded).toEqual([])
     expect(h.order).toEqual([])
+  })
+
+  it('本地 BrowserAuth 改变 token URL 后仍复用同一实例工作区', async () => {
+    const h = harness()
+    h.deps.createWindow = (() => ({
+      loadURL: async (url: string): Promise<void> => {
+        h.loaded.push(url)
+      },
+      webContents: {
+        // dsh BrowserAuth 登录后会去除首次打开时 URL 中的临时 token。
+        getURL: () => 'http://127.0.0.1:8002/',
+        session: { cookies: { set: async () => undefined } }
+      }
+    })) as OpenInstanceViewDeps<InstanceViewWindow>['createWindow']
+
+    await expect(openInstanceView(h.deps, args)).resolves.toBe(false)
+    expect(h.loaded).toEqual([])
+    expect(h.order).toEqual([])
+  })
+
+  it('仅当 token 被消费且页面保持同源同路径时复用 BrowserAuth 工作区', () => {
+    expect(isAuthenticatedTokenUrl('http://127.0.0.1:8002/', args.url)).toBe(true)
+    expect(isAuthenticatedTokenUrl('http://127.0.0.1:8002/other', args.url)).toBe(false)
+    expect(isAuthenticatedTokenUrl('http://other.example/', args.url)).toBe(false)
+    expect(isAuthenticatedTokenUrl('http://127.0.0.1:8002/?other=value#chat', args.url)).toBe(true)
+    expect(isAuthenticatedTokenUrl('http://127.0.0.1:8002/?token=replaced', args.url)).toBe(false)
+    expect(isAuthenticatedTokenUrl('http://127.0.0.1:8002/', 'http://127.0.0.1:8002/')).toBe(false)
   })
   it('无会话时只开窗+装拦截+加载,不写 Cookie', async () => {
     const h = harness()

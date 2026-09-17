@@ -76,6 +76,26 @@ export function isSameOriginLoginRedirect(redirectUrl: string | null, origin: st
 }
 
 /**
+ * BrowserAuth 成功后会消费启动 URL 的一次性 token，并回到同源同路径页面。
+ * 当前页面可保留自己的查询参数或 hash；只要不再携带 token 即可安全复用同一实例视图。
+ */
+export function isAuthenticatedTokenUrl(currentUrl: string | undefined, targetUrl: string): boolean {
+  if (!currentUrl) return false
+  try {
+    const current = new URL(currentUrl)
+    const target = new URL(targetUrl)
+    return (
+      target.searchParams.has('token') &&
+      !current.searchParams.has('token') &&
+      current.origin === target.origin &&
+      current.pathname === target.pathname
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
  * 开窗 → 装拦截 → 注入 Cookie → 加载。
  * @returns 是否在加载前成功写入了会话 Cookie
  */
@@ -84,9 +104,9 @@ export async function openInstanceView<W extends InstanceViewWindow>(
   args: OpenInstanceViewArgs
 ): Promise<boolean> {
   const win = deps.createWindow()
-  // `prepare` has already made the existing WebContentsView visible. Reusing an
-  // unchanged URL preserves its document and avoids a flash/reload on instance switching.
-  if (win.webContents.getURL?.() === args.url) return false
+  // 复用精确 URL，或 BrowserAuth 已消费一次性 token 后回到同源同路径的页面。
+  const currentUrl = win.webContents.getURL?.()
+  if (currentUrl === args.url || isAuthenticatedTokenUrl(currentUrl, args.url)) return false
   deps.installIntercept(win)
   let redirectedTo: string | null = null
   win.webContents.on?.('will-redirect', (_event, url) => {
