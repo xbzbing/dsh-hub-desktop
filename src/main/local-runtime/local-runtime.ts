@@ -5,7 +5,8 @@
  */
 import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { delimiter, dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { InstanceRuntimeStatus, InstanceStatusEvent, LocalInstance } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
@@ -67,6 +68,11 @@ export interface LocalRuntimeOptions {
    * (决策退化为「hub → 下载」两级,与旧行为兼容)。
    */
   pathProbe?: PathProbe
+  /**
+   * 为本机（`path` 来源）启动器解析一个真实 node 可执行文件；缺省按「同目录 → PATH」探测。
+   * 注入以便测试固定该解析结果（默认实现要读真实文件系统）。
+   */
+  resolveNode?: (scriptPath: string) => string | null
   /**
    * (生产装配必须注入;测试/受限环境注入 stub)。返回 true 才继续下载。
    */
@@ -138,10 +144,30 @@ function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS
   return { command: process.execPath, args: ['--expose-internals'], env: { ELECTRON_RUN_AS_NODE: '1' } }
 }
 
+/**
+ * 为本机启动器（`path` 来源）解析一个真实 node 可执行文件。
+ *
+ * 本机 dsh/dush 是 `#!/usr/bin/env node` 脚本，**不能**用 Electron 充当 Node：
+ * dsh 的原生插件按运行时指纹校验，Electron 的 V8 指纹不在其白名单内，
+ * 进程会以 code=1 立即退出。优先取与启动器同目录的 node（npm/pnpm 全局安装常放在一起），
+ * 其次扫 PATH。
+ */
+function resolveNodeFor(scriptPath: string): string | null {
+  const sameDir = join(dirname(scriptPath), process.platform === 'win32' ? 'node.exe' : 'node')
+  if (existsSync(sameDir)) return sameDir
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    if (dir === '') continue
+    const candidate = join(dir, process.platform === 'win32' ? 'node.exe' : 'node')
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
 export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeManager {
   const spawnImpl = options.spawnImpl ?? defaultSpawn
   const probe = options.probe ?? httpHealthProbe
   const nodeInvocation = options.nodeInvocation ?? defaultNodeInvocation()
+  const resolveNode = options.resolveNode ?? resolveNodeFor
   const profile = options.profile ?? 'web'
   const homeDir = options.homeDir ?? homedir
   const readyTimeoutMs = options.readyTimeoutMs ?? 60_000
@@ -386,7 +412,14 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       pendingStartCounts.set(id, (pendingStartCounts.get(id) ?? 0) + 1)
       try {
         emit(id, 'starting', { detail: '解析运行时来源' })
-        const customLauncher = instance.launcher === 'dush' ? 'dush' : null
+        // dush 由用户已安装的启动器直接执行；默认 dsh 仍沿用原有的来源探测与下载策略。
+        // 必须拿到**绝对路径**：裸命令名依赖 PATH 解析，而打包后 GUI 启动的 PATH 未必含用户 bin 目录。
+        const dushRuntime =
+          instance.launcher === 'dush'
+            ? ((await options.pathProbe?.probeLauncher?.('dush').catch(() => null)) ?? null)
+            : null
+        const customLauncher =
+          instance.launcher === 'dush' ? (dushRuntime?.command ?? 'dush') : null
         // dush 由用户已安装的启动器直接执行；默认 dsh 仍沿用原有的来源探测与下载策略。
         const [hubInstalled, pathRuntime] = customLauncher
           ? [[], null]
@@ -501,10 +534,38 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           // --profile 会直接选择 web profile，不能再附加 web 子命令；所有参数由 Hub 构造，不经 shell 解释。
           const profileArgs = ['--profile', instance.profile ?? profile]
           const serverArgs = ['--host', '127.0.0.1', '--port', String(preferredPort), '--no-open']
+          // path 来源跑的是**用户本机**的 dsh/dush（`#!/usr/bin/env node` 脚本），必须交给真实 node：
+          // 以 Electron 充当 Node 时 dsh 的原生插件会按运行时指纹拒绝，进程 code=1 立刻退出。
+          // hub 来源是 hub 自己安装的运行时，继续用内置 Electron（不要求用户装 node）。
+          const pathNode = runtimeSource === 'path' ? resolveNode(scriptPath) : null
+          const nodeArgs = nodeInvocation.args
+          const invocation =
+            runtimeSource !== 'path'
+              ? {
+                  command: nodeInvocation.command,
+                  args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
+                  env: { ...process.env, ...nodeInvocation.env, DSH_HOME: home }
+                }
+              : pathNode !== null
+                ? {
+                    command: pathNode,
+                    args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
+                    // 让 dsh 自己 spawn 的子进程也能解析到同一个 node。
+                    env: {
+                      ...process.env,
+                      PATH: `${dirname(pathNode)}${delimiter}${process.env.PATH ?? ''}`,
+                      DSH_HOME: home
+                    }
+                  }
+                : {
+                    // 找不到 node：仍按脚本 shebang 直接执行（用户 PATH 里可能有）。
+                    // 失败时退出详情会带上脱敏后的子进程日志，能看到 `env: node: ...` 这类原因。
+                    command: scriptPath,
+                    args: [...profileArgs, ...serverArgs],
+                    env: { ...process.env, DSH_HOME: home }
+                  }
           const child = spawnImpl({
-            command: customLauncher ?? nodeInvocation.command,
-            args: [...(customLauncher ? [] : [...nodeInvocation.args, scriptPath]), ...profileArgs, ...serverArgs],
-            env: { ...process.env, ...nodeInvocation.env, DSH_HOME: home },
+            ...invocation,
             cwd: home,
             detached: true
           })
@@ -575,7 +636,11 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             } else {
               entry.stopping = true // 兜底:防止在途 handleReady 续体继续以「运行中」发布
               emit(id, 'error', {
-                detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）`
+                // 附上子进程最后几行输出:启动失败时它是唯一的失败原因来源。
+                // `logTail` 经 `redactLine` 脱敏(剥掉 URL 查询串),就绪 URL 的 ?token= 不会进入详情。
+                detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）${
+                  entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''
+                }`
               })
             }
             entry.settleSpawn?.()

@@ -173,6 +173,8 @@ describe('createLocalRuntime', () => {
       installer: makeFakeInstaller(),
       dataRoot: '/tmp/hub-data',
       spawnImpl: spawnImpl as never,
+      // 固定 node 解析结果,避免测试随开发机是否装有 node 漂移。
+      resolveNode: () => null,
       readyTimeoutMs: 2_000
     })
 
@@ -281,7 +283,8 @@ describe('createLocalRuntime', () => {
     await waitForStatus(manager, instance.id, 'error')
 
     expect(manager.statusOf(instance.id)?.detail).toContain('code=1')
-    expect(manager.statusOf(instance.id)?.detail).not.toContain('port already in use')
+    // 子进程的 stderr 是启动失败唯一的诊断来源,必须带进详情(该字样不含凭据)。
+    expect(manager.statusOf(instance.id)?.detail).toContain('port already in use')
   })
 
   it('stop:SIGTERM → 子进程退出 → stopped;未退出 → SIGKILL 兜底', async () => {
@@ -1161,7 +1164,7 @@ describe('C1 凭据脱敏', () => {
     expect(manager.statusOf(instance.id)?.url).toBeUndefined()
   })
 
-  it('进程意外退出不会将日志写入详情', async () => {
+  it('进程意外退出的详情带子进程日志,但就绪 URL 的 token 必须被脱敏', async () => {
     const child = new EventEmitter() as unknown as FakeChild
     child.stdout = new PassThrough()
     child.stderr = new PassThrough()
@@ -1185,17 +1188,95 @@ describe('C1 凭据脱敏', () => {
     const instance = localInstance()
     const starting = manager.start(instance)
     await vi.waitFor(() => expect(manager.runningIds()).toContain(instance.id))
-    // 先输出一行日志。
-    child.stdout.write('diagnostic: external runtime stopped\n')
-    // 进程退出:详情不能拼接日志尾巴（日志另供内部诊断）。
+    // 子进程先输出诊断行，再输出一行**带 token 的就绪 URL**（后者是凭据，绝不能进详情）。
+    child.stderr.write('Error: unsupported Electron runtime fingerprint\n')
+    child.stdout.write('dsh web: http://127.0.0.1:52300/?token=super-secret-token\n')
     child.emit('exit', 1, null)
     await starting
     await waitForStatus(manager, instance.id, 'error')
 
     const errorEvent = events.findLast((event) => event.status === 'error')
     expect(errorEvent).toBeDefined()
-    // 详情只给出简洁状态，绝不拼接 token 或其他日志内容。
-    expect(errorEvent!.detail).toBe('进程意外退出（code=1 signal=null）')
+    // 失败原因可见（这是启动失败时唯一的诊断来源）。
+    expect(errorEvent!.detail).toContain('unsupported Electron runtime fingerprint')
+    // 但凭据必须已被 redactLine 脱敏。
+    expect(errorEvent!.detail).not.toContain('super-secret-token')
+    expect(errorEvent!.detail).not.toContain('token=')
+  })
+
+  it('path 来源用真实 node 执行本机启器,不用 Electron 充当 Node', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999701
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+
+    const manager = createLocalRuntime({
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      pathProbe: {
+        probe: async () => ({ command: '/Users/example/.local/bin/dsh', version: '0.1.6-alpha.2' })
+      },
+      // 本机启动器是 #!/usr/bin/env node 脚本:必须交给真实 node,
+      // 用 Electron(ELECTRON_RUN_AS_NODE)会被 dsh 原生插件的运行时指纹拒绝而 code=1。
+      resolveNode: (scriptPath) => (scriptPath.endsWith('/dsh') ? '/Users/example/.local/bin/node' : null),
+      readyTimeoutMs: 2_000
+    })
+
+    const starting = manager.start(localInstance())
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalled())
+    child.stdout.write(readyLine())
+    await starting
+
+    const invocation = (spawnImpl.mock.calls[0] as unknown as [
+      { command: string; args: string[]; env: NodeJS.ProcessEnv }
+    ])[0]
+    expect(invocation.command).toBe('/Users/example/.local/bin/node')
+    expect(invocation.args.slice(0, 2)).toEqual([
+      '--expose-internals',
+      '/Users/example/.local/bin/dsh'
+    ])
+    // 绝不能给真实 node 带上 Electron 的降级开关。
+    expect(invocation.env.ELECTRON_RUN_AS_NODE).toBeUndefined()
+    // 让 dsh spawn 的子进程也能找到同一个 node。
+    expect(invocation.env.PATH?.startsWith('/Users/example/.local/bin')).toBe(true)
+  })
+
+  it('找不到 node 时按脚本 shebang 直接执行,不悄悄回退到 Electron', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999702
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+
+    const manager = createLocalRuntime({
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      pathProbe: {
+        probe: async () => ({ command: '/Users/example/.local/bin/dsh', version: '0.1.6-alpha.2' })
+      },
+      resolveNode: () => null,
+      readyTimeoutMs: 2_000
+    })
+
+    const starting = manager.start(localInstance())
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalled())
+    child.stdout.write(readyLine())
+    await starting
+
+    const invocation = (spawnImpl.mock.calls[0] as unknown as [
+      { command: string; args: string[] }
+    ])[0]
+    expect(invocation.command).toBe('/Users/example/.local/bin/dsh')
+    expect(invocation.args).not.toContain('--expose-internals')
   })
 })
 
