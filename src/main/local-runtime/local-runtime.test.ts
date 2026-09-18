@@ -139,14 +139,12 @@ describe('createLocalRuntime', () => {
     expect(spawnImpl).toHaveBeenCalledWith(
       expect.objectContaining({
         command: process.execPath,
-        args: expect.arrayContaining(['--profile', 'web', '--host', '127.0.0.1', '--no-open'])
+        args: expect.arrayContaining(['--profile', 'web', '--no-open'])
       })
     )
-    expect(spawnImpl.mock.calls[0]?.[0].args.slice(-7)).toEqual([
+    expect(spawnImpl.mock.calls[0]?.[0].args.slice(-5)).toEqual([
       '--profile',
       'web',
-      '--host',
-      '127.0.0.1',
       '--port',
       expect.stringMatching(/^\d+$/),
       '--no-open'
@@ -189,8 +187,6 @@ describe('createLocalRuntime', () => {
         args: [
           '--profile',
           'web',
-          '--host',
-          '127.0.0.1',
           '--port',
           expect.stringMatching(/^\d+$/),
           '--no-open'

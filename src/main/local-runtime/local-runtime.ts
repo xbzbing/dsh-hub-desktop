@@ -10,13 +10,21 @@ import { delimiter, dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { InstanceRuntimeStatus, InstanceStatusEvent, LocalInstance } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
-import { DEFAULT_PORT_RANGE_END, DEFAULT_PORT_RANGE_START, findFreePort } from './port-allocator'
+import { DEFAULT_PORT_RANGE_END, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
 import type { RuntimeInstaller } from './runtime-installer'
 import { planRuntimeSource, type PathProbe } from './runtime-source'
 import { httpHealthProbe, type HealthProbe } from '../transport/probe'
 
 export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
+
+/**
+ * 本机 dsh web 的默认端口。与 dsh 自身默认端口一致：用户对 3080 有既有预期，
+ * 工作区地址 `127.0.0.1:3080` 可直接访问；被占用时仍向上递增。
+ *
+ * 刻意不复用 `DEFAULT_PORT_RANGE_START`（30000）：该常量与 SSH 隧道共用，改它会连带改变隧道端口。
+ */
+export const DEFAULT_LOCAL_PORT = 3080
 
 /** dsh 就绪输出：`dsh web: http://127.0.0.1:52300/?token=...` */
 const READY_PATTERN = /dsh\s+web:\s+(https?:\/\/\S+)/i
@@ -508,10 +516,10 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             if ((cancelGeneration.get(id) ?? -1) >= gen) return 'cancelled'
 
             // 优先实例记录里用户选定的端口(向导高级设置);被占则向上递增,启动后仍回写实际端口。
-            // 用户端口可能落在 hub 默认区间(30000-30999)之外(如 dsh 自身默认 52300):
+            // 用户端口可能落在默认区间(3080-30999)之外(如 dsh 自身默认 52300):
             // 区间内被占递增到 30999;区间外则向 65535 递进,保证用户端口本身先被尝试,
             // 否则该端口会被静默丢弃且每次启动都漂移新端口
-            const portStart = instance.port ?? DEFAULT_PORT_RANGE_START
+            const portStart = instance.port ?? DEFAULT_LOCAL_PORT
             const portEnd = portStart > DEFAULT_PORT_RANGE_END ? 65_535 : DEFAULT_PORT_RANGE_END
             const preferredPort = await findFreePort({
               start: portStart,
@@ -532,8 +540,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             await mkdir(home, { recursive: true })
 
           // --profile 会直接选择 web profile，不能再附加 web 子命令；所有参数由 Hub 构造，不经 shell 解释。
+          // 刻意不传 --host：由 dsh 自己的默认绑定决定（与用户直接运行 `dsh --profile web --port N --no-open` 一致）。
           const profileArgs = ['--profile', instance.profile ?? profile]
-          const serverArgs = ['--host', '127.0.0.1', '--port', String(preferredPort), '--no-open']
+          const serverArgs = ['--port', String(preferredPort), '--no-open']
           // path 来源跑的是**用户本机**的 dsh/dush（`#!/usr/bin/env node` 脚本），必须交给真实 node：
           // 以 Electron 充当 Node 时 dsh 的原生插件会按运行时指纹拒绝，进程 code=1 立刻退出。
           // hub 来源是 hub 自己安装的运行时，继续用内置 Electron（不要求用户装 node）。
