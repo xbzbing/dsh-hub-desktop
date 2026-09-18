@@ -196,6 +196,13 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
   }
 
+  function drainLogBuffer(entry: TunnelEntry): void {
+    const trailing = entry.buffer.trim()
+    if (trailing !== '') entry.log.push(trailing)
+    entry.buffer = ''
+    if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
+  }
+
   async function resolveTargetOrFallback(instance: SshInstance): Promise<ResolvedSshTarget> {
     try {
       return await resolveTarget(instance)
@@ -476,6 +483,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       entry.child = null
       cancelReconnect(entry)
       if (entry.stopping) return // stop() 独占发布 stopped
+      drainLogBuffer(entry)
       const attribution = entry.pendingReason ?? classifySshExit(code, entry.log.join('\n'))
       entry.pendingReason = null
       entry.ready = false

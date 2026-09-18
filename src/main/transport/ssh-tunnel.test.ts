@@ -232,6 +232,27 @@ describe('createSshTunnels（隧道管理器 + 看门狗）', () => {
     expect(manager.statusOf(instance.id)?.detail).toContain('已就绪')
   })
 
+  it('无换行的鉴权失败 stderr 仍可归因，不退化成笼统 255', async () => {
+    const child = makeFakeChild()
+    const manager = createSshTunnels({
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: (() => child) as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000
+    })
+    const instance = sshInstance()
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'running')
+
+    child.stderr.write('work@dsh.internal: Permission denied (publickey,password).')
+    child.emit('exit', 255, null)
+
+    await waitForStatus(manager, instance.id, 'error')
+    const detail = manager.statusOf(instance.id)?.detail ?? ''
+    expect(detail).toContain('鉴权失败')
+    expect(detail).not.toContain('SSH 会话异常退出（code=255）')
+  })
+
   it('看门狗:断线 → 归因 + 退避重连(第 N 次自动重连)', async () => {
     const children: FakeChild[] = []
     const spawnImpl = vi.fn(() => {
