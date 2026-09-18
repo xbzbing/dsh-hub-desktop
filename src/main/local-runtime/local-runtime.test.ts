@@ -131,7 +131,7 @@ describe('createLocalRuntime', () => {
     await waitForStatus(manager, instance.id, 'running')
 
     const status = manager.statusOf(instance.id)
-    expect(status?.url).toBe('http://127.0.0.1:31234/?token=abc')
+    expect(status?.url).toBeUndefined()
     expect(status?.port).toBe(31234)
     expect(status?.version).toBe('0.1.5-rc.1')
     expect(probe).toHaveBeenCalledWith('http://127.0.0.1:31234/?token=abc', expect.any(Number))
@@ -745,7 +745,7 @@ describe('createLocalRuntime', () => {
     child.stdout.write('234/?token=abc\n') // 另一半 + 换行
     await starting
     await waitForStatus(manager, instance.id, 'running')
-    expect(manager.statusOf(instance.id)?.url).toBe('http://127.0.0.1:31234/?token=abc')
+    expect(manager.statusOf(instance.id)?.url).toBeUndefined()
   })
 
   it('实例自定义端口:优先从该端口起分配(空闲直接用,被占则递增)', async () => {
@@ -888,7 +888,7 @@ describe('createLocalRuntime', () => {
     // 单回退身份检查仍会绿 —— 每条换代路径都隐含旧条目 stopping=true,身份检查属于
     await new Promise((resolve) => setTimeout(resolve, 60))
     expect(manager.runningIds()).toEqual([instance.id])
-    expect(manager.statusOf(instance.id)?.url).toBe('http://127.0.0.1:31235/?token=test-token')
+    expect(manager.statusOf(instance.id)?.url).toBeUndefined()
     expect(children[0]?.killCall).toEqual([])
   })
 
@@ -1131,8 +1131,8 @@ describe('C1 凭据脱敏', () => {
     // detail 中的 URL 必须脱敏:查询串(含 token)被剥离
     expect(errorEvent!.detail).not.toContain('SECRET_TOKEN_VALUE')
     expect(errorEvent!.detail).toContain('http://127.0.0.1:31234')
-    // url 字段保留完整(供内部使用),但不进入 detail
-    expect(errorEvent!.url).toBe('http://127.0.0.1:31234/?token=SECRET_TOKEN_VALUE')
+    // 状态事件绝不携带 bearer token；完整 URL 仅保存在主进程 entry，供 openView 使用。
+    expect(errorEvent!.url).toBeUndefined()
   })
 
   it('pushLog 不脱敏:就绪行匹配不受影响（READY_PATTERN 守卫）', async () => {
@@ -1157,10 +1157,8 @@ describe('C1 凭据脱敏', () => {
     await starting
     await waitForStatus(manager, instance.id, 'running')
 
-    // url 字段保留完整 token(内部使用)
-    expect(manager.statusOf(instance.id)?.url).toBe(
-      'http://127.0.0.1:31234/?token=my-secret-token'
-    )
+    // 状态事件不暴露 token；运行时内部仍持有完整 URL，供主进程打开工作区。
+    expect(manager.statusOf(instance.id)?.url).toBeUndefined()
   })
 
   it('进程意外退出不会将日志写入详情', async () => {
@@ -1202,6 +1200,45 @@ describe('C1 凭据脱敏', () => {
 })
 
 describe('R2 stopping+start 处理', () => {
+  it('stopAll 会取消全局队列中尚未建立 entry 的启动任务', async () => {
+    const children: FakeChild[] = []
+    const spawnImpl = vi.fn(() => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999300 - children.length
+      child.killCall = []
+      child.kill = vi.fn((signal?: NodeJS.Signals) => {
+        child.killCall.push(signal ?? 'SIGTERM')
+        setImmediate(() => child.emit('exit', 0, signal ?? 'SIGTERM'))
+        return true
+      }) as never
+      children.push(child)
+      return child as unknown as SpawnedProcess
+    })
+    const manager = createLocalRuntime({
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      readyTimeoutMs: 2_000,
+      stopGraceMs: 20
+    })
+    const first = localInstance()
+    const second = localInstance({ id: randomUUID() })
+    const startFirst = manager.start(first)
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(1))
+    const startSecond = manager.start(second)
+
+    await manager.stopAll()
+    await Promise.all([startFirst, startSecond])
+
+    expect(spawnImpl).toHaveBeenCalledTimes(1)
+    expect(manager.runningIds()).toEqual([])
+    expect(manager.statusOf(second.id)?.status).toBe('stopped')
+  })
+
   it('实例正在停止时收到新 start → 新启动排队执行（不被忽略）', async () => {
     const children: FakeChild[] = []
     const spawnImpl = vi.fn(() => {

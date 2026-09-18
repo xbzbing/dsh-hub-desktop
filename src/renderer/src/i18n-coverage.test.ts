@@ -869,7 +869,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   // —— IPC 信封 message（渲染层 toast 直接展示 result.message） ——
   debt('src/main/ipc/register.ts', ".refine((v) => v === null || v.trim() !== '', '口令不能为空串')"),
   debt('src/main/registry/instance-store.ts', "if (!current) throw new InstanceStoreError('not-found', `实例不存在：${id}`)"),
-  debt('src/main/ipc/register.ts', "if (!deps.openDataDir) throw new DataDirOpenError('internal', '打开数据目录不可用')"),
+  debt('src/main/ipc/settings-handlers.ts', "if (!deps.openDataDir) throw new DataDirOpenError('internal', '打开数据目录不可用')"),
   debt('src/main/ipc/register.ts', "if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)"),
   debt('src/main/ipc/register.ts', "if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${instanceId}`)"),
   debt('src/main/shell/open-data-dir.ts', "if (dir === '') throw new DataDirOpenError('internal', '数据目录不可用')"),
@@ -921,7 +921,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/transport/ssh-tunnel.ts', 'detail: `SSH 隧道断开（${attribution.message}）；${entry.backoffMs / 1000}s 后自动重连`'),
   debt('src/main/local-runtime/local-runtime.ts', "detail: `启动超时（${Math.round(readyTimeoutMs / 1000)}s）：未解析到就绪 URL${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`"),
   debt('src/main/local-runtime/runtime-installer.ts', 'detail: `安装 ${DSH_PACKAGE_NAME}@${version}`'),
-  debt('src/main/local-runtime/local-runtime.ts', 'detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`),'),
+  debt('src/main/local-runtime/local-runtime.ts', 'detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`)'),
   debt('src/main/local-runtime/local-runtime.ts', 'detail: `已在 ${entry.home} 启动（dsh web）`'),
   // Runtime source messages.
   debt('src/main/local-runtime/local-runtime.ts', "emit(id, 'starting', { detail: '解析运行时来源' })"),

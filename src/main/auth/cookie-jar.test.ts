@@ -55,6 +55,13 @@ describe('cookie-jar（内存 Cookie 罐）', () => {
     expect(jar.header()).toBeNull()
   })
 
+  it('拒绝会污染 Cookie 请求头的名称和值', () => {
+    expect(parseSetCookie('bad name=x; Path=/')).toBeNull()
+    expect(parseSetCookie('dsh_auth="a"; Path=/')).toBeNull()
+    expect(parseSetCookie('dsh_auth=a\rb; Path=/')).toBeNull()
+    expect(parseSetCookie('dsh_auth=a\nb; Path=/')).toBeNull()
+  })
+
   it('畸形 Set-Cookie 不炸', () => {
     expect(parseSetCookie('')).toBeNull()
     expect(parseSetCookie('=x')).toBeNull()

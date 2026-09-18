@@ -373,7 +373,7 @@ export const AUTH_IPC = {
 
 /**
  * 凭据保险库。
- * 通道命名与 auth:* 并列:凭据写入是**用户显式勾选**的结果,不是登录的副作用。
+ * 通道命名与 auth:* 并列；策略默认保存，用户可显式取消。
  */
 export const VAULT_IPC = {
   status: 'vault:status',
@@ -382,7 +382,12 @@ export const VAULT_IPC = {
   clear: 'vault:clear'
 } as const
 
-/** 单个实例的记住策略(默认都不记住) */
+/** 单个实例的记住策略。新实例默认保存密码和会话，用户可显式取消。 */
+export const DEFAULT_VAULT_POLICY = {
+  rememberPassword: true,
+  rememberSession: true
+} as const satisfies VaultPolicy
+
 export const VaultPolicySchema = z.object({
   rememberPassword: z.boolean(),
   rememberSession: z.boolean()
@@ -528,7 +533,7 @@ export type InstanceRuntimeStatus = 'stopped' | 'starting' | 'running' | 'error'
 export interface InstanceStatusEvent {
   id: string
   status: InstanceRuntimeStatus
-  /** 就绪 URL（本地实例带 browser-auth 令牌）；status=running 时存在 */
+  /** 工作区 URL；本地 BrowserAuth bearer URL 仅留在主进程，不会出现在此状态事件。 */
   url?: string
   /** 实际监听端口（以 dsh 打印的就绪 URL 为准，可能与预分配端口不同） */
   port?: number

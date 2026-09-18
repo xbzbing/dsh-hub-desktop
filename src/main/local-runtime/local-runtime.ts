@@ -75,6 +75,8 @@ export interface LocalRuntimeOptions {
 
 export interface LocalRuntimeManager {
   onStatus(listener: (event: InstanceStatusEvent) => void): () => void
+  /** 面向主进程的私有工作区 URL；本地 BrowserAuth token 不得出现在状态事件中。 */
+  urlOf(id: string): string | null
   statusOf(id: string): InstanceStatusEvent | null
   runningIds(): string[]
   start(instance: LocalInstance): Promise<void>
@@ -163,6 +165,14 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
    */
   const cancelGeneration = new Map<string, number>()
   const instanceGeneration = new Map<string, number>()
+  /** 已进入启动流程的任务计数；退出时必须连同已排队任务一并取消。 */
+  const pendingStartCounts = new Map<string, number>()
+
+  function decrementPendingStart(id: string): void {
+    const next = (pendingStartCounts.get(id) ?? 1) - 1
+    if (next <= 0) pendingStartCounts.delete(id)
+    else pendingStartCounts.set(id, next)
+  }
 
   function enqueueStart<T>(task: () => Promise<T>): Promise<T> {
     const next = startChain.then(task, task)
@@ -271,8 +281,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       // 缺失任一项都会造成 head-of-line 阻塞(下一个实例等到 readyTimer 触发)
       // 与无人回收的存活进程。
       emit(id, 'error', {
-        detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`),
-        url
+        detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`)
       })
       entry.stopping = true
       if (entry.timer) {
@@ -294,7 +303,6 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     entry.port = Number.isInteger(port) && port > 0 ? port : null
     if (stale()) return
     emit(id, 'running', {
-      url,
       version: entry.version,
       runtimeSource: entry.runtimeSource,
       ...(entry.port !== null ? { port: entry.port } : {}),
@@ -332,6 +340,10 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       return statuses.get(id) ?? null
     },
 
+    urlOf(id) {
+      return entries.get(id)?.url ?? null
+    },
+
     runningIds() {
       return [...entries.keys()]
     },
@@ -344,7 +356,6 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         emit(id, existing.ready ? 'running' : 'starting', {
           version: existing.version,
           runtimeSource: existing.runtimeSource,
-          ...(existing.url ? { url: existing.url } : {}),
           ...(existing.port !== null ? { port: existing.port } : {}),
           detail: '实例已在运行，忽略重复启动'
         })
@@ -354,6 +365,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       // 新的启动请求：递增 generation（不删除旧 cancel，旧 queued task 检查自己的 generation）
       const gen = (instanceGeneration.get(id) ?? 0) + 1
       instanceGeneration.set(id, gen)
+      pendingStartCounts.set(id, (pendingStartCounts.get(id) ?? 0) + 1)
       try {
         emit(id, 'starting', { detail: '解析运行时来源' })
         const customLauncher = instance.launcher === 'dush' ? 'dush' : null
@@ -425,7 +437,6 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
               emit(id, already.ready ? 'running' : 'starting', {
                 version: already.version,
                 runtimeSource: already.runtimeSource,
-                ...(already.url ? { url: already.url } : {}),
                 ...(already.port !== null ? { port: already.port } : {}),
                 detail: '实例已在运行，忽略重复启动'
               })
@@ -580,6 +591,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         emit(id, 'error', {
           detail: error instanceof Error ? error.message : String(error)
         })
+      } finally {
+        decrementPendingStart(id)
       }
     },
 
@@ -630,7 +643,6 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         emit(id, existing.ready ? 'running' : 'starting', {
           version: existing.version,
           runtimeSource: existing.runtimeSource,
-          ...(existing.url ? { url: existing.url } : {}),
           ...(existing.port !== null ? { port: existing.port } : {}),
           detail: '实例已在运行，忽略重复接管'
         })
@@ -661,8 +673,10 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     },
 
     async stopAll() {
-      const ids = [...entries.keys()]
-      await Promise.all(ids.map((id) => this.stop(id)))
+      // entries 以外，安装/端口分配/全局队列中的启动任务也必须作废，防止退出后再 spawn。
+      const ids = new Set([...entries.keys(), ...pendingStartCounts.keys()])
+      await Promise.all([...ids].map((id) => this.stop(id)))
+      await startChain
     }
   }
 }

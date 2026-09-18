@@ -380,6 +380,65 @@ describe('store settings', () => {
     await vi.waitFor(() => expect(openView).toHaveBeenCalledWith('ready-local'))
   })
 
+  it('离开工作区前使在途打开失效，迟到完成不能重新显示原生视图', async () => {
+    const useAppStore = await freshStore()
+    let resolveOpen!: (value: { ok: true; value: null }) => void
+    const hideView = vi.fn(async () => ({ ok: true as const, value: null }))
+    const openView = vi.fn(
+      () =>
+        new Promise<{ ok: true; value: null }>((resolve) => {
+          resolveOpen = resolve
+        })
+    )
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView } }
+    })
+
+    const opening = useAppStore.getState().openWorkspace('instance-a')
+    useAppStore.getState().setSettingsOpen(true)
+    resolveOpen({ ok: true, value: null })
+    await opening
+
+    expect(useAppStore.getState()).toMatchObject({
+      settingsOpen: true,
+      selection: null,
+      workspaceOpen: false,
+      workspaceOpening: false
+    })
+  })
+
+  it('过期工作区打开完成不会隐藏后一次选择的原生视图', async () => {
+    const useAppStore = await freshStore()
+    let resolveA!: (value: { ok: true; value: null }) => void
+    let resolveB!: (value: { ok: true; value: null }) => void
+    const hideView = vi.fn(async () => ({ ok: true as const, value: null }))
+    const openView = vi.fn((id: string) =>
+      new Promise<{ ok: true; value: null }>((resolve) => {
+        if (id === 'instance-a') resolveA = resolve
+        else resolveB = resolve
+      })
+    )
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView } }
+    })
+
+    const first = useAppStore.getState().openWorkspace('instance-a')
+    const second = useAppStore.getState().openWorkspace('instance-b')
+    resolveB({ ok: true, value: null })
+    await second
+    resolveA({ ok: true, value: null })
+    await first
+
+    expect(useAppStore.getState()).toMatchObject({
+      selection: 'instance-b',
+      workspaceOpen: true,
+      workspaceOpening: false
+    })
+    expect(hideView).toHaveBeenCalledTimes(2)
+  })
+
   it('运行中的本机实例从详情打开工作区时不重复启动', async () => {
     const useAppStore = await freshStore()
     const openView = vi.fn(async () => ({ ok: true as const, value: null }))

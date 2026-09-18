@@ -646,8 +646,9 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     },
 
     async stopAll() {
-      const ids = [...entries.keys()]
-      await Promise.all(ids.map((id) => this.stop(id)))
+      // 已进入启动流程但尚未建立 entry 的实例同样必须取消，避免退出后 spawn detached ssh。
+      const ids = new Set([...entries.keys(), ...startingIds])
+      await Promise.all([...ids].map((id) => this.stop(id)))
     },
 
     /**

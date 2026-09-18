@@ -89,6 +89,8 @@ interface AppState {
 }
 
 let toastSeq = 0
+/** 最近一次工作区导航意图；过期 IPC 完成不得覆盖当前实例视图。 */
+let workspaceNavigationGeneration = 0
 
   /** 系统主题监听的取消函数，避免重复订阅。 */
 let systemThemeUnsubscribe: (() => void) | null = null
@@ -257,24 +259,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 实例与总览导航优先于设置页：否则 settingsOpen 一直为 true，侧栏点击看似
   // 改了 selection，App 却始终渲染 SettingsView，用户被困在设置页。
   select: (id) => {
+    workspaceNavigationGeneration += 1
     void window.dshHub?.runtime?.hideView()
     set({ selection: id, workspaceOpen: false, workspaceOpening: false, settingsOpen: false })
   },
 
   openWorkspace: async (id) => {
+    const generation = ++workspaceNavigationGeneration
     void window.dshHub?.runtime?.hideView()
     set({ selection: id, workspaceOpen: false, workspaceOpening: true, settingsOpen: false })
     const result = await window.dshHub?.runtime.openView(id)
+    // A later selection/open request owns the native view. Stale responses only stop themselves.
+    if (generation !== workspaceNavigationGeneration || get().selection !== id) return
     if (result?.ok) {
-      // 删除、总览或另一实例切换可能在等待 IPC 时发生；陈旧完成不得重新覆盖当前视图。
-      if (get().selection !== id) {
-        void window.dshHub?.runtime?.hideView()
-        return
-      }
       set({ workspaceOpen: true, workspaceOpening: false })
       return
     }
-    if (get().selection === id) set({ workspaceOpening: false })
+    set({ workspaceOpening: false })
     if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
   },
 
@@ -309,6 +310,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (open) {
       const suspendWorkspace = state.workspaceOpen && state.selection !== null
       if (suspendWorkspace) {
+        workspaceNavigationGeneration += 1
         // WebContentsView 是独立于 React DOM 的原生子视图；确认隐藏后才挂载向导，
         // 否则它会覆盖新建实例弹窗。
         set({ workspaceOpen: false, workspaceOpening: false, workspaceSuspendedForWizard: true })
@@ -329,7 +331,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     })
   },
   setSettingsOpen: (open) => {
-    if (open) void window.dshHub?.runtime?.hideView()
+    if (open) {
+      workspaceNavigationGeneration += 1
+      void window.dshHub?.runtime?.hideView()
+    }
     set({ settingsOpen: open, workspaceOpen: false, workspaceOpening: false, ...(open ? { selection: null } : {}) })
   },
 

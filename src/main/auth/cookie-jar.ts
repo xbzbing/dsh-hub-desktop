@@ -14,6 +14,9 @@ export interface CookieRecord {
   attributes: string
 }
 
+const COOKIE_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+const COOKIE_VALUE_PATTERN = /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/
+
 /** 解析单个 Set-Cookie 头(只取第一个 name=value 对与属性) */
 export function parseSetCookie(header: string, now = Date.now()): CookieRecord | null {
   const trimmed = header.trim()
@@ -24,7 +27,7 @@ export function parseSetCookie(header: string, now = Date.now()): CookieRecord |
   if (eq <= 0) return null
   const name = first.slice(0, eq).trim()
   const value = first.slice(eq + 1).trim()
-  if (name === '') return null
+  if (!COOKIE_NAME_PATTERN.test(name) || !COOKIE_VALUE_PATTERN.test(value)) return null
 
   let expiresAt: number | null = null
   let maxAge: number | null = null

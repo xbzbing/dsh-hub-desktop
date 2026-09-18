@@ -26,6 +26,7 @@ let handlers: Map<string, Listener>
 let runtimeFake: {
   onStatus: ReturnType<typeof vi.fn>
   statusOf: ReturnType<typeof vi.fn>
+  urlOf: ReturnType<typeof vi.fn>
   runningIds: ReturnType<typeof vi.fn>
   start: ReturnType<typeof vi.fn>
   stop: ReturnType<typeof vi.fn>
@@ -89,6 +90,7 @@ beforeEach(async () => {
   runtimeFake = {
     onStatus: vi.fn(() => () => undefined),
     statusOf: vi.fn(() => currentStatus),
+    urlOf: vi.fn(() => currentStatus?.url ?? null),
     runningIds: vi.fn(() => []),
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
@@ -593,12 +595,13 @@ describe('registerIpc', () => {
     }
     if (!local.ok) throw new Error('创建失败')
     runtimeFake.start.mockImplementation(async (instance) => {
+      const url = 'http://127.0.0.1:39002/'
       runtimeFake.statusOf.mockReturnValue({
         id: instance.id,
         status: 'running',
-        url: 'http://127.0.0.1:39002/',
         at: '2026-09-16T00:00:00.000Z'
       })
+      runtimeFake.urlOf.mockReturnValue(url)
     })
 
     const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
@@ -624,12 +627,13 @@ describe('registerIpc', () => {
     })
     runtimeFake.start.mockImplementation(async (instance) => {
       await starting
+      const url = 'http://127.0.0.1:39003/'
       runtimeFake.statusOf.mockReturnValue({
         id: instance.id,
         status: 'running',
-        url: 'http://127.0.0.1:39003/',
         at: '2026-09-16T00:00:00.000Z'
       })
+      runtimeFake.urlOf.mockReturnValue(url)
     })
 
     const first = invoke('instances:openView', local.value.id) as Promise<{ ok: boolean }>
@@ -761,6 +765,25 @@ describe('registerIpc', () => {
     expect(vaultFake['rememberExternalAccessToken']).toHaveBeenCalledWith(local.value.id, 'new-token')
   })
 
+  it('外部接管创建在 token 持久化失败时回滚实例记录', async () => {
+    externalDshFake.scan.mockResolvedValue([
+      { pid: 84758, port: 52300, patch: null, command: 'node /x/dsh web' }
+    ])
+    vaultFake['rememberExternalAccessToken']!.mockRejectedValueOnce(new Error('keychain unavailable'))
+
+    const created = (await invoke('instances:create', {
+      ...VALID_LOCAL,
+      useExistingExternal: true,
+      externalPid: 84758,
+      externalAccess: 'access-token'
+    })) as { ok: boolean }
+
+    expect(created.ok).toBe(false)
+    expect((await invoke('instances:list'))).toMatchObject({ ok: true, value: [] })
+    expect(vaultFake['forgetExternalAccessToken']).toHaveBeenCalledOnce()
+    expect(runtimeFake.stop).toHaveBeenCalledOnce()
+  })
+
   it('本机已有 dsh web 时创建实例会绑定其端口，而非额外启动新进程', async () => {
     externalDshFake.scan.mockResolvedValue([
       { pid: 84758, port: 52300, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
@@ -851,6 +874,19 @@ describe('registerIpc', () => {
     expect(vaultFake['rememberExternalAccessToken']).not.toHaveBeenCalled()
   })
 
+  it('外部接管的 token 持久化失败时不改变现有运行时', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!local.ok) throw new Error('创建失败')
+    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+    vaultFake['rememberExternalAccessToken']!.mockRejectedValueOnce(new Error('keychain unavailable'))
+
+    const adopted = (await invoke('instances:adoptExternal', local.value.id, 84758, 'new-token')) as { ok: boolean }
+
+    expect(adopted.ok).toBe(false)
+    expect(runtimeFake.stop).not.toHaveBeenCalled()
+    expect(runtimeFake.adopt).not.toHaveBeenCalled()
+  })
+
   it('外部 dsh 接管验证 token 后保存，失效 token 会被清除并要求重新输入', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
@@ -900,6 +936,24 @@ describe('registerIpc', () => {
     }
     expect(wrongPort.ok).toBe(false)
     expect(wrongPort.code).toBe('invalid-input')
+
+    const nullByte = (await invoke(
+      'instances:adoptExternal',
+      local.value.id,
+      84758,
+      'http://127.0.0.1:3080/?token=%00'
+    )) as { ok: boolean; code?: string }
+    expect(nullByte.ok).toBe(false)
+    expect(nullByte.code).toBe('invalid-input')
+
+    const newline = (await invoke(
+      'instances:adoptExternal',
+      local.value.id,
+      84758,
+      'http://127.0.0.1:3080/?token=%0A'
+    )) as { ok: boolean; code?: string }
+    expect(newline.ok).toBe(false)
+    expect(newline.code).toBe('invalid-input')
   })
 
 

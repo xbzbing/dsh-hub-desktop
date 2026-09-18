@@ -2,20 +2,17 @@
  *
  * 白名单通道（preload 再暴露一层）；非法入参返回 `IpcResult` 错误信封而非抛异常，
  */
-import { app, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import { z } from 'zod'
 import { EndpointParseError } from '@shared/endpoint'
-import { IPC, type AppInfo, type PingResult } from '@shared/bridge'
 import {
   AUTH_IPC,
   CreateInstanceInputSchema,
   formatZodIssues,
-  HTTP_IPC,
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
   PatchInstanceSchema,
   SSH_IPC,
-  SETTINGS_IPC,
   SshKeyPreviewInputSchema,
   VAULT_IPC,
   VaultPolicySchema,
@@ -23,7 +20,6 @@ import {
   type HostKeyDecision,
   type AuthStateSnapshot,
   type ExternalDshWebSnapshot,
-  type HttpAuthDetection,
   type InstanceRecord,
   type VaultPolicy,
   type VaultStatusSnapshot,
@@ -33,7 +29,6 @@ import {
   type LocalLauncherSnapshot,
   type WorkspaceViewBounds
 } from '@shared/contracts'
-import { detectDraftEndpoint } from '../transport/http-endpoint'
 import { httpDirectEndpoint } from '../transport/endpoint-resolver'
 import type { HttpEndpointManager } from '../transport/http-endpoint'
 import { resolveSshKeyPreview } from '../ssh/key-preview'
@@ -47,8 +42,10 @@ import { InstanceStoreError, type InstanceStore } from '../registry/instance-sto
 import { DataDirOpenError } from '../shell/open-data-dir'
 import type { Vault } from '../vault/vault'
 import type { SettingsStore } from '../settings/settings-store'
-import { SettingsSchema } from '@shared/settings'
 import type { Settings } from '@shared/settings'
+import { registerHttpHandlers } from './http-handlers'
+import { registerAppHandlers } from './app-handlers'
+import { registerSettingsHandlers } from './settings-handlers'
 import type { AuditEntry } from '../audit/audit-log'
 
 async function defaultVerifyExternalAccess(url: string): Promise<boolean> {
@@ -157,7 +154,8 @@ function externalAccessToken(raw: unknown, port: number): string {
     throw new InstanceStoreError('invalid-input', '访问链接必须匹配已检测的本机 dsh 端口并包含 token')
   }
   const token = url.searchParams.get('token')
-  if (token === null || token === '') {
+  const containsControl = (value: string): boolean => [...value].some((char) => char.charCodeAt(0) <= 0x1f || char.charCodeAt(0) === 0x7f)
+  if (token === null || token === '' || containsControl(token)) {
     throw new InstanceStoreError('invalid-input', '访问链接必须匹配已检测的本机 dsh 端口并包含 token')
   }
   return token
@@ -190,25 +188,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   /** 外部 dsh 的 token URL 仅驻留在主进程会话内，绝不进入状态流或注册表。 */
   const externalAccessUrls = new Map<string, { pid: number; port: number; url: string }>()
   const processVersions = process.versions as NodeJS.ProcessVersions & { electron?: string }
-
-  ipcMain.handle(IPC.info, (): Promise<IpcResult<AppInfo>> =>
-    wrap((): AppInfo => ({
-      appVersion: app.getVersion(),
-      platform: process.platform,
-      arch: process.arch,
-      chrome: process.versions.chrome,
-      electron: processVersions.electron ?? '',
-      node: process.versions.node,
-      userDataPath: app.getPath('userData')
-    }))
-  )
-
-  ipcMain.handle(IPC.ping, (_event, message: unknown): Promise<IpcResult<PingResult>> =>
-    wrap((): PingResult => {
-      const echo = typeof message === 'string' && message !== '' ? message : null
-      return { echo, at: Date.now() }
-    })
-  )
+  registerAppHandlers(processVersions, wrap)
 
   // —— 实例注册表 CRUD ——
 
@@ -247,10 +227,19 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       }
       const record = await store.create({ ...recordInput, port: match.port })
       if (record.transport !== 'local') throw new Error('本机实例创建结果无效')
-      externalAccessUrls.set(record.id, { pid: match.pid, port: match.port, url: accessUrl })
-      await deps.vault.rememberExternalAccessToken(record.id, token)
-      await deps.runtime.adopt(record, { pid: match.pid, port: match.port, patch: match.patch })
-      return record
+      try {
+        await deps.vault.rememberExternalAccessToken(record.id, token)
+        await deps.runtime.adopt(record, { pid: match.pid, port: match.port, patch: match.patch })
+        externalAccessUrls.set(record.id, { pid: match.pid, port: match.port, url: accessUrl })
+        return record
+      } catch (error) {
+        // 创建外部接管实例是单个用例：后续安全存储或运行时接管失败时不能留下不可见孤儿记录。
+        externalAccessUrls.delete(record.id)
+        await deps.runtime.stop(record.id).catch(() => undefined)
+        await deps.vault.forgetExternalAccessToken(record.id).catch(() => undefined)
+        await store.remove(record.id).catch(() => undefined)
+        throw error
+      }
     })
   )
 
@@ -315,8 +304,14 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   )
 
   const openViewTasks = new Map<string, Promise<void>>()
+  let workspaceTargetId: string | null = null
 
   async function openWorkspace(instanceId: string): Promise<void> {
+    // 同实例的并发请求合并；不同实例则只有最新目标可以激活原生视图。
+    const isCurrent = (): boolean => workspaceTargetId === instanceId
+    const openIfCurrent = async (instance: InstanceRecord, url: string): Promise<void> => {
+      if (isCurrent()) await deps.openInstanceView(instance, url)
+    }
     const instance = await store.get(instanceId)
     if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${instanceId}`)
     const status =
@@ -325,12 +320,10 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         : instance.transport === 'http'
           ? deps.http.statusOf(instanceId)
           : deps.runtime.statusOf(instanceId)
-    if (
-      status?.status === 'running' &&
-      status.url &&
-      !(instance.transport === 'local' && status.runtimeSource === 'external')
-    ) {
-      await deps.openInstanceView(instance, status.url)
+    if (status?.status === 'running' && !(instance.transport === 'local' && status.runtimeSource === 'external')) {
+      const url = instance.transport === 'local' ? deps.runtime.urlOf(instanceId) : status.url
+      if (!url) throw new Error('workspace-url-unavailable')
+      await openIfCurrent(instance, url)
       return
     }
     if (instance.transport === 'http') {
@@ -339,14 +332,14 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
           console.error('[register] HTTP 实例状态探测失败：', error)
         })
       }
-      await deps.openInstanceView(instance, httpDirectEndpoint(instance))
+      await openIfCurrent(instance, httpDirectEndpoint(instance))
       return
     }
     if (instance.transport === 'ssh') {
       await deps.tunnels.start(instance)
       const ready = deps.tunnels.statusOf(instanceId)
       if (ready?.status === 'running' && ready.url) {
-        await deps.openInstanceView(instance, ready.url)
+        await openIfCurrent(instance, ready.url)
       }
       return
     }
@@ -361,7 +354,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
           await deps.vault.forgetExternalAccessToken(instanceId)
           throw new InstanceStoreError('invalid-state', '本机 dsh 已重启，请在实例详情中更新访问 token')
         }
-        await deps.openInstanceView(instance, savedAccess.url)
+        await openIfCurrent(instance, savedAccess.url)
         return
       }
       const external = deps.externalDsh ? await deps.externalDsh.scan() : []
@@ -378,13 +371,14 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         }
         await deps.runtime.adopt(instance, { pid: match.pid, port: match.port, patch: match.patch })
         externalAccessUrls.set(instanceId, { pid: match.pid, port: match.port, url: accessUrl })
-        await deps.openInstanceView(instance, accessUrl)
+        await openIfCurrent(instance, accessUrl)
         return
       }
       await deps.runtime.start(instance)
       const ready = deps.runtime.statusOf(instanceId)
-      if (ready?.status === 'running' && ready.url) {
-        await deps.openInstanceView(instance, ready.url)
+      const url = deps.runtime.urlOf(instanceId)
+      if (ready?.status === 'running' && url) {
+        await openIfCurrent(instance, url)
       }
       return
     }
@@ -394,6 +388,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   ipcMain.handle(INSTANCE_RUNTIME_IPC.openView, (_event, id: unknown): Promise<IpcResult<null>> =>
     wrap(async () => {
       const instanceId = parseId(id)
+      workspaceTargetId = instanceId
       const existing = openViewTasks.get(instanceId)
       if (existing) {
         await existing
@@ -467,19 +462,17 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         if (match.port === null) {
           throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')
         }
+        const previousAccess = externalAccessUrls.get(instanceId)
+        const previousToken = deps.vault.getExternalAccessToken(instanceId)
         const currentRuntime = deps.runtime.statusOf(instanceId)
-        if (deps.runtime.runningIds().includes(instanceId)) {
-          if (currentRuntime?.runtimeSource !== 'external') {
-            throw new InstanceStoreError('invalid-state', '实例已在运行，不能接管其他本机 dsh web')
-          }
-          // 仅解除旧的外部接管，不会终止用户自己的 dsh；随后用最新 token 重新验证并接管。
-          await deps.runtime.stop(instanceId)
-          externalAccessUrls.delete(instanceId)
+        const replacingExternal = deps.runtime.runningIds().includes(instanceId)
+        if (replacingExternal && currentRuntime?.runtimeSource !== 'external') {
+          throw new InstanceStoreError('invalid-state', '实例已在运行，不能接管其他本机 dsh web')
         }
         const rawAccess = typeof access === 'string' ? access.trim() : ''
         const usingStoredToken = rawAccess === ''
         const token = usingStoredToken
-          ? deps.vault.getExternalAccessToken(instanceId)
+          ? previousToken
           : externalAccessToken(access, match.port)
         if (!token) throw new InstanceStoreError('invalid-state', '本机 dsh 需要访问 token，请在实例详情中更新')
         const accessUrl = externalAccessUrl(token, match.port)
@@ -487,13 +480,37 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
           if (usingStoredToken) await deps.vault.forgetExternalAccessToken(instanceId)
           throw new InstanceStoreError('invalid-state', '访问 token 无效，请重新输入')
         }
-        await deps.runtime.adopt(instance, {
-          pid: match.pid,
-          port: match.port,
-          patch: match.patch
-        })
-        externalAccessUrls.set(instanceId, { pid: match.pid, port: match.port, url: accessUrl })
+        // 先持久化新 token，再拆除旧接管；持久化失败时当前可用会话完全不受影响。
         if (!usingStoredToken) await deps.vault.rememberExternalAccessToken(instanceId, token)
+        try {
+          if (replacingExternal) await deps.runtime.stop(instanceId)
+          await deps.runtime.adopt(instance, {
+            pid: match.pid,
+            port: match.port,
+            patch: match.patch
+          })
+          externalAccessUrls.set(instanceId, { pid: match.pid, port: match.port, url: accessUrl })
+        } catch (error) {
+          externalAccessUrls.delete(instanceId)
+          await deps.runtime.stop(instanceId).catch(() => undefined)
+          // 恢复旧 token 与已接管的用户进程，避免失败操作毁掉先前可用的会话。
+          if (!usingStoredToken) {
+            if (previousToken) await deps.vault.rememberExternalAccessToken(instanceId, previousToken).catch(() => undefined)
+            else await deps.vault.forgetExternalAccessToken(instanceId).catch(() => undefined)
+          }
+          if (previousAccess) {
+            await deps.runtime
+              .adopt(instance, {
+                pid: previousAccess.pid,
+                port: previousAccess.port,
+                patch: null,
+                url: previousAccess.url
+              })
+              .catch(() => undefined)
+            externalAccessUrls.set(instanceId, previousAccess)
+          }
+          throw error
+        }
         deps.audit?.({ instanceId, event: 'connect', result: 'adopt-external' })
         return null
       })
@@ -550,14 +567,14 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
 
   ipcMain.handle(INSTANCE_RUNTIME_IPC.hideView, (): Promise<IpcResult<null>> =>
     wrap(() => {
+      // 任何隐藏操作都取消尚未完成的 openView，防止迟到请求重新激活原生视图。
+      workspaceTargetId = null
       deps.hideInstanceView?.()
       return null
     })
   )
 
-  const authSnapshot = (
-    state: Awaited<ReturnType<AuthRegistry['login']>>
-  ): AuthStateSnapshot | null => (state === null ? null : (state as unknown as AuthStateSnapshot))
+  const authSnapshot = (state: Awaited<ReturnType<AuthRegistry['login']>>): AuthStateSnapshot | null => state
 
   /**
    * 写 vault 的「安静」包装:凭据记忆是**尽力而为**的附加动作,
@@ -588,7 +605,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
   }
 
   /**
-   * 主进程自行读取。门禁:必须显式勾选「记住密码」且 vault 里确有该实例的密码,
+   * 主进程自行读取。门禁:策略允许记住密码且 vault 里确有该实例的密码,
    * 否则 invalid-input(渲染层无从绕过:通道只收实例 id 与可选 OTP)。
    */
   function loginWithStored(instanceId: string, otp?: string): Promise<AuthStateSnapshot | null> {
@@ -677,7 +694,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       })
   )
 
-  // 显式勾选「记住密码」+ vault 里确有密码,否则 invalid-input;密码不跨 IPC。
+  // 策略允许且 vault 里确有密码，否则 invalid-input；密码不跨 IPC。
   ipcMain.handle(
     AUTH_IPC.loginStored,
     (_event, id: unknown, otp: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
@@ -760,55 +777,16 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     })
   )
 
-  ipcMain.handle(
-    SETTINGS_IPC.get,
-    (): Promise<IpcResult<Settings>> => wrap(() => deps.settings.read())
+  registerSettingsHandlers(
+    {
+      settings: deps.settings,
+      onSettingsChanged: deps.onSettingsChanged,
+      openDataDir: deps.openDataDir
+    },
+    wrap
   )
 
-  ipcMain.handle(
-    SETTINGS_IPC.update,
-    (_event, patch: unknown): Promise<IpcResult<Settings>> =>
-      wrap(async () => {
-        // 只接受已知字段的**部分**补丁;未知字段由 .strict() 拒绝。
-        // 注意:`.partial()` 不会去掉字段自身的 `.default()`,会把未提交的字段也填上默认值 ——
-        // 那会让「只改语言」的补丁顺带回写其它字段(并把用户的其它偏好重置)。
-        // 因此这里先按未知字段校验,再**只挑出调用方真正给出的键**。
-        const raw = z.record(z.string(), z.unknown()).parse(patch)
-        SettingsSchema.partial().strict().parse(raw)
-        const known = Object.keys(SettingsSchema.shape) as Array<keyof Settings>
-        const provided: Partial<Settings> = {}
-        for (const key of known) {
-          if (key in raw) provided[key] = raw[key] as never
-        }
-        const next = await deps.settings.update(provided)
-        // 原生副作用只按真正被修改的字段施加：例如切语言仅刷新托盘文案，
-        // 绝不能顺带调用 macOS 的 setLoginItemSettings。
-        deps.onSettingsChanged?.(next, Object.keys(provided) as Array<keyof Settings>)
-        return next
-      })
-  )
-
-  // **签名上没有路径参数**,并用空元组 schema 把「多传参数」判为非法调用 ——
-  // 目录只能由主进程自行解析,渲染层无法指定路径(见 `shell/open-data-dir.ts`)。
-  ipcMain.handle(
-    SETTINGS_IPC.openDataDir,
-    (_event, ...args: unknown[]): Promise<IpcResult<null>> =>
-      wrap(async () => {
-        z.tuple([]).parse(args)
-        if (!deps.openDataDir) throw new DataDirOpenError('internal', '打开数据目录不可用')
-        await deps.openDataDir()
-        return null
-      })
-  )
-
-  ipcMain.handle(
-    HTTP_IPC.detect,
-    (_event, endpointUrl: unknown): Promise<IpcResult<HttpAuthDetection>> =>
-      wrap(() => {
-        const raw = z.string().trim().min(1).max(2048).parse(endpointUrl)
-        return detectDraftEndpoint(raw)
-      })
-  )
+  registerHttpHandlers(wrap)
 
   ipcMain.handle(
     SSH_IPC.askpassReply,
