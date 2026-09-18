@@ -471,7 +471,7 @@ export default function Wizard(): ReactNode {
                   <input
                     className="input"
                     id="wizard-user"
-                    placeholder="dev"
+                    placeholder={t('wizard.userPlaceholder')}
                     value={form.username}
                     onChange={set('username')}
                     data-testid="wizard-user"

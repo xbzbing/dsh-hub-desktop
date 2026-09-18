@@ -251,6 +251,7 @@ export const MESSAGES = {
   'wizard.hostLabel': { zh: '主机（或 ~/.ssh/config 别名）', en: 'Host (or ~/.ssh/config alias)' },
   'wizard.hostPlaceholder': { zh: 'build-01.internal 或 build-01', en: 'build-01.internal or build-01' },
   'wizard.userLabel': { zh: '用户名', en: 'Username' },
+  'wizard.userPlaceholder': { zh: 'dev', en: 'dev' },
   'wizard.sshPortLabel': { zh: 'SSH 端口', en: 'SSH port' },
   'wizard.remotePortLabel': { zh: '远端 dsh 端口', en: 'Remote dsh port' },
   'wizard.urlLabel': { zh: '实例网址', en: 'Instance URL' },
