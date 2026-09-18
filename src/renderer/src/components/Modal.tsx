@@ -9,11 +9,13 @@ export function Modal(props: {
   footer?: ReactNode
   children: ReactNode
   testId?: string
+  /** 将浮层限制在右侧主内容区，而非覆盖整个应用。 */
+  scope?: 'app' | 'workspace'
   /** 关闭按钮的无障碍标签(由调用方经 t('common.close') 传入,保持本组件无 i18n 依赖) */
   closeLabel?: string
 }): ReactNode {
   return (
-    <div className="overlay" onClick={props.onClose}>
+    <div className={`overlay${props.scope === 'workspace' ? ' overlay-workspace' : ''}`} onClick={props.onClose}>
       <div
         className={`modal${props.wide ? ' wide' : ''}`}
         data-testid={props.testId}

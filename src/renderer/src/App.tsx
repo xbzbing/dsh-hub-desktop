@@ -96,7 +96,10 @@ export default function App() {
   const title = t('nav.overview')
 
   return (
-    <div className={`app-shell${rail ? ' rail' : ''}`} data-testid="app-shell">
+    <div
+      className={`app-shell${rail ? ' rail' : ''}${workspaceOpen || workspaceOpening ? ' workspace-auth-scope' : ''}`}
+      data-testid="app-shell"
+    >
       {/* 顶栏横跨侧边栏和主区，为 macOS 窗口控件预留空间。 */}
       <div className="topbar">
         <div className="tb-left">

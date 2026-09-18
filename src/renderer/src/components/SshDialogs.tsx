@@ -18,7 +18,10 @@ const BRIDGE = window.dshHub
  */
 export default function SshDialogs(): ReactNode {
   const t = useAppStore((state) => state.t)
+  const workspaceOpen = useAppStore((state) => state.workspaceOpen)
+  const workspaceOpening = useAppStore((state) => state.workspaceOpening)
   const toast = useAppStore((state) => state.toast)
+  const modalScope = workspaceOpen || workspaceOpening ? ('workspace' as const) : ('app' as const)
   const [hostKey, setHostKey] = useState<HostKeyPromptPayload | null>(null)
   const [askpass, setAskpass] = useState<AskpassPromptPayload | null>(null)
   const [secret, setSecret] = useState('')
@@ -80,6 +83,7 @@ export default function SshDialogs(): ReactNode {
     return (
       <Modal
         closeLabel={t('common.close')}
+        scope={modalScope}
         title={t('ssh.forgetTitle')}
         sub={forgetFor.target}
         onClose={() => setForgetFor(null)}
@@ -115,6 +119,8 @@ export default function SshDialogs(): ReactNode {
     return (
       <Modal
         closeLabel={t('common.close')}
+        scope={modalScope}
+        wide
         title={changed ? t('ssh.hostKeyChangedTitle') : t('ssh.hostKeyTitle')}
         sub={`${hostKey.target} · ${changed ? t('ssh.hostKeyChangedSub') : t('ssh.hostKeyNewSub')}`}
         onClose={() => replyHostKey('reject')}
@@ -168,12 +174,12 @@ export default function SshDialogs(): ReactNode {
         )}
         <div className="inset mt12">
           {hostKey.fingerprints.map((entry) => (
-            <div className="row-between" key={entry.fingerprint}>
-              <code className="num" style={{ fontSize: '12.5px' }}>
+            <div className="fingerprint-row" key={entry.fingerprint}>
+              <code className="num fingerprint-value">
                 {entry.typeLabel} · {entry.fingerprint}
               </code>
               <button
-                className="btn btn-ghost btn-sm"
+                className="btn btn-ghost btn-sm fingerprint-copy"
                 onClick={() => void navigator.clipboard.writeText(entry.fingerprint)}
               >
                 <Icon name="copy" /> {t('common.copy')}
@@ -195,6 +201,7 @@ export default function SshDialogs(): ReactNode {
     return (
       <Modal
         closeLabel={t('common.close')}
+        scope={modalScope}
         title={t('ssh.askpassTitle')}
         sub={askpass.prompt}
         onClose={() => replyAskpass(null)}

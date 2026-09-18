@@ -188,6 +188,78 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   await win.waitForTimeout(300)
 })
 
+test('SSH 认证对话框限制在右侧工作区且指纹复制行不溢出', async () => {
+  const workspaceId = await win.evaluate(async () => {
+    const created = await window.dshHub.instances.create({
+      transport: 'http',
+      name: 'SSH 对话框工作区范围',
+      authMode: 'none',
+      endpointUrl: 'https://workspace-scope.example.com/dsh'
+    })
+    if (!created.ok) throw new Error(created.message)
+    return created.value.id
+  })
+  await win.reload()
+  await expect(win.getByTestId(`inst-${workspaceId}`)).toBeVisible()
+  await win.getByTestId(`inst-${workspaceId}`).click()
+  await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.webContents.send('ssh:hostKeyDecision', {
+      requestId: 'ui-polish-host-key',
+      instanceId: 'ui-polish-instance',
+      target: 'vsgp',
+      verdict: 'unknown',
+      fingerprints: [
+        {
+          type: 'ssh-ed25519',
+          typeLabel: 'ED25519',
+          fingerprint: 'SHA256:abcdefghijklmnopqrstuvwxyz0123456789'
+        }
+      ],
+      previousFingerprints: []
+    })
+  })
+  await expect(win.getByTestId('fingerprint-dialog')).toBeVisible()
+  const geometry = await win.evaluate(() => {
+    const shell = document.querySelector('[data-testid="app-shell"]')
+    const sidebar = document.querySelector('[data-testid="sidebar"]')
+    const topbar = document.querySelector('.topbar')
+    const overlay = document.querySelector('.overlay-workspace')
+    const dialog = document.querySelector('[data-testid="fingerprint-dialog"]')
+    const copy = document.querySelector('.fingerprint-copy')
+    const value = document.querySelector('.fingerprint-value')
+    if (!shell || !sidebar || !topbar || !overlay || !dialog || !copy || !value) return null
+    const shellBox = shell.getBoundingClientRect()
+    const sidebarBox = sidebar.getBoundingClientRect()
+    const topbarBox = topbar.getBoundingClientRect()
+    const overlayBox = overlay.getBoundingClientRect()
+    const dialogBox = dialog.getBoundingClientRect()
+    const copyBox = copy.getBoundingClientRect()
+    const valueBox = value.getBoundingClientRect()
+    return {
+      shellLeft: shellBox.left,
+      sidebarRight: sidebarBox.right,
+      topbarBottom: topbarBox.bottom,
+      overlayLeft: overlayBox.left,
+      overlayTop: overlayBox.top,
+      dialogRight: dialogBox.right,
+      contentRight: shellBox.right,
+      copyRight: copyBox.right,
+      insetRight: valueBox.right
+    }
+  })
+  expect(geometry).not.toBeNull()
+  if (!geometry) return
+  expect(geometry.overlayLeft).toBeGreaterThanOrEqual(geometry.sidebarRight - 1)
+  expect(geometry.overlayTop).toBeGreaterThanOrEqual(geometry.topbarBottom - 1)
+  expect(geometry.dialogRight).toBeLessThanOrEqual(geometry.contentRight + 1)
+  expect(geometry.copyRight).toBeLessThanOrEqual(geometry.contentRight + 1)
+  expect(geometry.insetRight).toBeLessThanOrEqual(geometry.copyRight + 1)
+  await win.getByTestId('fingerprint-dialog').locator('.x-btn').click()
+  await expect(win.getByTestId('fingerprint-dialog')).toBeHidden()
+})
+
 test('#1 向导三选项卡:间距与边框关系正常(截图目验)', async () => {
   await win.getByTestId('new-instance-btn').click()
   await expect(win.getByTestId('wizard')).toBeVisible()

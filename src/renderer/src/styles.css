@@ -1215,6 +1215,33 @@ h3,
   backdrop-filter: blur(4px);
   animation: fade 0.18s ease;
 }
+/* SSH 认证和指纹确认在打开的工作区内完成，不能阻断侧栏或顶栏导航。 */
+.app-shell.workspace-auth-scope .overlay-workspace {
+  inset: 46px 0 0 262px;
+}
+.app-shell.workspace-auth-scope.rail .overlay-workspace {
+  left: 64px;
+}
+.fingerprint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fingerprint-value {
+  min-width: 0;
+  flex: 1;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.fingerprint-copy {
+  flex: none;
+}
+@media (max-width: 920px) {
+  .app-shell.workspace-auth-scope .overlay-workspace {
+    inset: 46px 0 0;
+  }
+}
 @keyframes fade {
   from {
     opacity: 0;
