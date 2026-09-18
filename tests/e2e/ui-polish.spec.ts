@@ -159,6 +159,10 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
     return mark ? Math.round(mark.getBoundingClientRect().width) : null
   })
   expect(expandedMark).toBe(28)
+  // 鼠标已停在实例上时收起侧栏，提示也必须在 rail 状态生效后出现；
+  // 不能依赖用户额外移出再移入触发第二次 hover。
+  const railInstance = win.getByTestId(`inst-${railItemId}`)
+  await railInstance.hover()
   await win.keyboard.press('Meta+b')
   await win.waitForTimeout(300)
   await win.screenshot({ path: join(SHOT_DIR, 'shell-rail.png'), animations: 'disabled' })
@@ -166,8 +170,6 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
     () => getComputedStyle(document.querySelector('[data-testid="app-shell"]') as Element).gridTemplateColumns
   )
   expect(railCols.split(' ')[0]).toBe('64px')
-  const railInstance = win.getByTestId(`inst-${railItemId}`)
-  await railInstance.hover()
   await expect(win.getByRole('tooltip')).toHaveText('收起态留白检查')
   await expect(win.getByRole('tooltip')).toBeVisible()
   await expect(railInstance).toHaveAttribute('title', '收起态留白检查')

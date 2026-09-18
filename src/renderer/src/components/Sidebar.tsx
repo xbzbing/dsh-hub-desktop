@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { InstanceSummary, Transport } from '@shared/contracts'
 import { Icon } from '../lib/icons'
@@ -23,12 +23,29 @@ export default function Sidebar(): ReactNode {
   const [query, setQuery] = useState('')
   const [groupByType, setGroupByType] = useState(false)
   const [railTooltip, setRailTooltip] = useState<{ name: string; top: number } | null>(null)
+  const hoveredInstanceRef = useRef<{ element: HTMLButtonElement; name: string } | null>(null)
 
   const showRailTooltip = (element: HTMLButtonElement, name: string): void => {
-    if (!rail) return
+    hoveredInstanceRef.current = { element, name }
     const rect = element.getBoundingClientRect()
     setRailTooltip({ name, top: rect.top + rect.height / 2 })
   }
+
+  const hideRailTooltip = (): void => {
+    hoveredInstanceRef.current = null
+    setRailTooltip(null)
+  }
+
+  useEffect(() => {
+    if (!rail || !hoveredInstanceRef.current) return
+    const frame = requestAnimationFrame(() => {
+      const hovered = hoveredInstanceRef.current
+      if (!hovered) return
+      const rect = hovered.element.getBoundingClientRect()
+      setRailTooltip({ name: hovered.name, top: rect.top + rect.height / 2 })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [rail])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -105,7 +122,7 @@ export default function Sidebar(): ReactNode {
                   selected={selection === item.id}
                   rail={rail}
                   onRailTooltip={showRailTooltip}
-                  onRailTooltipHide={() => setRailTooltip(null)}
+                  onRailTooltipHide={hideRailTooltip}
                 />
               ))}
             </div>
@@ -190,8 +207,10 @@ function InstanceItem(props: {
       className="inst"
       aria-current={props.selected}
       onClick={() => props.onClick(props.item.id)}
-      onMouseEnter={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
-      onMouseLeave={props.onRailTooltipHide}
+      onPointerEnter={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
+      onPointerMove={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
+      onPointerLeave={props.onRailTooltipHide}
+      onPointerCancel={props.onRailTooltipHide}
       onFocus={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
       onBlur={props.onRailTooltipHide}
       data-testid={`inst-${props.item.id}`}
