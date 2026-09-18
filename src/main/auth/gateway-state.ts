@@ -5,30 +5,11 @@
  * A valid session restores connected state. A stored password can submit silently before
  * the UI requests an OTP. Rate limits prevent further authentication requests.
  */
+import type { AuthPhase as SharedAuthPhase, AuthStateSnapshot } from '@shared/contracts'
 import type { GatewayFailure } from './gateway-client'
 
-export type AuthPhase =
-  | 'unknown' // 初始化
-  | 'probe' // 探测中
-  | 'needs-auth' // 已识别为网关,需要认证
-  | 'await-credentials' // 等待用户输入密码
-  | 'await-otp' // 等待动态验证码 / 备份码
-  | 'connected' // 会话就绪
-  | 'error' // 传输未就绪 / 失败超限
-
-export interface AuthState {
-  phase: AuthPhase
-  /** 是否需要 onboarding(改初始密码) */
-  needsOnboarding: boolean
-  /** 二因素是否启用(来自 settings,用于 UI 展示) */
-  otpEnabled: boolean
-  /** 锁定倒计时(ms);>0 时禁止发认证请求 */
-  lockedForMs: number
-  /** 面向用户的提示(不含凭据) */
-  message: string | null
-  /** 最近一次失败码(UI 归类用) */
-  lastErrorCode: string | null
-}
+export type AuthPhase = SharedAuthPhase
+export type AuthState = AuthStateSnapshot
 
 export function initialState(): AuthState {
   return {

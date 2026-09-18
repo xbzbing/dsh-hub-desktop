@@ -29,6 +29,9 @@ import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
+import { DEFAULT_VAULT_POLICY } from '@shared/contracts'
+import type { VaultPolicy as SharedVaultPolicy } from '@shared/contracts'
+
 /** 加密后端(生产:`electron.safeStorage`) */
 export interface VaultCrypto {
   /** 系统加密是否可用;false 即降级为内存模式 */
@@ -100,17 +103,8 @@ export interface Vault {
   policyIds(): string[]
 }
 
-export interface VaultPolicy {
-  /** 记住网关密码(勾选后才写入钥匙串) */
-  rememberPassword: boolean
-  /** 记住登录态(会话 Cookie),重启静默复用 */
-  rememberSession: boolean
-}
-
-export const DEFAULT_VAULT_POLICY: VaultPolicy = {
-  rememberPassword: true,
-  rememberSession: true
-}
+export { DEFAULT_VAULT_POLICY } from '@shared/contracts'
+export type VaultPolicy = SharedVaultPolicy
 
 /** 落盘格式(版本化,便于后续迁移) */
 interface VaultItem {

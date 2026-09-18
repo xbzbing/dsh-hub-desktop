@@ -235,6 +235,9 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
 
     await win.getByTestId('instances-table').getByText('OTP 网关实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
+    // 新实例默认保存密码与会话，用户可显式取消。
+    await expect(win.getByTestId('vault-remember-password')).toBeChecked()
+    await expect(win.getByTestId('vault-remember-session')).toBeChecked()
 
     // #2:未登录态 —— 按钮是「登录」且没有「登出」
     await expect(win.getByTestId('login-btn')).toBeVisible()

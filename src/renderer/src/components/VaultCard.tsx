@@ -9,7 +9,7 @@ import { useAppStore } from '../store'
 const BRIDGE = window.dshHub
 
 /**
- * 凭据存储卡。凭据仅在用户显式选择后保存；默认只保留在当前会话内存中。
+ * 凭据默认安全保存在系统钥匙串；用户可在此显式取消任一保存策略。
  * safeStorage 不可用时后端使用内存存储，界面显示警告。
  */
 export default function VaultCard({ instanceId }: { instanceId: string }): ReactNode {

@@ -105,8 +105,8 @@ export const MESSAGES = {
   'auth.locked': { zh: '失败次数过多，请等待 {seconds}s', en: 'Too many failures. Wait {seconds}s' },
   'auth.lockButton': { zh: '锁定 {seconds}s', en: 'Locked {seconds}s' },
   'auth.credentialsLocalOnly': {
-    zh: '凭据仅用于本次登录；未勾选「记住」时不会存入保险库',
-    en: 'Credentials are used for this sign-in only and are not stored in the vault unless you opt in'
+    zh: '密码和登录态默认安全保存在系统钥匙串；可在实例详情中取消记住。',
+    en: 'Passwords and sessions are saved in the system keychain by default; you can opt out in instance details.'
   },
   'auth.onboarding': {
     zh: '该实例仍在使用初始密码，请先在实例页面内完成改密后再登录。',

@@ -142,7 +142,7 @@ export interface DshHubBridge {
      */
     openDataDir: () => Promise<IpcResult<null>>
   }
-  /** 凭据保险库：默认不保存，显式勾选后才落盘。 */
+  /** 凭据保险库：默认保存密码和会话；用户可显式取消。 */
   vault: {
     status: () => Promise<IpcResult<VaultStatusSnapshot>>
     setPolicy: (instanceId: string, policy: VaultPolicy) => Promise<IpcResult<VaultPolicy>>

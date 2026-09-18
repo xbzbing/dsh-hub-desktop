@@ -279,7 +279,7 @@ export default function DetailView(): ReactNode {
           </div>
         </div>
 
-        {/* 凭据存储策略仅在用户显式勾选后持久化。 */}
+        {/* 凭据默认持久化，用户可在实例详情中显式取消。 */}
         {showAuthActions(record) && (
           <VaultCard key={record.id} instanceId={record.id} />
         )}
