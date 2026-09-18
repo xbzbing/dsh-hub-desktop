@@ -7,8 +7,11 @@ vi.mock('electron', () => {
     focus = vi.fn()
     isDestroyed = vi.fn(() => false)
     getURL = vi.fn(() => '')
+    getUserAgent = vi.fn(() => 'DSH Hub Test Agent')
+    setUserAgent = vi.fn()
     setWindowOpenHandler = vi.fn()
     session = {
+      setUserAgent: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
       setPermissionCheckHandler: vi.fn(),
       on: vi.fn()
@@ -40,8 +43,11 @@ interface TestView {
     focus: ReturnType<typeof vi.fn>
     isDestroyed: ReturnType<typeof vi.fn>
     getURL: ReturnType<typeof vi.fn>
+    getUserAgent: ReturnType<typeof vi.fn>
+    setUserAgent: ReturnType<typeof vi.fn>
     setWindowOpenHandler: ReturnType<typeof vi.fn>
     session: {
+      setUserAgent: ReturnType<typeof vi.fn>
       setPermissionRequestHandler: ReturnType<typeof vi.fn>
       setPermissionCheckHandler: ReturnType<typeof vi.fn>
       on: ReturnType<typeof vi.fn>
@@ -76,11 +82,15 @@ describe('createWorkspaceHost', () => {
 
   it('creates a main-owned, sandboxed view with popup, permission, download, and navigation guards', async () => {
     const hub = hubWindow()
-    const host = createWorkspaceHost(() => hub as never)
+    const host = createWorkspaceHost(() => hub as never, () => 'zh-Hans-CN')
     const view = host.prepare('11111111-1111-4111-8111-111111111111', 'http://127.0.0.1:3080/?token=abc')
     const created = fakeViews()[0]
     expect(created).toBeDefined()
     expect(hub.contentView.addChildView).toHaveBeenCalledWith(created)
+    expect(created?.webContents.session.setUserAgent).toHaveBeenCalledWith(
+      'DSH Hub Test Agent',
+      'zh-CN,zh,en-US,en'
+    )
     host.setBounds({ x: 64, y: 92, width: 1116, height: 688 })
     expect(created?.setBounds).toHaveBeenCalledWith({ x: 64, y: 92, width: 1116, height: 688 })
     await vi.waitFor(() => expect(created?.webContents.focus).toHaveBeenCalledTimes(1))

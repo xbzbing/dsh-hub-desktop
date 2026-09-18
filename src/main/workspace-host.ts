@@ -34,7 +34,10 @@ export interface WorkspaceHost {
  * Hosts an authenticated workspace in a main-process WebContentsView.
  * The renderer receives only visibility state and cannot access guest DOM, URLs, or cookies.
  */
-export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): WorkspaceHost {
+export function createWorkspaceHost(
+  getHubWindow: () => BrowserWindow | null,
+  systemLocale: () => string = () => 'en-US'
+): WorkspaceHost {
   const entries = new Map<string, Entry>()
   let activeId: string | null = null
   let cacheLimit = 3
@@ -57,6 +60,10 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
 
   function configure(entry: Entry): void {
     const { webContents } = entry.view
+    // dsh 在持久化设置同步前按 navigator.languages 初始化；显式把系统语言交给这个
+    // WebContentsView，避免 macOS/Electron 的默认 en-US 覆盖公共 DSH_HOME 的中文体验。
+    const locale = systemLocale().toLowerCase().startsWith('zh') ? 'zh-CN,zh,en-US,en' : 'en-US,en,zh-CN,zh'
+    webContents.session.setUserAgent(webContents.getUserAgent(), locale)
     webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     webContents.on('will-navigate', (event, url) => {
       if (!isAllowedInstanceNavigation(url, entry.originUrl)) event.preventDefault()

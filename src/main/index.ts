@@ -105,7 +105,7 @@ if (userDataOverride) app.setPath('userData', userDataOverride)
  * 实例窗口没有 preload，收到也无消费者；`auth:state` 仍广播（详情页可能在任一窗口）。
  */
 let hubWindow: BrowserWindow | null = null
-const workspaceHost = createWorkspaceHost(() => hubWindow)
+const workspaceHost = createWorkspaceHost(() => hubWindow, () => app.getLocale())
 
 
 let vault: Vault | null = null
