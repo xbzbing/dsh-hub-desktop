@@ -95,8 +95,13 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
       entry.originUrl = url
     }
     touch(entry)
-    for (const candidate of entries.values()) candidate.view.setVisible(candidate.instanceId === instanceId)
-    if (activeBounds) entry.view.setBounds(activeBounds)
+    // WebContentsView 的默认可见区域会覆盖整个窗口；首次打开前必须等待渲染层
+    // 回传右侧内容区边界，避免登录页面遮住侧边栏和顶栏。
+    for (const candidate of entries.values()) candidate.view.setVisible(false)
+    if (activeBounds) {
+      entry.view.setBounds(activeBounds)
+      entry.view.setVisible(true)
+    }
     activeId = instanceId
     trimCache()
     return {
@@ -129,7 +134,10 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
   function setBounds(bounds: WorkspaceViewBounds): void {
     activeBounds = bounds
     if (activeId === null) return
-    entries.get(activeId)?.view.setBounds(bounds)
+    const active = entries.get(activeId)
+    if (!active) return
+    active.view.setBounds(bounds)
+    active.view.setVisible(bounds.width > 0 && bounds.height > 0)
   }
 
   function closeAll(): void {

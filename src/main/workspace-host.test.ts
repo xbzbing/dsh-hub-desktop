@@ -104,6 +104,17 @@ describe('createWorkspaceHost', () => {
     expect(created?.webContents.loadURL).toHaveBeenCalledWith('http://127.0.0.1:3080/?token=abc')
   })
 
+  it('keeps a new workspace view hidden until the renderer supplies content bounds', () => {
+    const host = createWorkspaceHost(() => hubWindow() as never)
+    host.prepare('44444444-4444-4444-8444-444444444444', 'https://gw.example.com/login')
+    const created = fakeViews()[0]
+
+    expect(created?.setVisible).toHaveBeenCalledWith(false)
+    host.setBounds({ x: 262, y: 46, width: 918, height: 734 })
+    expect(created?.setBounds).toHaveBeenCalledWith({ x: 262, y: 46, width: 918, height: 734 })
+    expect(created?.setVisible).toHaveBeenLastCalledWith(true)
+  })
+
   it('updates the navigation allowlist when a trusted reopen uses a new local port', () => {
     const host = createWorkspaceHost(() => hubWindow() as never)
     host.prepare('33333333-3333-4333-8333-333333333333', 'http://127.0.0.1:3080/')

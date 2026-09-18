@@ -56,6 +56,7 @@ import type { HubNativePorts } from './shell/native-ports'
 import { handleWindowClose } from './shell/close-to-tray'
 import { createStatusNotifier } from './shell/status-notifier'
 import { createDataDirOpener } from './shell/open-data-dir'
+import { createGracefulQuit } from './shell/graceful-quit'
 import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
 import type { Vault } from './vault/vault'
 import type { Settings } from '@shared/settings'
@@ -277,6 +278,30 @@ let httpEndpoints: HttpEndpointManager | null = null
 let prompts: PromptBroker | null = null
 let auth: AuthRegistry | null = null
 let quitting = false
+
+const gracefulQuit = createGracefulQuit({
+  onStart: () => {
+    quitting = true
+  },
+  cleanup: async () => {
+    const recycling: Array<Promise<void>> = []
+    if (runtime) {
+      recycling.push(runtime.stopAll().catch((error: unknown) => console.error('[main] 停止实例失败：', error)))
+    }
+    if (tunnels) {
+      recycling.push(tunnels.stopAll().catch((error: unknown) => console.error('[main] 停止隧道失败：', error)))
+    }
+    if (httpEndpoints) {
+      recycling.push(
+        httpEndpoints.stopAll().catch((error: unknown) => console.error('[main] 停止 HTTP 实例失败：', error))
+      )
+    }
+    await Promise.all(recycling)
+  },
+  onError: (error) => console.error('[main] 退出清理失败：', error),
+  // app.quit() 会重新进入 before-quit；完成清理后必须直接结束进程，确保一次 ⌘Q 即退出。
+  exit: (code) => app.exit(code)
+})
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
@@ -596,30 +621,7 @@ void app.whenReady().then(() => {
   })
 })
 
-app.on('before-quit', (event) => {
-  // 所有退出路径(即使尚未初始化运行时)都必须先置位，防止 window close 回退为隐藏到托盘。
-  if (quitting) return
-  quitting = true
-  if (!runtime && !tunnels && !httpEndpoints) return
-  event.preventDefault()
-  const recycling: Array<Promise<void>> = []
-  if (runtime) {
-    recycling.push(runtime.stopAll().catch((error: unknown) => console.error('[main] 停止实例失败：', error)))
-  }
-  if (tunnels) {
-    recycling.push(
-      tunnels.stopAll().catch((error: unknown) => console.error('[main] 停止隧道失败：', error))
-    )
-  }
-  if (httpEndpoints) {
-    recycling.push(
-      httpEndpoints
-        .stopAll()
-        .catch((error: unknown) => console.error('[main] 停止 HTTP 实例失败：', error))
-    )
-  }
-  void Promise.all(recycling).finally(() => app.quit())
-})
+app.on('before-quit', (event) => gracefulQuit.handleBeforeQuit(event))
 
 app.on('window-all-closed', () => {
   // 全部窗口关闭:先收敛待答请求(macOS 进程可能驻留,请求不能悬着)

@@ -28,6 +28,11 @@ extraResources:
     to: trayTemplate@2x.png
 mac:
   icon: build/icon.icns
+  # Native Chromium/Electron resource locales only. App UI translations remain zh/en in app.asar.
+  electronLanguages:
+    - en
+    - zh_CN
+    - zh_TW
   category: public.app-category.developer-tools
   target:
     - dmg
