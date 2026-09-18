@@ -313,6 +313,8 @@ export const MESSAGES = {
   'detail.port': { zh: '端口', en: 'Port' },
   'detail.dataDirTitle': { zh: '该实例隔离的 DSH_HOME', en: 'Isolated DSH_HOME for this instance' },
   'detail.stop': { zh: '停止', en: 'Stop' },
+  'detail.disconnect': { zh: '断开工作区', en: 'Disconnect workspace' },
+  'detail.disconnected': { zh: '工作区已断开', en: 'Workspace disconnected' },
   'detail.starting': { zh: '启动中…', en: 'Starting…' },
   'detail.start': { zh: '启动', en: 'Start' },
   'detail.openView': { zh: '打开视图', en: 'Open view' },

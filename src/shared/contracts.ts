@@ -497,6 +497,8 @@ export const INSTANCE_RUNTIME_IPC = {
   openView: 'instances:openView',
   updateViewBounds: 'instances:updateViewBounds',
   hideView: 'instances:hideView',
+  /** 断开当前实例的内嵌工作区，只销毁 WebContentsView，不停止运行时或清除凭据。 */
+  disconnectView: 'instances:disconnectView',
   /** 只读探测本机 dsh/dush 启动器及版本，用于创建本机实例时的选择器。 */
   probeLocalDsh: 'instances:probeLocalDsh',
   /** 探测本机已运行的 dsh web 进程；返回 pid、端口和 patch 路径。 */

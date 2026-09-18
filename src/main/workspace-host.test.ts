@@ -192,6 +192,21 @@ describe('createWorkspaceHost', () => {
     expect(fakeViews()[2]?.webContents.close).not.toHaveBeenCalled()
   })
 
+  it('disconnect destroys only the selected guest view so reopening creates a fresh one', () => {
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never)
+    const instanceId = '88888888-8888-4888-8888-888888888888'
+    host.prepare(instanceId, 'http://127.0.0.1:3080/')
+    const first = fakeViews()[0]
+
+    host.disconnect(instanceId)
+
+    expect(hub.contentView.removeChildView).toHaveBeenCalledWith(first)
+    expect(first?.webContents.close).toHaveBeenCalledOnce()
+    host.prepare(instanceId, 'http://127.0.0.1:3080/')
+    expect(fakeViews()).toHaveLength(2)
+  })
+
   it('hides and destroys guest views without exposing them to the renderer', () => {
     const hub = hubWindow()
     const host = createWorkspaceHost(() => hub as never)

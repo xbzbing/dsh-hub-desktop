@@ -63,6 +63,7 @@ let authFake: {
   clientIds: ReturnType<typeof vi.fn>
 }
 let clearPartitionSession: ReturnType<typeof vi.fn>
+let closeInstanceView: ReturnType<typeof vi.fn>
 let vaultFake: Record<string, ReturnType<typeof vi.fn>>
 let auditSpy: (entry: { instanceId?: string | null; event: string; result?: string }) => void
 let settingsFake: Record<string, ReturnType<typeof vi.fn>>
@@ -125,6 +126,7 @@ beforeEach(async () => {
     clientIds: vi.fn(() => [])
   }
   clearPartitionSession = vi.fn(async () => undefined)
+  closeInstanceView = vi.fn()
   vaultFake = {
     status: vi.fn(() => ({ available: true, degraded: false, instanceCount: 0 })),
     getPolicy: vi.fn(() => ({ rememberPassword: false, rememberSession: false })),
@@ -187,6 +189,7 @@ beforeEach(async () => {
     audit: auditSpy,
     onSettingsChanged: onSettingsChanged as never,
     clearPartitionSession: clearPartitionSession as never,
+    closeInstanceView: closeInstanceView as never,
     prompts: promptsFake as never,
     openInstanceView: openInstanceView as never
   })
@@ -219,6 +222,7 @@ describe('registerIpc', () => {
       'instances:openView',
       'instances:updateViewBounds',
       'instances:hideView',
+      'instances:disconnectView',
       'instances:probeLocalDsh',
       'instances:scanExternal',
       'instances:adoptExternal',
@@ -242,6 +246,21 @@ describe('registerIpc', () => {
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
   })
 
+  it('disconnectView 只销毁指定 WebContentsView，不停止运行时或清除凭据', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const result = (await invoke('instances:disconnectView', created.value.id)) as { ok: boolean; value: null }
+
+    expect(result).toEqual({ ok: true, value: null })
+    expect(closeInstanceView).toHaveBeenCalledWith(created.value.id)
+    expect(runtimeFake.stop).not.toHaveBeenCalled()
+    expect(tunnelsFake.stop).not.toHaveBeenCalled()
+    expect(httpFake.stop).not.toHaveBeenCalled()
+    expect(authFake.forget).not.toHaveBeenCalled()
+    expect(vaultFake['forgetInstance']).not.toHaveBeenCalled()
+    expect(vaultFake['forgetSession']).not.toHaveBeenCalled()
+  })
   it('ssh:hostKeyForget:入参走 zod 边界,只有 ssh 实例才转交 tunnels.forgetHostKey', async () => {
     // 非 ssh 实例没有主机指纹 → invalid-input。三种情况都不许触碰隧道管理器。
     const invalid = (await invoke('ssh:hostKeyForget', { instanceId: 'not-a-uuid' })) as {

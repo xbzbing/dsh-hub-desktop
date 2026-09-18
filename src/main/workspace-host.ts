@@ -26,6 +26,8 @@ export interface WorkspaceHost {
   setCacheLimit(limit: number): void
   setBounds(bounds: WorkspaceViewBounds): void
   hide(): void
+  /** 销毁某实例的原生工作区；运行时和认证状态由调用方保留。 */
+  disconnect(instanceId: string): void
   close(instanceId: string): void
   closeAll(): void
 }
@@ -148,6 +150,10 @@ export function createWorkspaceHost(
     activeId = null
   }
 
+  function disconnect(instanceId: string): void {
+    close(instanceId)
+  }
+
   function close(instanceId: string): void {
     const entry = entries.get(instanceId)
     if (!entry) return
@@ -186,6 +192,7 @@ export function createWorkspaceHost(
     setCacheLimit,
     setBounds,
     hide,
+    disconnect,
     close,
     closeAll
   }

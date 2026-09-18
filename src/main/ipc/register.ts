@@ -69,6 +69,8 @@ export interface IpcDeps {
   openInstanceView: (instance: InstanceRecord, url: string) => Promise<void>
   /** 隐藏当前内嵌工作区，不向渲染层暴露访客 WebContents。 */
   hideInstanceView?: () => void
+  /** 销毁指定实例的内嵌工作区，不停止运行时或清除认证状态。 */
+  closeInstanceView?: (instanceId: string) => void
   /** 主进程应用经校验的内容区边界。 */
   setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => void
   prompts: PromptBroker
@@ -574,6 +576,17 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       // 任何隐藏操作都取消尚未完成的 openView，防止迟到请求重新激活原生视图。
       workspaceTargetId = null
       deps.hideInstanceView?.()
+      return null
+    })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.disconnectView, (_event, id: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      const instanceId = parseId(id)
+      const instance = await store.get(instanceId)
+      if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${instanceId}`)
+      if (workspaceTargetId === instanceId) workspaceTargetId = null
+      deps.closeInstanceView?.(instanceId)
       return null
     })
   )

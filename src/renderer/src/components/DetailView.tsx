@@ -110,6 +110,15 @@ export default function DetailView(): ReactNode {
     }
   }
 
+  const disconnectWorkspace = async (): Promise<void> => {
+    const result = await window.dshHub?.runtime.disconnectView(record.id)
+    if (!result?.ok) {
+      if (result) toast('err', t('detail.openViewFailed'), result.message)
+      return
+    }
+    toast('ok', t('detail.disconnected'))
+  }
+
   const deleteInstance = async (): Promise<void> => {
     const bridge = window.dshHub
     if (!bridge) return
@@ -260,6 +269,13 @@ export default function DetailView(): ReactNode {
             )}
             <button className="btn btn-secondary btn-sm" onClick={() => void copyAddress()}>
               <Icon name="copy" /> {t('detail.address')}
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              data-testid="disconnect-view-btn"
+              onClick={() => void disconnectWorkspace()}
+            >
+              <Icon name="close" /> {t('detail.disconnect')}
             </button>
             {/* 仅在已连接时显示登出操作。 */}
             {showAuthActions(record) && authPhase === 'connected' && (

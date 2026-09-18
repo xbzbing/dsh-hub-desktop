@@ -547,6 +547,7 @@ void app.whenReady().then(() => {
     onSettingsChanged: applyNativeSettings,
     openDataDir: () => dataDirOpener.open(),
     hideInstanceView: () => workspaceHost.hide(),
+    closeInstanceView: (instanceId) => workspaceHost.disconnect(instanceId),
     setInstanceViewBounds: (bounds) => workspaceHost.setBounds(bounds),
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)

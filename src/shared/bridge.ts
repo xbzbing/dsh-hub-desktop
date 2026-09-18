@@ -79,6 +79,8 @@ export interface DshHubBridge {
     openView: (id: string) => Promise<IpcResult<null>>
     updateViewBounds: (bounds: WorkspaceViewBounds) => Promise<IpcResult<null>>
     hideView: () => Promise<IpcResult<null>>
+    /** 销毁指定实例的内嵌工作区；不停止实例进程或清除登录凭据。 */
+    disconnectView: (id: string) => Promise<IpcResult<null>>
     probeLocalDsh: () => Promise<IpcResult<LocalLauncherSnapshot[]>>
     /**
      * 列出本机已运行的 dsh web 进程。无参数；返回项包含 pid、监听端口和 `--patch` 路径。
