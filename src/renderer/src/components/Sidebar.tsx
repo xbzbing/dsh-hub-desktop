@@ -22,6 +22,13 @@ export default function Sidebar(): ReactNode {
 
   const [query, setQuery] = useState('')
   const [groupByType, setGroupByType] = useState(false)
+  const [railTooltip, setRailTooltip] = useState<{ name: string; top: number } | null>(null)
+
+  const showRailTooltip = (element: HTMLButtonElement, name: string): void => {
+    if (!rail) return
+    const rect = element.getBoundingClientRect()
+    setRailTooltip({ name, top: rect.top + rect.height / 2 })
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -91,16 +98,37 @@ export default function Sidebar(): ReactNode {
                 </span>
               </div>
               {group.items.map((item) => (
-                <InstanceItem key={item.id} item={item} onClick={openFromSidebar} selected={selection === item.id} rail={rail} />
+                <InstanceItem
+                  key={item.id}
+                  item={item}
+                  onClick={openFromSidebar}
+                  selected={selection === item.id}
+                  rail={rail}
+                  onRailTooltip={showRailTooltip}
+                  onRailTooltipHide={() => setRailTooltip(null)}
+                />
               ))}
             </div>
           ))
         ) : (
           filtered.map((item) => (
-            <InstanceItem key={item.id} item={item} onClick={openFromSidebar} selected={selection === item.id} rail={rail} />
+            <InstanceItem
+              key={item.id}
+              item={item}
+              onClick={openFromSidebar}
+              selected={selection === item.id}
+              rail={rail}
+              onRailTooltip={showRailTooltip}
+              onRailTooltipHide={() => setRailTooltip(null)}
+            />
           ))
         )}
       </nav>
+      {rail && railTooltip && (
+        <div className="rail-instance-tooltip" style={{ top: railTooltip.top }} role="tooltip">
+          {railTooltip.name}
+        </div>
+      )}
       <div className="side-foot">
         <button
           className="btn btn-primary btn-block"
@@ -149,6 +177,8 @@ function InstanceItem(props: {
   selected: boolean
   rail: boolean
   onClick: (id: string) => void
+  onRailTooltip: (element: HTMLButtonElement, name: string) => void
+  onRailTooltipHide: () => void
 }): ReactNode {
   const t = useAppStore((state) => state.t)
   const statuses = useAppStore((state) => state.statuses)
@@ -160,6 +190,10 @@ function InstanceItem(props: {
       className="inst"
       aria-current={props.selected}
       onClick={() => props.onClick(props.item.id)}
+      onMouseEnter={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
+      onMouseLeave={props.onRailTooltipHide}
+      onFocus={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
+      onBlur={props.onRailTooltipHide}
       data-testid={`inst-${props.item.id}`}
       title={props.rail ? props.item.name : props.item.address}
     >
