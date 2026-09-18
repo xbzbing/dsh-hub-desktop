@@ -4,6 +4,8 @@ vi.mock('electron', () => {
   class FakeWebContents {
     handlers = new Map<string, (...args: unknown[]) => void>()
     loadURL = vi.fn(async () => undefined)
+    focus = vi.fn()
+    isDestroyed = vi.fn(() => false)
     getURL = vi.fn(() => '')
     setWindowOpenHandler = vi.fn()
     session = {
@@ -35,6 +37,8 @@ interface TestView {
   webContents: {
     handlers: Map<string, (...args: unknown[]) => void>
     loadURL: ReturnType<typeof vi.fn>
+    focus: ReturnType<typeof vi.fn>
+    isDestroyed: ReturnType<typeof vi.fn>
     getURL: ReturnType<typeof vi.fn>
     setWindowOpenHandler: ReturnType<typeof vi.fn>
     session: {
@@ -55,6 +59,8 @@ function fakeViews(): TestView[] {
 function hubWindow() {
   return {
     isDestroyed: vi.fn(() => false),
+    // 暴露 focus 以便断言工作区路径**从不**抢宿主窗口焦点。
+    focus: vi.fn(),
     getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 1180, height: 780 })),
     contentView: {
       addChildView: vi.fn(),
@@ -68,7 +74,7 @@ describe('createWorkspaceHost', () => {
     fakeViews().length = 0
   })
 
-  it('creates a main-owned, sandboxed view with popup, permission, download, and navigation guards', () => {
+  it('creates a main-owned, sandboxed view with popup, permission, download, and navigation guards', async () => {
     const hub = hubWindow()
     const host = createWorkspaceHost(() => hub as never)
     const view = host.prepare('11111111-1111-4111-8111-111111111111', 'http://127.0.0.1:3080/?token=abc')
@@ -77,6 +83,12 @@ describe('createWorkspaceHost', () => {
     expect(hub.contentView.addChildView).toHaveBeenCalledWith(created)
     host.setBounds({ x: 64, y: 92, width: 1116, height: 688 })
     expect(created?.setBounds).toHaveBeenCalledWith({ x: 64, y: 92, width: 1116, height: 688 })
+    await vi.waitFor(() => expect(created?.webContents.focus).toHaveBeenCalledTimes(1))
+    // 绝不从工作区路径抢宿主窗口焦点：那会打断 macOS 的应用激活。
+    expect(hub.focus).not.toHaveBeenCalled()
+    // 后续布局变化不得再次抢夺焦点，否则会打断用户正在输入的登录表单。
+    host.setBounds({ x: 64, y: 92, width: 1100, height: 688 })
+    expect(created?.webContents.focus).toHaveBeenCalledTimes(1)
     expect(created?.webContents.setWindowOpenHandler.mock.calls[0]?.[0]()).toEqual({ action: 'deny' })
 
     const permissionRequest = created?.webContents.session.setPermissionRequestHandler.mock.calls[0]?.[0] as (
@@ -105,14 +117,30 @@ describe('createWorkspaceHost', () => {
   })
 
   it('keeps a new workspace view hidden until the renderer supplies content bounds', () => {
-    const host = createWorkspaceHost(() => hubWindow() as never)
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never)
     host.prepare('44444444-4444-4444-8444-444444444444', 'https://gw.example.com/login')
     const created = fakeViews()[0]
 
+    expect(created?.setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 0, height: 0 })
     expect(created?.setVisible).toHaveBeenCalledWith(false)
+    expect(created?.setBounds.mock.invocationCallOrder[0]).toBeLessThan(
+      hub.contentView.addChildView.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+    )
     host.setBounds({ x: 262, y: 46, width: 918, height: 734 })
     expect(created?.setBounds).toHaveBeenCalledWith({ x: 262, y: 46, width: 918, height: 734 })
     expect(created?.setVisible).toHaveBeenLastCalledWith(true)
+  })
+
+  it('does not reveal a replacement workspace using bounds cached for the previous view', () => {
+    const host = createWorkspaceHost(() => hubWindow() as never)
+    host.prepare('55555555-5555-4555-8555-555555555555', 'https://first.example.com/')
+    host.setBounds({ x: 262, y: 46, width: 918, height: 734 })
+    host.prepare('66666666-6666-4666-8666-666666666666', 'https://second.example.com/login')
+    const replacement = fakeViews()[1]
+
+    expect(replacement?.setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 0, height: 0 })
+    expect(replacement?.setVisible).toHaveBeenLastCalledWith(false)
   })
 
   it('updates the navigation allowlist when a trusted reopen uses a new local port', () => {

@@ -16,6 +16,8 @@ interface Entry {
   originUrl: string
   view: WebContentsView
   lastUsed: number
+  /** 当前是否对用户可见；用于区分「首次显示」与后续布局变化。 */
+  visible: boolean
 }
 
 export interface WorkspaceHost {
@@ -35,7 +37,6 @@ export interface WorkspaceHost {
 export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): WorkspaceHost {
   const entries = new Map<string, Entry>()
   let activeId: string | null = null
-  let activeBounds: WorkspaceViewBounds | null = null
   let cacheLimit = 3
   let useSequence = 0
 
@@ -77,6 +78,7 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
         instanceId,
         originUrl: url,
         lastUsed: 0,
+        visible: false,
         view: new WebContentsView({
           webPreferences: {
             partition: `persist:inst-${instanceId}`,
@@ -89,19 +91,23 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
         })
       }
       configure(entry)
+      // WebContentsView 在加入 contentView 后会以默认大小绘制；必须先收缩并隐藏，
+      // 不能让远程登录页在首帧覆盖整个应用窗口。
+      entry.view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+      entry.view.setVisible(false)
       entries.set(instanceId, entry)
       win.contentView.addChildView(entry.view)
     } else {
       entry.originUrl = url
     }
     touch(entry)
-    // WebContentsView 的默认可见区域会覆盖整个窗口；首次打开前必须等待渲染层
-    // 回传右侧内容区边界，避免登录页面遮住侧边栏和顶栏。
-    for (const candidate of entries.values()) candidate.view.setVisible(false)
-    if (activeBounds) {
-      entry.view.setBounds(activeBounds)
-      entry.view.setVisible(true)
+    // WebContentsView 的默认可见区域会覆盖整个窗口。不能复用上一个工作区的边界，
+    // 因为侧栏状态和布局可能已经变化；先收缩并隐藏，等当前渲染周期回传右侧内容区边界。
+    for (const candidate of entries.values()) {
+      candidate.view.setVisible(false)
+      candidate.visible = false
     }
+    entry.view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
     activeId = instanceId
     trimCache()
     return {
@@ -110,9 +116,28 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
     }
   }
 
+  /**
+   * 把键盘焦点交给工作区。
+   *
+   * 只聚焦子视图，绝不调用 `win.focus()`：工作区是在用户已点击本应用的窗口后打开的，
+   * 此时宿主窗口已是 key window。反过来在布局/激活过程中抢窗口焦点会打断 macOS 的
+   * 应用激活，表现为「窗口点不到前台、输入落到下一层」。
+   */
+  function focusEntry(entry: Entry): void {
+    // 等本次布局提交完成后再转移键盘焦点，避免与窗口激活过程互相覆盖。
+    setImmediate(() => {
+      if (entry.view.webContents.isDestroyed()) return
+      entry.view.webContents.focus()
+    })
+  }
+
   function hide(): void {
     if (activeId === null) return
-    entries.get(activeId)?.view.setVisible(false)
+    const entry = entries.get(activeId)
+    if (entry) {
+      entry.view.setVisible(false)
+      entry.visible = false
+    }
     activeId = null
   }
 
@@ -122,6 +147,7 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
     const win = getHubWindow()
     if (win && !win.isDestroyed()) win.contentView.removeChildView(entry.view)
     entry.view.webContents.close()
+    entry.visible = false
     entries.delete(instanceId)
     if (activeId === instanceId) activeId = null
   }
@@ -132,12 +158,16 @@ export function createWorkspaceHost(getHubWindow: () => BrowserWindow | null): W
   }
 
   function setBounds(bounds: WorkspaceViewBounds): void {
-    activeBounds = bounds
     if (activeId === null) return
     const active = entries.get(activeId)
     if (!active) return
     active.view.setBounds(bounds)
-    active.view.setVisible(bounds.width > 0 && bounds.height > 0)
+    const visible = bounds.width > 0 && bounds.height > 0
+    active.view.setVisible(visible)
+    // 只在「隐藏 → 显示」时接管焦点：后续每次布局变化都抢焦点会打断用户正在进行的输入。
+    const becameVisible = visible && !active.visible
+    active.visible = visible
+    if (becameVisible) focusEntry(active)
   }
 
   function closeAll(): void {
