@@ -130,6 +130,11 @@ export default function AuthPanel(): ReactNode {
   useEffect(() => {
     if (!BRIDGE) return
     return BRIDGE.auth.onSignal((event: AuthSignalEvent) => {
+      const current = useAppStore.getState()
+      // 工作区自己的登录页已经在右侧 WebContentsView 中呈现。认证信号通常
+      // 会在导航后的异步探测中到达，此时若自动打开 Modal，fixed overlay 会覆盖整个 Hub。
+      // 工作区关闭后，来自详情页/后台资源的信号仍可打开全局认证面板。
+      if (current.workspaceOpen || current.workspaceOpening) return
       void openAndProbe(event.instanceId, setModel)
     })
   }, [])

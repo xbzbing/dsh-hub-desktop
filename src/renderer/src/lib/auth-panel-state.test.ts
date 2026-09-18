@@ -147,4 +147,10 @@ describe('auth-panel-state', () => {
     expect(closeAuthPanel()).toEqual(initialAuthPanelModel)
     expect(opened.target).not.toBeNull()
   })
+
+  it('工作区认证信号不把全局认证面板从关闭状态打开', () => {
+    expect(applyAuthState(initialAuthPanelModel, event('inst-a', snapshot({ phase: 'needs-auth' })), T0)).toEqual(
+      initialAuthPanelModel
+    )
+  })
 })

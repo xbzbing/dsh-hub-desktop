@@ -104,9 +104,20 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
         return workspace?.webContents?.getURL() ?? ''
       })
     ).toContain('/login')
+    await expect.poll(async () =>
+      app.evaluate(({ BrowserWindow }) => {
+        const workspace = BrowserWindow.getAllWindows()[0]?.contentView.children[0] as
+          | { getBounds?: () => { x: number; y: number; width: number; height: number } }
+          | undefined
+        return workspace?.getBounds?.() ?? null
+      })
+    ).toMatchObject({ x: 262, y: 46, width: expect.any(Number), height: expect.any(Number) })
     await expect(win.getByTestId('tb-title')).toHaveText('远程登录重定向')
+    // 认证页由右侧 WebContentsView 自己呈现；全局认证 Modal 只能由用户主动打开。
+    await expect(win.getByTestId('auth-panel')).toBeHidden()
+    await win.waitForTimeout(500)
+    await expect(win.getByTestId('auth-panel')).toBeHidden()
     await expect(win.getByTestId('tb-sub')).toHaveText(`127.0.0.1:${fakeGatewayPort}`)
-    await win.getByRole('button', { name: '关闭' }).click()
     await win.waitForTimeout(300)
     const log = mainErrors.join('')
     expect(log).not.toContain('[instance-view] 加载失败')
