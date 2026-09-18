@@ -72,6 +72,15 @@ describe('buildSshArgs（ 参数库）', () => {
     expect(args[args.indexOf('-i') + 1]).toBe('~/.ssh/id_ed25519')
   })
 
+  it('ControlPath 和私有 known_hosts 路径含空格时按 OpenSSH 配置语法转义', () => {
+    const args = buildSshArgs(sshInstance(), 30123, {
+      controlPath: '/tmp/DSH Hub/ctl-x.sock',
+      knownHostsPath: '/tmp/DSH Hub/known_hosts'
+    })
+    expect(args).toContain('ControlPath=/tmp/DSH\\ Hub/ctl-x.sock')
+    expect(args).toContain('UserKnownHostsFile=/tmp/DSH\\ Hub/known_hosts')
+  })
+
   it('argv 不经 shell：host 含特殊字符时仍为单参数（输入已限定字符集）', () => {
     const args = buildSshArgs(sshInstance({ host: 'my-host' }), 30123, ctx)
     expect(args).not.toContain('&&')

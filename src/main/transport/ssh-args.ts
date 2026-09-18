@@ -14,6 +14,11 @@ export interface SshArgsOptions {
   knownHostsPath: string
 }
 
+/** OpenSSH 会把 `-o Key=value` 的 value 当作配置行再次解析，路径空白必须转义。 */
+function escapeOptionValue(value: string): string {
+  return value.replace(/[\\\s]/g, (character) => `\\${character}`)
+}
+
 export function buildSshArgs(
   instance: SshInstance,
   localPort: number,
@@ -41,10 +46,10 @@ export function buildSshArgs(
     // ⚠️ 必须显式 ControlPersist=no：本机 ~/.ssh/config 常见 `ControlPersist yes`，
     // 前台，真正持隧道的是「未跟踪的 master」，停止/退出时回收不掉（实测孤儿）
     'ControlPersist=no',
-    `ControlPath=${options.controlPath}`,
+    `ControlPath=${escapeOptionValue(options.controlPath)}`,
     // 写入 hub 私有 known_hosts),此处不再允许 ssh 自行接受未知主机
     'StrictHostKeyChecking=yes',
-    `UserKnownHostsFile=${options.knownHostsPath}`
+    `UserKnownHostsFile=${escapeOptionValue(options.knownHostsPath)}`
   ]
   for (const option of optionsList) args.push('-o', option)
 
