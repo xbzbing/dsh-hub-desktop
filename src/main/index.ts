@@ -5,7 +5,8 @@ import {
   protocol,
   safeStorage,
   session,
-  shell
+  shell,
+  nativeTheme
 } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -51,6 +52,7 @@ import { resolveLanguage } from '@shared/settings'
 import type { Tray } from 'electron'
 import type { SettingsStore } from './settings/settings-store'
 import { createNativeSettingsApplier } from './shell/native-settings'
+import { applyNativeThemeSource } from './shell/native-theme'
 import { createHubNativePorts } from './shell/native-ports'
 import type { HubNativePorts } from './shell/native-ports'
 import { handleWindowClose } from './shell/close-to-tray'
@@ -364,6 +366,9 @@ void app.whenReady().then(() => {
     if (changedKeys.includes('workspaceCacheSize')) {
       workspaceHost.setCacheLimit(current.workspaceCacheSize)
     }
+    if (changedKeys.includes('theme')) {
+      applyNativeThemeSource(current.theme, nativeTheme)
+    }
   }
 
   // 这里只注入「偏好/语言」两个取值端口(三审 Finding 2)
@@ -399,6 +404,7 @@ void app.whenReady().then(() => {
     }
   }
   workspaceHost.setCacheLimit(settings.read().workspaceCacheSize)
+  applyNativeThemeSource(settings.read().theme, nativeTheme)
   nativeApplier.apply(settings.read(), { startup: true })
   audit = createAuditLog({ dir: join(dataRoot, 'audit') })
   if (!safeStorageAvailable) {
