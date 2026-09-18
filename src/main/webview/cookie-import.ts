@@ -35,17 +35,6 @@ export function cookieUrlFor(origin: string, basePath = '/'): string {
   return `${trimmedOrigin}${normalizedBase}/`
 }
 
-/**
- * 会话 Cookie 过期时间换算:内部一律用**毫秒**(与 `AuthClient` 一致),
- * electron `expirationDate` 要求**秒**。
- * 秒级输入(2026 年的秒 ≈ 1.7e9,毫秒 ≈ 1.7e12)会被识别并换算,
- * 避免静默写出 1970 年的时间戳。
- */
-export function toExpirationDate(expiresAtMs: number): number {
-  const ms = expiresAtMs < 1e12 ? expiresAtMs * 1000 : expiresAtMs
-  return Math.floor(ms / 1000)
-}
-
 export function toCookieRecord(options: ImportCookieOptions): SessionCookieRecord {
   const { origin, basePath = '/', cookie } = options
   return {
@@ -55,8 +44,7 @@ export function toCookieRecord(options: ImportCookieOptions): SessionCookieRecor
     path: '/', // 网关源码核实:basePath 不改变 Cookie 路径
     httpOnly: true,
     secure: false, // 网关 Cookie 刻意不带 Secure(纯 HTTP/LAN 场景)
-    sameSite: 'strict',
-    ...(cookie.expiresAt === null ? {} : { expirationDate: toExpirationDate(cookie.expiresAt) })
+    sameSite: 'strict'
   }
 }
 

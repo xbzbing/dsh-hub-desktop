@@ -10,6 +10,11 @@
  */
 import { isLoopbackHost } from '@shared/endpoint'
 
+function effectivePort(url: URL): number {
+  if (url.port !== '') return Number(url.port)
+  return url.protocol === 'https:' ? 443 : 80
+}
+
 export function isAllowedInstanceNavigation(targetUrl: string, originUrl: string): boolean {
   let target: URL
   let origin: URL
@@ -24,5 +29,5 @@ export function isAllowedInstanceNavigation(targetUrl: string, originUrl: string
   if (target.origin === origin.origin) return true
   // ② 回环同端口放行(别名等价;跨端口拒绝)
   if (!isLoopbackHost(target.hostname)) return false
-  return target.port === origin.port
+  return target.protocol === origin.protocol && effectivePort(target) === effectivePort(origin)
 }

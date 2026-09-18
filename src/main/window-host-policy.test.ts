@@ -27,6 +27,13 @@ describe('isAllowedInstanceNavigation（实例窗口外跳拦截 ）', () => {
     expect(isAllowedInstanceNavigation('http://127.0.0.1:80/', origin)).toBe(false)
   })
 
+  it('省略默认端口时只放行同协议的默认端口', () => {
+    const defaultHttp = 'http://127.0.0.1/'
+    expect(isAllowedInstanceNavigation('http://localhost:80/', defaultHttp)).toBe(true)
+    expect(isAllowedInstanceNavigation('https://localhost/', defaultHttp)).toBe(false)
+    expect(isAllowedInstanceNavigation('http://localhost:81/', defaultHttp)).toBe(false)
+  })
+
   it('非 http(s) 协议拒绝（file / data / javascript / about）', () => {
     expect(isAllowedInstanceNavigation('file:///etc/passwd', origin)).toBe(false)
     expect(isAllowedInstanceNavigation('data:text/html,<script>1</script>', origin)).toBe(false)

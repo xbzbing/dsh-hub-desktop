@@ -176,7 +176,6 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     async logout() {
       // 登出失败也清本地会话(用户意图明确);状态统一回「等待凭据」
       await gateway.logout()
-      backoff.recordSuccess()
       gateway.jar.clear()
       return apply({ type: 'session-absent' })
     },

@@ -90,13 +90,15 @@ describe('createWorkspaceHost', () => {
     expect(created?.webContents.session.setPermissionCheckHandler.mock.calls[0]?.[0]()).toBe(false)
     expect(created?.webContents.session.on).toHaveBeenCalledWith('will-download', expect.any(Function))
 
-    const navigate = created?.webContents.handlers.get('will-navigate')
-    const denied = { preventDefault: vi.fn() }
-    navigate?.(denied, 'https://evil.example.com/')
-    expect(denied.preventDefault).toHaveBeenCalled()
-    const allowed = { preventDefault: vi.fn() }
-    navigate?.(allowed, 'http://localhost:3080/jobs')
-    expect(allowed.preventDefault).not.toHaveBeenCalled()
+    for (const eventName of ['will-navigate', 'will-redirect']) {
+      const navigate = created?.webContents.handlers.get(eventName)
+      const denied = { preventDefault: vi.fn() }
+      navigate?.(denied, 'https://evil.example.com/')
+      expect(denied.preventDefault).toHaveBeenCalled()
+      const allowed = { preventDefault: vi.fn() }
+      navigate?.(allowed, 'http://localhost:3080/jobs')
+      expect(allowed.preventDefault).not.toHaveBeenCalled()
+    }
 
     void view.loadURL('http://127.0.0.1:3080/?token=abc')
     expect(created?.webContents.loadURL).toHaveBeenCalledWith('http://127.0.0.1:3080/?token=abc')

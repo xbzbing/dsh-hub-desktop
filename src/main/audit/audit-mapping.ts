@@ -48,10 +48,13 @@ export function mapAuthTransition(
     return entry('session-revoked', next.lastErrorCode ?? 'unauthenticated')
   }
 
-  // 锁定优先于其它失败归类(锁定本身就是限流的终态)
-  if (next.lockedForMs > 0) {
+  // 只记录进入锁定边沿；倒计时刷新不应重复污染审计。
+  if (next.lockedForMs > 0 && (prev?.lockedForMs ?? 0) <= 0) {
     return entry('lockout', next.lastErrorCode ?? 'locked')
   }
+
+  // 锁定倒计时期间只保留首个 lockout 事件。
+  if (next.lockedForMs > 0) return []
 
   if (next.lastErrorCode === 'rate-limited') {
     return entry('rate-limited', 'rate-limited')

@@ -4,7 +4,6 @@ import {
   importSessionCookie,
   prepareInstanceView,
   toCookieRecord,
-  toExpirationDate,
   type CookieSetter
 } from './cookie-import'
 
@@ -21,11 +20,18 @@ describe('cookie-import（ Cookie 双写）', () => {
       path: '/',
       httpOnly: true,
       secure: false,
-      sameSite: 'strict',
-      expirationDate: 1_800_000_000
+      sameSite: 'strict'
     })
     // basePath 不改变 Cookie 路径,但 url 落在实例 origin 下
     expect(record.url).toBe('https://gw.example.com/dsh/')
+  })
+
+  it('保险库会话注入不写 expirationDate，避免 Chromium 分区持久化凭据', () => {
+    const record = toCookieRecord({
+      origin: 'https://gw.example.com',
+      cookie: { name: 'dsh_auth', value: 'tok', expiresAt: 1_800_000_000_000 }
+    })
+    expect(record.expirationDate).toBeUndefined()
   })
 
   it('无过期时间(会话 Cookie)不带 expirationDate', () => {
@@ -53,19 +59,6 @@ describe('cookie-import（ Cookie 双写）', () => {
       cookie: { name: 'dsh_auth', value: 'x', expiresAt: null }
     })
     expect(ok).toBe(false)
-  })
-
-  it('expirationDate 换算:毫秒输入按 秒 写出;秒级输入不会被写成 1970', () => {
-    // 2026-09 的毫秒时间戳
-    const ms = 1_789_000_000_000
-    expect(toExpirationDate(ms)).toBe(1_789_000_000)
-    // 同一个时刻的秒级输入(误传)应被识别并换算成毫秒,而不是当作 1970 前的值
-    expect(toExpirationDate(1_789_000_000)).toBe(1_789_000_000)
-    const record = toCookieRecord({
-      origin: 'http://127.0.0.1:3080',
-      cookie: { name: 'dsh_auth', value: 'x', expiresAt: 1_789_000_000 }
-    })
-    expect(record.expirationDate).toBe(1_789_000_000)
   })
 
   it('顺序纪律:先注入 Cookie 再 loadURL', async () => {

@@ -278,6 +278,22 @@ describe('AuthClient（/ 编排）', () => {
     expect(state.message).toBe('账号或验证码错误')
   })
 
+  it('未知服务端错误码不会进入认证状态', async () => {
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw/dsh',
+      fetchImpl: fakeFetch((url) =>
+        url.includes('/login/auth')
+          ? jsonResponse(500, { error: 'hostile-user-input', message: 'secret from server' })
+          : htmlResponse(302, '', '/login')
+      )
+    })
+    await client.probeAndRestore()
+    const state = await client.login('pw')
+    expect(state.lastErrorCode).toBe('unexpected')
+    expect(state.message).toBe('服务返回了未知错误')
+  })
+
   it('无需登录端点(200)→ 直接 connected', async () => {
     const client = createAuthClient({
       instanceId: 'i1',
@@ -301,6 +317,30 @@ describe('AuthClient（/ 编排）', () => {
     const detection = await client.probeAndRestore()
     expect(detection.mode).toBe('unreachable')
     expect(client.state().phase).toBe('error')
+  })
+
+  it('logout 不清除 active rate-limit lock', async () => {
+    let now = 1_000_000
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw/dsh',
+      now: () => now,
+      fetchImpl: fakeFetch((url) =>
+        url.includes('/login/auth')
+          ? jsonResponse(429, { ok: false, error: 'too-many-attempts', retryAfterSeconds: 90 })
+          : url.includes('/login/logout')
+            ? jsonResponse(200, { ok: true })
+            : htmlResponse(302, '', '/login')
+      )
+    })
+    await client.probeAndRestore()
+    await client.login('pw')
+    await client.logout()
+
+    expect(client.backoff.canAttempt()).toBe(false)
+    expect(client.state().lockedForMs).toBeGreaterThan(0)
+    now += 91_000
+    expect(client.backoff.canAttempt()).toBe(true)
   })
 
   it('logout → 清 Cookie 并回 needs-auth', async () => {

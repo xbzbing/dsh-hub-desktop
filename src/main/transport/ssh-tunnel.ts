@@ -318,14 +318,15 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     return isPortAvailable(port)
   }
 
-  async function waitForReady(entry: TunnelEntry): Promise<void> {
-    if (entry.stopping) return
+  async function waitForReady(entry: TunnelEntry, child: SpawnedProcess): Promise<void> {
+    if (entry.stopping || entry.child !== child) return
     const deadline = now() + readyTimeoutMs
     while (now() < deadline) {
-      if (entry.stopping) return
+      if (entry.stopping || entry.child !== child) return
       const healthy = await probe(entry.url, healthTimeoutMs)
+      if (entry.stopping || entry.child !== child) return
       if (healthy) {
-        if (entry.stopping) return
+        if (entry.stopping || entry.child !== child) return
         entry.ready = true
         entry.stableSince = now()
         entry.forwardFailed = false
@@ -336,21 +337,18 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         })
         return
       }
-      if (entry.stopping) return
+      if (entry.stopping || entry.child !== child) return
       await sleep(healthProbeRetryMs)
     }
-    // 就绪期限内远端 dsh 未响应：杀掉隧道，让看门狗按退避重连（远端可能正在重启）
+    if (entry.stopping || entry.child !== child) return
+    // 就绪期限内远端 dsh 未响应：杀掉本次隧道，让看门狗按退避重连（远端可能正在重启）
     entry.pendingReason = { kind: 'connect', message: '远端 dsh 未就绪' }
-    if (entry.child) {
-      killProcessGroup(entry.child, 'SIGKILL')
-      const exited = await waitForProcessExit(entry.child, stopGraceMs)
-      if (!exited) {
-        // 僵尸兜底：exit 事件不来的话，也要让用户看到归因并安排重连
-        entry.pendingReason = null
-        emit(entry.id, 'error', { detail: '远端 dsh 未就绪（就绪探测超时），即将自动重连' })
-        scheduleReconnect(entry)
-      }
-    } else {
+    killProcessGroup(child, 'SIGKILL')
+    const exited = await waitForProcessExit(child, stopGraceMs)
+    if (entry.child !== child) return
+    if (!exited) {
+      // 僵尸兜底：exit 事件不来的话，也要让用户看到归因并安排重连
+      entry.pendingReason = null
       emit(entry.id, 'error', { detail: '远端 dsh 未就绪（就绪探测超时），即将自动重连' })
       scheduleReconnect(entry)
     }
@@ -438,7 +436,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (entry.stopping) return
     const child = spawnSsh(entry, instance)
     entry.child = child
-    await waitForReady(entry)
+    await waitForReady(entry, child)
   }
 
   function attachHandlers(child: SpawnedProcess, entry: TunnelEntry): void {
@@ -607,7 +605,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         }
         const child = spawnSsh(entry, instance)
         entry.child = child
-        await waitForReady(entry)
+        await waitForReady(entry, child)
       } catch (error) {
         if (allocatedPort !== null) reservedPorts.delete(allocatedPort)
         emit(id, 'error', {

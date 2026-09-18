@@ -16,6 +16,8 @@ export function redactUrl(raw: string): string {
   if (raw === '') return raw
   try {
     const parsed = new URL(raw)
+    parsed.username = ''
+    parsed.password = ''
     parsed.search = ''
     parsed.hash = ''
     return parsed.toString()

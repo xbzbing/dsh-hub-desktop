@@ -47,6 +47,16 @@ describe('audit-mapping（ 状态迁移 → 事件枚举）', () => {
     ).toEqual([{ instanceId: 'i1', event: 'lockout', result: 'too-many-attempts' }])
   })
 
+  it('锁定倒计时刷新不会重复写 lockout 审计', () => {
+    expect(
+      mapAuthTransition(
+        'i1',
+        auth({ lockedForMs: 60_000, lastErrorCode: 'too-many-attempts' }),
+        auth({ lockedForMs: 59_000, lastErrorCode: 'too-many-attempts' })
+      )
+    ).toEqual([])
+  })
+
   it('限流 = rate-limited', () => {
     expect(
       mapAuthTransition(

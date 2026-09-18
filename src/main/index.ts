@@ -278,7 +278,14 @@ let prompts: PromptBroker | null = null
 let auth: AuthRegistry | null = null
 let quitting = false
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) app.quit()
+else {
+  app.on('second-instance', () => showHubWindow())
+}
+
 void app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return
   registerRendererProtocol()
 
   const dataRoot = app.getPath('userData')

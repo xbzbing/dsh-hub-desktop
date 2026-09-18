@@ -258,6 +258,21 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   }
 
   async function handleReady(id: string, entry: Entry, url: string): Promise<void> {
+    const failReady = (error: unknown): void => {
+      if (entry.stopping || entries.get(id) !== entry) return
+      emit(id, 'error', {
+        detail: error instanceof Error ? `解析就绪地址失败：${error.message}` : '解析就绪地址失败'
+      })
+      entry.stopping = true
+      if (entry.timer) {
+        clearTimeout(entry.timer)
+        entry.timer = null
+      }
+      killTree(entry, 'SIGKILL')
+      entries.delete(id)
+      entry.settleSpawn?.()
+    }
+    try {
     // 在途续体身份守卫:探测/重试期间本条目的进程可能已退出(退出处理器会删条目并立即
 
     // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
@@ -308,7 +323,10 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       ...(entry.port !== null ? { port: entry.port } : {}),
       detail: `已在 ${entry.home} 启动（dsh web）`
     })
-    entry.settleSpawn?.() // 排他地放行下一个实例的启动
+      entry.settleSpawn?.() // 排他地放行下一个实例的启动
+    } catch (error) {
+      failReady(error)
+    }
   }
 
   function watchStdout(id: string, entry: Entry): void {

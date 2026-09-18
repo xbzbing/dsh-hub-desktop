@@ -20,6 +20,12 @@ describe('redactUrl（凭据脱敏）', () => {
     expect(redactUrl('https://gw.example.com:8443/dsh?token=sec')).toBe('https://gw.example.com:8443/dsh')
   })
 
+  it('剥离 URL userinfo、查询串与锚点', () => {
+    expect(redactUrl('https://user:s3cr3t@gw.example.com/dsh?token=sec#fragment')).toBe(
+      'https://gw.example.com/dsh'
+    )
+  })
+
   it('空串与非 URL 文本不变', () => {
     expect(redactUrl('')).toBe('')
     expect(redactUrl('已断开接管')).toBe('已断开接管')

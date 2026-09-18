@@ -68,26 +68,28 @@ afterEach(() => {
 })
 
 describe('openInstanceWindow（实例窗口接线, 拦截外跳）', () => {
-  it('会注册 will-navigate 守卫:同源回环放行,外部/跨端口跳转 preventDefault', () => {
+  it('会在 will-navigate 与 will-redirect 上拦截跨端口或外部跳转', () => {
     const win = openInstanceWindow({ instanceId: `n-${++seq}`, title: 't', url: ORIGIN }) as unknown as TestWin
-    const navigate = win.webContents.handlers.get('will-navigate')
-    expect(navigate).toBeDefined()
+    for (const eventName of ['will-navigate', 'will-redirect']) {
+      const navigate = win.webContents.handlers.get(eventName)
+      expect(navigate).toBeDefined()
 
-    const allowed = { preventDefault: vi.fn() }
-    navigate?.(allowed, 'http://127.0.0.1:30000/api/jobs')
-    expect(allowed.preventDefault).not.toHaveBeenCalled()
+      const allowed = { preventDefault: vi.fn() }
+      navigate?.(allowed, 'http://127.0.0.1:30000/api/jobs')
+      expect(allowed.preventDefault).not.toHaveBeenCalled()
 
-    const deniedExternal = { preventDefault: vi.fn() }
-    navigate?.(deniedExternal, 'https://evil.example.com/phish')
-    expect(deniedExternal.preventDefault).toHaveBeenCalledTimes(1)
+      const deniedExternal = { preventDefault: vi.fn() }
+      navigate?.(deniedExternal, 'https://evil.example.com/phish')
+      expect(deniedExternal.preventDefault).toHaveBeenCalledTimes(1)
 
-    const deniedCrossPort = { preventDefault: vi.fn() }
-    navigate?.(deniedCrossPort, 'http://127.0.0.1:30001/')
-    expect(deniedCrossPort.preventDefault).toHaveBeenCalledTimes(1)
+      const deniedCrossPort = { preventDefault: vi.fn() }
+      navigate?.(deniedCrossPort, 'http://127.0.0.1:30001/')
+      expect(deniedCrossPort.preventDefault).toHaveBeenCalledTimes(1)
 
-    const deniedNonHttp = { preventDefault: vi.fn() }
-    navigate?.(deniedNonHttp, 'file:///etc/passwd')
-    expect(deniedNonHttp.preventDefault).toHaveBeenCalledTimes(1)
+      const deniedNonHttp = { preventDefault: vi.fn() }
+      navigate?.(deniedNonHttp, 'file:///etc/passwd')
+      expect(deniedNonHttp.preventDefault).toHaveBeenCalledTimes(1)
+    }
   })
 
   it('弹窗一律拒绝', () => {

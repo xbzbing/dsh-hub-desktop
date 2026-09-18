@@ -31,11 +31,18 @@ const PORT_SCHEMA = z.number('端口必须是数字').int('端口必须是整数
  * - `host[:port]` / `[v6][:port]`：端口必须落在 1–65535（非法端口组合显式拒绝，
  *   而不是把整串存进 host 字段）。
  */
+const SSH_PORT_PATTERN = /^(\d+)$/
+
+function parseSshPort(rawPort: string): number | null {
+  if (!SSH_PORT_PATTERN.test(rawPort)) return null
+  return inPortRange(rawPort) ? Number(rawPort) : null
+}
+
 function isValidSshHost(host: string): boolean {
   const portOfPlain = /^([A-Za-z0-9._-]+):(\d+)$/.exec(host)
-  if (portOfPlain) return inPortRange(portOfPlain[2])
+  if (portOfPlain) return parseSshPort(portOfPlain[2] ?? '') !== null
   const portOfBracket = /^\[([0-9a-fA-F:.]+)\](?::(\d+))?$/.exec(host)
-  if (portOfBracket) return portOfBracket[2] === undefined || inPortRange(portOfBracket[2])
+  if (portOfBracket) return portOfBracket[2] === undefined || parseSshPort(portOfBracket[2]) !== null
   if (host.includes(':')) {
     // 裸 IPv6（含 IPv4-mapped 点分尾巴 `::ffff:192.168.1.5`）：至少两个冒号且字符集合法
     return /^[0-9a-fA-F:.]+$/.test(host) && (host.match(/:/g)?.length ?? 0) >= 2
@@ -578,17 +585,15 @@ export interface SshHostPortSplit {
  *   `[192.0.2.1]:2222` 等点分形态也必须能拆分，否则端口会静默回退）。
  */
 export function splitSshHostPort(host: string, fallbackPort: number): SshHostPortSplit {
-  const plain = /^([A-Za-z0-9._-]+):(\d{1,5})$/.exec(host)
+  const plain = /^([A-Za-z0-9._-]+):(\d+)$/.exec(host)
   if (plain) {
-    const port = Number(plain[2] ?? '')
-    if (port >= 1 && port <= 65535) return { host: plain[1] ?? '', port, portEmbedded: true }
+    const port = parseSshPort(plain[2] ?? '')
+    if (port !== null) return { host: plain[1] ?? '', port, portEmbedded: true }
   }
-  const bracketedWithPort = /^\[([0-9a-fA-F:.]+)\]:(\d{1,5})$/.exec(host)
+  const bracketedWithPort = /^\[([0-9a-fA-F:.]+)\]:(\d+)$/.exec(host)
   if (bracketedWithPort) {
-    const port = Number(bracketedWithPort[2] ?? '')
-    if (port >= 1 && port <= 65535) {
-      return { host: bracketedWithPort[1] ?? '', port, portEmbedded: true }
-    }
+    const port = parseSshPort(bracketedWithPort[2] ?? '')
+    if (port !== null) return { host: bracketedWithPort[1] ?? '', port, portEmbedded: true }
   }
   // 方括号无端口形态 `[::1]`：只归一化主机形态，端口由调用方决定
   const bracketedPlain = /^\[([0-9a-fA-F:.]+)\]$/.exec(host)

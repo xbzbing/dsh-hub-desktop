@@ -99,7 +99,7 @@ function joinUrl(baseUrl: string, path: string): string {
   return `${base}${suffix}`
 }
 
-const ERROR_MESSAGES: Record<string, string> = {
+const ERROR_MESSAGES: Record<GatewayErrorCode, string> = {
   'otp-required': '请输入动态验证码或备份码',
   'invalid-credentials': '账号或验证码错误',
   'rate-limited': '尝试过于频繁，请稍后再试',
@@ -113,11 +113,19 @@ const ERROR_MESSAGES: Record<string, string> = {
   'otp-not-enabled': '该实例未启用动态验证码',
   'invalid-otp': '动态验证码错误',
   'invalid-backup-code': '备份码无效',
-  'otp-secret-missing': '实例的 OTP 配置异常，请联系管理员'
+  'otp-secret-missing': '实例的 OTP 配置异常，请联系管理员',
+  'invalid-json': '响应格式无效',
+  'bad-request': '请求无效',
+  network: '网络错误',
+  unexpected: '服务返回了未知错误'
 }
 
-function messageFor(code: string, fallback: string): string {
-  return ERROR_MESSAGES[code] ?? fallback
+function isGatewayErrorCode(code: string): code is GatewayErrorCode {
+  return Object.hasOwn(ERROR_MESSAGES, code)
+}
+
+function messageFor(code: GatewayErrorCode, status: number): string {
+  return ERROR_MESSAGES[code] ?? `请求失败（HTTP ${status}）`
 }
 
 export function createGatewayClient(options: GatewayClientOptions): GatewayClient {
@@ -174,17 +182,17 @@ export function createGatewayClient(options: GatewayClientOptions): GatewayClien
   /** 把网关响应映射为稳定的失败语义 */
   function failureFrom(status: number, json: unknown): GatewayFailure {
     const body = (json ?? {}) as { error?: unknown; message?: unknown; retryAfterSeconds?: unknown }
-    const code = typeof body.error === 'string' && body.error !== '' ? body.error : 'unexpected'
+    const rawCode = typeof body.error === 'string' ? body.error : ''
+    const code = isGatewayErrorCode(rawCode) ? rawCode : 'unexpected'
     const retryAfterSeconds =
       typeof body.retryAfterSeconds === 'number' && Number.isFinite(body.retryAfterSeconds)
         ? body.retryAfterSeconds
         : null
-    const rawMessage = typeof body.message === 'string' ? body.message : ''
     return {
       ok: false,
       status,
-      code: code as GatewayErrorCode,
-      message: rawMessage !== '' ? rawMessage : messageFor(code, `请求失败（HTTP ${status}）`),
+      code,
+      message: messageFor(code, status),
       retryAfterSeconds
     }
   }

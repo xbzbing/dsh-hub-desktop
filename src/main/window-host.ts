@@ -52,9 +52,11 @@ export function openInstanceWindow(options: OpenInstanceViewOptions): BrowserWin
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   // 顶层导航只许留在本实例服务（回环 + 同端口）：把实例分区带去外部 origin
   // 等于给未来的网关 Cookie 开外泄通道（策略细则见 window-host-policy.ts）
-  win.webContents.on('will-navigate', (event, url) => {
+  const guardNavigation = (event: { preventDefault(): void }, url: string): void => {
     if (!isAllowedInstanceNavigation(url, options.url)) event.preventDefault()
-  })
+  }
+  win.webContents.on('will-navigate', guardNavigation)
+  win.webContents.on('will-redirect', guardNavigation)
   // 实例分区内的权限请求（通知 / 地理位置 / 剪贴板等）一律拒绝
   win.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) =>
     callback(false)
