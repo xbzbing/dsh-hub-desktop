@@ -284,6 +284,45 @@ describe('store settings', () => {
     expect(useAppStore.getState().settingsOpen).toBe(false)
   })
 
+  it('断开工作区只清除工作区连接状态，不停止仍在运行的实例', async () => {
+    const useAppStore = await freshStore()
+    const disconnectView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { disconnectView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({
+      statuses: { running: { id: 'running', status: 'running', at: '2026-09-18T00:00:00.000Z' } },
+      workspaceConnected: { running: true }
+    })
+
+    await useAppStore.getState().disconnectWorkspace('running')
+
+    expect(disconnectView).toHaveBeenCalledWith('running')
+    expect(useAppStore.getState().workspaceConnected.running).toBe(false)
+    expect(useAppStore.getState().statuses.running?.status).toBe('running')
+  })
+
+  it('断开后的运行实例按未连接展示，再次打开工作区后恢复已连接', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({
+      selection: 'running',
+      statuses: { running: { id: 'running', status: 'running', at: '2026-09-18T00:00:00.000Z' } },
+      workspaceConnected: { running: false }
+    })
+
+    expect(toStatusInfo('running', useAppStore.getState().workspaceConnected.running).labelKey).toBe('state.idle')
+    await useAppStore.getState().openWorkspace('running')
+    expect(openView).toHaveBeenCalledWith('running')
+    expect(useAppStore.getState().workspaceConnected.running).toBe(true)
+    expect(toStatusInfo('running', useAppStore.getState().workspaceConnected.running).labelKey).toBe('state.connected')
+  })
+
   it('打开工作区成功时先显示加载状态，再保留 selection 并显示内嵌工作区', async () => {
     const useAppStore = await freshStore()
     let resolveOpen: ((value: { ok: true; value: null }) => void) | undefined

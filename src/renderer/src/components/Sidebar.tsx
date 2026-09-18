@@ -151,7 +151,8 @@ function InstanceItem(props: {
 }): ReactNode {
   const t = useAppStore((state) => state.t)
   const statuses = useAppStore((state) => state.statuses)
-  const display = toDisplayStatus(statuses[props.item.id]?.status)
+  const workspaceConnected = useAppStore((state) => state.workspaceConnected)
+  const display = toDisplayStatus(statuses[props.item.id]?.status, workspaceConnected[props.item.id] ?? true)
   const info = STATUS_INFO[display]
   return (
     <button

@@ -50,7 +50,8 @@ export const STATUS_INFO: Record<DisplayStatus, DisplayStatusInfo> = {
 }
 
 /** 将运行时状态映射为展示状态。 */
-export function toDisplayStatus(status?: InstanceRuntimeStatus): DisplayStatus {
+export function toDisplayStatus(status?: InstanceRuntimeStatus, workspaceConnected = true): DisplayStatus {
+  if (status === 'running' && !workspaceConnected) return 'idle'
   switch (status) {
     case 'starting':
       return 'connecting'
@@ -68,8 +69,8 @@ export function toDisplayStatus(status?: InstanceRuntimeStatus): DisplayStatus {
  *
  * 列表和侧边栏共用此映射，确保圆点、胶囊和文案反映同一状态。
  */
-export function toStatusInfo(status?: InstanceRuntimeStatus): DisplayStatusInfo {
-  return STATUS_INFO[toDisplayStatus(status)]
+export function toStatusInfo(status?: InstanceRuntimeStatus, workspaceConnected = true): DisplayStatusInfo {
+  return STATUS_INFO[toDisplayStatus(status, workspaceConnected)]
 }
 
 /**

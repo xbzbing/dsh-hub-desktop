@@ -37,6 +37,8 @@ interface AppState {
   workspaceOpening: boolean
   /** 向导暂时遮挡了主进程工作区；关闭向导后恢复已缓存视图。 */
   workspaceSuspendedForWizard: boolean
+  /** 断开操作显式标记的工作区；未标记实例沿用运行时状态展示。 */
+  workspaceConnected: Record<string, boolean>
   setWorkspaceOpen: (open: boolean) => void
   rail: boolean
   theme: 'light' | 'dark'
@@ -79,6 +81,8 @@ interface AppState {
   select: (id: string | null) => void
   /** 选择实例后打开其工作区；失败时保留详情，提示用户原因。 */
   openWorkspace: (id: string) => Promise<void>
+  /** 断开指定实例的内嵌工作区，不停止其运行时。 */
+  disconnectWorkspace: (id: string) => Promise<void>
   /** 侧栏入口：处于错误状态的本机实例直接展示详情，避免必然失败的启动尝试。 */
   openFromSidebar: (id: string) => void
   toggleRail: () => void
@@ -134,6 +138,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   workspaceOpen: false,
   workspaceOpening: false,
   workspaceSuspendedForWizard: false,
+  workspaceConnected: {},
   rail: false,
   theme: initialTheme(),
   wizardOpen: false,
@@ -251,7 +256,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
         }
       }
-      return { instances, statuses, pendingOpen }
+      return {
+        instances,
+        statuses,
+        pendingOpen,
+        workspaceConnected:
+          event.status === 'stopped' ? { ...state.workspaceConnected, [event.id]: false } : state.workspaceConnected
+      }
     })
     if (shouldOpen !== null) void get().openWorkspace(shouldOpen)
   },
@@ -290,11 +301,31 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // A later selection/open request owns the native view. Stale responses only stop themselves.
     if (generation !== workspaceNavigationGeneration || get().selection !== id) return
     if (result?.ok) {
-      set({ workspaceOpen: true, workspaceOpening: false })
+      set((state) => ({
+        workspaceOpen: true,
+        workspaceOpening: false,
+        workspaceConnected: { ...state.workspaceConnected, [id]: true }
+      }))
       return
     }
     set({ workspaceOpening: false })
     if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
+  },
+
+  disconnectWorkspace: async (id) => {
+    const generation = ++workspaceNavigationGeneration
+    const result = await window.dshHub?.runtime.disconnectView(id)
+    if (generation !== workspaceNavigationGeneration) return
+    if (!result?.ok) {
+      if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
+      return
+    }
+    set((state) => ({
+      workspaceOpen: false,
+      workspaceOpening: false,
+      workspaceConnected: { ...state.workspaceConnected, [id]: false }
+    }))
+    get().toast('ok', get().t('detail.disconnected'))
   },
 
   openFromSidebar: (id) => {

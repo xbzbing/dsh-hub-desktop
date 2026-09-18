@@ -19,6 +19,7 @@ function HomeContent(): ReactNode {
   const t = useAppStore((state) => state.t)
   const instances = useAppStore((state) => state.instances)
   const statuses = useAppStore((state) => state.statuses)
+  const workspaceConnected = useAppStore((state) => state.workspaceConnected)
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
   const toast = useAppStore((state) => state.toast)
@@ -26,7 +27,7 @@ function HomeContent(): ReactNode {
   const [deleteTarget, setDeleteTarget] = useState<InstanceSummary | null>(null)
 
   const connected = instances.filter(
-    (item) => toDisplayStatus(statuses[item.id]?.status) === 'connected'
+    (item) => toDisplayStatus(statuses[item.id]?.status, workspaceConnected[item.id] ?? true) === 'connected'
   ).length
   const attention = instances.filter(
     (item) => toDisplayStatus(statuses[item.id]?.status) === 'error'
@@ -86,7 +87,7 @@ function HomeContent(): ReactNode {
               <TableRow
                 key={item.id}
                 item={item}
-                info={toStatusInfo(statuses[item.id]?.status)}
+                info={toStatusInfo(statuses[item.id]?.status, workspaceConnected[item.id] ?? true)}
                 version={statuses[item.id]?.version}
                 onDetail={() => openDetail(item.id)}
                 onDelete={() => setDeleteTarget(item)}

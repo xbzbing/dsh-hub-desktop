@@ -24,10 +24,14 @@ export default function DetailView(): ReactNode {
   const t = useAppStore((state) => state.t)
   const record = useAppStore((state) => (selection ? state.records[selection] : undefined))
   const status = useAppStore((state) => (selection ? state.statuses[selection] : undefined))
+  const workspaceConnected = useAppStore((state) =>
+    selection ? state.workspaceConnected[selection] ?? true : true
+  )
   const authPhase = useAppStore((state) => (selection ? state.authPhases[selection] : undefined))
   const ensureRecord = useAppStore((state) => state.ensureRecord)
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
+  const disconnectWorkspace = useAppStore((state) => state.disconnectWorkspace)
   const toast = useAppStore((state) => state.toast)
   const openWorkspace = useAppStore((state) => state.openWorkspace)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
@@ -96,7 +100,7 @@ export default function DetailView(): ReactNode {
     )
   }
 
-  const display = toDisplayStatus(status?.status)
+  const display = toDisplayStatus(status?.status, workspaceConnected)
   const info = STATUS_INFO[display]
   const version =
     status?.version ?? (record.transport === 'local' ? record.dshVersion : null) ?? '—'
@@ -110,13 +114,8 @@ export default function DetailView(): ReactNode {
     }
   }
 
-  const disconnectWorkspace = async (): Promise<void> => {
-    const result = await window.dshHub?.runtime.disconnectView(record.id)
-    if (!result?.ok) {
-      if (result) toast('err', t('detail.openViewFailed'), result.message)
-      return
-    }
-    toast('ok', t('detail.disconnected'))
+  const disconnectView = async (): Promise<void> => {
+    await disconnectWorkspace(record.id)
   }
 
   const deleteInstance = async (): Promise<void> => {
@@ -273,7 +272,7 @@ export default function DetailView(): ReactNode {
             <button
               className="btn btn-secondary btn-sm"
               data-testid="disconnect-view-btn"
-              onClick={() => void disconnectWorkspace()}
+              onClick={() => void disconnectView()}
             >
               <Icon name="close" /> {t('detail.disconnect')}
             </button>
