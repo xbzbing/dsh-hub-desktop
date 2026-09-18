@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { Transport } from '@shared/contracts'
+import type { InstanceSummary, Transport } from '@shared/contracts'
 import { Icon } from '../lib/icons'
 import logoUrl from '../../../../design/dsh-hub-logo.svg'
 import { STATUS_INFO, TYPE_INFO, toDisplayStatus } from '../lib/format'
@@ -91,13 +91,13 @@ export default function Sidebar(): ReactNode {
                 </span>
               </div>
               {group.items.map((item) => (
-                <InstanceItem key={item.id} id={item.id} onClick={openFromSidebar} selected={selection === item.id} />
+                <InstanceItem key={item.id} item={item} onClick={openFromSidebar} selected={selection === item.id} />
               ))}
             </div>
           ))
         ) : (
           filtered.map((item) => (
-            <InstanceItem key={item.id} id={item.id} onClick={openFromSidebar} selected={selection === item.id} />
+            <InstanceItem key={item.id} item={item} onClick={openFromSidebar} selected={selection === item.id} />
           ))
         )}
       </nav>
@@ -145,33 +145,30 @@ export default function Sidebar(): ReactNode {
 }
 
 function InstanceItem(props: {
-  id: string
+  item: InstanceSummary
   selected: boolean
   onClick: (id: string) => void
 }): ReactNode {
   const t = useAppStore((state) => state.t)
   const statuses = useAppStore((state) => state.statuses)
-  const instances = useAppStore((state) => state.instances)
-  const item = instances.find((entry) => entry.id === props.id)
-  if (!item) return null
-  const display = toDisplayStatus(statuses[props.id]?.status)
+  const display = toDisplayStatus(statuses[props.item.id]?.status)
   const info = STATUS_INFO[display]
   return (
     <button
       className="inst"
       aria-current={props.selected}
-      onClick={() => props.onClick(props.id)}
-      data-testid={`inst-${props.id}`}
-      title={item.address}
+      onClick={() => props.onClick(props.item.id)}
+      data-testid={`inst-${props.item.id}`}
+      title={props.item.address}
     >
       <span className={`status-dot ${info.dotClass}`} aria-hidden="true" />
       <span className="inst-text">
-        <span className="inst-name">{item.name}</span>
-        <span className="inst-meta num">{item.address}</span>
+        <span className="inst-name">{props.item.name}</span>
+        <span className="inst-meta num">{props.item.address}</span>
       </span>
       <span className="badge">
-        <Icon name={TYPE_INFO[item.transport].icon} size={11} />
-        <span className="type-label">{t(TYPE_INFO[item.transport].labelKey)}</span>
+        <Icon name={TYPE_INFO[props.item.transport].icon} size={11} />
+        <span className="type-label">{t(TYPE_INFO[props.item.transport].labelKey)}</span>
       </span>
     </button>
   )

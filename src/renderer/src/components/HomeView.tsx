@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { InstanceSummary } from '@shared/contracts'
 import { Icon } from '../lib/icons'
@@ -31,7 +31,7 @@ function HomeContent(): ReactNode {
   const attention = instances.filter(
     (item) => toDisplayStatus(statuses[item.id]?.status) === 'error'
   ).length
-  const sorted = [...instances].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+  const sorted = useMemo(() => [...instances].sort((a, b) => a.name.localeCompare(b.name, 'zh')), [instances])
 
   const openDetail = (id: string): void => {
     void ensureRecord(id)
