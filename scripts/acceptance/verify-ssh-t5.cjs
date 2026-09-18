@@ -5,6 +5,7 @@ const { _electron: electron } = require('@playwright/test')
 const { mkdir, rm, writeFile, readFile } = require('node:fs/promises')
 const { join, resolve } = require('node:path')
 const { execSync, spawn } = require('node:child_process')
+const { userInfo } = require('node:os')
 const http = require('node:http')
 
 const ACC = '/tmp/dsh-ssh-t5'
@@ -12,7 +13,8 @@ const DATA_DIR = resolve(process.cwd(), 'hub-data', 'verify-ssh-t5')
 const SSH_PORT = 32223
 const HTTP_PORT = 33081
 const PASSPHRASE = 't5-transient-passphrase'
-const SSH_USER = process.env.USER || 'dev'
+/** sshd 配置需要本机已存在的账号:取自系统,不写死任何用户名 */
+const SSH_USER = process.env.USER || userInfo().username
 let app = null
 let sshdProc = null
 let httpServer = null

@@ -58,8 +58,9 @@ describe('buildSshArgs（ 参数库）', () => {
   })
 
   it('显式非默认端口 / 用户名 / 密钥路径 → 带 -p/-l/-i', () => {
+    // 用户真实输入形态:argv 不经 shell,`~` 由 ssh 自己展开(已实测 OpenSSH 支持)。
     const args = buildSshArgs(
-      sshInstance({ port: 2222, identityFile: '/Users/dev/.ssh/id_ed25519' }),
+      sshInstance({ port: 2222, identityFile: '~/.ssh/id_ed25519' }),
       30123,
       ctx
     )
@@ -68,7 +69,7 @@ describe('buildSshArgs（ 参数库）', () => {
     expect(args).toContain('-l')
     expect(args[args.indexOf('-l') + 1]).toBe('dev')
     expect(args).toContain('-i')
-    expect(args[args.indexOf('-i') + 1]).toBe('/Users/dev/.ssh/id_ed25519')
+    expect(args[args.indexOf('-i') + 1]).toBe('~/.ssh/id_ed25519')
   })
 
   it('argv 不经 shell：host 含特殊字符时仍为单参数（输入已限定字符集）', () => {

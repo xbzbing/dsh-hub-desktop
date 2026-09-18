@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import { userInfo } from 'node:os'
 import { parseAgentKeys, parseSshG } from './key-preview'
 
 const ED = 'AAAAC3NzaC1lZDI1NTE5AAAAIL/GqayzeH4ALFQzq7BrQ4lodGaiDICVgULWk7rQZ4iw'
+/** 模拟真实 `ssh -G` / `ssh-add -L` 输出:用户名取自当前环境,不写死某个账号 */
+const USER = userInfo().username
 
 describe('key-preview 解析（只读元信息，不碰私钥）', () => {
   it('parseSshG:提取全部 identityfile（优先级顺序）与生效 user/hostname/port', () => {
     const stdout = [
       'host dsh.internal',
-      'user dev',
+      `user ${USER}`,
       'hostname dsh-really.internal',
       'port 2222',
       'identityfile ~/.ssh/id_rsa',
@@ -15,7 +18,7 @@ describe('key-preview 解析（只读元信息，不碰私钥）', () => {
       'identitiesonly no'
     ].join('\n')
     const parsed = parseSshG(stdout)
-    expect(parsed.user).toBe('dev')
+    expect(parsed.user).toBe(USER)
     expect(parsed.host).toBe('dsh-really.internal') // 别名解析后的真实主机
     expect(parsed.port).toBe(2222)
     expect(parsed.identityFiles).toEqual(['~/.ssh/id_rsa', '~/.ssh/id_ed25519'])
@@ -27,11 +30,11 @@ describe('key-preview 解析（只读元信息，不碰私钥）', () => {
   })
 
   it('parseAgentKeys:exit 0 且有公钥 = ready（含类型/注释/指纹）', () => {
-    const stdout = `ssh-ed25519 ${ED} dev@example\n`
+    const stdout = `ssh-ed25519 ${ED} ${USER}@example\n`
     const result = parseAgentKeys(stdout, '', 0)
     expect(result.status).toBe('ready')
     expect(result.keys[0]?.typeLabel).toBe('ED25519')
-    expect(result.keys[0]?.comment).toBe('dev@example')
+    expect(result.keys[0]?.comment).toBe(`${USER}@example`)
     expect(result.keys[0]?.fingerprint).toMatch(/^SHA256:/)
   })
 

@@ -93,7 +93,7 @@ export function parseDshWebProcesses(psOutput: string): ExternalDshWeb[] {
 
 /**
  * 解析 `lsof -nP -iTCP -sTCP:LISTEN` 输出 → pid → 首个监听端口。
- * 行形如:`node 84758 dev 21u IPv4 0x… 0t0 TCP localhost:3080 (LISTEN)`。
+ * 行形如:`node 84758 <user> 21u IPv4 0x… 0t0 TCP localhost:3080 (LISTEN)`。
  */
 export function parseListeningPorts(lsofOutput: string): Map<number, number> {
   const ports = new Map<number, number>()

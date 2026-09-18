@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { userInfo } from 'node:os'
 import { classifySshExit } from './attribution'
 
 describe('classifySshExit（ 退出归因）', () => {
   it('鉴权失败 → auth（含 stderr 证据）', () => {
-    const result = classifySshExit(255, 'dev@dsh.internal: Permission denied (publickey).')
+    // ssh 的鉴权失败提示形如 `<user>@<host>: Permission denied`;用户名取自当前环境。
+    const result = classifySshExit(
+      255,
+      `${userInfo().username}@dsh.internal: Permission denied (publickey).`
+    )
     expect(result.kind).toBe('auth')
     expect(result.message).toContain('鉴权失败')
     expect(result.message).toContain('Permission denied')

@@ -443,7 +443,19 @@ describe("ControlPath 路径规则（unix socket 104 字节上限）", () => {
   })
 
   it("数据目录过长时自适应退化到系统临时目录", () => {
-    const long = '/Users/someone/workspace/private/some-very-long-org/dsh-plugins/dsh-hub-desktop/hub-data/verify-ssh'
+    // 长度是这条用例的关键输入:退化阈值是 dataRoot ≥ 66 字节。前缀取自系统临时目录,
+    // 既不写死任何用户的目录结构,又在 macOS/Linux 上都足够长。
+    const long = join(
+      tmpdir(),
+      'workspace',
+      'private',
+      'some-very-long-org',
+      'dsh-plugins',
+      'dsh-hub-desktop',
+      'hub-data',
+      'verify-ssh'
+    )
+    expect(long.length).toBeGreaterThan(66)
     const dir = socketsDirFor(long)
     expect(dir).not.toBe(`${long}/ssh`)
     expect(dir.startsWith(tmpdir())).toBe(true)

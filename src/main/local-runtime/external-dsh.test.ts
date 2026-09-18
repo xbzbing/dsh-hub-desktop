@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { homedir, userInfo } from 'node:os'
+import { join } from 'node:path'
 import {
   createExternalDshScanner,
   isDshWebCommand,
@@ -11,23 +13,29 @@ import {
 /**
  *   node ~/.local/bin/dsh web --patch ~/.dush/cordis.dush.patch.yml --no-open
  * hub 必须能发现它(只读探测:ps + lsof),且不能把自己的 spawn 或 shell 包装误报成外部实例。
+ *
+ * 路径与用户名取自当前运行环境:真实 `ps`/`lsof` 输出的就是这些环境相关的绝对路径,
+ * 因此探测比写死某个用户的路径更贴近生产,也不会把个人目录带进仓库。
  */
+const HOME = homedir()
+const USER = userInfo().username
+const DSH_BIN = join(HOME, '.local/bin/dsh')
+const PATCH = join(HOME, '.dush/cordis.dush.patch.yml')
+/** 仓库根(vitest 以项目根为 cwd),用于模拟 `cd <repo> && …` 的 shell 包装行 */
+const REPO_ROOT = process.cwd()
+const DSH_WEB_CMD = `node ${DSH_BIN} web --patch ${PATCH} --no-open`
 
 const REAL_PS = [
   '  1 /sbin/launchd',
-  '  84758 node /Users/dev/.local/bin/dsh web --patch /Users/dev/.dush/cordis.dush.patch.yml --no-open',
-  '  34325 bash -c cd /Users/dev/workspace/private/dsh-plugins/dsh-hub-desktop && ps -axo pid=,command= | grep "dsh web"',
+  `  84758 ${DSH_WEB_CMD}`,
+  `  34325 bash -c cd ${REPO_ROOT} && ps -axo pid=,command= | grep "dsh web"`,
   '  34327 grep dsh web',
   '  9001 node /Applications/DSH Hub.app/Contents/Resources/app.asar/runtimes/0.1.5/node_modules/@deepseek-ai/dsh/lib/bin.js --profile default --host 127.0.0.1 --port 30501 --no-open'
 ].join('\n')
 
 describe('isDshWebCommand(命令行判定)', () => {
   it('识别真实 dush 形态:dsh web --patch …', () => {
-    expect(
-      isDshWebCommand(
-        'node /Users/dev/.local/bin/dsh web --patch /Users/dev/.dush/cordis.dush.patch.yml --no-open'
-      )
-    ).toBe(true)
+    expect(isDshWebCommand(DSH_WEB_CMD)).toBe(true)
   })
 
   it('识别 hub 运行时入口形态:@deepseek-ai/dsh/lib/bin.js web', () => {
@@ -54,10 +62,10 @@ describe('isDshWebCommand(命令行判定)', () => {
 
   it('排除无关进程与「目录名里带 dsh」的干扰项', () => {
     expect(isDshWebCommand('/usr/sbin/cupsd')).toBe(false)
-    expect(isDshWebCommand('node /Users/dev/dsh-plugins/dsh-hub-desktop/out/main/index.js')).toBe(
-      false
-    )
-    expect(isDshWebCommand('node /Users/dev/.local/bin/dsh --version')).toBe(false)
+    expect(
+      isDshWebCommand(`node ${join(HOME, 'dsh-plugins/dsh-hub-desktop/out/main/index.js')}`)
+    ).toBe(false)
+    expect(isDshWebCommand(`node ${DSH_BIN} --version`)).toBe(false)
   })
 })
 
@@ -82,7 +90,7 @@ describe('parseDshWebProcesses(ps 解析)', () => {
     expect(found).toHaveLength(1)
     expect(found[0]).toMatchObject({
       pid: 84758,
-      patch: '/Users/dev/.dush/cordis.dush.patch.yml',
+      patch: PATCH,
       port: null // 命令行没写 --port → 交 lsof 兜底
     })
     expect(found[0]?.command).toContain('/.local/bin/dsh web')
@@ -108,10 +116,10 @@ describe('parseListeningPorts(lsof 解析)', () => {
   it('pid → 首个监听端口', () => {
     const output = [
       'COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME',
-      'node-darw  4323 dev   38u  IPv4 0x1      0t0  TCP 127.0.0.1:49152 (LISTEN)',
-      'node      84758 dev   21u  IPv4 0x2      0t0  TCP *:3080 (LISTEN)',
-      'node      84758 dev   22u  IPv6 0x3      0t0  TCP *:3081 (LISTEN)',
-      'node      84758 dev   23u  IPv4 0x4      0t0  TCP 127.0.0.1:3080 (ESTABLISHED)'
+      `node-darw  4323 ${USER}   38u  IPv4 0x1      0t0  TCP 127.0.0.1:49152 (LISTEN)`,
+      `node      84758 ${USER}   21u  IPv4 0x2      0t0  TCP *:3080 (LISTEN)`,
+      `node      84758 ${USER}   22u  IPv6 0x3      0t0  TCP *:3081 (LISTEN)`,
+      `node      84758 ${USER}   23u  IPv4 0x4      0t0  TCP 127.0.0.1:3080 (ESTABLISHED)`
     ].join('\n')
     const ports = parseListeningPorts(output)
     expect(ports.get(84758)).toBe(3080) // 首个 LISTEN;ESTABLISHED 不算
@@ -126,20 +134,18 @@ describe('createExternalDshScanner(注入 IO)', () => {
         if (command === 'ps') {
           return {
             code: 0,
-            stdout:
-              '  84758 node /Users/dev/.local/bin/dsh web --patch /Users/dev/.dush/cordis.dush.patch.yml --no-open\n'
+            stdout: `  84758 ${DSH_WEB_CMD}\n`
           }
         }
-        return { code: 0, stdout: 'node 84758 dev 21u IPv4 0x2 0t0 TCP *:3080 (LISTEN)\n' }
+        return { code: 0, stdout: `node 84758 ${USER} 21u IPv4 0x2 0t0 TCP *:3080 (LISTEN)\n` }
       }
     })
     await expect(scanner.scan()).resolves.toEqual([
       {
         pid: 84758,
         port: 3080,
-        patch: '/Users/dev/.dush/cordis.dush.patch.yml',
-        command:
-          'node /Users/dev/.local/bin/dsh web --patch /Users/dev/.dush/cordis.dush.patch.yml --no-open'
+        patch: PATCH,
+        command: DSH_WEB_CMD
       }
     ])
   })
