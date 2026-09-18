@@ -91,13 +91,13 @@ export default function Sidebar(): ReactNode {
                 </span>
               </div>
               {group.items.map((item) => (
-                <InstanceItem key={item.id} item={item} onClick={openFromSidebar} selected={selection === item.id} />
+                <InstanceItem key={item.id} item={item} onClick={openFromSidebar} selected={selection === item.id} rail={rail} />
               ))}
             </div>
           ))
         ) : (
           filtered.map((item) => (
-            <InstanceItem key={item.id} item={item} onClick={openFromSidebar} selected={selection === item.id} />
+            <InstanceItem key={item.id} item={item} onClick={openFromSidebar} selected={selection === item.id} rail={rail} />
           ))
         )}
       </nav>
@@ -147,6 +147,7 @@ export default function Sidebar(): ReactNode {
 function InstanceItem(props: {
   item: InstanceSummary
   selected: boolean
+  rail: boolean
   onClick: (id: string) => void
 }): ReactNode {
   const t = useAppStore((state) => state.t)
@@ -160,7 +161,7 @@ function InstanceItem(props: {
       aria-current={props.selected}
       onClick={() => props.onClick(props.item.id)}
       data-testid={`inst-${props.item.id}`}
-      title={props.item.address}
+      title={props.rail ? props.item.name : props.item.address}
     >
       <span className={`status-dot ${info.dotClass}`} aria-hidden="true" />
       <span className="inst-text">

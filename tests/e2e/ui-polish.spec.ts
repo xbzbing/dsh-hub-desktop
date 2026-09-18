@@ -166,6 +166,7 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
     () => getComputedStyle(document.querySelector('[data-testid="app-shell"]') as Element).gridTemplateColumns
   )
   expect(railCols.split(' ')[0]).toBe('64px')
+  await expect(win.getByTestId(`inst-${railItemId}`)).toHaveAttribute('title', '收起态留白检查')
   const collapseAfter = await win.getByTestId('sidebar-collapse-btn').boundingBox()
   const brandAfter = await win.getByTestId('brand').boundingBox()
   expect(collapseAfter).not.toBeNull()
