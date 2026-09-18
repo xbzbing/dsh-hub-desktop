@@ -368,7 +368,7 @@ describe('store settings', () => {
     expect(useAppStore.getState().workspaceOpen).toBe(false)
   })
 
-  it('侧栏点击错误状态的本机实例时直接进入详情，不发起必然失败的打开请求', async () => {
+  it('侧栏点击任意错误实例时直接进入详情，不发起必然失败的打开请求', async () => {
     const useAppStore = await freshStore()
     const openView = vi.fn(async () => ({ ok: true as const, value: null }))
     vi.stubGlobal('window', {
@@ -378,29 +378,115 @@ describe('store settings', () => {
     useAppStore.setState({
       instances: [
         {
-          id: 'broken-local',
-          name: '损坏本机实例',
-          transport: 'local',
+          id: 'broken-ssh',
+          name: '损坏 SSH 实例',
+          transport: 'ssh',
           authMode: 'auto',
-          address: '127.0.0.1:3080',
+          address: 'dsh.internal:8080',
           updatedAt: '2026-09-18T00:00:00.000Z'
         }
       ],
       statuses: {
-        'broken-local': {
-          id: 'broken-local',
+        'broken-ssh': {
+          id: 'broken-ssh',
           status: 'error',
           at: '2026-09-18T00:00:00.000Z',
-          detail: '进程意外退出'
+          detail: 'SSH 鉴权失败'
         }
       }
     })
 
-    useAppStore.getState().openFromSidebar('broken-local')
-    expect(useAppStore.getState().selection).toBe('broken-local')
+    useAppStore.getState().openFromSidebar('broken-ssh')
+    expect(useAppStore.getState().selection).toBe('broken-ssh')
     expect(useAppStore.getState().workspaceOpen).toBe(false)
     expect(useAppStore.getState().workspaceOpening).toBe(false)
     expect(openView).not.toHaveBeenCalled()
+  })
+
+  it('连接中实例在侧栏点击后保持加载页，收到运行状态后打开工作区', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({
+      instances: [
+        {
+          id: 'starting-ssh',
+          name: '连接中的 SSH 实例',
+          transport: 'ssh',
+          authMode: 'auto',
+          address: 'dsh.internal:8080',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      ],
+      statuses: {
+        'starting-ssh': {
+          id: 'starting-ssh',
+          status: 'starting',
+          at: '2026-09-18T00:00:00.000Z'
+        }
+      }
+    })
+
+    useAppStore.getState().openFromSidebar('starting-ssh')
+    expect(useAppStore.getState()).toMatchObject({
+      selection: 'starting-ssh',
+      workspaceOpening: true,
+      workspaceOpen: false
+    })
+    expect(openView).not.toHaveBeenCalled()
+    useAppStore.getState().applyStatus({
+      id: 'starting-ssh',
+      status: 'running',
+      url: 'http://127.0.0.1:30000/',
+      at: '2026-09-18T00:00:01.000Z'
+    })
+    await vi.waitFor(() => expect(openView).toHaveBeenCalledWith('starting-ssh'))
+    expect(useAppStore.getState().workspaceOpen).toBe(true)
+  })
+
+  it('连接中实例收到失败状态时回到实例详情', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({
+      instances: [
+        {
+          id: 'failed-ssh',
+          name: '失败中的 SSH 实例',
+          transport: 'ssh',
+          authMode: 'auto',
+          address: 'dsh.internal:8080',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      ],
+      statuses: {
+        'failed-ssh': {
+          id: 'failed-ssh',
+          status: 'starting',
+          at: '2026-09-18T00:00:00.000Z'
+        }
+      }
+    })
+
+    useAppStore.getState().openFromSidebar('failed-ssh')
+    expect(useAppStore.getState().workspaceOpening).toBe(true)
+    useAppStore.getState().applyStatus({
+      id: 'failed-ssh',
+      status: 'error',
+      detail: 'SSH 隧道失败',
+      at: '2026-09-18T00:00:01.000Z'
+    })
+    expect(useAppStore.getState()).toMatchObject({
+      selection: 'failed-ssh',
+      workspaceOpen: false,
+      workspaceOpening: false
+    })
   })
 
   it('侧栏点击非错误实例时仍按原流程打开工作区', async () => {

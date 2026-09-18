@@ -256,6 +256,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
         }
       }
+      if (state.workspaceOpening && state.selection === event.id) {
+        if (event.status === 'running') shouldOpen = event.id
+        if (event.status === 'error' || event.status === 'stopped') {
+          return {
+            instances,
+            statuses,
+            pendingOpen,
+            workspaceOpening: false,
+            workspaceConnected:
+              event.status === 'stopped'
+                ? { ...state.workspaceConnected, [event.id]: false }
+                : state.workspaceConnected
+          }
+        }
+      }
       return {
         instances,
         statuses,
@@ -331,8 +346,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
   openFromSidebar: (id) => {
     const instance = get().instances.find((item) => item.id === id)
     const status = get().statuses[id]?.status ?? instance?.runtimeStatus
-    if (instance?.transport === 'local' && status === 'error') {
+    if (status === 'error') {
       get().select(id)
+      return
+    }
+    if (status === 'starting') {
+      workspaceNavigationGeneration += 1
+      void window.dshHub?.runtime?.hideView()
+      set({ selection: id, workspaceOpen: false, workspaceOpening: true, settingsOpen: false })
       return
     }
     void get().openWorkspace(id)
