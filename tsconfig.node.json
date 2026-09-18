@@ -21,6 +21,7 @@
   "include": [
     "electron.vite.config.ts",
     "vitest.config.ts",
+    "vitest.contract.config.ts",
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*"

@@ -8,11 +8,17 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const DEFAULT_SRC =
-  process.env.DSH_AUTH_GATEWAY_SRC ?? '/Users/dev/workspace/private/dsh-auth-gateway'
+const DEFAULT_SRC = process.env.DSH_AUTH_GATEWAY_SRC?.trim() || null
+
+function configuredGatewaySource(src) {
+  if (src) return src
+  throw new Error(
+    '缺少 DSH_AUTH_GATEWAY_SRC：请将其设置为本地 dsh-auth-gateway 源码目录后再运行 pnpm test:contract'
+  )
+}
 
 async function loadGatewayModule(src) {
-  const root = resolve(src)
+  const root = resolve(configuredGatewaySource(src))
   const [gateway, store, otpStore, totp] = await Promise.all([
     import(pathToFileURL(join(root, 'lib', 'gateway.js')).href),
     import(pathToFileURL(join(root, 'lib', 'store.js')).href),

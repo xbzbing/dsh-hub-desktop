@@ -21,6 +21,7 @@ let app = null
 
 function log(tag, ok, detail = '') {
   const mark = ok === null ? '·' : ok ? '✅' : '❌'
+  if (ok === false) process.exitCode = 1
   console.log(`${mark} [${tag}] ${detail}`)
 }
 

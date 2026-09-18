@@ -67,10 +67,10 @@ test('list 返回摘要,get 读回完整记录,delete 生效', async () => {
   const list = await win.evaluate(async () => window.dshHub.instances.list())
   expect(list.ok).toBe(true)
   if (list.ok) {
-    const ids = list.value.map((item) => item.id)
-    expect(ids).toContain(created.value.id)
+    const summary = list.value.find((item) => item.id === created.value.id)
+    expect(summary).toBeDefined()
     // 摘要不含详情字段
-    expect(list.value[0]).not.toHaveProperty('endpointUrl')
+    expect(summary).not.toHaveProperty('endpointUrl')
   }
 
   const detail = await win.evaluate(async (id) => window.dshHub.instances.get(id), created.value.id)

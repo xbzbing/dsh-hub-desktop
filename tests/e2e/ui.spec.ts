@@ -78,10 +78,12 @@ test('侧栏实例名称进入工作区或错误详情，随后可删除实例',
   await expect(win.getByTestId('instances-table')).toBeVisible()
   const firstSidebarItem = win.locator('[data-testid^="inst-"]').first()
   await firstSidebarItem.click()
-  const workspaceOpened = await win
-    .getByTestId('workspace-loading')
-    .isVisible({ timeout: 1_000 })
-    .catch(() => false)
+  await expect.poll(async () => {
+    const workspaceLoading = await win.getByTestId('workspace-loading').isVisible().catch(() => false)
+    const detail = await win.getByTestId('view-detail').isVisible().catch(() => false)
+    return workspaceLoading || detail
+  }).toBe(true)
+  const workspaceOpened = await win.getByTestId('workspace-loading').isVisible().catch(() => false)
   if (workspaceOpened) {
     await expect(win.getByTestId('workspace-toolbar')).toHaveCount(0)
     await expect(win.getByTestId('workspace-back-btn')).toBeVisible()

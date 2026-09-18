@@ -15,11 +15,12 @@ import { join, resolve } from 'node:path'
 
 const DATA_DIR = resolve(__dirname, '..', '..', 'hub-data', 'e2e-external')
 const SHOT_DIR = resolve(__dirname, '..', '..', 'hub-data', 'ui-polish-shots')
-const REMOTE_GATEWAY = 'https://dsh.crazydb.com/'
 
 let app: ElectronApplication
 let win: Page
 let fakeDsh: ChildProcess | null = null
+let fakeDshPort: number | null = null
+let fakeGatewayPort: number | null = null
 
 const launchArgs = ['.']
 if (process.env.CI) launchArgs.push('--no-sandbox')
@@ -34,8 +35,7 @@ test.beforeAll(async () => {
 
   const script = [
     "const http = require('node:http')",
-    `http.createServer((req, res) => { const token = new URL(req.url, 'http://127.0.0.1').searchParams.get('token'); if (!['external-token', 'test-restart-token'].includes(token ?? '')) { res.writeHead(401); res.end('dsh web authentication required'); return } res.end('<html><body><h1 id="external-dsh">外部 dsh web</h1></body></html>') })`,
-    ".listen(0, '127.0.0.1', function () { console.log(this.address().port); setTimeout(() => {}, 600000) })"
+    `const server = http.createServer((req, res) => { if (req.url.startsWith('/login')) { res.end('<html><body><h1>本地网关登录</h1></body></html>'); return } const token = new URL(req.url, 'http://127.0.0.1').searchParams.get('token'); if (!['external-token', 'test-restart-token'].includes(token ?? '')) { res.writeHead(302, { location: '/login' }); res.end(); return } res.end('<html><body><h1 id="external-dsh">外部 dsh web</h1></body></html>') }); server.listen(0, '127.0.0.1', () => { console.log('PORT=' + server.address().port); setTimeout(() => {}, 600000) })`
   ].join('\n')
   fakeDsh = spawn(
     process.execPath,
@@ -43,9 +43,20 @@ test.beforeAll(async () => {
     { stdio: ['ignore', 'pipe', 'ignore'], detached: false }
   )
   await new Promise<void>((resolvePromise, reject) => {
+    let output = ''
+    const timeout = setTimeout(() => reject(new Error(`本地假网关未输出端口：${output}`)), 5_000)
     fakeDsh?.once('error', reject)
-    fakeDsh?.stdout?.once('data', () => resolvePromise())
+    fakeDsh?.stdout?.on('data', (chunk) => {
+      output += String(chunk)
+      const portMatch = /PORT=(\d{1,5})/.exec(output)
+      if (!portMatch?.[1]) return
+      fakeGatewayPort = Number(portMatch[1])
+      fakeDshPort = fakeGatewayPort
+      clearTimeout(timeout)
+      resolvePromise()
+    })
   })
+  expect(fakeDshPort).toBeGreaterThan(0)
 
   app = await electron.launch({
     args: launchArgs,
@@ -76,7 +87,7 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
         endpointUrl
       })
       return r.ok ? r.value.id : null
-    }, REMOTE_GATEWAY)
+    }, `http://127.0.0.1:${fakeGatewayPort}`)
     expect(created).not.toBeNull()
     if (!created) return
 
@@ -94,12 +105,12 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
       })
     ).toContain('/login')
     await expect(win.getByTestId('tb-title')).toHaveText('远程登录重定向')
-    await expect(win.getByTestId('tb-sub')).toHaveText('dsh.crazydb.com')
+    await expect(win.getByTestId('tb-sub')).toHaveText(`127.0.0.1:${fakeGatewayPort}`)
     await win.getByRole('button', { name: '关闭' }).click()
     await win.waitForTimeout(300)
     const log = mainErrors.join('')
     expect(log).not.toContain('[instance-view] 加载失败')
-    expect(log).not.toContain("ERR_FAILED (-2) loading 'https://dsh.crazydb.com/'")
+    expect(log).not.toContain("ERR_FAILED (-2) loading 'http://127.0.0.1:")
   } finally {
     app.process().stderr?.off('data', onOutput)
     app.process().stdout?.off('data', onOutput)

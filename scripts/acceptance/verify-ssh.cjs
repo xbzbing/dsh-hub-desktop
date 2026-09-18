@@ -270,21 +270,19 @@ async function run() {
 }
 
 run()
-  .catch((error) => {
+  .catch(async (error) => {
     console.error('[FAIL]', error)
+    process.exitCode = 1
     const { writeFileSync } = require('node:fs')
     // 失败时 dump 事件便于归因
     if (app) {
-      app
-        .firstWindow()
-        .then((hub) => hub.evaluate(() => window.__sshEvents || []))
-        .then((events) => {
-          writeFileSync('/tmp/verify-ssh-events.json', JSON.stringify(events, null, 2))
-        })
-        .catch(() => undefined)
-        .finally(() => process.exit(1))
-    } else {
-      process.exit(1)
+      try {
+        const hub = await app.firstWindow()
+        const events = await hub.evaluate(() => window.__sshEvents || [])
+        writeFileSync('/tmp/verify-ssh-events.json', JSON.stringify(events, null, 2))
+      } catch {
+        /* 进程可能已经退出 */
+      }
     }
   })
   .finally(async () => {

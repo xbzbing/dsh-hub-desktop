@@ -17,6 +17,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { collectArtifacts } from './checksums.mjs'
 import {
   findPlaceholders,
   normalizeArtifactUrl,
@@ -213,21 +214,30 @@ if (PRE_ONLY) {
   if (!(await exists(sumsPath))) {
     skip('SHA256SUMS.txt 与实际字节一致', 'dist/SHA256SUMS.txt 不存在 —— 先执行 pnpm release:checksums')
   } else {
-    await check('SHA256SUMS.txt 与实际字节一致', () => {
+    await check('SHA256SUMS.txt 与实际字节一致', async () => {
       const lines = readFileSync(sumsPath, 'utf8')
         .trim()
         .split('\n')
         .filter(Boolean)
       assert(lines.length > 0, 'SHA256SUMS.txt 为空')
+      const manifestNames = new Set()
       for (const line of lines) {
         const match = /^([0-9a-f]{64})\s{2}(.+)$/.exec(line)
         assert(match !== null, `无法解析的校验和行：${line}`)
         const [, digest, name] = match
+        assert(!manifestNames.has(name), `SHA256SUMS.txt 包含重复条目：${name}`)
+        manifestNames.add(name)
         const full = join(DIST, name)
         assert(isFile(full), `校验和清单里的 ${name} 不存在`)
         const actual = createHash('sha256').update(readFileSync(full)).digest('hex')
         assert(actual === digest, `${name} 的 sha256 不匹配（清单 ${digest} ≠ 实际 ${actual}）`)
       }
+      const artifacts = await collectArtifacts(DIST)
+      const artifactNames = new Set(artifacts.map((artifact) => artifact.name))
+      assert(
+        manifestNames.size === artifactNames.size && [...artifactNames].every((name) => manifestNames.has(name)),
+        `SHA256SUMS.txt 与应分发产物不一致（清单：${[...manifestNames].join(', ')}；产物：${[...artifactNames].join(', ')}）`
+      )
     })
   }
 }

@@ -95,7 +95,7 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # post
 | `pnpm test` | 单测（vitest） |
 | `pnpm build` | 三端产物（E2E 前置） |
 | `pnpm test:e2e` | Playwright `_electron` |
-| `pnpm test:contract` | 契约测试（对真实网关实例） |
+| `pnpm test:contract` | 对本地 dsh-auth-gateway 源码运行认证契约测试；需设置 `DSH_AUTH_GATEWAY_SRC=/path/to/dsh-auth-gateway` |
 
 发布产物（一律 `--publish never`，结构上不可能误发布，且有单测钉住）：
 

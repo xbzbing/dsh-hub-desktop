@@ -137,7 +137,7 @@ async function main() {
   if (!preview.value.identityFiles.includes(`${ACC}/client`)) {
     throw new Error(`keyPreview 未包含显式私钥:${JSON.stringify(preview.value.identityFiles)}`)
   }
-  if (!JSON.stringify(preview.value).includes('blob') === false && preview.value.agent.keys.some((k) => 'privateKey' in k)) {
+  if (JSON.stringify(preview.value).includes('PRIVATE KEY') || preview.value.agent.keys.some((key) => 'privateKey' in key)) {
     throw new Error('密钥预览泄露了私钥字段')
   }
   console.log(

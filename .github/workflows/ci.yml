@@ -22,3 +22,21 @@ jobs:
       - run: pnpm build
       # Electron E2E 需要显示服务;Linux CI 无显示器,用 xvfb 虚拟屏(R4)
       - run: xvfb-run -a pnpm test:e2e
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/dsh-auth-gateway
+          path: dsh-auth-gateway
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:contract
+        env:
+          DSH_AUTH_GATEWAY_SRC: ${{ github.workspace }}/dsh-auth-gateway
