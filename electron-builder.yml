@@ -2,6 +2,9 @@
 # T14 增补 `publish` / 更新元数据(见 docs/T14-发布演练.md)
 appId: dev.dshhub.desktop
 productName: DSH Hub
+# `electron` 已随 devDependencies 安装。复用其解压分发包可避免 builder 在每次
+# macOS 打包时额外访问 GitHub；离线或网络抖动环境仍可稳定出包。
+electronDist: node_modules/electron/dist
 directories:
   buildResources: build
   output: dist

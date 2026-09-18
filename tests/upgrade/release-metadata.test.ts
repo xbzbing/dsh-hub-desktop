@@ -113,6 +113,10 @@ describe('打包与发布配置', () => {
     expect(existsSync(join(ROOT, 'build', 'icon.ico'))).toBe(true)
   })
 
+  it('macOS 本地打包复用已安装的 Electron 分发包，不依赖下载', () => {
+    expect(yml).toMatch(/^electronDist:\s*node_modules\/electron\/dist\s*$/m)
+  })
+
   it('零运行时依赖', () => {
     expect(Object.keys(pkg.dependencies ?? {})).toEqual([])
   })

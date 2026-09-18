@@ -302,7 +302,7 @@ console.log('\n--- 当前环境无法验证的项目 ---')
 console.log('  · 代码签名与公证：无 Apple Developer 证书，产物未签名（只宜自用）')
 console.log('  · Windows NSIS 产物：需 Windows 或 wine 环境')
 console.log('  · 自动更新端到端：需真实远端和已安装的先前版本，本机无法验证')
-console.log('  · dmg 产物：本机网络对 dmg 附加依赖不稳，当前只产出 zip')
+console.log('  · dmg 产物：已在本机构建；未签名，Gatekeeper 仍需手动允许')
 
 if (failed.length > 0) {
   console.log('\n发布演练失败：')
