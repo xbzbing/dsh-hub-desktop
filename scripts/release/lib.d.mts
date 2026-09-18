@@ -23,6 +23,7 @@ export interface ArtifactHash {
 export interface ReleaseNotes {
   version: string
   date: string
+  distribution: 'source-only'
   artifacts: string[]
 }
 

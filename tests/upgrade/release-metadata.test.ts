@@ -40,51 +40,39 @@ describe('版本与发布说明一致性', () => {
     expect(version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
   })
 
-  it('当前版本存在对应的发布说明,且版本号一致', () => {
+  it('当前版本存在对应的 source-only 发布说明，且版本号一致', () => {
     const notes = parseReleaseNotes(readText(`docs/releases/${tag}.md`))
     expect(notes.version).toBe(version)
     expect(notes.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(notes.distribution).toBe('source-only')
+    expect(notes.artifacts).toEqual([])
   })
 
   it('发布说明不含占位符', () => {
     expect(findPlaceholders(readText(`docs/releases/${tag}.md`))).toEqual([])
   })
 
-  it('发布说明的产物清单覆盖所有已声明的打包目标', () => {
+  it('source-only 发布说明不声明官方二进制资产或更新元数据', () => {
     const notes = parseReleaseNotes(readText(`docs/releases/${tag}.md`))
-    // 安装包（zip/dmg/exe）必须带版本号,否则不同版本的附件会互相覆盖;
-    // 更新元数据与校验和清单是固定文件名,天然不含版本号,按设计豁免。
-    const installers = notes.artifacts.filter((name) => /\.(zip|dmg|exe)$/.test(name))
-    expect(installers.length).toBeGreaterThanOrEqual(3)
-    for (const name of installers) {
-      expect(name, `安装包名 ${name} 缺少版本号`).toContain(version)
-    }
-    const joined = notes.artifacts.join('\n')
-    // mac: dmg + zip
-    expect(joined).toMatch(/\.dmg/)
-    expect(joined).toMatch(/\.zip/)
-    // win: nsis → .exe
-    expect(joined).toMatch(/\.exe/)
-    // 自动更新的更新元数据
-    expect(joined).toMatch(/latest-mac\.yml/)
-    expect(joined).toMatch(/SHA256SUMS\.txt/)
+    expect(notes.distribution).toBe('source-only')
+    expect(notes.artifacts).toEqual([])
   })
 
-  it('发布说明明确标注哪些产物尚未构建(不许暗示已产出)', () => {
-    const text = readText(`docs/releases/${tag}.md`)
-    expect(text).toContain('未构建')
+  it('parseReleaseNotes 拒绝缺失或未知的分发模式', () => {
+    const valid = ['# DSH Hub v1.2.3', '', '- 发布日期: 2026-09-18', '', '## 分发方式', '', '- `source-only`'].join('\n')
+    expect(parseReleaseNotes(valid)).toMatchObject({ version: '1.2.3', distribution: 'source-only', artifacts: [] })
+    expect(() => parseReleaseNotes(valid.replace('- `source-only`', ''))).toThrow(/分发方式/)
+    expect(() => parseReleaseNotes(valid.replace('source-only', 'signed-binary'))).toThrow(/分发方式/)
   })
 })
 
 describe('打包与发布配置', () => {
   const yml = readText('electron-builder.yml')
 
-  it('更新元数据 provider 为 github 且只创建草稿', () => {
-    expect(yml).toMatch(/^\s*provider:\s*github\s*$/m)
-    expect(yml).toMatch(/^\s*releaseType:\s*draft\s*$/m)
-    // 仓库无 git remote,provider 无法推断,owner/repo 必须显式
-    expect(yml).toMatch(/^\s*owner:\s*\S+/m)
-    expect(yml).toMatch(/^\s*repo:\s*\S+/m)
+  it('electron-builder 不配置 GitHub publish provider', () => {
+    expect(yml).not.toMatch(/^publish:\s*$/m)
+    expect(yml).not.toMatch(/^\s*provider:\s*github\s*$/m)
+    expect(yml).not.toMatch(/^\s*releaseType:\s*draft\s*$/m)
   })
 
   it('本地打包脚本结构上不可能误发布', () => {

@@ -178,19 +178,10 @@ export function verifyUpdateMetadata({ metadata, appVersion, artifacts }) {
 }
 
 /**
- * 从发布说明里抽出「机器可校验」的三样东西。
+ * 从发布说明里抽出机器可校验的发布字段。
+ * 当前公开发布只允许 source-only，避免把未签名桌面包误当作官方资产。
  *
- * Required release-note fields:
- *
- * ```md
- * # DSH Hub v0.1.0
- *
- * - 发布日期: 2026-09-16
- *
- * ## 产物
- *
- * - `DSH Hub-0.1.0-arm64-mac.zip`
- * ```
+ * @returns {{version: string, date: string, distribution: 'source-only', artifacts: string[]}}
  */
 export function parseReleaseNotes(markdown) {
   if (typeof markdown !== 'string' || markdown.trim() === '') {
@@ -201,25 +192,40 @@ export function parseReleaseNotes(markdown) {
   const dateMatch = /^-\s*发布日期[:：]\s*(\d{4}-\d{2}-\d{2})\s*$/m.exec(markdown)
   if (!dateMatch) throw new UpdateMetadataError('发布说明缺少「- 发布日期: YYYY-MM-DD」行')
 
-  // 逐行取「## 产物」小节:用行扫描而不是 `\Z` 之类的锚点
-  // （`\Z` 是 PCRE 语法,在 JS 里不是锚点,写出来只会是个无意义的转义)
   const lines = markdown.split(/\r?\n/)
-  const start = lines.findIndex((line) => /^##\s+产物\s*$/.test(line))
-  if (start === -1) throw new UpdateMetadataError('发布说明缺少「## 产物」小节')
-  const section = []
-  for (let i = start + 1; i < lines.length; i++) {
+  const distributionStart = lines.findIndex((line) => /^##\s+分发方式\s*$/.test(line))
+  if (distributionStart === -1) throw new UpdateMetadataError('发布说明缺少「## 分发方式」小节')
+  const distributionLines = []
+  for (let i = distributionStart + 1; i < lines.length; i++) {
     const line = lines[i]
     if (/^##\s/.test(line)) break
-    section.push(line)
+    distributionLines.push(line)
+  }
+  const modes = distributionLines
+    .map((line) => /^-\s*`([^`]+)`\s*$/.exec(line))
+    .filter((match) => match !== null)
+    .map((match) => match[1])
+  if (modes.length !== 1 || modes[0] !== 'source-only') {
+    throw new UpdateMetadataError('分发方式必须明确且只能是 `source-only`')
+  }
+
+  const artifactsStart = lines.findIndex((line) => /^##\s+产物\s*$/.test(line))
+  const section = []
+  if (artifactsStart !== -1) {
+    for (let i = artifactsStart + 1; i < lines.length; i++) {
+      const line = lines[i]
+      if (/^##\s/.test(line)) break
+      section.push(line)
+    }
   }
   const artifacts = section
     .map((line) => /^-\s*`([^`]+)`/.exec(line))
     .filter((match) => match !== null)
     .map((match) => match[1])
-  if (artifacts.length === 0) {
-    throw new UpdateMetadataError('「## 产物」小节里没有任何 ``- `文件名` `` 条目')
+  if (artifacts.length > 0) {
+    throw new UpdateMetadataError('source-only 发布说明不得声明桌面安装包、更新元数据或校验和资产')
   }
-  return { version: headingMatch[1], date: dateMatch[1], artifacts }
+  return { version: headingMatch[1], date: dateMatch[1], distribution: 'source-only', artifacts: [] }
 }
 
 /** 发布说明里不允许残留的占位符 */
