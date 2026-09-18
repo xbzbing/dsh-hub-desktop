@@ -548,6 +548,18 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           // hub 来源是 hub 自己安装的运行时，继续用内置 Electron（不要求用户装 node）。
           const pathNode = runtimeSource === 'path' ? resolveNode(scriptPath) : null
           const nodeArgs = nodeInvocation.args
+          const pathEnv: NodeJS.ProcessEnv = {
+            ...process.env,
+            ...(pathNode !== null
+              ? { PATH: `${dirname(pathNode)}${delimiter}${process.env.PATH ?? ''}` }
+              : {}),
+            DSH_HOME: home
+          }
+          if (instance.launcher === 'dush') {
+            // dush wrapper 会把自己的隔离 patch 追加到 DUSH_PATCH_FILE；继承用户全局
+            // patch 会让同一个 loader entry(id=dush) 加载两次，直接触发 duplicate 报错。
+            delete pathEnv.DUSH_PATCH_FILE
+          }
           const invocation =
             runtimeSource !== 'path'
               ? {
@@ -560,18 +572,14 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
                     command: pathNode,
                     args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
                     // 让 dsh 自己 spawn 的子进程也能解析到同一个 node。
-                    env: {
-                      ...process.env,
-                      PATH: `${dirname(pathNode)}${delimiter}${process.env.PATH ?? ''}`,
-                      DSH_HOME: home
-                    }
+                    env: pathEnv
                   }
                 : {
                     // 找不到 node：仍按脚本 shebang 直接执行（用户 PATH 里可能有）。
                     // 失败时退出详情会带上脱敏后的子进程日志，能看到 `env: node: ...` 这类原因。
                     command: scriptPath,
                     args: [...profileArgs, ...serverArgs],
-                    env: { ...process.env, DSH_HOME: home }
+                    env: pathEnv
                   }
           const child = spawnImpl({
             ...invocation,
