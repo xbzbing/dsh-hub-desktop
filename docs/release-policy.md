@@ -23,7 +23,7 @@ pnpm dist:mac:zip
 pnpm dist:win
 ```
 
-所有命令带 `--publish never`。这些本地构建产物不是官方发布物，不应作为 GitHub Release 资产上传。
+所有命令带 `--publish never`。`pnpm dist:mac` 默认只生成未封装的 `.app` 目录；需要 zip 验证时使用 `pnpm dist:mac:zip`。这些本地构建产物不是官方发布物，不应作为 GitHub Release 资产上传。
 
 ## 发布流程
 

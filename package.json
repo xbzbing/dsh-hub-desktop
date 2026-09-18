@@ -22,7 +22,7 @@
     "test:e2e": "playwright test",
     "test:contract": "vitest run --config vitest.contract.config.ts",
     "dist": "pnpm build && electron-builder --publish never",
-    "dist:mac": "pnpm build && electron-builder --mac --publish never",
+    "dist:mac": "pnpm build && electron-builder --mac dir --publish never",
     "dist:mac:zip": "pnpm build && electron-builder --mac zip --publish never",
     "dist:win": "pnpm build && electron-builder --win --publish never",
     "release:check": "node scripts/release/rehearse.mjs",

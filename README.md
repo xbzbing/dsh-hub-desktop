@@ -103,7 +103,7 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # post
 
 ```bash
 pnpm dist:mac:zip      # mac zip，本地验证用
-pnpm dist:mac          # mac dmg + zip，本地验证用
+pnpm dist:mac          # 仅生成未封装的 macOS .app，本地验证用
 pnpm dist:win          # Windows NSIS，本地验证用
 pnpm release:checksums # 仅本地字节校验辅助工具
 pnpm release:check     # source-only 发布演练，不检查 dist/ 资产

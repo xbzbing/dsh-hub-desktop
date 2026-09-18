@@ -75,6 +75,11 @@ describe('打包与发布配置', () => {
     expect(yml).not.toMatch(/^\s*releaseType:\s*draft\s*$/m)
   })
 
+  it('dist:mac 仅构建未封装的 macOS .app', () => {
+    expect(yml).toMatch(/^\s*target:\s*\n\s*-\s*dir\s*$/m)
+    expect(pkg.scripts['dist:mac']).toContain('electron-builder --mac dir')
+  })
+
   it('本地打包脚本结构上不可能误发布', () => {
     for (const name of ['dist', 'dist:mac', 'dist:mac:zip', 'dist:win']) {
       expect(pkg.scripts[name], `缺少脚本 ${name}`).toBeTruthy()
