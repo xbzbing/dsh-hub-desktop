@@ -251,67 +251,67 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
     return { ...process.env, PATH: [...new Set(dirs)].join(':') + (existing ? `:${existing}` : '') }
   }
 
-  return {
-    async probeLauncher(launcher): Promise<PathRuntime | null> {
-      const which = platform === 'win32' ? 'where' : 'which'
-      try {
-        const located = await run(which, [launcher])
-        if (located.code !== 0) return null
+  /**
+   * 三层探测:① 常规 PATH ② 候选绝对路径 ③ 登录 shell 兜底。
+   *
+   * `probe()` 与 `probeLauncher()` **必须走同一套**:打包后从 Finder/Dock 启动时
+   * 进程只继承 launchd 的最小 PATH(`/usr/bin:/bin:/usr/sbin:/sbin`),装在
+   * `~/.local/bin` 的 dsh/dush 永远 `which` 不到 —— 向导若只做第 ① 层,用户就会
+   * 看到「未检测到 dsh 或 dush」,而运行时获取却能成功。
+   */
+  async function probeFor(launcher: 'dsh' | 'dush'): Promise<PathRuntime | null> {
+    // ① 常规 PATH 探测(终端启动的场景:这里就命中)
+    const which = platform === 'win32' ? 'where' : 'which'
+    try {
+      const located = await run(which, [launcher])
+      if (located.code === 0) {
         const command = firstLine(located.stdout)
-        return validate(command, WHICH_TIMEOUT_MS, enrichedEnv(command))
-      } catch {
-        return null
+        const viaWhich = await validate(command, WHICH_TIMEOUT_MS, enrichedEnv(command))
+        if (viaWhich) return viaWhich
       }
-    },
-    async probe(): Promise<PathRuntime | null> {
-      // ① 常规 PATH 探测(终端启动的场景:这里就命中)
-      const which = platform === 'win32' ? 'where' : 'which'
-      try {
-        const located = await run(which, ['dsh'])
-        if (located.code === 0) {
-          const command = firstLine(located.stdout)
-          const viaWhich = await validate(command, WHICH_TIMEOUT_MS, enrichedEnv(command))
-          if (viaWhich) return viaWhich
-        }
-      } catch {
-        // which/where 不存在(极端环境)也继续走候选探测
-      }
-
-      // ② 常见全局安装位置:GUI 启动时 PATH 残缺,这些路径 which 看不到
-      for (const candidate of candidatePaths(platform, home, listDir)) {
-        if (!exists(candidate)) continue
-        const found = await validate(candidate, WHICH_TIMEOUT_MS, enrichedEnv(candidate))
-        if (found) return found
-      }
-
-      // ③ 登录 shell 兜底:自定义 PATH(nvm/volta/asdf/自建 bin)只有登录环境才知道,
-      //    而且 shell 里 dsh 与 node 都能解析。**在 shell 内一次跑完**路径与版本,
-      //    避免「shell 里找得到、外面跑不动」的假阴性(node 不在 GUI PATH 上)。
-      if (useLoginShell && platform !== 'win32') {
-        try {
-          const located = await runWith(
-            shell,
-            ['-lc', 'command -v dsh; dsh --version'],
-            SHELL_PROBE_TIMEOUT_MS
-          )
-          if (located.code === 0) {
-            const lines = located.stdout
-              .split('\n')
-              .map((line) => line.trim())
-              .filter((line) => line !== '')
-            const command = lines[0] ?? ''
-            const version = lines[1] ?? ''
-            if (isAbsoluteFor(platform, command) && VERSION_PATTERN.test(version)) {
-              return { command, version }
-            }
-          }
-        } catch {
-          // 登录 shell 不可用/超时:按未探到处理
-        }
-      }
-
-      return null
+    } catch {
+      // which/where 不存在(极端环境)也继续走候选探测
     }
+
+    // ② 常见全局安装位置:GUI 启动时 PATH 残缺,这些路径 which 看不到
+    for (const candidate of candidatePaths(platform, home, listDir, launcher)) {
+      if (!exists(candidate)) continue
+      const found = await validate(candidate, WHICH_TIMEOUT_MS, enrichedEnv(candidate))
+      if (found) return found
+    }
+
+    // ③ 登录 shell 兜底:自定义 PATH(nvm/volta/asdf/自建 bin)只有登录环境才知道,
+    //    而且 shell 里 dsh 与 node 都能解析。**在 shell 内一次跑完**路径与版本,
+    //    避免「shell 里找得到、外面跑不动」的假阴性(node 不在 GUI PATH 上)。
+    if (useLoginShell && platform !== 'win32') {
+      try {
+        const located = await runWith(
+          shell,
+          ['-lc', `command -v ${launcher}; ${launcher} --version`],
+          SHELL_PROBE_TIMEOUT_MS
+        )
+        if (located.code === 0) {
+          const lines = located.stdout
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line !== '')
+          const command = lines[0] ?? ''
+          const version = lines[1] ?? ''
+          if (isAbsoluteFor(platform, command) && VERSION_PATTERN.test(version)) {
+            return { command, version }
+          }
+        }
+      } catch {
+        // 登录 shell 不可用/超时:按未探到处理
+      }
+    }
+
+    return null
+  }
+
+  return {
+    probeLauncher: (launcher) => probeFor(launcher),
+    probe: () => probeFor('dsh')
   }
 }
 
@@ -347,35 +347,36 @@ function searchNodeDirs(home: string, listDir: (path: string) => string[]): stri
 function candidatePaths(
   platform: NodeJS.Platform,
   home: string,
-  listDir: (path: string) => string[]
+  listDir: (path: string) => string[],
+  launcher: 'dsh' | 'dush'
 ): string[] {
   if (platform === 'win32') {
     return [
-      `${home}\\.local\\bin\\dsh.cmd`,
-      `${home}\\AppData\\Roaming\\npm\\dsh.cmd`,
-      `${home}\\AppData\\Local\\pnpm\\dsh.cmd`
+      `${home}\\.local\\bin\\${launcher}.cmd`,
+      `${home}\\AppData\\Roaming\\npm\\${launcher}.cmd`,
+      `${home}\\AppData\\Local\\pnpm\\${launcher}.cmd`
     ]
   }
   const candidates = [
     // npm 全局(--prefix ~/.local 或默认前缀)/ macOS 常见
-    `${home}/.local/bin/dsh`,
-    `${home}/.npm-global/bin/dsh`,
+    `${home}/.local/bin/${launcher}`,
+    `${home}/.npm-global/bin/${launcher}`,
     // pnpm 全局(macOS 与 Linux 两处默认落点)
-    `${home}/Library/pnpm/dsh`,
-    `${home}/.local/share/pnpm/dsh`,
+    `${home}/Library/pnpm/${launcher}`,
+    `${home}/.local/share/pnpm/${launcher}`,
     // 其它版本管理器
-    `${home}/.volta/bin/dsh`,
-    `${home}/.bun/bin/dsh`,
-    `${home}/.dnm/shims/dsh`,
-    `${home}/.asdf/shims/dsh`,
+    `${home}/.volta/bin/${launcher}`,
+    `${home}/.bun/bin/${launcher}`,
+    `${home}/.dnm/shims/${launcher}`,
+    `${home}/.asdf/shims/${launcher}`,
     // 系统包管理器
-    '/opt/homebrew/bin/dsh',
-    '/usr/local/bin/dsh'
+    `/opt/homebrew/bin/${launcher}`,
+    `/usr/local/bin/${launcher}`
   ]
   // nvm:多版本,逐个列目录(取全部,由 validate 决定谁可用)
   const nvmRoot = `${home}/.nvm/versions/node`
   for (const entry of listDir(nvmRoot).sort().reverse()) {
-    candidates.push(`${nvmRoot}/${entry}/bin/dsh`)
+    candidates.push(`${nvmRoot}/${entry}/bin/${launcher}`)
   }
   return [...new Set(candidates)]
 }

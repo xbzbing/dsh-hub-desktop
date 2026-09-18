@@ -392,3 +392,74 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     })
   })
 })
+
+describe('probeLauncher(向导检测本机 dsh/dush)', () => {
+  /** 纯注入环境:候选探测不看真实文件系统 */
+  const HERMETIC = {
+    home: '/Users/example',
+    listDir: () => [],
+    loginShell: false
+  }
+
+  it('which 失败 → 回退候选绝对路径(打包后 GUI 启动 PATH 残缺)', async () => {
+    const probe = createPathProbe({
+      ...HERMETIC,
+      exists: (path) => path === '/Users/example/.local/bin/dsh',
+      run: scriptedRunner({
+        'which dsh': { code: 1, stdout: '' },
+        '/Users/example/.local/bin/dsh --version': { code: 0, stdout: '0.1.6-alpha.2\n' }
+      })
+    })
+    await expect(probe.probeLauncher?.('dsh')).resolves.toEqual({
+      command: '/Users/example/.local/bin/dsh',
+      version: '0.1.6-alpha.2'
+    })
+  })
+
+  it('候选表必须覆盖 dush(不能只列 dsh)', async () => {
+    const probe = createPathProbe({
+      ...HERMETIC,
+      exists: (path) => path === '/Users/example/.local/bin/dush',
+      run: scriptedRunner({
+        'which dush': { code: 1, stdout: '' },
+        '/Users/example/.local/bin/dush --version': { code: 0, stdout: '0.1.1-rc.3\n' }
+      })
+    })
+    await expect(probe.probeLauncher?.('dush')).resolves.toEqual({
+      command: '/Users/example/.local/bin/dush',
+      version: '0.1.1-rc.3'
+    })
+  })
+
+  it('which 与候选都不行 → 登录 shell 兜底(自定义 PATH 只有登录环境知道)', async () => {
+    const probe = createPathProbe({
+      ...HERMETIC,
+      loginShell: true,
+      shell: '/bin/zsh',
+      exists: () => false,
+      run: scriptedRunner({
+        'which dush': { code: 1, stdout: '' },
+        '/bin/zsh -lc command -v dush; dush --version': {
+          code: 0,
+          stdout: '/custom/bin/dush\n0.1.1-rc.3\n'
+        }
+      })
+    })
+    await expect(probe.probeLauncher?.('dush')).resolves.toEqual({
+      command: '/custom/bin/dush',
+      version: '0.1.1-rc.3'
+    })
+  })
+
+  it('探测 dsh 时不得把 dush 当结果(启动器之间不串台)', async () => {
+    const probe = createPathProbe({
+      ...HERMETIC,
+      exists: (path) => path === '/Users/example/.local/bin/dush',
+      run: scriptedRunner({
+        'which dsh': { code: 1, stdout: '' },
+        '/Users/example/.local/bin/dush --version': { code: 0, stdout: '0.1.1-rc.3\n' }
+      })
+    })
+    await expect(probe.probeLauncher?.('dsh')).resolves.toBeNull()
+  })
+})
