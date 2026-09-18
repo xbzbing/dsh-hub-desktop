@@ -1082,6 +1082,7 @@ const NON_RENDERER_COPY_DEBT_INTERNAL: readonly DebtEntry[] = [
 
   // —— 普通 Error(message 为中文):IPC 边界统一换成稳定码的固定文案(register.ts wrap 的 internal),明细只进主进程日志;或被调用方 catch 后只 console.error ——
   debt('src/main/ssh/key-preview.ts', "else reject(error ?? new Error('ssh -G 未返回任何配置'))"),
+  debt('src/main/ssh/host-trust.ts', "else reject(error ?? new Error('ssh -G 未返回任何配置'))"),
   debt('src/main/vault/vault.ts', "if (password === '') throw new Error('空密码不写入 vault')"),
   debt('src/main/vault/vault.ts', "if (token === '') throw new Error('空访问 token 不写入 vault')"),
   debt('src/main/vault/vault.ts', "if (session.value === '') throw new Error('空会话不写入 vault')"),

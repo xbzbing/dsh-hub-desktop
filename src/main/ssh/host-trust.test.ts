@@ -8,6 +8,7 @@ import {
   formatKnownHostsLines,
   hostTargetLabel,
   knownHostsHostField,
+  parseResolvedSshTarget,
   parseKeyscan,
   parseKnownHosts,
   publicKeyFingerprint,
@@ -40,6 +41,21 @@ describe('host-trust（TOFU 纯逻辑）', () => {
       'SHA256:WVEaUHwlYk84FEWb7QvPJ5ptvpPwIbrN3GIrwvt32RM'
     )
     expect(publicKeyFingerprint('not-base64')).toMatch(/^SHA256:/)
+  })
+
+  it('解析 SSH 别名的实际主机和端口，供 TOFU 与 ssh 保持一致', () => {
+    const target = parseResolvedSshTarget(
+      ['host vsgp', 'hostname 108.61.187.89', 'port 2222'].join('\n'),
+      { host: 'vsgp', port: 22 }
+    )
+    expect(target).toEqual({ host: '108.61.187.89', port: 2222 })
+  })
+
+  it('实际目标解析异常字段时回退到实例输入', () => {
+    expect(parseResolvedSshTarget('hostname\nport invalid', { host: 'vsgp', port: 22 })).toEqual({
+      host: 'vsgp',
+      port: 22
+    })
   })
 
   it('解析 ssh-keyscan 输出(跳过注释行,去重)', () => {

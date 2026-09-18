@@ -7,7 +7,7 @@
  * 私钥内容永不读取；只处理公钥与指纹。
  */
 import { createHash } from 'node:crypto'
-import type { HostKeyFingerprintInfo, HostKeyPromptPayload } from '@shared/contracts'
+import type { HostKeyFingerprintInfo, HostKeyPromptPayload, SshInstance } from '@shared/contracts'
 import { execFile } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
@@ -142,6 +142,60 @@ export interface HostTrustOptions {
   knownHostsPath: string
   keyscanCommand?: string
   timeoutMs?: number
+}
+
+export interface ResolvedSshTarget {
+  host: string
+  port: number
+}
+
+/**
+ * 从 OpenSSH 的有效配置中取得实际连接目标。SSH 别名可通过 HostName / Port 重写目标，
+ * 而 StrictHostKeyChecking 会以该目标查询 known_hosts；因此 TOFU 也必须使用同一目标。
+ */
+export function parseResolvedSshTarget(
+  stdout: string,
+  fallback: ResolvedSshTarget
+): ResolvedSshTarget {
+  let host = fallback.host
+  let port = fallback.port
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    const spaceIndex = line.indexOf(' ')
+    if (spaceIndex === -1) continue
+    const key = line.slice(0, spaceIndex).toLowerCase()
+    const value = line.slice(spaceIndex + 1).trim()
+    if (key === 'hostname' && value !== '') host = value
+    if (key === 'port') {
+      const parsed = Number(value)
+      if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535) port = parsed
+    }
+  }
+  return { host, port }
+}
+
+/**
+ * 只读取 `ssh -G` 的文本配置，不读取私钥或启动网络会话。解析失败由调用方回退到实例输入。
+ */
+export async function resolveSshTarget(
+  instance: Pick<SshInstance, 'host' | 'port' | 'username'>,
+  sshCommand = 'ssh',
+  timeoutMs = 6_000
+): Promise<ResolvedSshTarget> {
+  const args = [
+    '-G',
+    '-l',
+    instance.username,
+    ...(instance.port !== 22 ? ['-p', String(instance.port)] : []),
+    instance.host
+  ]
+  const stdout = await new Promise<string>((resolve, reject) => {
+    execFile(sshCommand, args, { timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (error, out) => {
+      if (out && out.trim() !== '') resolve(out)
+      else reject(error ?? new Error('ssh -G 未返回任何配置'))
+    })
+  })
+  return parseResolvedSshTarget(stdout, { host: instance.host, port: instance.port })
 }
 
 export function createHostTrustProbe(

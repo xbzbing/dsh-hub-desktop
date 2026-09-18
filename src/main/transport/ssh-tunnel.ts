@@ -30,9 +30,11 @@ import {
   knownHostsHostField,
   recordHostTrust,
   toFingerprints,
+  resolveSshTarget,
   type HostKeyEntry,
   type HostKeyPrompt,
-  type HostTrustProbe
+  type HostTrustProbe,
+  type ResolvedSshTarget
 } from '../ssh/host-trust'
 import { classifySshExit, type SshExitAttribution } from './attribution'
 import { sshTunnelEndpoint } from './endpoint-resolver'
@@ -73,6 +75,8 @@ export interface SshTunnelOptions {
   confirmHostKey?: (request: HostKeyPrompt) => Promise<'trust' | 'reject'>
   /** askpass helper 使用的 Node 命令(缺省 process.execPath + ELECTRON_RUN_AS_NODE) */
   askpassNode?: { command: string; args: string[] }
+  /** ssh -G 实际目标解析器（注入以便别名 + TOFU 对齐的测试） */
+  resolveTarget?: (instance: Pick<SshInstance, 'host' | 'port' | 'username'>) => Promise<ResolvedSshTarget>
   /** 信任探测器工厂(注入以便单测覆盖 TOFU 写入/轮换;缺省 ssh-keyscan + 私有 known_hosts) */
   hostTrustProbe?: (host: string, port: number, knownHostsPath: string) => HostTrustProbe
 }
@@ -148,6 +152,8 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
   const askpass = options.askpass
   const confirmHostKey = options.confirmHostKey
   const askpassNode = options.askpassNode ?? { command: process.execPath, args: [] }
+  const resolveTarget =
+    options.resolveTarget ?? ((instance: Pick<SshInstance, 'host' | 'port' | 'username'>) => resolveSshTarget(instance, sshCommand))
   const trustProbeFactory =
     options.hostTrustProbe ??
     ((host: string, port: number, knownHostsPath: string) =>
@@ -190,10 +196,20 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
   }
 
+  async function resolveTargetOrFallback(instance: SshInstance): Promise<ResolvedSshTarget> {
+    try {
+      return await resolveTarget(instance)
+    } catch {
+      // `ssh -G` 仅用于对齐别名的实际目标；不可用时仍可按实例输入继续连接并归因。
+      return { host: instance.host, port: instance.port }
+    }
+  }
+
   async function ensureTrust(instance: SshInstance, emitWaiting: (detail: string) => void): Promise<boolean> {
+    const target = await resolveTargetOrFallback(instance)
     const knownHostsPath = join(dataRoot, 'ssh', 'known_hosts')
-    const hostField = knownHostsHostField(instance.host, instance.port)
-    const probe = trustProbeFactory(instance.host, instance.port, knownHostsPath)
+    const hostField = knownHostsHostField(target.host, target.port)
+    const probe = trustProbeFactory(target.host, target.port, knownHostsPath)
     const trusted = await probe.readTrusted()
     let scanned: HostKeyEntry[]
     try {
@@ -212,7 +228,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       if (confirmHostKey) {
         await confirmHostKey({
           instanceId: instance.id,
-          target: hostTargetLabel(instance.host, instance.port),
+          target: hostTargetLabel(target.host, target.port),
           verdict: 'changed',
           fingerprints: toFingerprints(scanned),
           previousFingerprints: toFingerprints(evaluation.mismatched)
@@ -224,7 +240,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     emitWaiting('等待确认服务器指纹')
     const decision = await confirmHostKey({
       instanceId: instance.id,
-      target: hostTargetLabel(instance.host, instance.port),
+      target: hostTargetLabel(target.host, target.port),
       verdict: 'unknown',
       fingerprints: toFingerprints(scanned),
       previousFingerprints: []
@@ -655,9 +671,10 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
      * 主进程侧唯一的调用方是显式的「忘记该主机指纹」动作,连接流程绝不调用它。
      */
     async forgetHostKey(instance) {
+      const target = await resolveTargetOrFallback(instance)
       await recordHostTrust(
         join(dataRoot, 'ssh', 'known_hosts'),
-        knownHostsHostField(instance.host, instance.port),
+        knownHostsHostField(target.host, target.port),
         [],
         'replace'
       )

@@ -97,6 +97,42 @@ describe('createSshTunnels（隧道管理器 + 看门狗）', () => {
     expect(events.map((event) => event.status)).toContain('running')
   })
 
+  it('SSH 别名解析为实际目标时，TOFU 将实际主机键写入私有 known_hosts', async () => {
+    const { mkdtemp, readFile } = await import('node:fs/promises')
+    const dataRoot = await mkdtemp(join(tmpdir(), 'hub-ssh-alias-'))
+    const resolved = { host: '108.61.187.89', port: 22 }
+    const HOST_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    const child = makeFakeChild()
+    const manager = createSshTunnels({
+      dataRoot,
+      spawnImpl: (() => child) as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000,
+      portProbe: (async () => true) as never,
+      resolveTarget: async () => resolved,
+      confirmHostKey: async () => 'trust' as const,
+      hostTrustProbe: (host, port) => {
+        expect({ host, port }).toEqual(resolved)
+        return {
+          scan: async () => [{ type: 'ssh-ed25519', blob: HOST_KEY }],
+          readTrusted: async () => []
+        }
+      }
+    })
+    const instance = sshInstance({ host: 'vsgp' })
+
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'running')
+
+    const knownHosts = await readFile(join(dataRoot, 'ssh', 'known_hosts'), 'utf8')
+    expect(knownHosts).toContain(`${resolved.host} ssh-ed25519 ${HOST_KEY}`)
+    expect(knownHosts).not.toContain('vsgp ssh-ed25519')
+
+    await manager.forgetHostKey(instance)
+    const afterForget = await readFile(join(dataRoot, 'ssh', 'known_hosts'), 'utf8')
+    expect(afterForget).not.toContain(resolved.host)
+  })
+
   it('并发启动两个实例 → 本地端口互不冲突(保留集互斥)', async () => {
     const children: FakeChild[] = []
     const spawnImpl = vi.fn(() => {
