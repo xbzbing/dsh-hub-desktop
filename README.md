@@ -97,15 +97,19 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # post
 | `pnpm test:e2e` | Playwright `_electron` |
 | `pnpm test:contract` | 对本地 dsh-auth-gateway 源码运行认证契约测试；需设置 `DSH_AUTH_GATEWAY_SRC=/path/to/dsh-auth-gateway` |
 
-发布产物（一律 `--publish never`，结构上不可能误发布，且有单测钉住）：
+发布相关命令分为“本地打包与验证”和“源码发布”两类。当前 GitHub Release 采用 `source-only` 策略，只发布源码、tag 和 Release Note，不上传 `.app`、`.dmg`、`.zip`、`.exe`、自动更新元数据或校验和文件。使用者需自行准备构建环境并从源码构建。
+
+本地打包命令仍保留，但生成的未签名、未公证产物只适用于开发、本机验证和受控测试：
 
 ```bash
-pnpm dist:mac:zip      # mac zip + 更新元数据 dist/latest-mac.yml
-pnpm dist:mac          # 含 dmg target（需网络拉取 dmg 附加依赖）
-pnpm dist:win          # NSIS + latest.yml（需 Windows/wine）
-pnpm release:checksums # 生成 dist/SHA256SUMS.txt
-pnpm release:check     # 发布演练：离线可校验部分全绿才通过
+pnpm dist:mac:zip      # mac zip，本地验证用
+pnpm dist:mac          # mac dmg + zip，本地验证用
+pnpm dist:win          # Windows NSIS，本地验证用
+pnpm release:checksums # 仅本地字节校验辅助工具
+pnpm release:check     # source-only 发布演练，不检查 dist/ 资产
 ```
+
+正式源码发布前，运行 `CI=true pnpm release:check -- --pre`，确认发布说明包含 `source-only` 分发模式。发布收口命令只创建 tag 和无资产 Draft Release；详见 [`docs/release-policy.md`](docs/release-policy.md)。恢复官方二进制分发前，必须具备 Apple Developer ID 签名、公证、干净机器验证和可复核的更新元数据校验。
 
 > 无 TTY 环境跑 `pnpm <script>` 需带 `CI=true`（pnpm 11 依赖检查在无 TTY 时会中止）。
 
@@ -127,8 +131,9 @@ pnpm release:check     # 发布演练：离线可校验部分全绿才通过
 
 ## 文档
 
-- 产品与设计基线（入库）：`docs/PRD.md` · `docs/dsh-hub-desktop-design.md` ·
-  `docs/desktop-implementation-plan.md` · `design/dsh-hub-desktop.html` · `design/brand-spec.md`
+- 产品、设计与发布策略（入库）：`docs/PRD.md` · `docs/dsh-hub-desktop-design.md` ·
+  `docs/desktop-implementation-plan.md` · [`docs/release-policy.md`](docs/release-policy.md) ·
+  `design/dsh-hub-desktop.html` · `design/brand-spec.md`
 - 任务追踪类文档（开发任务清单、评审报告、交付清单、打包 / 发布演练 / 安全走查报告等）
   为**本地文档**，按里程碑放 `docs/local/ms-<N>/`（当前 `ms-1`），不进 git
   （一次性任务追踪，见 `.gitignore`）

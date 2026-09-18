@@ -284,12 +284,12 @@ useSettingsStore   // 设置(本地持久化)
 
 ### M5 发行
 
-- [ ] **T13 electron-builder 双平台 + 图标/签名准备**
-  - 验收:NSIS / DMG 安装包可装可跑;自动更新通道预留
-  - 验证:本地打包 + 虚拟机冒烟
-- [ ] **T14 发布演练**:GitHub Release 草案、更新元数据、升级路径测试
+- [x] **T13 electron-builder 双平台 + 图标/签名准备**
+  - 验收:本地可构建 NSIS / DMG；保留签名与自动更新所需配置，但不公开分发未签名产物
+  - 验证:本地打包 + 受控环境冒烟
+- [x] **T14 source-only 发布演练**:GitHub Draft Release 只含源码、tag 与发布说明；升级路径测试保留
 
-**M5 验收出口**:双平台安装包 + 更新流可用。
+**M5 当前验收出口**:source-only GitHub Release 流程可复核；官方二进制发行与自动更新待签名、公证和干净机器验证后恢复。
 
 ---
 
