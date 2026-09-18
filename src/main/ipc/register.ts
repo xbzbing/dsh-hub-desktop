@@ -310,6 +310,10 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     // 同实例的并发请求合并；不同实例则只有最新目标可以激活原生视图。
     const isCurrent = (): boolean => workspaceTargetId === instanceId
     const openIfCurrent = async (instance: InstanceRecord, url: string): Promise<void> => {
+      if (!isCurrent()) return
+      // 首次打开不能依赖详情页的异步 probe：它可能晚于 WebContentsView 的首个导航，
+      // 导致已记住的会话 Cookie 还没恢复就先被网关重定向到 /login。
+      if (instance.authMode !== 'none') await deps.auth.probe(instance.id)
       if (isCurrent()) await deps.openInstanceView(instance, url)
     }
     const instance = await store.get(instanceId)

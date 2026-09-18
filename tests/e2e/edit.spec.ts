@@ -48,6 +48,10 @@ test.beforeAll(async () => {
     })
   )
   expect(http.ok).toBe(true)
+  // 直接经桥接播种时，首屏的异步列表 hydration 可能仍持有旧快照；刷新后再断言
+  // 两条已落盘记录均已进入 renderer，避免把测试初始化竞态误判为工作区行为。
+  await win.reload()
+  await expect(win.getByTestId('instances-table')).toContainText('明文远端实例')
 })
 
 test.afterAll(async () => {

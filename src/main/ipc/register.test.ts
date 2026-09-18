@@ -1392,7 +1392,7 @@ describe('registerIpc', () => {
     expect(openInstanceView.mock.calls[0]?.[1]).toBe('http://127.0.0.1:30000/')
   })
 
-  it('openView:运行中实例 → 用就绪 URL 打开窗口', async () => {
+  it('openView:运行中实例 → 先完成认证探测再打开窗口，避免首个请求落到登录页', async () => {
     const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!created.ok) throw new Error('创建失败')
     currentStatus = {
@@ -1402,10 +1402,29 @@ describe('registerIpc', () => {
       port: 31234,
       at: '2026-09-15T00:00:00.000Z'
     }
+    let releaseProbe!: () => void
+    const probeFinished = new Promise<void>((resolve) => {
+      releaseProbe = resolve
+    })
+    const order: string[] = []
+    authFake.probe.mockImplementation(async () => {
+      order.push('probe-start')
+      await probeFinished
+      order.push('probe-end')
+      return null
+    })
+    openInstanceView.mockImplementation(async () => {
+      order.push('open-view')
+    })
 
-    const result = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    const opening = invoke('instances:openView', created.value.id) as Promise<{ ok: boolean }>
+    await vi.waitFor(() => expect(order).toEqual(['probe-start']))
+    expect(openInstanceView).not.toHaveBeenCalled()
+    releaseProbe()
+
+    const result = await opening
     expect(result.ok).toBe(true)
-    expect(openInstanceView).toHaveBeenCalledTimes(1)
+    expect(order).toEqual(['probe-start', 'probe-end', 'open-view'])
     expect(openInstanceView.mock.calls[0]?.[1]).toBe('http://127.0.0.1:31234/?token=abc')
   })
 
