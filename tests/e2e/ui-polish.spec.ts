@@ -273,6 +273,8 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
     // 已连接态 —— 「重新登录」出现,「登出」出现
     await expect(win.getByTestId('login-btn')).toContainText('重新登录')
     await expect(win.getByTestId('logout-btn')).toBeVisible()
+    // 密码 + TOTP 登录成功后「凭据存储」必须就地更新,不需要进出工作区才刷新
+    await expect(win.getByTestId('vault-state')).toContainText('已记住')
     await win.screenshot({ path: join(SHOT_DIR, 'detail-connected.png'), animations: 'disabled' })
 
     // 登出 → 回到「登录」且无登出按钮

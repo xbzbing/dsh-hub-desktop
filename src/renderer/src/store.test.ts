@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Settings } from '@shared/settings'
+import type { VaultStatusSnapshot } from '@shared/contracts'
 import { toStatusInfo } from './lib/format'
 
 /**
@@ -27,6 +28,8 @@ let themeAdds: number
 let themeRemoves: number
 let matchDark: boolean
 let storedTheme: string | null
+/** vault.status 的返回值；登录成功后就地刷新「凭证存储」依赖它 */
+let vaultResult: { ok: true; value: VaultStatusSnapshot } | { ok: false; message: string }
 
 function installGlobals(): void {
   settingsValue = { ...DEFAULTS }
@@ -38,6 +41,10 @@ function installGlobals(): void {
   themeRemoves = 0
   matchDark = false
   storedTheme = null
+  vaultResult = {
+    ok: true,
+    value: { available: true, degraded: false, rememberedInstances: [], policies: {} }
+  }
 
   const media = {
     matches: false,
@@ -74,7 +81,8 @@ function installGlobals(): void {
         }
       },
       getInfo: async () => ({ ok: false }),
-      instances: { list: async () => ({ ok: true, value: [] }) }
+      instances: { list: async () => ({ ok: true, value: [] }) },
+      vault: { status: async () => vaultResult }
     }
   })
 }
@@ -536,5 +544,46 @@ describe('store settings', () => {
     // stopped 时移除状态记录，展示回到 idle。
     expect(stopped['i1']).toBeUndefined()
     expect(toStatusInfo(stopped['i1']?.status).dotClass).toBe('')
+  })
+})
+
+describe('store vault', () => {
+  it('refreshVault 写入主进程返回的最新快照', async () => {
+    const useAppStore = await freshStore()
+    expect(useAppStore.getState().vaultStatus).toBeNull()
+
+    await useAppStore.getState().refreshVault()
+    expect(useAppStore.getState().vaultStatus?.rememberedInstances).toEqual([])
+
+    vaultResult = {
+      ok: true,
+      value: {
+        available: true,
+        degraded: false,
+        rememberedInstances: ['instance-1'],
+        policies: { 'instance-1': { rememberPassword: true, rememberSession: true } }
+      }
+    }
+    await useAppStore.getState().refreshVault()
+    expect(useAppStore.getState().vaultStatus?.rememberedInstances).toEqual(['instance-1'])
+  })
+
+  it('读取失败时保留上一份快照，不把已记住的凭据显示成未记住', async () => {
+    const useAppStore = await freshStore()
+    vaultResult = {
+      ok: true,
+      value: {
+        available: true,
+        degraded: false,
+        rememberedInstances: ['instance-1'],
+        policies: {}
+      }
+    }
+    await useAppStore.getState().refreshVault()
+    expect(useAppStore.getState().vaultStatus?.rememberedInstances).toEqual(['instance-1'])
+
+    vaultResult = { ok: false, message: '保险库不可用' }
+    await useAppStore.getState().refreshVault()
+    expect(useAppStore.getState().vaultStatus?.rememberedInstances).toEqual(['instance-1'])
   })
 })

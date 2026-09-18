@@ -69,6 +69,7 @@ async function openAndProbe(
 export default function AuthPanel(): ReactNode {
   // 面板状态经纯归约函数流转(auth-panel-state.ts):跨实例事件被忽略、锁定用绝对到期时刻
   const t = useAppStore((state) => state.t)
+  const refreshVault = useAppStore((state) => state.refreshVault)
   const [model, setModel] = useState(initialAuthPanelModel)
   const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
@@ -188,6 +189,9 @@ export default function AuthPanel(): ReactNode {
       const value = result.ok ? result.value : null
       if (value) setModel((current) => applyAuthSnapshot(current, target.id, value))
       else if (!result.ok) setError(result.message)
+      // 登录成功时主进程已把密码写入保险库（写盘在 IPC 返回前完成），这里就地刷新
+      // 「凭据存储」，否则详情页要等到重新挂载才显示「已记住」。
+      if (value?.phase === 'connected') await refreshVault()
     } finally {
       setBusy(false)
       setOtp('')

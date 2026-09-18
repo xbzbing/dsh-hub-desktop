@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { VaultPolicy, VaultStatusSnapshot } from '@shared/contracts'
+import type { VaultPolicy } from '@shared/contracts'
 import { canSubmitPolicy, effectivePolicy } from '../lib/vault-policy'
 import { Icon } from '../lib/icons'
 
@@ -11,27 +11,27 @@ const BRIDGE = window.dshHub
 /**
  * 凭据默认安全保存在系统钥匙串；用户可在此显式取消任一保存策略。
  * safeStorage 不可用时后端使用内存存储，界面显示警告。
+ *
+ * 快照放在 store 而不是组件本地状态：登录成功后主进程会静默写入凭据，
+ * 认证面板需要据此就地刷新本卡片，否则只有重新挂载（例如进出工作区）才会更新。
  */
 export default function VaultCard({ instanceId }: { instanceId: string }): ReactNode {
   const t = useAppStore((state) => state.t)
-  const [status, setStatus] = useState<VaultStatusSnapshot | null>(null)
+  const status = useAppStore((state) => state.vaultStatus)
+  const setVaultStatus = useAppStore((state) => state.setVaultStatus)
+  const refreshVault = useAppStore((state) => state.refreshVault)
   const [busy, setBusy] = useState(false)
 
-  const refresh = useCallback(async (): Promise<void> => {
-    const result = await BRIDGE?.vault.status()
-    if (result?.ok) setStatus(result.value)
-  }, [])
-
   useEffect(() => {
-    void refresh()
-  }, [refresh, instanceId])
+    void refreshVault()
+  }, [refreshVault, instanceId])
 
   const applyPolicy = async (next: VaultPolicy): Promise<void> => {
     if (!BRIDGE || !interactive) return
     setBusy(true)
     try {
       await BRIDGE.vault.setPolicy(instanceId, next)
-      await refresh()
+      await refreshVault()
     } finally {
       setBusy(false)
     }
@@ -42,7 +42,7 @@ export default function VaultCard({ instanceId }: { instanceId: string }): React
     setBusy(true)
     try {
       const result = await BRIDGE.vault.clear()
-      if (result.ok) setStatus(result.value)
+      if (result.ok) setVaultStatus(result.value)
     } finally {
       setBusy(false)
     }

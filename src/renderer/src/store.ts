@@ -4,7 +4,8 @@ import type {
   AuthPhase,
   InstanceRecord,
   InstanceStatusEvent,
-  InstanceSummary
+  InstanceSummary,
+  VaultStatusSnapshot
 } from '@shared/contracts'
 import { DEFAULT_SETTINGS, resolveLanguage } from '@shared/settings'
 import type { Language, Settings, Theme } from '@shared/settings'
@@ -53,6 +54,13 @@ interface AppState {
   authPhases: Record<string, AuthPhase>
   /** 写入/清除实例的认证相位(登出后为最新相位,无需特判) */
   applyAuthPhase: (instanceId: string, phase: AuthPhase) => void
+  /**
+   * 凭据保险库快照。登录成功时主进程会**静默**写入凭据，渲染层不会收到任何事件，
+   * 因此必须由登录流程显式刷新，否则详情页的「凭据存储」会一直停留在旧状态。
+   */
+  vaultStatus: VaultStatusSnapshot | null
+  setVaultStatus: (status: VaultStatusSnapshot) => void
+  refreshVault: () => Promise<void>
   toasts: ToastItem[]
   /** 非敏感偏好，由主进程 settings.json 保存。 */
   settings: Settings
@@ -133,6 +141,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   pendingOpen: [],
   userDataPath: null,
   authPhases: {},
+  vaultStatus: null,
   toasts: [],
   settings: DEFAULT_SETTINGS,
   language: initialLanguage(),
@@ -209,6 +218,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   applyAuthPhase: (instanceId, phase) => {
     set((state) => ({ authPhases: { ...state.authPhases, [instanceId]: phase } }))
+  },
+
+  setVaultStatus: (status) => set({ vaultStatus: status }),
+
+  refreshVault: async () => {
+    const result = await window.dshHub?.vault.status()
+    // 读取失败时保留上一份快照:把「已记住」翻回「未记住」是误导,且会诱使用户重复保存。
+    if (result?.ok) set({ vaultStatus: result.value })
   },
 
   applyStatus: (event) => {
