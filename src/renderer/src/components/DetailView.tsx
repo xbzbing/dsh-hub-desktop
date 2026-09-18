@@ -31,7 +31,6 @@ export default function DetailView(): ReactNode {
   const toast = useAppStore((state) => state.toast)
   const openWorkspace = useAppStore((state) => state.openWorkspace)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
-  const setWorkspaceOpen = useAppStore((state) => state.setWorkspaceOpen)
   const userDataPath = useAppStore((state) => state.userDataPath)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -54,9 +53,7 @@ export default function DetailView(): ReactNode {
     if (!showAuthActions(record)) return
     if (authPhase !== undefined) return
     void window.dshHub?.auth.probe(selection)
-    // probe 只在相位未知时发一次;record/authPhase 变化不重复触发
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection])
+  }, [selection, record, authPhase])
 
   // 本机已在运行的 dsh web:仅本地实例且未运行时探测(探测是只读 ps+lsof,便宜)。
   // 注意 `display` 在下方早期 return 之后才声明,这里按 status 直接判定;
@@ -154,9 +151,7 @@ export default function DetailView(): ReactNode {
     }
     setExternalToken('')
     setShowExternalTokenEditor(false)
-    const opened = await bridge.runtime.openView(record.id)
-    if (opened.ok) setWorkspaceOpen(true)
-    else toast('err', t('detail.openViewFailed'), opened.message)
+    void openWorkspace(record.id)
   }
 
   return (
@@ -323,10 +318,7 @@ export default function DetailView(): ReactNode {
                   })
                   return
                 }
-                void window.dshHub?.runtime.openView(record.id).then((result) => {
-                  if (result?.ok) setWorkspaceOpen(true)
-                  else if (result) toast('err', t('detail.openViewFailed'), result.message)
-                })
+                void openWorkspace(record.id)
               }}
               disabled={display === 'connecting'}
               data-testid="open-view-btn"
@@ -432,10 +424,7 @@ export default function DetailView(): ReactNode {
                           toast('err', t('detail.adoptFailed'), result.message)
                         } else {
                           toast('ok', t('detail.adopted'), `127.0.0.1:${item.port}`)
-                          void window.dshHub?.runtime.openView(record.id).then((opened) => {
-                            if (opened?.ok) setWorkspaceOpen(true)
-                            else if (opened) toast('err', t('detail.openViewFailed'), opened.message)
-                          })
+                          void openWorkspace(record.id)
                         }
                       })
                       .finally(() => setAdopting(null))

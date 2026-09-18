@@ -212,6 +212,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   applyStatus: (event) => {
+    let shouldOpen: string | null = null
     set((state) => {
       const removed = event.status === 'stopped'
       const statuses = { ...state.statuses }
@@ -228,14 +229,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (pendingOpen.includes(event.id)) {
         if (event.status === 'running') {
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
-          // openWorkspace 内置选择守卫与错误处理，避免手动 openView 的竞态
-          void get().openWorkspace(event.id)
+          shouldOpen = event.id
         } else if (event.status === 'error' || event.status === 'stopped') {
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
         }
       }
       return { instances, statuses, pendingOpen }
     })
+    if (shouldOpen !== null) void get().openWorkspace(shouldOpen)
   },
 
   ensureRecord: async (id) => {
