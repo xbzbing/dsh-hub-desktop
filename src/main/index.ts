@@ -608,8 +608,9 @@ void app.whenReady().then(() => {
   createWindow()
 
   app.on('activate', () => {
-    // macOS 惯例：点击 Dock 图标且无窗口时重建窗口
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // macOS 惯例：点击 Dock 图标时把窗口带回前台。窗口可能仍然存在但处于隐藏状态
+    // （「关闭时最小化到托盘」），此时只判断「有没有窗口」会让点击毫无反应。
+    showHubWindow()
   })
 
   app.on('browser-window-created', (_event, win) => {
