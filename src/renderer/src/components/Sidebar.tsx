@@ -29,6 +29,8 @@ export default function Sidebar(): ReactNode {
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [dragPosition, setDragPosition] = useState<'top' | 'bottom'>('top')
+  /** ref 实时记录放下位置，避免 onDrop 闭包读到旧 state */
+  const dropTargetRef = useRef<{ id: string; position: 'top' | 'bottom' } | null>(null)
   /** 记录拖拽开始时的完整顺序，用于计算新位置 */
   const dragStartOrderRef = useRef<string[]>([])
 
@@ -122,10 +124,11 @@ export default function Sidebar(): ReactNode {
       if (!draggedId || draggedId === itemId) return
       event.preventDefault()
       event.dataTransfer.dropEffect = 'move'
-      // 根据鼠标在元素中的垂直位置判断插入到上方还是下方
       const rect = event.currentTarget.getBoundingClientRect()
       const midY = rect.top + rect.height / 2
       const pos: 'top' | 'bottom' = event.clientY < midY ? 'top' : 'bottom'
+      // 同时写 ref(即时)和 state(渲染指示线)
+      dropTargetRef.current = { id: itemId, position: pos }
       setDragOverId(itemId)
       setDragPosition(pos)
     },
@@ -140,25 +143,29 @@ export default function Sidebar(): ReactNode {
       const toIndex = order.indexOf(itemId)
       if (fromIndex === -1 || toIndex === -1) return
 
-      // 计算新顺序:先移除拖拽项，再插入到目标位置
+      // 从 ref 读取即时放下位置(不依赖可能过期的 state 闭包)
+      const target = dropTargetRef.current
+      const position = target?.id === itemId ? target.position : 'bottom'
+
       const newOrder = order.filter((id) => id !== draggedId)
       let insertAt = newOrder.indexOf(itemId)
-      if (dragPosition === 'bottom') insertAt += 1
+      if (position === 'bottom') insertAt += 1
       newOrder.splice(insertAt, 0, draggedId)
 
-      // 仅在顺序真正变化时提交
       if (newOrder.some((id, i) => id !== order[i])) {
         void reorderInstances(newOrder)
       }
       setDraggedId(null)
       setDragOverId(null)
+      dropTargetRef.current = null
     },
-    [draggedId, dragPosition, instances, reorderInstances]
+    [draggedId, instances, reorderInstances]
   )
 
   const handleDragEnd = useCallback((): void => {
     setDraggedId(null)
     setDragOverId(null)
+    dropTargetRef.current = null
     dragStartOrderRef.current = []
   }, [])
 
