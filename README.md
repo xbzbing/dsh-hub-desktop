@@ -1,15 +1,35 @@
 # DSH Hub Desktop
 
-个人使用的 Electron 桌面工具：统一管理多个 **dsh**（DeepSeek Harness）实例 —— 本地进程、
-SSH 隧道、远程 HTTP 直连三种形态一站管理。认证对接 dsh-auth-gateway 协议
-（密码 + TOTP + HttpOnly Cookie 注入），支持凭据保险库与已存密码静默登录。
+[English](README.en.md)
+
+> 个人使用的 Electron 桌面工具：统一管理多个 **dsh**（DeepSeek Harness）实例。
+> 本地进程、SSH 隧道、远程 HTTP 直连三种形态一站管理。
+> 认证对接 dsh-auth-gateway 协议（密码 + TOTP + HttpOnly Cookie 注入），支持凭据保险库与已存密码静默登录。
+
+这是一个个人项目，没有苹果开发者账号，无法打包可信的 App。
+主要解决远程开发机场景下，文档页面和 `dsh` 页面频繁切换的问题。
+使用 OpenDesign 设计原型，用 `dsh` 实现，最终有了 `DSH Hub`。
+
+<p align="center">
+  <img src="docs/images/home-overview.png" alt="DSH Hub Desktop - 亮色主题" width="800" />
+  <br/>
+  <em>亮色主题 · 实例总览</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/dark-theme.png" alt="DSH Hub Desktop - 暗色主题" width="800" />
+  <br/>
+  <em>暗色主题 · 实例总览</em>
+</p>
 
 ## 功能特性
 
 - **实例统一管理**：注册表本地落盘（原子写 + 滚动备份 + 损坏自愈 + 版本迁移）；
   向导式创建 → 启动 → 详情页启停 / 编辑 / 开窗 / 删除
-- **三种传输**：`local`（spawn 本地进程）· `ssh`（隧道，看门狗指数退避自动重连）·
-  `http`（远程直连）；统一状态通道，启停 / 开窗按 transport 分发
+- **三种传输**：统一状态通道，启停 / 开窗按 transport 分发
+  - `local`：spawn 本地进程
+  - `ssh`：隧道，看门狗指数退避自动重连
+  - `http/https`：远程直连
 - **认证一体化**：网关五态探测识别（登录页 / OTP / onboarding / API 401 / 无需登录）；
   认证面板全状态流（密码 → 6 位 OTP / 备份码 → 锁定倒计时）；
   **已存密码静默登录**（勾选「记住密码」后，重启 / 会话失效无需重输密码 —— 密码绝不跨进程传递）
