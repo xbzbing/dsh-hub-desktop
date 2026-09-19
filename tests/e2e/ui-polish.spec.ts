@@ -647,6 +647,19 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
     // 直接 connected:面板关闭,全程无 auth-otp 输入框
     await expect(win.getByTestId('auth-panel')).toBeHidden({ timeout: 10_000 })
     expect(await win.getByTestId('auth-otp').count()).toBe(0)
+
+    // 密码已入保险库;登出只清会话,不清密码。重新打开面板时用显式入口复用已存密码,
+    // 不手输任何内容也能登录 —— 且密码不写进渲染层,密码框始终为空。
+    await expect(win.getByTestId('vault-state')).toContainText('已记住')
+    await win.getByTestId('logout-btn').click()
+    await expect(win.getByTestId('login-btn')).toContainText('登录')
+    await win.getByTestId('login-btn').click()
+    await expect(win.getByTestId('auth-panel')).toBeVisible()
+    await expect(win.getByTestId('auth-password')).toHaveValue('')
+    await expect(win.getByTestId('auth-use-stored')).toBeVisible()
+    await win.getByTestId('auth-use-stored').click()
+    await expect(win.getByTestId('auth-panel')).toBeHidden({ timeout: 10_000 })
+    await expect(win.getByTestId('login-btn')).toContainText('重新登录')
   } finally {
     direct.server.close()
   }

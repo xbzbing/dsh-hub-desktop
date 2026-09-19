@@ -183,16 +183,19 @@ export default function AuthPanel(): ReactNode {
   const lockedSeconds = lockSeconds(model)
   const phase = state.phase
 
-  const submit = async (): Promise<void> => {
+  /**
+   * 提交一次登录。`useStored` 为真时由主进程从保险库读取密码，
+   * 密码不经过渲染层；为假时使用用户输入的密码。
+   */
+  const runLogin = async (useStored: boolean): Promise<void> => {
     if (!BRIDGE || busy || locked) return
     setBusy(true)
     setError(null)
     try {
-      // 验证码阶段可使用保存的密码；密码本身不跨 IPC，由主进程读取。
-      const useStored = phase === 'await-otp' && password === '' && storedAvailable
+      const code = otp === '' ? undefined : otp
       const result = useStored
-        ? await BRIDGE.auth.loginStored(target.id, otp === '' ? undefined : otp)
-        : await BRIDGE.auth.login(target.id, password, otp === '' ? undefined : otp)
+        ? await BRIDGE.auth.loginStored(target.id, code)
+        : await BRIDGE.auth.login(target.id, password, code)
       const value = result.ok ? result.value : null
       if (value) setModel((current) => applyAuthSnapshot(current, target.id, value))
       else if (!result.ok) setError(result.message)
@@ -204,6 +207,13 @@ export default function AuthPanel(): ReactNode {
       setOtp('')
     }
   }
+
+  /** 主提交:验证码阶段密码留空时复用已存密码,其余情况使用输入的密码。 */
+  const submit = (): Promise<void> =>
+    runLogin(phase === 'await-otp' && password === '' && storedAvailable)
+
+  /** 显式入口:密码屏直接用已存密码登录,不要求用户输入。 */
+  const submitStored = (): Promise<void> => runLogin(true)
 
   const close = (): void => {
     setModel(closeAuthPanel())
@@ -301,21 +311,36 @@ export default function AuthPanel(): ReactNode {
       )}
 
       {isPasswordPhase ? (
-        <div className="field mt12">
-          <label htmlFor="auth-password">{t('auth.password')}</label>
-          <input
-            id="auth-password"
-            className="input"
-            type="password"
-            autoFocus
-            value={password}
-            data-testid="auth-password"
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submit()
-            }}
-          />
-        </div>
+        <>
+          <div className="field mt12">
+            <label htmlFor="auth-password">{t('auth.password')}</label>
+            <input
+              id="auth-password"
+              className="input"
+              type="password"
+              autoFocus
+              value={password}
+              data-testid="auth-password"
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void submit()
+              }}
+            />
+          </div>
+          {/* 密码留空时不必手输:由主进程用保险库中的密码完成登录。 */}
+          {storedAvailable && (
+            <button
+              className="btn btn-ghost btn-sm mt12"
+              data-testid="auth-use-stored"
+              disabled={busy || locked}
+              title={t('auth.useStoredHint')}
+              onClick={() => void submitStored()}
+            >
+              <Icon name="shield" />
+              {t('auth.useStoredPassword')}
+            </button>
+          )}
+        </>
       ) : (
         <div className="field mt12">
           <label htmlFor="auth-otp">{useBackup ? t('auth.backupCode') : t('auth.otp')}</label>

@@ -124,6 +124,14 @@ export const MESSAGES = {
     zh: '密码留空将使用保险库里已保存的密码登录',
     en: 'Leave the password empty to sign in with the saved password'
   },
+  'auth.useStoredPassword': {
+    zh: '使用已保存的密码登录',
+    en: 'Sign in with the saved password'
+  },
+  'auth.useStoredHint': {
+    zh: '密码由主进程从系统钥匙串读取，不会显示在界面上。',
+    en: 'The password is read from the system keychain by the main process and is never shown here.'
+  },
   'auth.otpHint': {
     zh: '该实例启用了二因素认证，提交密码后会要求输入验证码。',
     en: 'Two-factor authentication is enabled; a code will be requested after your password.'
