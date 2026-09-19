@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { InstanceSummary } from '@shared/contracts'
 import { Icon } from '../lib/icons'
@@ -32,7 +32,6 @@ function HomeContent(): ReactNode {
   const attention = instances.filter(
     (item) => toDisplayStatus(statuses[item.id]?.status) === 'error'
   ).length
-  const sorted = useMemo(() => [...instances].sort((a, b) => a.name.localeCompare(b.name, 'zh')), [instances])
 
   const openDetail = (id: string): void => {
     void ensureRecord(id)
@@ -83,7 +82,7 @@ function HomeContent(): ReactNode {
           </thead>
           <tbody>
             {/* 状态事件更新切片引用后，表格会重新渲染当前状态。 */}
-            {sorted.map((item) => (
+            {instances.map((item) => (
               <TableRow
                 key={item.id}
                 item={item}

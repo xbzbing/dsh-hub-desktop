@@ -73,6 +73,8 @@ interface AppState {
 
   load: () => Promise<void>
   refreshList: () => Promise<void>
+  /** 按给定 ID 列表重排实例顺序（乐观更新 + IPC 持久化）。 */
+  reorderInstances: (orderedIds: string[]) => Promise<void>
   applyStatus: (event: InstanceStatusEvent) => void
   ensureRecord: (id: string) => Promise<InstanceRecord | null>
   /** 强制从主进程重读该实例(绕过缓存)—— 编辑保存后刷新详情必须用它:
@@ -218,6 +220,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
       }, {})
       // 推送事件优先于列表快照，避免列表读取期间的旧快照覆盖最新状态。
       set((state) => ({ instances: result.value, statuses: { ...snapshotStatuses, ...state.statuses } }))
+    }
+  },
+
+  reorderInstances: async (orderedIds) => {
+    const bridge = window.dshHub
+    if (!bridge) return
+    // 乐观更新:立即重排本地数组
+    set((state) => {
+      const byId = new Map(state.instances.map((inst) => [inst.id, inst]))
+      const reordered = orderedIds.map((id) => byId.get(id)).filter(Boolean) as InstanceSummary[]
+      return { instances: reordered }
+    })
+    // 持久化
+    const result = await bridge.instances.reorder(orderedIds)
+    if (!result.ok) {
+      // 失败回滚:从主进程重新拉取
+      await get().refreshList()
     }
   },
 

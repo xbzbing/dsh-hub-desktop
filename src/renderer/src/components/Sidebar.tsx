@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { InstanceSummary, Transport } from '@shared/contracts'
 import { Icon } from '../lib/icons'
@@ -19,10 +19,18 @@ export default function Sidebar(): ReactNode {
   const toggleTheme = useAppStore((state) => state.toggleTheme)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
   const setSettingsOpen = useAppStore((state) => state.setSettingsOpen)
+  const reorderInstances = useAppStore((state) => state.reorderInstances)
 
   const [query, setQuery] = useState('')
   const [groupByType, setGroupByType] = useState(false)
   const hoveredInstanceRef = useRef<{ element: HTMLButtonElement; name: string } | null>(null)
+
+  // —— 拖拽排序状态 ——
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [dragPosition, setDragPosition] = useState<'top' | 'bottom'>('top')
+  /** 记录拖拽开始时的完整顺序，用于计算新位置 */
+  const dragStartOrderRef = useRef<string[]>([])
 
   const showRailTooltip = (element: HTMLButtonElement, name: string): void => {
     hoveredInstanceRef.current = { element, name }
@@ -66,6 +74,16 @@ export default function Sidebar(): ReactNode {
 
   useEffect(() => () => void window.dshHub?.runtime.hideTooltip(), [])
 
+  // 窗口失焦时也清理拖拽状态
+  useEffect(() => {
+    const onBlur = (): void => {
+      setDraggedId(null)
+      setDragOverId(null)
+    }
+    window.addEventListener('blur', onBlur)
+    return () => window.removeEventListener('blur', onBlur)
+  }, [])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return instances
@@ -84,6 +102,65 @@ export default function Sidebar(): ReactNode {
       }))
       .filter((group) => group.items.length > 0)
   }, [filtered, groupByType])
+
+  // —— 拖拽事件回调 ——
+
+  const handleDragStart = useCallback(
+    (itemId: string, event: React.DragEvent): void => {
+      // 分组模式下禁用拖拽
+      if (grouped) return
+      setDraggedId(itemId)
+      dragStartOrderRef.current = instances.map((i) => i.id)
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', itemId)
+    },
+    [grouped, instances]
+  )
+
+  const handleDragOver = useCallback(
+    (itemId: string, event: React.DragEvent): void => {
+      if (!draggedId || draggedId === itemId) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'move'
+      // 根据鼠标在元素中的垂直位置判断插入到上方还是下方
+      const rect = event.currentTarget.getBoundingClientRect()
+      const midY = rect.top + rect.height / 2
+      const pos: 'top' | 'bottom' = event.clientY < midY ? 'top' : 'bottom'
+      setDragOverId(itemId)
+      setDragPosition(pos)
+    },
+    [draggedId]
+  )
+
+  const handleDrop = useCallback(
+    (itemId: string): void => {
+      if (!draggedId || draggedId === itemId) return
+      const order = dragStartOrderRef.current.length > 0 ? dragStartOrderRef.current : instances.map((i) => i.id)
+      const fromIndex = order.indexOf(draggedId)
+      const toIndex = order.indexOf(itemId)
+      if (fromIndex === -1 || toIndex === -1) return
+
+      // 计算新顺序:先移除拖拽项，再插入到目标位置
+      const newOrder = order.filter((id) => id !== draggedId)
+      let insertAt = newOrder.indexOf(itemId)
+      if (dragPosition === 'bottom') insertAt += 1
+      newOrder.splice(insertAt, 0, draggedId)
+
+      // 仅在顺序真正变化时提交
+      if (newOrder.some((id, i) => id !== order[i])) {
+        void reorderInstances(newOrder)
+      }
+      setDraggedId(null)
+      setDragOverId(null)
+    },
+    [draggedId, dragPosition, instances, reorderInstances]
+  )
+
+  const handleDragEnd = useCallback((): void => {
+    setDraggedId(null)
+    setDragOverId(null)
+    dragStartOrderRef.current = []
+  }, [])
 
   return (
     <aside className="sidebar" data-testid="sidebar">
@@ -142,6 +219,13 @@ export default function Sidebar(): ReactNode {
                   rail={rail}
                   onRailTooltip={showRailTooltip}
                   onRailTooltipHide={hideRailTooltip}
+                  draggable={false}
+                  onDragStart={undefined}
+                  onDragOver={undefined}
+                  onDrop={undefined}
+                  onDragEnd={undefined}
+                  dragOver={false}
+                  dragPosition={undefined}
                 />
               ))}
             </div>
@@ -156,6 +240,22 @@ export default function Sidebar(): ReactNode {
               rail={rail}
               onRailTooltip={showRailTooltip}
               onRailTooltipHide={hideRailTooltip}
+              draggable={!grouped}
+              isDragging={draggedId === item.id}
+              onDragStart={
+                grouped
+                  ? undefined
+                  : (event) => handleDragStart(item.id, event)
+              }
+              onDragOver={
+                grouped
+                  ? undefined
+                  : (event) => handleDragOver(item.id, event)
+              }
+              onDrop={grouped ? undefined : () => handleDrop(item.id)}
+              onDragEnd={handleDragEnd}
+              dragOver={dragOverId === item.id && draggedId !== item.id}
+              dragPosition={dragOverId === item.id ? dragPosition : undefined}
             />
           ))
         )}
@@ -210,15 +310,29 @@ function InstanceItem(props: {
   onClick: (id: string) => void
   onRailTooltip: (element: HTMLButtonElement, name: string) => void
   onRailTooltipHide: () => void
+  draggable: boolean
+  isDragging?: boolean
+  onDragStart?: (event: React.DragEvent) => void
+  onDragOver?: (event: React.DragEvent) => void
+  onDrop?: () => void
+  onDragEnd?: () => void
+  dragOver: boolean
+  dragPosition?: 'top' | 'bottom'
 }): ReactNode {
   const t = useAppStore((state) => state.t)
   const statuses = useAppStore((state) => state.statuses)
   const workspaceConnected = useAppStore((state) => state.workspaceConnected)
   const display = toDisplayStatus(statuses[props.item.id]?.status, workspaceConnected[props.item.id] ?? true)
   const info = STATUS_INFO[display]
+
+  const classNames = ['inst']
+  if (props.selected) classNames.push('selected')
+  if (props.isDragging) classNames.push('dragging')
+  if (props.dragOver) classNames.push(props.dragPosition === 'top' ? 'drag-over-top' : 'drag-over-bottom')
+
   return (
     <button
-      className="inst"
+      className={classNames.join(' ')}
       aria-current={props.selected}
       onClick={() => props.onClick(props.item.id)}
       onPointerEnter={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
@@ -228,6 +342,11 @@ function InstanceItem(props: {
       onBlur={props.onRailTooltipHide}
       data-testid={`inst-${props.item.id}`}
       title={props.rail ? props.item.name : props.item.address}
+      draggable={props.draggable}
+      onDragStart={props.onDragStart}
+      onDragOver={props.onDragOver}
+      onDrop={props.onDrop}
+      onDragEnd={props.onDragEnd}
     >
       <span className={`status-dot ${info.dotClass}`} aria-hidden="true" />
       <span className="inst-text">

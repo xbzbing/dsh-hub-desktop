@@ -811,6 +811,15 @@ h3,
   border-radius: 9px;
   text-align: left;
 }
+.inst.dragging {
+  opacity: 0.4;
+}
+.inst.drag-over-top {
+  border-top: 2px solid var(--accent);
+}
+.inst.drag-over-bottom {
+  border-bottom: 2px solid var(--accent);
+}
 .inst:hover {
   background: var(--hover);
 }
