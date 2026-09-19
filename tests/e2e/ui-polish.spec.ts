@@ -3,6 +3,123 @@ import { _electron as electron, expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { inflateSync } from 'node:zlib'
+
+/**
+ * 解码 PNG(RGBA/8bit)为像素缓冲,只支持 Playwright 截图产出的形态。
+ * 用于核对原生提示的圆角描边是否真的绘制出来,而不只是 computed style 正确。
+ */
+function decodePng(buffer: Buffer): { width: number; height: number; pixels: Buffer } {
+  let pos = 8
+  let width = 0
+  let height = 0
+  const chunks: Buffer[] = []
+  while (pos < buffer.length) {
+    const length = buffer.readUInt32BE(pos)
+    const type = buffer.toString('ascii', pos + 4, pos + 8)
+    const data = buffer.subarray(pos + 8, pos + 8 + length)
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0)
+      height = data.readUInt32BE(4)
+      if (data[8] !== 8 || data[9] !== 6) throw new Error(`unsupported png: depth=${data[8]} color=${data[9]}`)
+    } else if (type === 'IDAT') {
+      chunks.push(data)
+    }
+    pos += 12 + length
+  }
+  const raw = inflateSync(Buffer.concat(chunks))
+  const stride = width * 4
+  const pixels = Buffer.alloc(height * stride)
+  for (let y = 0; y < height; y += 1) {
+    const filter = raw.readUInt8(y * (stride + 1))
+    const lineStart = y * (stride + 1) + 1
+    const prevStart = y === 0 ? -1 : (y - 1) * stride
+    const currentStart = y * stride
+    for (let i = 0; i < stride; i += 1) {
+      const a = i >= 4 ? pixels.readUInt8(currentStart + i - 4) : 0
+      const b = prevStart < 0 ? 0 : pixels.readUInt8(prevStart + i)
+      const c = i >= 4 && prevStart >= 0 ? pixels.readUInt8(prevStart + i - 4) : 0
+      let value = raw.readUInt8(lineStart + i)
+      if (filter === 1) value += a
+      else if (filter === 2) value += b
+      else if (filter === 3) value += (a + b) >> 1
+      else if (filter === 4) {
+        const p = a + b - c
+        const pa = Math.abs(p - a)
+        const pb = Math.abs(p - b)
+        const pc = Math.abs(p - c)
+        value += pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+      }
+      pixels.writeUInt8(value & 0xff, currentStart + i)
+    }
+  }
+  return { width, height, pixels }
+}
+
+/**
+ * 统计提示可见区域的边框像素:四角圆角弧线与四边直线都必须存在,
+ * 且窗口四角本身必须是透明像素(否则说明圆角被窗口边界裁成了直角)。
+ */
+function inspectTooltipCorners(png: Buffer): {
+  cornerBorderPixels: number
+  edgeBorderPixels: number
+  transparentCorners: boolean
+} | null {
+  const { width, height, pixels } = decodePng(png)
+  const alphaAt = (x: number, y: number): number => pixels.readUInt8((y * width + x) * 4 + 3)
+  const isBorder = (x: number, y: number): boolean => {
+    const i = (y * width + x) * 4
+    if (pixels.readUInt8(i + 3) < 200) return false
+    const luminance =
+      (pixels.readUInt8(i) + pixels.readUInt8(i + 1) + pixels.readUInt8(i + 2)) / 3
+    return luminance > 180 && luminance < 245
+  }
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (alphaAt(x, y) > 128) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  if (maxX < 0) return null
+  // 圆角弧线:从可见区域四角沿对角线向内扫,必须命中边框像素。
+  let cornerBorderPixels = 0
+  const span = Math.min(24, maxX - minX, maxY - minY)
+  for (const [ox, oy, dx, dy] of [
+    [minX, minY, 1, 1],
+    [maxX, minY, -1, 1],
+    [minX, maxY, 1, -1],
+    [maxX, maxY, -1, -1]
+  ] as const) {
+    for (let step = 0; step < span; step += 1) {
+      if (isBorder(ox + dx * step, oy + dy * step)) cornerBorderPixels += 1
+    }
+  }
+  // 四边直线:可见区域各边中点附近必须有边框像素。
+  let edgeBorderPixels = 0
+  const midX = Math.floor((minX + maxX) / 2)
+  const midY = Math.floor((minY + maxY) / 2)
+  for (let offset = -6; offset <= 6; offset += 1) {
+    if (isBorder(midX + offset, minY)) edgeBorderPixels += 1
+    if (isBorder(midX + offset, maxY)) edgeBorderPixels += 1
+    if (isBorder(minX, midY + offset)) edgeBorderPixels += 1
+    if (isBorder(maxX, midY + offset)) edgeBorderPixels += 1
+  }
+  // 窗口四角必须透明:非透明说明系统窗口圆角把描边切成了直角或裁掉了弧线。
+  const transparentCorners =
+    alphaAt(0, 0) < 25 &&
+    alphaAt(width - 1, 0) < 25 &&
+    alphaAt(0, height - 1) < 25 &&
+    alphaAt(width - 1, height - 1) < 25
+  return { cornerBorderPixels, edgeBorderPixels, transparentCorners }
+}
 
 /**
  * UI E2E 与截图验证：向导布局、认证状态、明文提示、顶栏布局和详情页。
@@ -191,6 +308,98 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   }
   await win.keyboard.press('Meta+b')
   await win.waitForTimeout(300)
+})
+
+test('收起态悬停提示的四边与圆角一致', async () => {
+  const instanceId = await win.evaluate(async () => {
+    const created = await window.dshHub.instances.create({
+      transport: 'http',
+      name: '收起态提示边框',
+      authMode: 'none',
+      endpointUrl: 'https://rail-tooltip.example.com/dsh'
+    })
+    if (!created.ok) throw new Error(created.message)
+    return created.value.id
+  })
+  await win.reload()
+  await expect(win.getByTestId('app-shell')).toBeVisible()
+  // 提示只在收起态出现,先把侧栏收敛到已知状态,避免依赖前序用例的收展状态。
+  const collapsed = await win.evaluate(() =>
+    document.querySelector('[data-testid="app-shell"]')?.classList.contains('rail')
+  )
+  if (!collapsed) await win.keyboard.press('Meta+b')
+  await win.waitForTimeout(300)
+  await expect
+    .poll(() =>
+      win.evaluate(() => getComputedStyle(document.querySelector('[data-testid="app-shell"]') as Element).gridTemplateColumns)
+    )
+    .toContain('64px')
+  const railItem = win.getByTestId(`inst-${instanceId}`)
+  await expect(railItem).toBeVisible()
+  await railItem.hover()
+
+  // 提示是独立原生窗口(renderer DOM 会被原生工作区视图盖住),必须真实出现。
+  // 窗口实例会被复用,必须等到它显示当前实例名称,否则可能读到上一次的旧内容。
+  await expect
+    .poll(
+      async () => {
+        const page = app.windows().find((candidate) => candidate.url().startsWith('data:text/html'))
+        if (!page) return null
+        return (await page.locator('main').textContent().catch(() => null)) ?? null
+      },
+      { timeout: 10000 }
+    )
+    .toBe('收起态提示边框')
+  const tooltipPage = app.windows().find((candidate) => candidate.url().startsWith('data:text/html'))
+  expect(tooltipPage).toBeDefined()
+  const tooltipStyle = await tooltipPage?.evaluate(() => {
+    const box = document.querySelector('main')
+    if (!box) return null
+    const style = getComputedStyle(box)
+    const rect = box.getBoundingClientRect()
+    const body = document.body.getBoundingClientRect()
+    return {
+      text: box.textContent,
+      radius: style.borderTopLeftRadius,
+      widths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
+      colors: [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor],
+      // 圆角描边必须完整落在窗口内,否则四角会被窗口边界裁掉。
+      inset: {
+        top: rect.top - body.top,
+        left: rect.left - body.left,
+        right: body.right - rect.right,
+        bottom: body.bottom - rect.bottom
+      }
+    }
+  })
+  expect(tooltipStyle?.text).toBe('收起态提示边框')
+  expect(tooltipStyle?.radius).toBe('7px')
+  expect(tooltipStyle?.widths).toEqual(['1px', '1px', '1px', '1px'])
+  expect(new Set(tooltipStyle?.colors).size).toBe(1)
+  // 圆角描边必须远离窗口边缘:系统窗口圆角遮罩只允许裁到透明安全区。
+  expect(tooltipStyle?.inset).toEqual({ top: 14, left: 14, right: 14, bottom: 14 })
+
+  // 像素级核对:直接截取提示页面并解码,确认四角圆角处存在边框像素。
+  // 只看 computed style 无法发现「四角被窗口边界裁掉」这类合成层缺陷。
+  const shot = await tooltipPage?.screenshot({ omitBackground: true })
+  expect(shot).toBeDefined()
+  const corners = shot ? inspectTooltipCorners(shot) : null
+  expect(corners).not.toBeNull()
+  expect(corners?.cornerBorderPixels).toBeGreaterThanOrEqual(4)
+  expect(corners?.edgeBorderPixels).toBeGreaterThanOrEqual(4)
+  expect(corners?.transparentCorners).toBe(true)
+
+  // 指针移开后提示必须隐藏,不留悬浮窗口。
+  await win.mouse.move(600, 400)
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().filter(
+          (candidate) => candidate.isVisible() && candidate.webContents.getURL().startsWith('data:text/html')
+        ).length
+      )
+    )
+    .toBe(0)
 })
 
 test('刷新后不会保留旧的原生工作区边界', async () => {

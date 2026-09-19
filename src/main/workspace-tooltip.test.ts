@@ -70,18 +70,24 @@ describe('createWorkspaceTooltipHost', () => {
       transparent: true,
       focusable: false,
       skipTaskbar: true,
-      show: false
+      show: false,
+      hasShadow: false,
+      // 系统圆角会裁掉提示自身的圆角描边，必须关闭。
+      roundedCorners: false
     })
     expect(tooltip?.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
     expect(tooltip?.setIgnoreMouseEvents).toHaveBeenCalledWith(true, { forward: true })
     const bounds = tooltip?.setBounds.mock.calls.at(-1)?.[0]
-    expect(bounds).toMatchObject({ x: 172, y: 343 })
-    expect(bounds.width).toBeGreaterThanOrEqual(98)
-    expect(bounds.height).toBe(34)
+    // 窗口比可见提示四周各大一圈透明安全区,圆角描边因此不会被窗口遮罩裁掉。
+    expect(bounds).toMatchObject({ x: 158, y: 330 })
+    expect(bounds.width).toBeGreaterThanOrEqual(124)
+    expect(bounds.height).toBe(60)
     expect(tooltip?.showInactive).toHaveBeenCalledOnce()
-    const loaded = tooltip?.loadURL.mock.calls[0]?.[0] as string
-    expect(decodeURIComponent(loaded)).toContain('margin:1px')
-    expect(decodeURIComponent(loaded)).toContain('收起态示例实例')
+    const loaded = decodeURIComponent(tooltip?.loadURL.mock.calls[0]?.[0] as string)
+    expect(loaded).toContain('padding:14px')
+    expect(loaded).toContain('border-radius:7px')
+    expect(loaded).toContain('border:1px solid')
+    expect(loaded).toContain('收起态示例实例')
   })
 
   it('hides without retaining a native overlay when the pointer leaves', async () => {

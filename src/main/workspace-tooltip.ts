@@ -7,18 +7,24 @@ export interface WorkspaceTooltipHost {
   close(): void
 }
 
-const TOOLTIP_HEIGHT = 34
-const TOOLTIP_MIN_WIDTH = 98
-const TOOLTIP_MAX_WIDTH = 322
+const TOOLTIP_HEIGHT = 32
+/**
+ * 提示自身的圆角与阴影都贴着内容边缘。窗口圆角遮罩会在四角裁掉一条弧线，
+ * 因此四周留出透明安全区：遮罩只能裁到透明像素，圆角描边保持完整。
+ */
+const TOOLTIP_PADDING = 14
+const TOOLTIP_WINDOW_HEIGHT = TOOLTIP_HEIGHT + TOOLTIP_PADDING * 2
+const TOOLTIP_MIN_WIDTH = 96
+const TOOLTIP_MAX_WIDTH = 320
 
 function tooltipWidth(text: string): number {
   // 中文字符与西文混排时按较保守的平均宽度预留，避免原生窗口在工作区上方截断。
-  return Math.max(TOOLTIP_MIN_WIDTH, Math.min(TOOLTIP_MAX_WIDTH, Math.ceil(text.length * 14 + 24)))
+  return Math.max(TOOLTIP_MIN_WIDTH, Math.min(TOOLTIP_MAX_WIDTH, Math.ceil(text.length * 14 + 22)))
 }
 
 function tooltipHtml(text: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-html,body{margin:0;background:transparent;overflow:hidden}body{font:12px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#1f2937}main{box-sizing:border-box;height:32px;margin:1px;padding:6px 9px;border:1px solid #d8dce4;border-radius:7px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .08);line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}</style></head><body><main>${escapeHtml(text)}</main></body></html>`
+html,body{margin:0;background:transparent;overflow:hidden}body{padding:${TOOLTIP_PADDING}px;font:12px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#1f2937}main{box-sizing:border-box;height:${TOOLTIP_HEIGHT}px;padding:6px 9px;border:1px solid #d8dce4;border-radius:7px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .08);line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}</style></head><body><main>${escapeHtml(text)}</main></body></html>`
 }
 
 function escapeHtml(value: string): string {
@@ -54,8 +60,8 @@ export function createWorkspaceTooltipHost(
     if (existing) return existing
     const created = createWindow({
       parent,
-      width: TOOLTIP_MIN_WIDTH,
-      height: TOOLTIP_HEIGHT,
+      width: TOOLTIP_MIN_WIDTH + TOOLTIP_PADDING * 2,
+      height: TOOLTIP_WINDOW_HEIGHT,
       frame: false,
       transparent: true,
       resizable: false,
@@ -64,6 +70,9 @@ export function createWorkspaceTooltipHost(
       skipTaskbar: true,
       show: false,
       hasShadow: false,
+      // 无边框窗口默认带系统圆角（macOS 约 10px），比提示自身的 7px 圆角更大，
+      // 会把整段圆角描边裁掉、只剩四条直边。关掉系统圆角，由页面 CSS 自行绘制。
+      roundedCorners: false,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
@@ -85,12 +94,12 @@ export function createWorkspaceTooltipHost(
       if (!parent || parent.isDestroyed()) return
       const nativeTooltip = ensureWindow(parent)
       const parentBounds = parent.getContentBounds()
-      const width = tooltipWidth(tooltip.text)
+      const width = tooltipWidth(tooltip.text) + TOOLTIP_PADDING * 2
       nativeTooltip.setBounds({
-        x: parentBounds.x + tooltip.x,
-        y: parentBounds.y + tooltip.y - Math.floor(TOOLTIP_HEIGHT / 2),
+        x: parentBounds.x + tooltip.x - TOOLTIP_PADDING,
+        y: parentBounds.y + tooltip.y - Math.floor(TOOLTIP_WINDOW_HEIGHT / 2),
         width,
-        height: TOOLTIP_HEIGHT
+        height: TOOLTIP_WINDOW_HEIGHT
       })
       if (displayedText !== tooltip.text) {
         await nativeTooltip.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(tooltipHtml(tooltip.text))}`)
