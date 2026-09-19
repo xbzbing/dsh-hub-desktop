@@ -1,4 +1,4 @@
-import { WebContentsView, type BrowserWindow } from 'electron'
+import { shell, WebContentsView, type BrowserWindow } from 'electron'
 import type { WorkspaceViewBounds } from '@shared/contracts'
 import { isAllowedInstanceNavigation } from './window-host-policy'
 
@@ -81,7 +81,15 @@ export function createWorkspaceHost(
   function configure(entry: Entry): void {
     const { webContents } = entry.view
     configureLocale(webContents)
-    webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    webContents.setWindowOpenHandler(({ url }) => {
+      if (!url) return { action: 'deny' }
+      // target="_blank" 链接:外部 URL 用系统浏览器打开,同 origin 拒绝
+      if (isAllowedInstanceNavigation(url, entry.originUrl)) {
+        return { action: 'deny' }
+      }
+      void shell.openExternal(url)
+      return { action: 'deny' }
+    })
     webContents.on('will-navigate', (event, url) => {
       if (!isAllowedInstanceNavigation(url, entry.originUrl)) event.preventDefault()
     })

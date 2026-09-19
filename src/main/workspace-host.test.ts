@@ -101,7 +101,7 @@ describe('createWorkspaceHost', () => {
     // 后续布局变化不得再次抢夺焦点，否则会打断用户正在输入的登录表单。
     host.setBounds({ x: 64, y: 92, width: 1100, height: 688 })
     expect(created?.webContents.focus).toHaveBeenCalledTimes(1)
-    expect(created?.webContents.setWindowOpenHandler.mock.calls[0]?.[0]()).toEqual({ action: 'deny' })
+    expect(created?.webContents.setWindowOpenHandler.mock.calls[0]?.[0]({ url: '' })).toEqual({ action: 'deny' })
 
     const permissionRequest = created?.webContents.session.setPermissionRequestHandler.mock.calls[0]?.[0] as (
       contents: unknown,
