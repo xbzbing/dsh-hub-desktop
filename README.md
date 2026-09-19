@@ -2,37 +2,13 @@
 
 [English](README.en.md)
 
-> 个人使用的 Electron 桌面工具：统一管理多个 **dsh**（DeepSeek Harness）实例。
-> 本地进程、SSH 隧道、远程 HTTP 直连三种形态一站管理。
-> 认证对接 dsh-auth-gateway 协议（密码 + TOTP + HttpOnly Cookie 注入），支持凭据保险库与已存密码静默登录。
+> 个人小玩具，主要解决在使用远程开发机的场景下，文档页面和 `dsh` 页面来回切换有点乱的问题。
+> 刚好我的`OpenCode-go`和`mimo-code-plan`都要到期了，于是使用 OpenDesign 设计原型，用 `dsh` 实现出来，然后就有了 `DSH Hub`。
+> 累计消耗`dsh`有 395 轮，7784 步，1528M token。
 
-这是一个个人项目，没有苹果开发者账号，无法打包可信的 App。
-主要解决远程开发机场景下，文档页面和 `dsh` 页面频繁切换的问题。
-使用 OpenDesign 设计原型，用 `dsh` 实现，最终有了 `DSH Hub`。
+个人使用的 Electron 桌面工具：统一管理多个 **dsh**（DeepSeek Harness）实例 —— 本地进程、SSH 隧道、远程 HTTP 直连三种形态一站管理。认证对接 dsh-auth-gateway 协议（密码 + TOTP + HttpOnly Cookie 注入），支持凭据保险库与已存密码静默登录。
 
-<p align="center">
-  <img src="docs/images/home-overview.png" alt="DSH Hub Desktop - 亮色主题" width="800" />
-  <br/>
-  <em>亮色主题 · 实例总览</em>
-</p>
-
-<p align="center">
-  <img src="docs/images/dark-theme.png" alt="DSH Hub Desktop - 暗色主题" width="800" />
-  <br/>
-  <em>暗色主题 · 实例总览</em>
-</p>
-
-<p align="center">
-  <img src="docs/images/instance-show.png" alt="DSH Hub Desktop - 实例详情" width="800" />
-  <br/>
-  <em>实例详情页</em>
-</p>
-
-<p align="center">
-  <img src="docs/images/sidebar-collapsed.png" alt="DSH Hub Desktop - 收起侧边栏" width="800" />
-  <br/>
-  <em>侧边栏收起 · 图标模式</em>
-</p>
+由于没有苹果开发者账号，因此无法打包可信的 App，需要`clone`代码仓库并通过`pnpm dist:mac`来编译 App。
 
 ## 功能特性
 
@@ -51,6 +27,13 @@
 - **SSH 安全**：TOFU 主机指纹确认（首次信任 / 变更一律拒绝），口令经内存通道瞬时传递
 - **双语 + 明暗主题**：zh / en 全量 i18n（走查护栏防遗漏），OKLch 品牌 token
 - **托盘 / 通知 / 自启**：可配置
+
+| | |
+|:---:|:---:|
+| ![亮色主题](docs/images/home-overview.png) | ![暗色主题](docs/images/dark-theme.png) |
+| *亮色主题 · 实例总览* | *暗色主题 · 实例总览* |
+| ![实例详情](docs/images/instance-show.png) | ![收起侧边栏](docs/images/sidebar-collapsed.png) |
+| *实例详情页* | *侧边栏收起 · 图标模式* |
 
 ## 技术栈
 

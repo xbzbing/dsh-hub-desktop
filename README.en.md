@@ -2,37 +2,13 @@
 
 [中文](README.md)
 
-> A personal Electron desktop tool for managing multiple **dsh** (DeepSeek Harness) instances.
-> Supports local processes, SSH tunnels, and remote HTTP connections in a single interface.
-> Authentication integrates with the dsh-auth-gateway protocol (password + TOTP + HttpOnly Cookie injection), with a credential vault for silent login using saved passwords.
+> A personal side project. Mainly solves the problem of constantly switching between documentation pages and `dsh` pages when working on remote development machines.
+> My `OpenCode-go` and `mimo-code-plan` were both about to expire, so I designed a prototype with OpenDesign and implemented it using `dsh` — and `DSH Hub` was born.
+> Total `dsh` usage: 395 rounds, 7,784 steps, 1,528M tokens.
 
-This is a personal project built without an Apple Developer Account, so signed/notarized builds are not available.
-It solves the problem of frequent switching between documentation pages and `dsh` pages when working on remote development machines.
-The prototype was designed with OpenDesign and implemented using `dsh`, resulting in `DSH Hub`.
+A personal Electron desktop tool for managing multiple **dsh** (DeepSeek Harness) instances — local processes, SSH tunnels, and remote HTTP connections, all in one place. Authentication integrates with the dsh-auth-gateway protocol (password + TOTP + HttpOnly Cookie injection), with a credential vault for silent login using saved passwords.
 
-<p align="center">
-  <img src="docs/images/home-overview.png" alt="DSH Hub Desktop - Light Theme" width="800" />
-  <br/>
-  <em>Light Theme · Instance Overview</em>
-</p>
-
-<p align="center">
-  <img src="docs/images/dark-theme.png" alt="DSH Hub Desktop - Dark Theme" width="800" />
-  <br/>
-  <em>Dark Theme · Instance Overview</em>
-</p>
-
-<p align="center">
-  <img src="docs/images/instance-show.png" alt="DSH Hub Desktop - Instance Detail" width="800" />
-  <br/>
-  <em>Instance Detail Page</em>
-</p>
-
-<p align="center">
-  <img src="docs/images/sidebar-collapsed.png" alt="DSH Hub Desktop - Collapsed Sidebar" width="800" />
-  <br/>
-  <em>Collapsed Sidebar · Icon Mode</em>
-</p>
+Since I don't have an Apple Developer Account, I can't distribute a signed app. You'll need to `clone` the repo and build with `pnpm dist:mac`.
 
 ## Features
 
@@ -48,6 +24,13 @@ The prototype was designed with OpenDesign and implemented using `dsh`, resultin
 - **SSH Security**: TOFU host fingerprint verification (trust on first use / reject on change), passwords passed via ephemeral memory channel
 - **Bilingual + Light/Dark Theme**: Full zh/en i18n (lint guardrails prevent omissions), OKLch brand tokens
 - **Tray / Notifications / Auto-start**: Configurable
+
+| | |
+|:---:|:---:|
+| ![Light Theme](docs/images/home-overview.png) | ![Dark Theme](docs/images/dark-theme.png) |
+| *Light Theme · Instance Overview* | *Dark Theme · Instance Overview* |
+| ![Instance Detail](docs/images/instance-show.png) | ![Collapsed Sidebar](docs/images/sidebar-collapsed.png) |
+| *Instance Detail Page* | *Collapsed Sidebar · Icon Mode* |
 
 ## Tech Stack
 
