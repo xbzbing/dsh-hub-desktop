@@ -226,6 +226,7 @@ describe('registerIpc', () => {
       'instances:create',
       'instances:update',
       'instances:delete',
+      'instances:reorder',
       'instances:start',
       'instances:stop',
       'instances:openView',

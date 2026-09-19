@@ -1103,7 +1103,18 @@ const NON_RENDERER_COPY_DEBT_INTERNAL: readonly DebtEntry[] = [
   debt('src/main/auth/backoff.ts', "reason = why ?? '请求过于频繁，已暂停自动重试'"),
 
   // —— redact.ts 的正则字符类含中文标点(。，；！？、):用于排除 URL 末尾标点,是正则语法不是界面文案 ——
-  debt('src/shared/redact.ts', "return line.replace(/https?:\\/\\/[^\\s,。，；！？、()]+/gi, (match) => redactUrl(match))")
+  debt('src/shared/redact.ts', "return line.replace(/https?:\\/\\/[^\\s,。，；！？、()]+/gi, (match) => redactUrl(match))"),
+
+  // —— 实例排序校验错误:只在主进程 IPC 边界抛出,由 wrap() 转为固定码 ——
+  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '排序列表必须是字符串数组')"),
+  debt(
+    'src/main/registry/instance-store.ts',
+    '`排序列表长度(${orderedIds.length})与实例数量(${current.length})不一致`'
+  ),
+  debt(
+    'src/main/registry/instance-store.ts',
+    "throw new InstanceStoreError('invalid-input', `排序列表包含未知实例 ID：${id}`)"
+  )
 ]
 
 /**

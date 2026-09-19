@@ -777,3 +777,75 @@ test('OTP 屏无已存密码时密码输入框持续可见且可提交', async (
     server.close()
   }
 })
+
+test('侧边栏拖拽排序 + 首页表格同步', async () => {
+  test.setTimeout(60_000)
+  // 创建三个实例
+  const ids: string[] = []
+  for (const name of ['排序实例 C', '排序实例 A', '排序实例 B']) {
+    const result = await win.evaluate(async (n) => {
+      const r = await window.dshHub.instances.create({
+        transport: 'http',
+        name: n,
+        authMode: 'auto',
+        endpointUrl: `http://127.0.0.1:30999/dsh`
+      })
+      if (!r.ok) throw new Error(`create failed: ${JSON.stringify(r)}`)
+      return r.value.id
+    }, name)
+    ids.push(result)
+  }
+  await win.reload()
+  await expect(win.getByTestId('app-shell')).toBeVisible()
+  await win.waitForTimeout(400)
+
+  // 获取完整列表,确认新实例在末尾
+  const listBefore = await win.evaluate(async () => {
+    const r = await window.dshHub.instances.list()
+    return r.ok ? r.value.map((i) => ({ id: i.id, name: i.name })) : []
+  })
+  expect(listBefore.slice(-3).map((i) => i.name)).toEqual(['排序实例 C', '排序实例 A', '排序实例 B'])
+
+  // 把三个新实例重排为 A → B → C,同时保留其他实例在前面
+  const others = listBefore.slice(0, -3).map((i) => i.id)
+  const newOrder = [...others, ids[1], ids[2], ids[0]]
+  const reordered = await win.evaluate(async (reorderedIds) => {
+    const result = await window.dshHub.instances.reorder(reorderedIds)
+    return result.ok ? result.value.map((i) => i.id) : null
+  }, newOrder)
+  expect(reordered).toEqual(newOrder)
+
+  // 刷新页面验证持久化顺序
+  await win.reload()
+  await expect(win.getByTestId('app-shell')).toBeVisible()
+  await win.waitForTimeout(400)
+
+  // 侧边栏顺序验证:新实例部分 A → B → C
+  const listAfter = await win.evaluate(async () => {
+    const r = await window.dshHub.instances.list()
+    return r.ok ? r.value.map((i) => i.id) : []
+  })
+  expect(listAfter.slice(-3)).toEqual([ids[1], ids[2], ids[0]])
+
+  // 侧边栏渲染顺序也一致
+  const sidebar = win.getByTestId('sidebar')
+  const aBox = await sidebar.getByTestId(`inst-${ids[1]}`).boundingBox()
+  const bBox = await sidebar.getByTestId(`inst-${ids[2]}`).boundingBox()
+  const cBox = await sidebar.getByTestId(`inst-${ids[0]}`).boundingBox()
+  expect(aBox!.y).toBeLessThan(bBox!.y)
+  expect(bBox!.y).toBeLessThan(cBox!.y)
+
+  // 首页表格也同步: A → B → C
+  const table = win.getByTestId('instances-table')
+  const rows = table.locator('tbody tr')
+  const rowCount = await rows.count()
+  const rowTexts: string[] = []
+  for (let i = 0; i < rowCount; i++) {
+    rowTexts.push(await rows.nth(i).textContent() ?? '')
+  }
+  const aRow = rowTexts.findIndex((t) => t.includes('排序实例 A'))
+  const bRow = rowTexts.findIndex((t) => t.includes('排序实例 B'))
+  const cRow = rowTexts.findIndex((t) => t.includes('排序实例 C'))
+  expect(aRow).toBeLessThan(bRow)
+  expect(bRow).toBeLessThan(cRow)
+})
