@@ -64,6 +64,8 @@ let authFake: {
 }
 let clearPartitionSession: ReturnType<typeof vi.fn>
 let closeInstanceView: ReturnType<typeof vi.fn>
+let showInstanceTooltip: ReturnType<typeof vi.fn>
+let hideInstanceTooltip: ReturnType<typeof vi.fn>
 let vaultFake: Record<string, ReturnType<typeof vi.fn>>
 let auditSpy: (entry: { instanceId?: string | null; event: string; result?: string }) => void
 let settingsFake: Record<string, ReturnType<typeof vi.fn>>
@@ -127,6 +129,8 @@ beforeEach(async () => {
   }
   clearPartitionSession = vi.fn(async () => undefined)
   closeInstanceView = vi.fn()
+  showInstanceTooltip = vi.fn(async () => undefined)
+  hideInstanceTooltip = vi.fn()
   vaultFake = {
     status: vi.fn(() => ({ available: true, degraded: false, instanceCount: 0 })),
     getPolicy: vi.fn(() => ({ rememberPassword: false, rememberSession: false })),
@@ -190,6 +194,8 @@ beforeEach(async () => {
     onSettingsChanged: onSettingsChanged as never,
     clearPartitionSession: clearPartitionSession as never,
     closeInstanceView: closeInstanceView as never,
+    showInstanceTooltip: showInstanceTooltip as never,
+    hideInstanceTooltip: hideInstanceTooltip as never,
     prompts: promptsFake as never,
     openInstanceView: openInstanceView as never
   })
@@ -221,6 +227,8 @@ describe('registerIpc', () => {
       'instances:stop',
       'instances:openView',
       'instances:updateViewBounds',
+      'instances:showTooltip',
+      'instances:hideTooltip',
       'instances:hideView',
       'instances:disconnectView',
       'instances:probeLocalDsh',
@@ -244,6 +252,29 @@ describe('registerIpc', () => {
       'settings:update'
     ]
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
+  })
+
+  it('将经 schema 校验的原生提示交给主进程，并在隐藏时撤销', async () => {
+    const shown = (await invoke('instances:showTooltip', { text: '实例名称', x: 72, y: 160 })) as {
+      ok: boolean
+      value: null
+    }
+    const hidden = (await invoke('instances:hideTooltip')) as { ok: boolean; value: null }
+
+    expect(shown).toEqual({ ok: true, value: null })
+    expect(hidden).toEqual({ ok: true, value: null })
+    expect(showInstanceTooltip).toHaveBeenCalledWith({ text: '实例名称', x: 72, y: 160 })
+    expect(hideInstanceTooltip).toHaveBeenCalledOnce()
+  })
+
+  it('拒绝超长或越界的原生提示载荷', async () => {
+    const result = (await invoke('instances:showTooltip', { text: 'x'.repeat(201), x: -1, y: 160 })) as {
+      ok: boolean
+      code?: string
+    }
+
+    expect(result).toMatchObject({ ok: false, code: 'invalid-input' })
+    expect(showInstanceTooltip).not.toHaveBeenCalled()
   })
 
   it('disconnectView 只销毁指定 WebContentsView，不停止运行时或清除凭据', async () => {

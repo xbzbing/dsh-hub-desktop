@@ -64,6 +64,7 @@ import type { Vault } from './vault/vault'
 import type { Settings } from '@shared/settings'
 import type { AuditLog } from './audit/audit-log'
 import { createWorkspaceHost } from './workspace-host'
+import { createWorkspaceTooltipHost } from './workspace-tooltip'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'] ?? null
@@ -108,6 +109,7 @@ if (userDataOverride) app.setPath('userData', userDataOverride)
  */
 let hubWindow: BrowserWindow | null = null
 const workspaceHost = createWorkspaceHost(() => hubWindow, () => app.getLocale())
+const workspaceTooltipHost = createWorkspaceTooltipHost(() => hubWindow)
 
 
 let vault: Vault | null = null
@@ -555,6 +557,8 @@ void app.whenReady().then(() => {
     hideInstanceView: () => workspaceHost.hide(),
     closeInstanceView: (instanceId) => workspaceHost.disconnect(instanceId),
     setInstanceViewBounds: (bounds) => workspaceHost.setBounds(bounds),
+    showInstanceTooltip: (tooltip) => workspaceTooltipHost.show(tooltip),
+    hideInstanceTooltip: () => workspaceTooltipHost.hide(),
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
       // 否则「先停隧道再清 Cookie」会静默 no-op
@@ -629,7 +633,10 @@ void app.whenReady().then(() => {
   })
 })
 
-app.on('before-quit', (event) => gracefulQuit.handleBeforeQuit(event))
+app.on('before-quit', (event) => {
+  workspaceTooltipHost.close()
+  gracefulQuit.handleBeforeQuit(event)
+})
 
 app.on('window-all-closed', () => {
   // 全部窗口关闭:先收敛待答请求(macOS 进程可能驻留,请求不能悬着)

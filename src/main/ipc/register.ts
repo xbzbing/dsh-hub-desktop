@@ -16,6 +16,7 @@ import {
   SshKeyPreviewInputSchema,
   VAULT_IPC,
   VaultPolicySchema,
+  WorkspaceTooltipSchema,
   WorkspaceViewBoundsSchema,
   type HostKeyDecision,
   type AuthStateSnapshot,
@@ -73,6 +74,9 @@ export interface IpcDeps {
   closeInstanceView?: (instanceId: string) => void
   /** 主进程应用经校验的内容区边界。 */
   setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => void
+  /** 工作区原生视图之上的只读提示；文本与坐标由 schema 限制。 */
+  showInstanceTooltip?: (tooltip: { text: string; x: number; y: number }) => Promise<void>
+  hideInstanceTooltip?: () => void
   prompts: PromptBroker
   http: HttpEndpointManager
   auth: AuthRegistry
@@ -571,10 +575,26 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     })
   )
 
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.showTooltip, (_event, tooltip: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      const parsed = WorkspaceTooltipSchema.parse(tooltip)
+      await deps.showInstanceTooltip?.(parsed)
+      return null
+    })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.hideTooltip, (): Promise<IpcResult<null>> =>
+    wrap(() => {
+      deps.hideInstanceTooltip?.()
+      return null
+    })
+  )
+
   ipcMain.handle(INSTANCE_RUNTIME_IPC.hideView, (): Promise<IpcResult<null>> =>
     wrap(() => {
       // 任何隐藏操作都取消尚未完成的 openView，防止迟到请求重新激活原生视图。
       workspaceTargetId = null
+      deps.hideInstanceTooltip?.()
       deps.hideInstanceView?.()
       return null
     })
@@ -586,6 +606,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       const instance = await store.get(instanceId)
       if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${instanceId}`)
       if (workspaceTargetId === instanceId) workspaceTargetId = null
+      deps.hideInstanceTooltip?.()
       deps.closeInstanceView?.(instanceId)
       return null
     })

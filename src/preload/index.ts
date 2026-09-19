@@ -23,7 +23,8 @@ import {
   type SshKeyPreviewInput,
   type SshKeyPreviewResult,
   type VaultPolicy,
-  type VaultStatusSnapshot
+  type VaultStatusSnapshot,
+  type WorkspaceTooltip
 } from '@shared/contracts'
 
 /**
@@ -46,6 +47,8 @@ const bridge: DshHubBridge = {
     stop: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.stop, id),
     openView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openView, id),
     updateViewBounds: (bounds) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.updateViewBounds, bounds),
+    showTooltip: (tooltip: WorkspaceTooltip) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.showTooltip, tooltip),
+    hideTooltip: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.hideTooltip),
     hideView: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.hideView),
     disconnectView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.disconnectView, id),
     probeLocalDsh: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.probeLocalDsh),

@@ -496,6 +496,8 @@ export const INSTANCE_RUNTIME_IPC = {
   stop: 'instances:stop',
   openView: 'instances:openView',
   updateViewBounds: 'instances:updateViewBounds',
+  showTooltip: 'instances:showTooltip',
+  hideTooltip: 'instances:hideTooltip',
   hideView: 'instances:hideView',
   /** 断开当前实例的内嵌工作区，只销毁 WebContentsView，不停止运行时或清除凭据。 */
   disconnectView: 'instances:disconnectView',
@@ -517,6 +519,17 @@ export const WorkspaceViewBoundsSchema = z
   .strict()
 
 export type WorkspaceViewBounds = z.infer<typeof WorkspaceViewBoundsSchema>
+
+/** 收起侧栏的实例名称提示锚点（相对 Hub content view 的坐标）。 */
+export const WorkspaceTooltipSchema = z
+  .object({
+    text: z.string().trim().min(1).max(200),
+    x: z.number().int().min(0).max(20_000),
+    y: z.number().int().min(0).max(20_000)
+  })
+  .strict()
+
+export type WorkspaceTooltip = z.infer<typeof WorkspaceTooltipSchema>
 
 export interface LocalLauncherSnapshot {
   launcher: 'dsh' | 'dush'

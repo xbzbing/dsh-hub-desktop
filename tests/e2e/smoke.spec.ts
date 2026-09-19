@@ -59,7 +59,19 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
   const runtimeKeys = await win.evaluate(() =>
     window.dshHub?.runtime ? Object.keys(window.dshHub.runtime).sort() : null
   )
-  expect(runtimeKeys).toEqual(['adoptExternal', 'disconnectView', 'hideView', 'openView', 'probeLocalDsh', 'scanExternal', 'start', 'stop', 'updateViewBounds'])
+  expect(runtimeKeys).toEqual([
+    'adoptExternal',
+    'disconnectView',
+    'hideTooltip',
+    'hideView',
+    'openView',
+    'probeLocalDsh',
+    'scanExternal',
+    'showTooltip',
+    'start',
+    'stop',
+    'updateViewBounds'
+  ])
   const sshKeys = await win.evaluate(() =>
     window.dshHub?.ssh ? Object.keys(window.dshHub.ssh).sort() : null
   )

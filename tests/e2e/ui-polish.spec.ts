@@ -170,8 +170,6 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
     () => getComputedStyle(document.querySelector('[data-testid="app-shell"]') as Element).gridTemplateColumns
   )
   expect(railCols.split(' ')[0]).toBe('64px')
-  await expect(win.getByRole('tooltip')).toHaveText('收起态留白检查')
-  await expect(win.getByRole('tooltip')).toBeVisible()
   await expect(railInstance).toHaveAttribute('title', '收起态留白检查')
   const collapseAfter = await win.getByTestId('sidebar-collapse-btn').boundingBox()
   const brandAfter = await win.getByTestId('brand').boundingBox()
@@ -210,9 +208,22 @@ test('SSH 认证对话框限制在右侧工作区且指纹复制行不溢出', a
   await expect(win.getByTestId(`inst-${workspaceId}`)).toBeVisible()
   await win.getByTestId(`inst-${workspaceId}`).click()
   await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+  await win.keyboard.press('Meta+b')
+  const workspaceRailItem = win.getByTestId(`inst-${workspaceId}`)
+  await workspaceRailItem.hover()
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().filter((candidate) => candidate !== BrowserWindow.getFocusedWindow() && candidate.isVisible()).length
+      )
+    )
+    .toBeGreaterThan(0)
 
   await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0]?.webContents.send('ssh:hostKeyDecision', {
+    const hub = BrowserWindow.getAllWindows().find(
+      (candidate) => !candidate.webContents.getURL().startsWith('data:text/html')
+    )
+    hub?.webContents.send('ssh:hostKeyDecision', {
       requestId: 'ui-polish-host-key',
       instanceId: 'ui-polish-instance',
       target: 'vsgp',

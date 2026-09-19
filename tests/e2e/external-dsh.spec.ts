@@ -98,7 +98,9 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
     await win.getByTestId('open-view-btn').click()
     await expect.poll(async () =>
       app.evaluate(({ BrowserWindow }) => {
-        const workspace = BrowserWindow.getAllWindows()[0]?.contentView.children[0] as
+        const workspace = BrowserWindow.getAllWindows()
+          .find((candidate) => candidate.contentView.children.length > 0)
+          ?.contentView.children[0] as
           | { webContents?: { getURL(): string } }
           | undefined
         return workspace?.webContents?.getURL() ?? ''
@@ -106,7 +108,9 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
     ).toContain('/login')
     await expect.poll(async () =>
       app.evaluate(({ BrowserWindow }) => {
-        const workspace = BrowserWindow.getAllWindows()[0]?.contentView.children[0] as
+        const workspace = BrowserWindow.getAllWindows()
+          .find((candidate) => candidate.contentView.children.length > 0)
+          ?.contentView.children[0] as
           | { getBounds?: () => { x: number; y: number; width: number; height: number } }
           | undefined
         return workspace?.getBounds?.() ?? null
@@ -236,7 +240,9 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   await card.locator('[data-testid^="adopt-btn-"]:not([disabled])').first().click()
   await expect.poll(async () =>
     app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0]?.contentView.children.map((child) =>
+      BrowserWindow.getAllWindows()
+        .find((candidate) => candidate.contentView.children.length > 0)
+        ?.contentView.children.map((child) =>
         (child as { webContents?: { getURL(): string } }).webContents?.getURL() ?? ''
       ) ?? []
     )

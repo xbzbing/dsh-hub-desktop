@@ -29,6 +29,7 @@ import type {
   SshHostKeyForgetInput,
   SshKeyPreviewInput,
   SshKeyPreviewResult,
+  WorkspaceTooltip,
   WorkspaceViewBounds
 } from './contracts'
 
@@ -78,6 +79,9 @@ export interface DshHubBridge {
     stop: (id: string) => Promise<IpcResult<null>>
     openView: (id: string) => Promise<IpcResult<null>>
     updateViewBounds: (bounds: WorkspaceViewBounds) => Promise<IpcResult<null>>
+    /** 显示位于原生工作区视图之上的只读名称提示。 */
+    showTooltip: (tooltip: WorkspaceTooltip) => Promise<IpcResult<null>>
+    hideTooltip: () => Promise<IpcResult<null>>
     hideView: () => Promise<IpcResult<null>>
     /** 销毁指定实例的内嵌工作区；不停止实例进程或清除登录凭据。 */
     disconnectView: (id: string) => Promise<IpcResult<null>>

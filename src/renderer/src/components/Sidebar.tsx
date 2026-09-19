@@ -22,30 +22,39 @@ export default function Sidebar(): ReactNode {
 
   const [query, setQuery] = useState('')
   const [groupByType, setGroupByType] = useState(false)
-  const [railTooltip, setRailTooltip] = useState<{ name: string; top: number } | null>(null)
   const hoveredInstanceRef = useRef<{ element: HTMLButtonElement; name: string } | null>(null)
 
   const showRailTooltip = (element: HTMLButtonElement, name: string): void => {
     hoveredInstanceRef.current = { element, name }
+    if (!rail) return
     const rect = element.getBoundingClientRect()
-    setRailTooltip({ name, top: rect.top + rect.height / 2 })
+    void window.dshHub?.runtime.showTooltip({ text: name, x: 72, y: Math.round(rect.top + rect.height / 2) })
   }
 
   const hideRailTooltip = (): void => {
     hoveredInstanceRef.current = null
-    setRailTooltip(null)
+    void window.dshHub?.runtime.hideTooltip()
   }
 
   useEffect(() => {
-    if (!rail || !hoveredInstanceRef.current) return
+    if (!rail || !hoveredInstanceRef.current) {
+      void window.dshHub?.runtime.hideTooltip()
+      return
+    }
     const frame = requestAnimationFrame(() => {
       const hovered = hoveredInstanceRef.current
       if (!hovered) return
       const rect = hovered.element.getBoundingClientRect()
-      setRailTooltip({ name: hovered.name, top: rect.top + rect.height / 2 })
+      void window.dshHub?.runtime.showTooltip({
+        text: hovered.name,
+        x: 72,
+        y: Math.round(rect.top + rect.height / 2)
+      })
     })
     return () => cancelAnimationFrame(frame)
   }, [rail])
+
+  useEffect(() => () => void window.dshHub?.runtime.hideTooltip(), [])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -136,16 +145,11 @@ export default function Sidebar(): ReactNode {
               selected={selection === item.id}
               rail={rail}
               onRailTooltip={showRailTooltip}
-              onRailTooltipHide={() => setRailTooltip(null)}
+              onRailTooltipHide={hideRailTooltip}
             />
           ))
         )}
       </nav>
-      {rail && railTooltip && (
-        <div className="rail-instance-tooltip" style={{ top: railTooltip.top }} role="tooltip">
-          {railTooltip.name}
-        </div>
-      )}
       <div className="side-foot">
         <button
           className="btn btn-primary btn-block"
@@ -208,7 +212,6 @@ function InstanceItem(props: {
       aria-current={props.selected}
       onClick={() => props.onClick(props.item.id)}
       onPointerEnter={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
-      onPointerMove={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
       onPointerLeave={props.onRailTooltipHide}
       onPointerCancel={props.onRailTooltipHide}
       onFocus={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
