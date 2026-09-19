@@ -54,6 +54,16 @@ export default function Sidebar(): ReactNode {
     return () => cancelAnimationFrame(frame)
   }, [rail])
 
+  // 窗口失焦时清除悬停状态，防止切换应用后提示窗残留。
+  useEffect(() => {
+    const onBlur = (): void => {
+      hoveredInstanceRef.current = null
+      void window.dshHub?.runtime.hideTooltip()
+    }
+    window.addEventListener('blur', onBlur)
+    return () => window.removeEventListener('blur', onBlur)
+  }, [])
+
   useEffect(() => () => void window.dshHub?.runtime.hideTooltip(), [])
 
   const filtered = useMemo(() => {

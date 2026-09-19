@@ -265,6 +265,13 @@ function createWindow(): BrowserWindow {
     workspaceHost.closeAll()
     if (hubWindow === win) hubWindow = null
   })
+  // 切换应用时隐藏提示窗，防止残留；切回时恢复工作区键盘焦点。
+  win.on('blur', () => {
+    workspaceTooltipHost.hide()
+  })
+  win.on('focus', () => {
+    workspaceHost.focusActive()
+  })
   hubWindow = win
   return win
 }
