@@ -123,6 +123,13 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
             apply({ type: 'login-requires-otp', otpEnabled: true })
             return gate
           }
+          // settings 200 只说明该端点本身不需要会话；页面 302 → /login 才是会话失效的证据。
+          // 在此消费该证据，否则会被误判为「已恢复」而跳过调用方的已存密码静默登录。
+          if (gate.mode === 'gateway' && gate.gatewayEvidence === 'login-page') {
+            apply({ type: 'probe-gateway' })
+            apply({ type: 'session-absent' })
+            return gate
+          }
           apply({ type: 'session-restored', otpEnabled: settings.value.otpEnabled })
           return {
             mode: 'gateway',

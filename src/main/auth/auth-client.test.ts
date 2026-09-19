@@ -131,6 +131,36 @@ describe('AuthClient（/ 编排）', () => {
     expect(client.state().needsOnboarding).toBe(false)
   })
 
+  it('settings 200 但页面 302 → /login 时不得进入 connected', async () => {
+    // settings 端点无需会话即返回 200;会话失效的唯一证据是页面重定向到登录页。
+    const jar = {
+      store: vi.fn(),
+      header: () => 'dsh_auth=expired',
+      get: () => ({ name: 'dsh_auth', value: 'expired', expiresAt: null, attributes: '' }),
+      clear: vi.fn(),
+      describe: () => []
+    } as unknown as CookieJar
+    const fetchImpl = fakeFetch((url) => {
+      if (url.includes('/login-api/settings')) {
+        return jsonResponse(200, { ok: true, config: { 'dsh-auth-gateway': { otpEnabled: false } } })
+      }
+      return htmlResponse(302, '', '/dsh/login')
+    })
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw.example.com/dsh',
+      jar,
+      fetchImpl
+    })
+    const detection = await client.probeAndRestore()
+
+    expect(detection.gatewayEvidence).toBe('login-page')
+    expect(client.state().phase).not.toBe('connected')
+    expect(client.state().phase).toBe('await-credentials')
+    // 会话 Cookie 保留给随后的静默登录复用,不能在此清掉。
+    expect(jar.clear).not.toHaveBeenCalled()
+  })
+
   it('D1:探测带上已有会话 Cookie —— 半认证会话能看到 otp/onboarding 两种状态', async () => {
     const probes: Array<string | null> = []
     const jar = {
