@@ -193,6 +193,41 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   await win.waitForTimeout(300)
 })
 
+test('刷新后不会保留旧的原生工作区边界', async () => {
+  const instanceId = await win.evaluate(async () => {
+    const created = await window.dshHub.instances.create({
+      transport: 'http',
+      name: '刷新边界恢复',
+      authMode: 'none',
+      endpointUrl: 'https://reload-bounds.example.com/dsh'
+    })
+    if (!created.ok) throw new Error(created.message)
+    return created.value.id
+  })
+  await win.reload()
+  await expect(win.getByTestId(`inst-${instanceId}`)).toBeVisible()
+  await win.getByTestId(`inst-${instanceId}`).click()
+  await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+  await win.keyboard.press('Meta+b')
+  await win.waitForTimeout(300)
+
+  await win.reload()
+  await expect(win.getByTestId('app-shell')).toBeVisible()
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) => {
+        const workspace = BrowserWindow.getAllWindows()
+          .find((candidate) => candidate.contentView.children.length > 0)
+          ?.contentView.children[0] as
+          | { isVisible?: () => boolean; getBounds?: () => { width: number; height: number } }
+          | undefined
+        return workspace ? { visible: workspace.isVisible?.() ?? true, bounds: workspace.getBounds?.() ?? null } : null
+      })
+    )
+    .toMatchObject({ bounds: { width: 0, height: 0 } })
+  await expect(win.getByTestId('sidebar-collapse-btn')).toHaveAttribute('aria-label', '收起侧边栏')
+})
+
 test('SSH 认证对话框限制在右侧工作区且指纹复制行不溢出', async () => {
   const workspaceId = await win.evaluate(async () => {
     const created = await window.dshHub.instances.create({

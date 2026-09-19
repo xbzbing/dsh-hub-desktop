@@ -232,6 +232,13 @@ function createWindow(): BrowserWindow {
   win.webContents.on('will-navigate', (event, url) => {
     if (!isAllowedNavigation(url)) event.preventDefault()
   })
+  // Command+R 只重启 renderer，主进程管理的 WebContentsView 不会自动销毁。
+  // 在 Hub 顶层重新导航时立即撤销旧工作区边界，避免它覆盖刷新后恢复的侧边栏。
+  win.webContents.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
+    if (!isMainFrame) return
+    workspaceTooltipHost.hide()
+    workspaceHost.hide()
+  })
 
   if (isDev && rendererDevUrl) void win.loadURL(rendererDevUrl)
   else void win.loadURL(`${RENDERER_ORIGIN}/index.html`)

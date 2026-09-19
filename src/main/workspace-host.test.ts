@@ -213,6 +213,7 @@ describe('createWorkspaceHost', () => {
     host.prepare('22222222-2222-4222-8222-222222222222', 'http://127.0.0.1:3081/')
     const created = fakeViews()[0]
     host.hide()
+    expect(created?.setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 0, height: 0 })
     expect(created?.setVisible).toHaveBeenCalledWith(false)
     host.close('22222222-2222-4222-8222-222222222222')
     expect(hub.contentView.removeChildView).toHaveBeenCalledWith(created)

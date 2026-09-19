@@ -144,6 +144,8 @@ export function createWorkspaceHost(
     if (activeId === null) return
     const entry = entries.get(activeId)
     if (entry) {
+      // Renderer reload 会丢失 workspaceOpen；同时清零旧边界，避免原生视图覆盖恢复后的展开侧栏。
+      entry.view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
       entry.view.setVisible(false)
       entry.visible = false
     }
