@@ -9,6 +9,7 @@ vi.mock('electron', () => {
     getURL = vi.fn(() => '')
     getUserAgent = vi.fn(() => 'DSH Hub Test Agent')
     setUserAgent = vi.fn()
+    reload = vi.fn()
     setWindowOpenHandler = vi.fn()
     session = {
       setUserAgent: vi.fn(),
@@ -45,6 +46,7 @@ interface TestView {
     getURL: ReturnType<typeof vi.fn>
     getUserAgent: ReturnType<typeof vi.fn>
     setUserAgent: ReturnType<typeof vi.fn>
+    reload: ReturnType<typeof vi.fn>
     setWindowOpenHandler: ReturnType<typeof vi.fn>
     session: {
       setUserAgent: ReturnType<typeof vi.fn>
@@ -124,6 +126,29 @@ describe('createWorkspaceHost', () => {
 
     void view.loadURL('http://127.0.0.1:3080/?token=abc')
     expect(created?.webContents.loadURL).toHaveBeenCalledWith('http://127.0.0.1:3080/?token=abc')
+  })
+
+  it('updates locale for cached workspace views when the Hub language changes', () => {
+    let locale = 'zh'
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never, () => locale)
+    host.prepare('77777777-7777-4777-8777-777777777777', 'https://gw.example.com/')
+    const created = fakeViews()[0]
+    locale = 'en'
+    host.setLocale()
+    expect(created?.webContents.session.setUserAgent).toHaveBeenLastCalledWith(
+      'DSH Hub Test Agent',
+      'en-US,en,zh-CN,zh'
+    )
+    expect(created?.webContents.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('reloads the active workspace view after credentials are silently restored', () => {
+    const host = createWorkspaceHost(() => hubWindow() as never)
+    host.prepare('88888888-8888-4888-8888-888888888888', 'https://gw.example.com/')
+    const created = fakeViews()[0]
+    host.reload()
+    expect(created?.webContents.reload).toHaveBeenCalledTimes(1)
   })
 
   it('keeps a new workspace view hidden until the renderer supplies content bounds', () => {

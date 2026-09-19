@@ -7,6 +7,7 @@ export interface WorkspaceView {
   webContents: {
     session: Electron.Session
     getURL(): string
+    reload(): void
     on(event: 'will-redirect', listener: (_event: { preventDefault(): void }, url: string) => void): void
   }
 }
@@ -24,7 +25,9 @@ export interface WorkspaceHost {
   prepare(instanceId: string, url: string): WorkspaceView
   /** 调整已缓存实例视图上限；超出的最久未使用非活动视图立即回收。 */
   setCacheLimit(limit: number): void
+  setLocale(): void
   setBounds(bounds: WorkspaceViewBounds): void
+  reload(): void
   hide(): void
   /** 销毁某实例的原生工作区；运行时和认证状态由调用方保留。 */
   disconnect(instanceId: string): void
@@ -38,7 +41,7 @@ export interface WorkspaceHost {
  */
 export function createWorkspaceHost(
   getHubWindow: () => BrowserWindow | null,
-  systemLocale: () => string = () => 'en-US'
+  workspaceLocale: () => string = () => 'en-US'
 ): WorkspaceHost {
   const entries = new Map<string, Entry>()
   let activeId: string | null = null
@@ -60,12 +63,16 @@ export function createWorkspaceHost(
     }
   }
 
+  function configureLocale(webContents: WebContentsView['webContents']): void {
+    // dsh 在持久化设置同步前按 navigator.languages 初始化；使用 Hub 的显式语言偏好，
+    // 避免系统语言与应用设置不一致时远程登录页回落为英文。
+    const locale = workspaceLocale().toLowerCase().startsWith('zh') ? 'zh-CN,zh,en-US,en' : 'en-US,en,zh-CN,zh'
+    webContents.session.setUserAgent(webContents.getUserAgent(), locale)
+  }
+
   function configure(entry: Entry): void {
     const { webContents } = entry.view
-    // dsh 在持久化设置同步前按 navigator.languages 初始化；显式把系统语言交给这个
-    // WebContentsView，避免 macOS/Electron 的默认 en-US 覆盖公共 DSH_HOME 的中文体验。
-    const locale = systemLocale().toLowerCase().startsWith('zh') ? 'zh-CN,zh,en-US,en' : 'en-US,en,zh-CN,zh'
-    webContents.session.setUserAgent(webContents.getUserAgent(), locale)
+    configureLocale(webContents)
     webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     webContents.on('will-navigate', (event, url) => {
       if (!isAllowedInstanceNavigation(url, entry.originUrl)) event.preventDefault()
@@ -108,6 +115,7 @@ export function createWorkspaceHost(
       win.contentView.addChildView(entry.view)
     } else {
       entry.originUrl = url
+      configureLocale(entry.view.webContents)
     }
     touch(entry)
     // WebContentsView 的默认可见区域会覆盖整个窗口。不能复用上一个工作区的边界，
@@ -172,6 +180,17 @@ export function createWorkspaceHost(
     trimCache()
   }
 
+  function setLocale(): void {
+    for (const entry of entries.values()) {
+      configureLocale(entry.view.webContents)
+      entry.view.webContents.reload()
+    }
+  }
+
+  function reload(): void {
+    for (const entry of entries.values()) entry.view.webContents.reload()
+  }
+
   function setBounds(bounds: WorkspaceViewBounds): void {
     if (activeId === null) return
     const active = entries.get(activeId)
@@ -192,7 +211,9 @@ export function createWorkspaceHost(
   return {
     prepare,
     setCacheLimit,
+    setLocale,
     setBounds,
+    reload,
     hide,
     disconnect,
     close,

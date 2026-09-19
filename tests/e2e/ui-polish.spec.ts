@@ -256,7 +256,7 @@ test('SSH 认证对话框限制在右侧工作区且指纹复制行不溢出', a
 
   await app.evaluate(({ BrowserWindow }) => {
     const hub = BrowserWindow.getAllWindows().find(
-      (candidate) => !candidate.webContents.getURL().startsWith('data:text/html')
+      (candidate) => candidate.contentView.children.length > 0
     )
     hub?.webContents.send('ssh:hostKeyDecision', {
       requestId: 'ui-polish-host-key',

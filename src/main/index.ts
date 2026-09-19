@@ -18,6 +18,7 @@ import type {
 } from '@shared/contracts'
 import { AUTH_IPC, INSTANCE_STATUS_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
+import type { AuthProbeController } from './ipc/register'
 import { createLocalRuntime } from './local-runtime/local-runtime'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createExternalDshScanner } from './local-runtime/external-dsh'
@@ -108,7 +109,10 @@ if (userDataOverride) app.setPath('userData', userDataOverride)
  * 实例窗口没有 preload，收到也无消费者；`auth:state` 仍广播（详情页可能在任一窗口）。
  */
 let hubWindow: BrowserWindow | null = null
-const workspaceHost = createWorkspaceHost(() => hubWindow, () => app.getLocale())
+const workspaceHost = createWorkspaceHost(
+  () => hubWindow,
+  () => resolveLanguage(settingsRef?.read().language, app.getLocale())
+)
 const workspaceTooltipHost = createWorkspaceTooltipHost(() => hubWindow)
 
 
@@ -202,6 +206,7 @@ const shouldInstallIntercept = createOncePerSession<Electron.Session>()
  * 无守卫时会对同一实例并发重探多次(徒增网关压力)。渲染层侧另有同义守卫。
  */
 const reprobeInFlight = new Set<string>()
+let authProbeController: AuthProbeController | null = null
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -374,6 +379,9 @@ void app.whenReady().then(() => {
     nativeApplier.apply(current, { changedKeys })
     if (changedKeys.includes('workspaceCacheSize')) {
       workspaceHost.setCacheLimit(current.workspaceCacheSize)
+    }
+    if (changedKeys.includes('language')) {
+      workspaceHost.setLocale()
     }
     if (changedKeys.includes('theme')) {
       applyNativeThemeSource(current.theme, nativeTheme)
@@ -549,7 +557,7 @@ void app.whenReady().then(() => {
 
   authRegistryRef = auth
 
-  registerIpc(instanceStore, {
+  authProbeController = registerIpc(instanceStore, {
     runtime,
     tunnels,
     http: httpEndpoints,
@@ -594,8 +602,11 @@ void app.whenReady().then(() => {
               if (signal) {
                 if (signal === 'session-expired' && auth && !reprobeInFlight.has(instance.id)) {
                   reprobeInFlight.add(instance.id)
-                  void auth
-                    .probe(instance.id)
+                  void authProbeController
+                    ?.probe(instance.id)
+                    .then((state) => {
+                      if (state?.phase === 'connected') workspaceHost.reload()
+                    })
                     .catch((error: unknown) => console.error('[main] 静默重探失败：', error))
                     .finally(() => reprobeInFlight.delete(instance.id))
                 }
