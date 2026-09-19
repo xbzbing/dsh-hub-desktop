@@ -167,6 +167,13 @@ export default function AuthPanel(): ReactNode {
     }
   }, [targetId, targetPhase])
 
+  // 面板关闭(含登录成功后的自动关闭)即丢弃已输入内容,避免密码在渲染层留存。
+  useEffect(() => {
+    if (targetId !== null && targetPhase !== null) return
+    setPassword('')
+    setOtp('')
+  }, [targetId, targetPhase])
+
   const target = model.target
   const state = model.state
   if (!target || !state) return null
