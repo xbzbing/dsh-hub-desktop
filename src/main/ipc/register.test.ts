@@ -461,6 +461,27 @@ describe('registerIpc', () => {
     expect(authFake.login).toHaveBeenCalledTimes(1)
   })
 
+  it('remote session expiry from connected resets the stored-password attempt', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    vaultFake.getPolicy?.mockReturnValue({ rememberPassword: true, rememberSession: false })
+    vaultFake.getPassword?.mockReturnValue('stored-secret')
+    const connected = { phase: 'connected', lockedForMs: 0 }
+    const awaiting = { phase: 'await-credentials', lockedForMs: 0 }
+    authFake.stateOf
+      .mockReturnValueOnce(connected)
+      .mockReturnValueOnce(awaiting)
+      .mockReturnValueOnce(connected)
+      .mockReturnValueOnce(awaiting)
+    authFake.login.mockResolvedValue({ phase: 'connected', lockedForMs: 0 })
+
+    await invoke('auth:probe', id)
+    await invoke('auth:probe', id)
+
+    expect(authFake.login).toHaveBeenCalledTimes(2)
+    expect(authFake.login).toHaveBeenNthCalledWith(1, id, 'stored-secret', undefined)
+    expect(authFake.login).toHaveBeenNthCalledWith(2, id, 'stored-secret', undefined)
+  })
+
   it('probe only attempts silent login from eligible phases', async () => {
     // 每个相用独立实例:静默尝试「每实例一次」的记账不该掩盖相本身的判定
     const uid = ((): (() => string) => {

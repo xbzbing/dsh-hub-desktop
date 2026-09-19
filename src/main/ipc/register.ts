@@ -190,7 +190,11 @@ function toSummary(record: InstanceRecord, runtimeStatus?: InstanceRuntimeStatus
   }
 }
 
-export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
+export interface AuthProbeController {
+  probe(instanceId: string): Promise<AuthStateSnapshot | null>
+}
+
+export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeController {
   /** 外部 dsh 的 token URL 仅驻留在主进程会话内，绝不进入状态流或注册表。 */
   const externalAccessUrls = new Map<string, { pid: number; port: number; url: string }>()
   const processVersions = process.versions as NodeJS.ProcessVersions & { electron?: string }
@@ -319,7 +323,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
       if (!isCurrent()) return
       // 首次打开不能依赖详情页的异步 probe：它可能晚于 WebContentsView 的首个导航，
       // 导致已记住的会话 Cookie 还没恢复就先被网关重定向到 /login。
-      if (instance.authMode !== 'none') await deps.auth.probe(instance.id)
+      if (instance.authMode !== 'none') await probeWithStoredPassword(instance.id)
       if (isCurrent()) await deps.openInstanceView(instance, url)
     }
     const instance = await store.get(instanceId)
@@ -700,14 +704,21 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
     }
   }
 
+  async function probeWithStoredPassword(instanceId: string): Promise<AuthStateSnapshot | null> {
+    const beforeProbe = deps.auth.stateOf(instanceId)
+    await deps.auth.probe(instanceId)
+    const probedState = deps.auth.stateOf(instanceId) as Awaited<ReturnType<AuthRegistry['stateOf']>>
+    // 远端 dsh 重启会让原有 Cookie 失效：允许这次从 connected 回落到登录态时重新复用一次已存密码。
+    if (beforeProbe?.phase === 'connected' && probedState?.phase !== 'connected') {
+      storedLoginAttempted.delete(instanceId)
+    }
+    const state = await autoLoginWithStored(instanceId, probedState)
+    return authSnapshot(state)
+  }
+
   // Try one silent login when probing finds a stored password and an authentication state.
   ipcMain.handle(AUTH_IPC.probe, (_event, id: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
-    wrap(async () => {
-      const instanceId = parseId(id)
-      await deps.auth.probe(instanceId)
-      const state = await autoLoginWithStored(instanceId, deps.auth.stateOf(instanceId) as never)
-      return authSnapshot(state)
-    })
+    wrap(async () => probeWithStoredPassword(parseId(id)))
   )
 
   ipcMain.handle(
@@ -842,4 +853,6 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): void {
         return null
       })
   )
+
+  return { probe: probeWithStoredPassword }
 }
