@@ -22,6 +22,12 @@ The prototype was designed with OpenDesign and implemented using `dsh`, resultin
   <em>Dark Theme · Instance Overview</em>
 </p>
 
+<p align="center">
+  <img src="docs/images/sidebar-collapsed.png" alt="DSH Hub Desktop - Collapsed Sidebar" width="800" />
+  <br/>
+  <em>Collapsed Sidebar · Icon Mode</em>
+</p>
+
 ## Features
 
 - **Unified Instance Management**: Local registry with atomic writes, rolling backups, corruption recovery, and schema migration. Wizard-based creation → startup → detail page for start/stop/edit/open/delete

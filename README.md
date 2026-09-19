@@ -22,6 +22,12 @@
   <em>暗色主题 · 实例总览</em>
 </p>
 
+<p align="center">
+  <img src="docs/images/sidebar-collapsed.png" alt="DSH Hub Desktop - 收起侧边栏" width="800" />
+  <br/>
+  <em>侧边栏收起 · 图标模式</em>
+</p>
+
 ## 功能特性
 
 - **实例统一管理**：注册表本地落盘（原子写 + 滚动备份 + 损坏自愈 + 版本迁移）；
