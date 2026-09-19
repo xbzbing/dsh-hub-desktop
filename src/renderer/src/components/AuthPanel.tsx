@@ -72,6 +72,7 @@ export default function AuthPanel(): ReactNode {
   const refreshVault = useAppStore((state) => state.refreshVault)
   const [model, setModel] = useState(initialAuthPanelModel)
   const [password, setPassword] = useState('')
+  const [otpPassword, setOtpPassword] = useState('')
   const [otp, setOtp] = useState('')
   const [useBackup, setUseBackup] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -171,8 +172,13 @@ export default function AuthPanel(): ReactNode {
   useEffect(() => {
     if (targetId !== null && targetPhase !== null) return
     setPassword('')
+    setOtpPassword('')
     setOtp('')
   }, [targetId, targetPhase])
+
+  // OTP 屏的密码输入使用独立状态 otpPassword，避免与密码屏的 password 状态冲突。
+  // effectivePassword 统一两种来源，供提交逻辑使用。
+  const effectivePassword = password === '' ? otpPassword : password
 
   const target = model.target
   const state = model.state
@@ -195,7 +201,7 @@ export default function AuthPanel(): ReactNode {
       const code = otp === '' ? undefined : otp
       const result = useStored
         ? await BRIDGE.auth.loginStored(target.id, code)
-        : await BRIDGE.auth.login(target.id, password, code)
+        : await BRIDGE.auth.login(target.id, effectivePassword, code)
       const value = result.ok ? result.value : null
       if (value) setModel((current) => applyAuthSnapshot(current, target.id, value))
       else if (!result.ok) setError(result.message)
@@ -210,7 +216,7 @@ export default function AuthPanel(): ReactNode {
 
   /** 主提交:验证码阶段密码留空时复用已存密码,其余情况使用输入的密码。 */
   const submit = (): Promise<void> =>
-    runLogin(phase === 'await-otp' && password === '' && storedAvailable)
+    runLogin(phase === 'await-otp' && effectivePassword === '' && storedAvailable)
 
   /** 显式入口:密码屏直接用已存密码登录,不要求用户输入。 */
   const submitStored = (): Promise<void> => runLogin(true)
@@ -218,6 +224,7 @@ export default function AuthPanel(): ReactNode {
   const close = (): void => {
     setModel(closeAuthPanel())
     setPassword('')
+    setOtpPassword('')
     setOtp('')
     setError(null)
   }
@@ -259,15 +266,15 @@ export default function AuthPanel(): ReactNode {
                 busy ||
                 locked ||
                 (phase === 'await-otp'
-                  ? otp === '' || (password === '' && !storedAvailable)
+                  ? otp === '' || (effectivePassword === '' && !storedAvailable)
                   : password === '')
               }
               title={
-                phase === 'await-otp' && password === ''
-                  ? storedAvailable
+                phase === 'await-otp' && effectivePassword === '' && !storedAvailable
+                  ? t('auth.needReusedPassword')
+                  : phase === 'await-otp' && effectivePassword === '' && storedAvailable
                     ? t('auth.storedHint')
-                    : t('auth.needReusedPassword')
-                  : undefined
+                    : undefined
               }
             >
               {busy
@@ -296,16 +303,16 @@ export default function AuthPanel(): ReactNode {
         </div>
       )}
 
-      {phase === 'await-otp' && password === '' && (
+      {phase === 'await-otp' && password === '' && !storedAvailable && (
         <div className="field mt12">
           <label htmlFor="auth-password-otp">{t('auth.passwordForOtp')}</label>
           <input
             id="auth-password-otp"
             className="input"
             type="password"
-            value={password}
+            value={otpPassword}
             data-testid="auth-password-in-otp"
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) => setOtpPassword(event.target.value)}
           />
         </div>
       )}

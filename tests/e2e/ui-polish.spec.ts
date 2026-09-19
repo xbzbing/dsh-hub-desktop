@@ -194,6 +194,66 @@ function startFakeGateway(requireOtp: boolean): Promise<{ server: Server; port: 
   })
 }
 
+/**
+ * 假网关(OTP 页面直跳):页面探测 302 → /otp/verify 触发 otp-page 证据,
+ * 探测直接进入 await-otp,跳过密码屏——用于测试 OTP 屏的密码输入框。
+ * 首登无密码:401;带 OTP 的 POST:200。
+ */
+function startFakeOtpGateway(): Promise<{ server: Server; port: number }> {
+  return new Promise((resolvePromise) => {
+    const server = createServer((req, res) => {
+      const url = new URL(req.url ?? '/', 'http://x')
+      // 页面探测 → 302 → /otp/verify (otp-page 证据)
+      if (url.pathname === '/' || url.pathname === '/dsh' || url.pathname === '/dsh/') {
+        res.writeHead(302, { location: '/dsh/otp/verify' })
+        res.end()
+        return
+      }
+      if (url.pathname.endsWith('/login-api/settings')) {
+        res.writeHead(401, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: 'unauthenticated' }))
+        return
+      }
+      if (url.pathname.endsWith('/login/auth') && req.method === 'POST') {
+        let body = ''
+        req.on('data', (chunk: Buffer) => {
+          body += String(chunk)
+        })
+        req.on('end', () => {
+          let otp: string | undefined
+          let password: string | undefined
+          try {
+            const parsed = JSON.parse(body) as { otp?: string; password?: string }
+            otp = parsed.otp
+            password = parsed.password
+          } catch {
+            otp = undefined
+            password = undefined
+          }
+          if (!password || !otp) {
+            res.writeHead(400, { 'content-type': 'application/json' })
+            res.end(JSON.stringify({ error: 'otp-required' }))
+            return
+          }
+          res.writeHead(200, {
+            'content-type': 'application/json',
+            'set-cookie': 'dsh_auth=ticket123; Path=/; HttpOnly'
+          })
+          res.end(JSON.stringify({ ok: true }))
+        })
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      const port = typeof address === 'object' && address ? address.port : 0
+      resolvePromise({ server, port })
+    })
+  })
+}
+
 test.beforeAll(async () => {
   await rm(DATA_DIR, { recursive: true, force: true })
   await mkdir(DATA_DIR, { recursive: true })
@@ -662,5 +722,58 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
     await expect(win.getByTestId('login-btn')).toContainText('重新登录')
   } finally {
     direct.server.close()
+  }
+})
+
+test('OTP 屏无已存密码时密码输入框持续可见且可提交', async () => {
+  const { server, port } = await startFakeOtpGateway()
+  test.setTimeout(60_000)
+  try {
+    const created = await win.evaluate(async (p) => {
+      const r = await window.dshHub.instances.create({
+        transport: 'http',
+        name: 'OTP 无密码实例',
+        authMode: 'auto',
+        endpointUrl: `http://127.0.0.1:${p}/dsh`
+      })
+      if (!r.ok) throw new Error(`create failed: ${JSON.stringify(r)}`)
+      const s = await window.dshHub.runtime.start(r.value.id)
+      return { id: r.value.id, startOk: s.ok }
+    }, port)
+    expect(created.startOk).toBe(true)
+    // 探测打 /dsh/ → 302 → /otp/verify → otp-page 证据 → await-otp
+    await win.waitForTimeout(600)
+    await win.reload()
+    await expect(win.getByTestId('app-shell')).toBeVisible()
+    await win.waitForTimeout(400)
+
+    await win.getByTestId('instances-table').getByText('OTP 无密码实例', { exact: true }).click()
+    await expect(win.getByTestId('view-detail')).toBeVisible()
+
+    // 新实例未登录过,保险库中无凭据 → storedAvailable=false
+    await expect(win.getByTestId('vault-state')).not.toContainText('已记住')
+
+    // 打开认证面板 → 探测后直接进入 await-otp(无密码屏)
+    await win.getByTestId('login-btn').click()
+    await expect(win.getByTestId('auth-panel')).toBeVisible()
+
+    // OTP 屏:密码输入框必须出现(无已存密码,phase=await-otp,password='')
+    const otpPwd = win.getByTestId('auth-password-in-otp')
+    await expect(otpPwd).toBeVisible({ timeout: 10_000 })
+    // storedAvailable=false → 不应显示已保存密码提示
+    await expect(win.getByTestId('auth-stored-hint')).toBeHidden()
+
+    // 输入密码 — 字段持续可见(不会因输入一个字符后自卸载)
+    await otpPwd.fill('hunter2')
+    await expect(otpPwd).toHaveValue('hunter2')
+
+    // 输入 OTP 并提交
+    await win.getByTestId('auth-otp').fill('654321')
+    await win.getByTestId('auth-submit').click()
+    await expect(win.getByTestId('auth-panel')).toBeHidden({ timeout: 10_000 })
+    // 登录成功 → 重新登录按钮出现
+    await expect(win.getByTestId('login-btn')).toContainText('重新登录')
+  } finally {
+    server.close()
   }
 })
