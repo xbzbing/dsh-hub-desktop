@@ -265,4 +265,38 @@ describe('createWorkspaceHost', () => {
     expect(hub.contentView.removeChildView).toHaveBeenCalledWith(created)
     expect(created?.webContents.close).toHaveBeenCalled()
   })
+
+  it('focusActive gives keyboard focus to the visible workspace view', () => {
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never)
+    const instanceId = '99999999-9999-4999-9999-999999999999'
+    host.prepare(instanceId, 'http://127.0.0.1:3082/')
+    const view = fakeViews()[0]!
+
+    host.focusActive()
+
+    // focusEntry uses setImmediate; flush it.
+    return new Promise<void>((resolve) =>
+      setImmediate(() => {
+        expect(view.webContents.focus).toHaveBeenCalled()
+        resolve()
+      })
+    )
+  })
+
+  it('focusActive is a no-op when no workspace is visible', () => {
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never)
+    host.prepare('aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', 'http://127.0.0.1:3083/')
+    const view = fakeViews()[0]!
+    // hide() clears activeId, so focusActive should be a no-op.
+    host.hide()
+    host.focusActive()
+    return new Promise<void>((resolve) =>
+      setImmediate(() => {
+        expect(view.webContents.focus).not.toHaveBeenCalled()
+        resolve()
+      })
+    )
+  })
 })

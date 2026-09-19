@@ -39,6 +39,8 @@ export interface WorkspaceHost {
   disconnect(instanceId: string): void
   close(instanceId: string): void
   closeAll(): void
+  /** 将键盘焦点交还当前可见的工作区视图。由窗口重新激活时调用。 */
+  focusActive(): void
 }
 
 /**
@@ -221,6 +223,12 @@ export function createWorkspaceHost(
     for (const instanceId of [...entries.keys()]) close(instanceId)
   }
 
+  function focusActive(): void {
+    if (activeId === null) return
+    const entry = entries.get(activeId)
+    if (entry && !entry.view.webContents.isDestroyed()) focusEntry(entry)
+  }
+
   return {
     prepare,
     setCacheLimit,
@@ -231,6 +239,7 @@ export function createWorkspaceHost(
     loadedUrl,
     disconnect,
     close,
-    closeAll
+    closeAll,
+    focusActive
   }
 }
