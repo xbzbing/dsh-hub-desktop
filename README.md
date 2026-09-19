@@ -23,6 +23,12 @@
 </p>
 
 <p align="center">
+  <img src="docs/images/instance-show.png" alt="DSH Hub Desktop - 实例详情" width="800" />
+  <br/>
+  <em>实例详情页</em>
+</p>
+
+<p align="center">
   <img src="docs/images/sidebar-collapsed.png" alt="DSH Hub Desktop - 收起侧边栏" width="800" />
   <br/>
   <em>侧边栏收起 · 图标模式</em>

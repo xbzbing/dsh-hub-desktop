@@ -23,6 +23,12 @@ The prototype was designed with OpenDesign and implemented using `dsh`, resultin
 </p>
 
 <p align="center">
+  <img src="docs/images/instance-show.png" alt="DSH Hub Desktop - Instance Detail" width="800" />
+  <br/>
+  <em>Instance Detail Page</em>
+</p>
+
+<p align="center">
   <img src="docs/images/sidebar-collapsed.png" alt="DSH Hub Desktop - Collapsed Sidebar" width="800" />
   <br/>
   <em>Collapsed Sidebar · Icon Mode</em>
