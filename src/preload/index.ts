@@ -40,7 +40,8 @@ const bridge: DshHubBridge = {
     get: (id) => ipcRenderer.invoke(INSTANCE_IPC.get, id),
     create: (input) => ipcRenderer.invoke(INSTANCE_IPC.create, input),
     update: (id, patch) => ipcRenderer.invoke(INSTANCE_IPC.update, id, patch),
-    remove: (id) => ipcRenderer.invoke(INSTANCE_IPC.delete, id)
+    remove: (id) => ipcRenderer.invoke(INSTANCE_IPC.delete, id),
+    reorder: (orderedIds) => ipcRenderer.invoke(INSTANCE_IPC.reorder, orderedIds)
   },
   runtime: {
     start: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.start, id),

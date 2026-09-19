@@ -72,6 +72,8 @@ export interface DshHubBridge {
     create: (input: CreateInstanceInput) => Promise<IpcResult<InstanceRecord>>
     update: (id: string, patch: PatchInstanceInput) => Promise<IpcResult<InstanceRecord>>
     remove: (id: string) => Promise<IpcResult<{ removed: boolean }>>
+    /** 按给定 ID 列表重排实例顺序；ID 必须与当前注册表完全一致。 */
+    reorder: (orderedIds: string[]) => Promise<IpcResult<InstanceSummary[]>>
   }
   /** 本地实例运行时控制：start/stop 立即返回，进展经 onInstanceStatus 回推。 */
   runtime: {

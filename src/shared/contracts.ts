@@ -481,13 +481,15 @@ export interface InstanceSummary {
   updatedAt: string
 }
 
-/** 实例注册表 CRUD 通道。 */
+/** 实例注册表 CRUD + 排序通道。 */
 export const INSTANCE_IPC = {
   list: 'instances:list',
   get: 'instances:get',
   create: 'instances:create',
   update: 'instances:update',
-  delete: 'instances:delete'
+  delete: 'instances:delete',
+  /** 按给定 ID 列表重排实例顺序；ID 必须与当前注册表完全一致。 */
+  reorder: 'instances:reorder'
 } as const
 
 /** 本地运行时控制通道：start/stop 立即返回，进展由 `instance:status` 事件回推。 */

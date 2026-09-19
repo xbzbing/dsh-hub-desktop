@@ -80,6 +80,8 @@ export interface InstanceStore {
   create(input: CreateInstanceInput): Promise<InstanceRecord>
   update(id: string, patch: PatchInstanceInput): Promise<InstanceRecord>
   remove(id: string): Promise<boolean>
+  /** 按给定 ID 列表重排实例顺序；ID 必须与当前注册表完全一致。 */
+  reorder(orderedIds: string[]): Promise<InstanceRecord[]>
   stats(): Promise<InstanceStoreStats>
 }
 
@@ -407,6 +409,29 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
         if (!current.some((record) => record.id === id)) return false
         await persist(current.filter((record) => record.id !== id))
         return true
+      }),
+
+    reorder: (orderedIds) =>
+      enqueue(async () => {
+        await ensureLoaded()
+        const current = instances ?? []
+        // 校验:orderedIds 必须与当前 ID 集合完全一致(不多不少)
+        if (orderedIds.length !== current.length) {
+          throw new InstanceStoreError(
+            'invalid-input',
+            `排序列表长度(${orderedIds.length})与实例数量(${current.length})不一致`
+          )
+        }
+        const currentIds = new Set(current.map((r) => r.id))
+        for (const id of orderedIds) {
+          if (!currentIds.has(id)) {
+            throw new InstanceStoreError('invalid-input', `排序列表包含未知实例 ID：${id}`)
+          }
+        }
+        const byId = new Map(current.map((r) => [r.id, r]))
+        const reordered = orderedIds.map((id) => byId.get(id)!)
+        await persist(reordered)
+        return reordered.map((r) => structuredClone(r))
       }),
 
     stats: () =>

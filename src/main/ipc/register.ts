@@ -286,6 +286,19 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
       })
   )
 
+  ipcMain.handle(
+    INSTANCE_IPC.reorder,
+    (_event, orderedIds: unknown): Promise<IpcResult<InstanceSummary[]>> =>
+      wrap(async () => {
+        if (!Array.isArray(orderedIds)) {
+          throw new InstanceStoreError('invalid-input', '排序列表必须是字符串数组')
+        }
+        const ids = orderedIds.map((id) => parseId(id))
+        const records = await store.reorder(ids)
+        return records.map((record) => toSummary(record, statusFor(record)))
+      })
+  )
+
   ipcMain.handle(INSTANCE_RUNTIME_IPC.start, (_event, id: unknown): Promise<IpcResult<null>> =>
     wrap(async () => {
       const instance = await store.get(parseId(id))
