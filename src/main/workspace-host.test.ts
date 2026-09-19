@@ -143,6 +143,27 @@ describe('createWorkspaceHost', () => {
     expect(created?.webContents.reload).toHaveBeenCalledTimes(1)
   })
 
+  it('reports the cached view URL read-only, and null when nothing is cached', () => {
+    const host = createWorkspaceHost(() => hubWindow() as never)
+    const id = '99999999-9999-4999-8999-999999999999'
+    // 尚未 prepare → 无缓存视图
+    expect(host.loadedUrl(id)).toBeNull()
+    host.prepare(id, 'https://gw.example.com/dsh/')
+    // prepare 只创建视图，尚未导航完成 → 仍视为「不可复用」
+    expect(host.loadedUrl(id)).toBeNull()
+    const created = fakeViews()[0]
+    created?.webContents.getURL.mockReturnValue('https://gw.example.com/dsh/')
+    // 只读：查询不得改变可见性、边界或激活目标
+    const boundsCalls = created?.setBounds.mock.calls.length
+    const visibleCalls = created?.setVisible.mock.calls.length
+    expect(host.loadedUrl(id)).toBe('https://gw.example.com/dsh/')
+    expect(created?.setBounds.mock.calls.length).toBe(boundsCalls)
+    expect(created?.setVisible.mock.calls.length).toBe(visibleCalls)
+    // 视图已销毁 → 不可复用
+    created?.webContents.isDestroyed.mockReturnValue(true)
+    expect(host.loadedUrl(id)).toBeNull()
+  })
+
   it('reloads the active workspace view after credentials are silently restored', () => {
     const host = createWorkspaceHost(() => hubWindow() as never)
     host.prepare('88888888-8888-4888-8888-888888888888', 'https://gw.example.com/')

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createOncePerSession, isAuthenticatedTokenUrl, isSameOriginLoginRedirect, openInstanceView } from './instance-view'
+import { createOncePerSession, isAuthenticatedTokenUrl, isSameOriginLoginRedirect, openInstanceView, shouldReuseLoadedView } from './instance-view'
 import type { InstanceViewWindow, OpenInstanceViewDeps } from './instance-view'
 
 const COOKIE = { name: 'dsh_auth', value: 'sess-token', expiresAt: null }
@@ -127,6 +127,19 @@ describe('openInstanceView（ 先注入再 loadURL 的顺序纪律）', () => {
     expect(isAuthenticatedTokenUrl('http://127.0.0.1:8002/?token=replaced', args.url)).toBe(false)
     expect(isAuthenticatedTokenUrl('http://127.0.0.1:8002/', 'http://127.0.0.1:8002/')).toBe(false)
   })
+  it('shouldReuseLoadedView 只认「无需导航」的两种情况', () => {
+    const target = 'http://127.0.0.1:8002/?token=abc'
+    // 精确同 URL，或 BrowserAuth 已消费一次性 token 后回到同源同路径
+    expect(shouldReuseLoadedView(target, target)).toBe(true)
+    expect(shouldReuseLoadedView('http://127.0.0.1:8002/', target)).toBe(true)
+    // 未缓存(undefined)、异源、异路径、以及仍带 token 的当前页都需要重新导航
+    expect(shouldReuseLoadedView(undefined, target)).toBe(false)
+    expect(shouldReuseLoadedView('', target)).toBe(false)
+    expect(shouldReuseLoadedView('http://other.example/', target)).toBe(false)
+    expect(shouldReuseLoadedView('http://127.0.0.1:8002/other', target)).toBe(false)
+    expect(shouldReuseLoadedView('http://127.0.0.1:8002/?token=old', target)).toBe(false)
+  })
+
   it('无会话时只开窗+装拦截+加载,不写 Cookie', async () => {
     const h = harness()
     const injected = await openInstanceView(h.deps, { ...args, cookie: null })

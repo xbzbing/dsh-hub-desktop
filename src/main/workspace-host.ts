@@ -7,6 +7,7 @@ export interface WorkspaceView {
   webContents: {
     session: Electron.Session
     getURL(): string
+    isDestroyed(): boolean
     reload(): void
     on(event: 'will-redirect', listener: (_event: { preventDefault(): void }, url: string) => void): void
   }
@@ -29,6 +30,11 @@ export interface WorkspaceHost {
   setBounds(bounds: WorkspaceViewBounds): void
   reload(): void
   hide(): void
+  /**
+   * 已缓存视图当前停在哪。只读，不改变可见性、边界或激活目标。
+   * 未缓存或尚未导航完成时返回 null；调用方据此判断打开是否需要重新导航。
+   */
+  loadedUrl(instanceId: string): string | null
   /** 销毁某实例的原生工作区；运行时和认证状态由调用方保留。 */
   disconnect(instanceId: string): void
   close(instanceId: string): void
@@ -191,6 +197,13 @@ export function createWorkspaceHost(
     for (const entry of entries.values()) entry.view.webContents.reload()
   }
 
+  function loadedUrl(instanceId: string): string | null {
+    const entry = entries.get(instanceId)
+    if (!entry || entry.view.webContents.isDestroyed()) return null
+    const url = entry.view.webContents.getURL()
+    return url === '' ? null : url
+  }
+
   function setBounds(bounds: WorkspaceViewBounds): void {
     if (activeId === null) return
     const active = entries.get(activeId)
@@ -215,6 +228,7 @@ export function createWorkspaceHost(
     setBounds,
     reload,
     hide,
+    loadedUrl,
     disconnect,
     close,
     closeAll

@@ -96,6 +96,20 @@ export function isAuthenticatedTokenUrl(currentUrl: string | undefined, targetUr
 }
 
 /**
+ * 视图是否已停在该 URL，从而本次打开不需要导航。
+ *
+ * 复用精确 URL，或 BrowserAuth 已消费一次性 token 后回到同源同路径的页面。
+ * 调用方据此判断「本次打开会不会真的发生导航」——不会导航时既无需注入会话 Cookie，
+ * 也不必为注入而等待认证探测。
+ */
+export function shouldReuseLoadedView(
+  currentUrl: string | undefined,
+  targetUrl: string
+): boolean {
+  return currentUrl === targetUrl || isAuthenticatedTokenUrl(currentUrl, targetUrl)
+}
+
+/**
  * 开窗 → 装拦截 → 注入 Cookie → 加载。
  * @returns 是否在加载前成功写入了会话 Cookie
  */
@@ -104,9 +118,7 @@ export async function openInstanceView<W extends InstanceViewWindow>(
   args: OpenInstanceViewArgs
 ): Promise<boolean> {
   const win = deps.createWindow()
-  // 复用精确 URL，或 BrowserAuth 已消费一次性 token 后回到同源同路径的页面。
-  const currentUrl = win.webContents.getURL?.()
-  if (currentUrl === args.url || isAuthenticatedTokenUrl(currentUrl, args.url)) return false
+  if (shouldReuseLoadedView(win.webContents.getURL?.(), args.url)) return false
   deps.installIntercept(win)
   let redirectedTo: string | null = null
   win.webContents.on?.('will-redirect', (_event, url) => {
