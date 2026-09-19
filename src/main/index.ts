@@ -574,6 +574,7 @@ void app.whenReady().then(() => {
     setInstanceViewBounds: (bounds) => workspaceHost.setBounds(bounds),
     showInstanceTooltip: (tooltip) => workspaceTooltipHost.show(tooltip),
     hideInstanceTooltip: () => workspaceTooltipHost.hide(),
+    instanceViewUrl: (instanceId) => workspaceHost.loadedUrl(instanceId),
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
       // 否则「先停隧道再清 Cookie」会静默 no-op

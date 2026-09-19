@@ -31,6 +31,7 @@ import {
   type WorkspaceViewBounds
 } from '@shared/contracts'
 import { httpDirectEndpoint } from '../transport/endpoint-resolver'
+import { shouldReuseLoadedView } from '../webview/instance-view'
 import type { HttpEndpointManager } from '../transport/http-endpoint'
 import { resolveSshKeyPreview } from '../ssh/key-preview'
 import type { PromptBroker } from '../ssh/prompt-broker'
@@ -77,6 +78,11 @@ export interface IpcDeps {
   /** 工作区原生视图之上的只读提示；文本与坐标由 schema 限制。 */
   showInstanceTooltip?: (tooltip: { text: string; x: number; y: number }) => Promise<void>
   hideInstanceTooltip?: () => void
+  /**
+   * 已缓存实例视图当前停在哪（只读）。缺省视为「无缓存视图」。
+   * 用于判断本次打开是否真的会导航，从而决定认证探测要不要进入等待路径。
+   */
+  instanceViewUrl?: (instanceId: string) => string | null
   prompts: PromptBroker
   http: HttpEndpointManager
   auth: AuthRegistry
@@ -323,7 +329,17 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
       if (!isCurrent()) return
       // 首次打开不能依赖详情页的异步 probe：它可能晚于 WebContentsView 的首个导航，
       // 导致已记住的会话 Cookie 还没恢复就先被网关重定向到 /login。
-      if (instance.authMode !== 'none') await probeWithStoredPassword(instance.id)
+      // 但已经停在同一 URL 的缓存视图不会再导航（见 shouldReuseLoadedView），
+      // 此时注入 Cookie 无从发生，等待一次远程网关往返只会拖长切换的加载时间。
+      if (instance.authMode !== 'none') {
+        const probe = probeWithStoredPassword(instance.id)
+        const cachedUrl = deps.instanceViewUrl?.(instance.id) ?? undefined
+        if (shouldReuseLoadedView(cachedUrl, url)) {
+          void probe.catch((error: unknown) => console.error('[register] 后台认证探测失败：', error))
+        } else {
+          await probe
+        }
+      }
       if (isCurrent()) await deps.openInstanceView(instance, url)
     }
     const instance = await store.get(instanceId)

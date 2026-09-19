@@ -43,6 +43,7 @@ let tunnelsFake: {
   forgetHostKey: ReturnType<typeof vi.fn>
 }
 let openInstanceView: ReturnType<typeof vi.fn>
+let instanceViewUrlFake: ReturnType<typeof vi.fn>
 let externalDshFake: { scan: ReturnType<typeof vi.fn> }
 let httpFake: {
   onStatus: ReturnType<typeof vi.fn>
@@ -173,6 +174,7 @@ beforeEach(async () => {
     filePath: vi.fn(() => '/tmp/settings.json')
   }
   openInstanceView = vi.fn()
+  instanceViewUrlFake = vi.fn(() => null)
   externalDshFake = { scan: vi.fn(async () => []) }
   promptsFake = {
     requestHostKey: vi.fn(async () => 'trust'),
@@ -196,6 +198,7 @@ beforeEach(async () => {
     closeInstanceView: closeInstanceView as never,
     showInstanceTooltip: showInstanceTooltip as never,
     hideInstanceTooltip: hideInstanceTooltip as never,
+    instanceViewUrl: instanceViewUrlFake as never,
     prompts: promptsFake as never,
     openInstanceView: openInstanceView as never
   })
@@ -733,6 +736,70 @@ describe('registerIpc', () => {
       expect.objectContaining({ id: created.value.id, transport: 'http' }),
       expect.stringContaining('gw.example.com')
     )
+  })
+
+  it('已停在同一 URL 的远程工作区不再等待认证探测', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '已打开的远程',
+      authMode: 'auto',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    const endpoint = 'https://gw.example.com/dsh/'
+    httpFake.statusOf.mockReturnValue({
+      id: created.value.id,
+      status: 'running',
+      url: endpoint,
+      at: '2026-09-15T00:00:00.000Z'
+    })
+    // 缓存视图已停在同一 URL → 本次打开不会导航，探测不该阻塞显示。
+    instanceViewUrlFake.mockReturnValue(endpoint)
+    let probeSettled = false
+    authFake.probe.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            probeSettled = true
+            resolve(null)
+          }, 50)
+        })
+    )
+
+    const opened = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    expect(probeSettled).toBe(false)
+    expect(openInstanceView).toHaveBeenCalledWith(expect.objectContaining({ id: created.value.id }), endpoint)
+  })
+
+  it('缓存视图停在别的 URL 时仍先完成认证探测再开窗', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '换址的远程',
+      authMode: 'auto',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    const endpoint = 'https://gw.example.com/dsh/'
+    httpFake.statusOf.mockReturnValue({
+      id: created.value.id,
+      status: 'running',
+      url: endpoint,
+      at: '2026-09-15T00:00:00.000Z'
+    })
+    instanceViewUrlFake.mockReturnValue('https://gw.example.com/dsh/other')
+    const order: string[] = []
+    authFake.probe.mockImplementation(async () => {
+      order.push('probe')
+      return null
+    })
+    openInstanceView.mockImplementation(async () => {
+      order.push('openInstanceView')
+    })
+
+    const opened = (await invoke('instances:openView', created.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    expect(order).toEqual(['probe', 'openInstanceView'])
   })
 
   it('未连接的 SSH 和本机实例会在打开工作区时开始准备', async () => {
