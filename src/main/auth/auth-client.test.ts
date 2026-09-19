@@ -198,7 +198,7 @@ describe('AuthClient（/ 编排）', () => {
     const fetchImpl = fakeFetch((url) =>
       url.includes('/login-api/settings')
         ? jsonResponse(200, { ok: true, config: { 'dsh-auth-gateway': { otpEnabled: true } } })
-        : htmlResponse(302, '', '/login')
+        : new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } })
     )
     const client = createAuthClient({ instanceId: 'i1', endpointUrl: 'https://gw/dsh', jar, fetchImpl })
     await client.probeAndRestore()
