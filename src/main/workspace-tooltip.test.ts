@@ -75,11 +75,12 @@ describe('createWorkspaceTooltipHost', () => {
     expect(tooltip?.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
     expect(tooltip?.setIgnoreMouseEvents).toHaveBeenCalledWith(true, { forward: true })
     const bounds = tooltip?.setBounds.mock.calls.at(-1)?.[0]
-    expect(bounds).toMatchObject({ x: 172, y: 344 })
-    expect(bounds.width).toBeGreaterThanOrEqual(96)
-    expect(bounds.height).toBe(32)
+    expect(bounds).toMatchObject({ x: 172, y: 343 })
+    expect(bounds.width).toBeGreaterThanOrEqual(98)
+    expect(bounds.height).toBe(34)
     expect(tooltip?.showInactive).toHaveBeenCalledOnce()
     const loaded = tooltip?.loadURL.mock.calls[0]?.[0] as string
+    expect(decodeURIComponent(loaded)).toContain('margin:1px')
     expect(decodeURIComponent(loaded)).toContain('收起态示例实例')
   })
 
