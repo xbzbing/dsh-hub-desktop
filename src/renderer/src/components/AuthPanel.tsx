@@ -337,7 +337,7 @@ export default function AuthPanel(): ReactNode {
           {/* 密码留空时不必手输:由主进程用保险库中的密码完成登录。 */}
           {storedAvailable && (
             <button
-              className="btn btn-ghost btn-sm mt12"
+              className="btn btn-secondary btn-sm mt12"
               data-testid="auth-use-stored"
               disabled={busy || locked}
               title={t('auth.useStoredHint')}
