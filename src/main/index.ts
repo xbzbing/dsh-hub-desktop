@@ -332,6 +332,13 @@ else {
   app.on('second-instance', () => showHubWindow())
 }
 
+// 无头 E2E 里 Chromium 探测不到桌面环境,safeStorage 会回退 basic_text(非真加密),
+// 凭据保险库随之降级。经此开关显式声明后端,让保险库在 Linux CI 上与真实桌面一致;
+// 产品默认跟随桌面环境,不设置该环境变量即无影响。
+if (process.env.DSH_HUB_E2E_PASSWORD_STORE) {
+  app.commandLine.appendSwitch('password-store', process.env.DSH_HUB_E2E_PASSWORD_STORE)
+}
+
 void app.whenReady().then(() => {
   if (!hasSingleInstanceLock) return
   registerRendererProtocol()

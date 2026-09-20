@@ -191,7 +191,8 @@ export function createExternalDshScanner(
         try {
           const ps = await run('powershell.exe', ['-NoProfile', '-Command', WIN_PROCESS_SCRIPT])
           processes = parseDshWebProcesses(ps.stdout)
-        } catch {
+        } catch (error) {
+          console.error('[external-dsh] 进程查询失败：', error)
           return []
         }
         if (processes.length === 0) return processes
@@ -202,7 +203,8 @@ export function createExternalDshScanner(
           const netstat = await run('netstat', ['-ano', '-p', 'tcp'])
           const ports = parseWindowsListeningPorts(netstat.stdout)
           return processes.map((item) => ({ ...item, port: ports.get(item.pid) ?? null }))
-        } catch {
+        } catch (error) {
+          console.error('[external-dsh] 端口查询失败：', error)
           return processes.map((item) => ({ ...item, port: null }))
         }
       }
@@ -210,7 +212,8 @@ export function createExternalDshScanner(
       try {
         const ps = await run('ps', ['-axo', 'pid=,command='])
         processes = parseDshWebProcesses(ps.stdout)
-      } catch {
+      } catch (error) {
+        console.error('[external-dsh] 进程查询失败：', error)
         return []
       }
       if (processes.length === 0) return processes
@@ -221,7 +224,8 @@ export function createExternalDshScanner(
         const lsof = await run('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN'])
         const ports = parseListeningPorts(lsof.stdout)
         processes = processes.map((item) => ({ ...item, port: ports.get(item.pid) ?? null }))
-      } catch {
+      } catch (error) {
+        console.error('[external-dsh] 端口查询失败：', error)
         // lsof 不可用或超时时不返回可打开的端口，避免连接到未验证的本机服务。
         processes = processes.map((item) => ({ ...item, port: null }))
       }
