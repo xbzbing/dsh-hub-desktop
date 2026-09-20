@@ -30,6 +30,10 @@ jobs:
         env:
           # 无头环境无法点击下载确认原生对话框;本地实例启动按拒绝处理,快速到达确定终态
           DSH_HUB_E2E_DECLINE_DOWNLOAD: '1'
+          # Electron 的 Chromium 依据桌面环境选择 safeStorage 后端;
+          # 无头会话缺桌面环境标识时会选不到 gnome-keyring,凭据保险库降级为纯内存
+          XDG_CURRENT_DESKTOP: GNOME
+          DESKTOP_SESSION: gnome
         run: |
           dbus-run-session -- sh -c '
             echo "ci-unlock" | gnome-keyring-daemon --unlock --replace --components=secrets >/tmp/keyring.env 2>/tmp/keyring.err &
@@ -59,7 +63,6 @@ jobs:
           path: |
             test-results/
             hub-data/ui-polish-shots/
-            hub-data/e2e-external/vault/
             hub-data/e2e-external/audit/
           if-no-files-found: ignore
           retention-days: 7
@@ -81,3 +84,34 @@ jobs:
       - run: pnpm test:contract
         env:
           DSH_AUTH_GATEWAY_SRC: ${{ github.workspace }}/dsh-auth-gateway
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      # Windows 的 safeStorage 走 DPAPI,无需额外密钥环;无头下载确认同样按拒绝处理
+      - name: Run E2E
+        env:
+          DSH_HUB_E2E_DECLINE_DOWNLOAD: '1'
+        run: pnpm test:e2e
+      - name: Upload E2E failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-artifacts-windows
+          path: |
+            test-results/
+            hub-data/ui-polish-shots/
+            hub-data/e2e-external/audit/
+          if-no-files-found: ignore
+          retention-days: 7
