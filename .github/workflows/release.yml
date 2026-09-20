@@ -1,0 +1,65 @@
+name: Release
+
+# 标签驱动：推送 v<version> 标签后，在 Windows 上构建未签名安装包，
+# 生成 SHA-256 校验和，并创建 Draft Release 上传资产。流水线不自动发布，
+# 需人工确认资产与校验和后再点击 Publish（见 docs/release-policy.md）。
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: 校验 tag 与 package.json 版本一致
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "${{ github.ref_name }}"
+          if ($tag -ne "v$version") {
+            throw "标签 $tag 与 package.json 版本 v$version 不一致"
+          }
+
+      # 发布说明的「分发方式 ↔ 资产清单」自洽性校验（离线可判定部分）
+      - name: 发布演练
+        run: pnpm release:check
+
+      - run: pnpm build
+      - run: pnpm dist:win
+
+      # `latest.yml` 是自动更新元数据：未签名安装包不提供更新通道，
+      # 也不属于发布策略允许的资产，生成校验和之前先移除。
+      - name: 移除自动更新元数据
+        shell: pwsh
+        run: Remove-Item dist/latest.yml -ErrorAction SilentlyContinue
+
+      - run: pnpm release:checksums
+
+      - name: 创建/更新 Draft Release 并上传资产
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "${{ github.ref_name }}"
+          $installer = "dist/DSH Hub Setup $version.exe"
+          if (-not (Test-Path -LiteralPath $installer)) {
+            throw "未找到安装包：$installer"
+          }
+          $releases = gh release list --limit 100 --json tagName | ConvertFrom-Json
+          if (-not ($releases | Where-Object { $_.tagName -eq $tag })) {
+            gh release create $tag --draft --title "DSH Hub $version" --notes-file "docs/releases/$tag.md"
+          }
+          gh release upload $tag $installer dist/SHA256SUMS.txt --clobber
+          gh release view $tag --json url,assets

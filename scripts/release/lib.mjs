@@ -178,10 +178,63 @@ export function verifyUpdateMetadata({ metadata, appVersion, artifacts }) {
 }
 
 /**
- * 从发布说明里抽出机器可校验的发布字段。
- * 当前公开发布只允许 source-only，避免把未签名桌面包误当作官方资产。
+ * 允许出现在公开 Release 的分发模式。
  *
- * @returns {{version: string, date: string, distribution: 'source-only', artifacts: string[]}}
+ * - `source-only`:只有 tag、发布说明与 GitHub 自动生成的源码归档;
+ * - `windows-unsigned`:额外提供**未签名**的 Windows 安装包与校验和清单。
+ *   macOS 二进制仍不发布 —— 未签名未公证的 .app 在 Gatekeeper 下不可用。
+ */
+export const DISTRIBUTION_MODES = ['source-only', 'windows-unsigned']
+
+/** 公开 Release 一律不得出现的资产形态(macOS 二进制 / 自动更新元数据 / 差分中间产物) */
+const FORBIDDEN_ARTIFACT_PATTERNS = [
+  { pattern: /\.(dmg|app)$/i, reason: 'macOS 二进制在未签名未公证前不得公开分发' },
+  { pattern: /\.zip$/i, reason: 'zip 归档不是本版本声明的分发形态' },
+  { pattern: /^latest(-.*)?\.ya?ml$/i, reason: '自动更新元数据不对未签名安装包提供' },
+  { pattern: /\.blockmap$/i, reason: '差分包中间产物不属于分发给人的产物' }
+]
+
+/**
+ * 校验「分发方式 ↔ 产物清单」是否自洽。
+ *
+ * windows-unsigned 用**白名单**而不是黑名单:只允许这一版的 NSIS 安装包与 SHA256SUMS.txt,
+ * 任何新增资产都必须先改这里 —— 避免某次发布顺手带上不该公开的文件。
+ */
+export function validateDistributionArtifacts(distribution, version, artifacts) {
+  for (const artifact of artifacts) {
+    const forbidden = FORBIDDEN_ARTIFACT_PATTERNS.find((entry) => entry.pattern.test(artifact))
+    if (forbidden) {
+      throw new UpdateMetadataError(`发布说明不得声明资产 ${artifact}：${forbidden.reason}`)
+    }
+  }
+  if (distribution === 'source-only') {
+    if (artifacts.length > 0) {
+      throw new UpdateMetadataError('source-only 发布说明不得声明桌面安装包、更新元数据或校验和资产')
+    }
+    return
+  }
+  if (artifacts.length === 0) {
+    throw new UpdateMetadataError('windows-unsigned 发布说明必须声明 Windows 安装包与校验和资产')
+  }
+  const allowed = [`DSH Hub Setup ${version}.exe`, 'SHA256SUMS.txt']
+  for (const artifact of artifacts) {
+    if (!allowed.includes(artifact)) {
+      throw new UpdateMetadataError(
+        `windows-unsigned 只允许 ${allowed.join(' 与 ')}，不接受 ${artifact}`
+      )
+    }
+  }
+  const missing = allowed.filter((name) => !artifacts.includes(name))
+  if (missing.length > 0) {
+    throw new UpdateMetadataError(`windows-unsigned 缺少资产：${missing.join('、')}`)
+  }
+}
+
+/**
+ * 从发布说明里抽出机器可校验的发布字段。
+ * 只接受 `DISTRIBUTION_MODES` 中显式声明的模式,避免把未签名桌面包误当作官方资产。
+ *
+ * @returns {{version: string, date: string, distribution: 'source-only'|'windows-unsigned', artifacts: string[]}}
  */
 export function parseReleaseNotes(markdown) {
   if (typeof markdown !== 'string' || markdown.trim() === '') {
@@ -205,9 +258,12 @@ export function parseReleaseNotes(markdown) {
     .map((line) => /^-\s*`([^`]+)`\s*$/.exec(line))
     .filter((match) => match !== null)
     .map((match) => match[1])
-  if (modes.length !== 1 || modes[0] !== 'source-only') {
-    throw new UpdateMetadataError('分发方式必须明确且只能是 `source-only`')
+  if (modes.length !== 1 || !DISTRIBUTION_MODES.includes(modes[0])) {
+    throw new UpdateMetadataError(
+      `分发方式必须明确且只能是 ${DISTRIBUTION_MODES.map((mode) => `\`${mode}\``).join(' 或 ')}`
+    )
   }
+  const distribution = modes[0]
 
   const artifactsStart = lines.findIndex((line) => /^##\s+产物\s*$/.test(line))
   const section = []
@@ -222,10 +278,8 @@ export function parseReleaseNotes(markdown) {
     .map((line) => /^-\s*`([^`]+)`/.exec(line))
     .filter((match) => match !== null)
     .map((match) => match[1])
-  if (artifacts.length > 0) {
-    throw new UpdateMetadataError('source-only 发布说明不得声明桌面安装包、更新元数据或校验和资产')
-  }
-  return { version: headingMatch[1], date: dateMatch[1], distribution: 'source-only', artifacts: [] }
+  validateDistributionArtifacts(distribution, headingMatch[1], artifacts)
+  return { version: headingMatch[1], date: dateMatch[1], distribution, artifacts }
 }
 
 /** 发布说明里不允许残留的占位符 */

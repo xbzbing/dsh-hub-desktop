@@ -114,7 +114,7 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # post
 
 **测试说明**：E2E 用例使用 `DSH_HUB_DATA_DIR` 指向的隔离临时目录，实例与凭据均为测试环境构造的数据。CI 失败时收集的产物只包含 Playwright 错误上下文、trace、界面截图与审计日志；凭据保险库文件（`vault/credentials.json`）即使内容是密文也不上传。若未来某条测试必须预置保险库数据，必须使用测试环境构造的 mock 数据并在此处记录其构造方式。
 
-发布相关命令分为“本地打包与验证”和“源码发布”两类。当前 GitHub Release 采用 `source-only` 策略，只发布源码、tag 和 Release Note，不上传 `.app`、`.dmg`、`.zip`、`.exe`、自动更新元数据或校验和文件。使用者需自行准备构建环境并从源码构建。
+发布相关命令分为“本地打包与验证”和“公开 Release”两类。公开 Release 由发布说明的「分发方式」决定：`source-only` 只发布源码、tag 和 Release Note；`windows-unsigned` 额外提供未签名的 64 位 Windows 安装包与 SHA-256 校验和，由标签流水线在 `windows-latest` 上构建。两种模式都不上传 `.app`、`.dmg`、`.zip` 等 macOS 二进制与自动更新元数据：macOS 未签名未公证的产物在 Gatekeeper 下不可用，使用者需自行准备构建环境并从源码构建。
 
 本地打包命令仍保留，但生成的未签名、未公证产物只适用于开发、本机验证和受控测试：
 
@@ -122,11 +122,11 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # post
 pnpm dist:mac:zip      # mac zip，本地验证用
 pnpm dist:mac          # 仅生成未封装的 macOS .app，本地验证用
 pnpm dist:win          # Windows NSIS，本地验证用
-pnpm release:checksums # 仅本地字节校验辅助工具
-pnpm release:check     # source-only 发布演练，不检查 dist/ 资产
+pnpm release:checksums # 生成 SHA256SUMS.txt（发布流水线使用）
+pnpm release:check     # 发布演练：校验发布说明与分发模式、资产清单自洽
 ```
 
-正式源码发布前，运行 `CI=true pnpm release:check -- --pre`，确认发布说明包含 `source-only` 分发模式。发布收口命令只创建 tag 和无资产 Draft Release；详见 [`docs/release-policy.md`](docs/release-policy.md)。恢复官方二进制分发前，必须具备 Apple Developer ID 签名、公证、干净机器验证和可复核的更新元数据校验。
+发布前运行 `CI=true pnpm release:check -- --pre`，确认发布说明的分发模式与资产清单自洽。`windows-unsigned` 模式下推送 tag 即触发 `.github/workflows/release.yml` 构建并上传资产到 Draft Release；`source-only` 模式按演练输出创建无资产 Draft Release。两种模式都由人工确认后再 Publish；详见 [`docs/release-policy.md`](docs/release-policy.md)。恢复 macOS 二进制分发前，必须具备 Apple Developer ID 签名、公证、干净机器验证和可复核的更新元数据校验。
 
 > 无 TTY 环境跑 `pnpm <script>` 需带 `CI=true`（pnpm 11 依赖检查在无 TTY 时会中止）。
 

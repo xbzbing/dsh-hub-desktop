@@ -289,7 +289,7 @@ useSettingsStore   // 设置(本地持久化)
   - 验证:本地打包 + 受控环境冒烟
 - [x] **T14 source-only 发布演练**:GitHub Draft Release 只含源码、tag 与发布说明；升级路径测试保留
 
-**M5 当前验收出口**:source-only GitHub Release 流程可复核；官方二进制发行与自动更新待签名、公证和干净机器验证后恢复。
+**M5 当前验收出口**:发布流程可复核 —— `source-only` 只发源码与 tag，`windows-unsigned` 追加未签名 64 位 Windows 安装包与校验和；macOS 二进制发行与自动更新待签名、公证和干净机器验证后恢复。
 
 ---
 
