@@ -59,7 +59,8 @@ test('明文警告显示为短标签，完整详情通过 data-tip 提供', asyn
   // 侧栏选中 http 实例(播种的第二个)
   await win.getByTestId('instances-table').isVisible()
   await win.getByText('明文远端实例').first().click()
-  await expect(win.getByTestId('workspace-loading')).toBeVisible()
+  // workspace-loading 仅在打开在途时渲染,是瞬态:Windows 上远端域名秒败,
+  // 错误态先于可见性轮询到达,断言 loading 必然引入竞态 —— 只断言已进入工作区。
   await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
   await win.getByTestId('workspace-back-btn').click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
