@@ -14,6 +14,7 @@ export function registerAppHandlers(
       chrome: process.versions.chrome,
       electron: processVersions.electron ?? '',
       node: process.versions.node,
+      v8: process.versions.v8,
       userDataPath: app.getPath('userData')
     }))
   )

@@ -2,12 +2,14 @@ import {
   app,
   BrowserWindow,
   dialog,
+  Menu,
   protocol,
   safeStorage,
   session,
   shell,
   nativeTheme
 } from 'electron'
+import type { MenuItemConstructorOptions } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerRendererAssets } from './renderer-assets'
@@ -16,7 +18,7 @@ import type {
   InstanceRuntimeStatus,
   InstanceStatusEvent
 } from '@shared/contracts'
-import { AUTH_IPC, INSTANCE_STATUS_EVENT } from '@shared/contracts'
+import { AUTH_IPC, ABOUT_IPC, INSTANCE_STATUS_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
 import type { AuthProbeController } from './ipc/register'
 import { createLocalRuntime } from './local-runtime/local-runtime'
@@ -59,6 +61,7 @@ import type { HubNativePorts } from './shell/native-ports'
 import { handleWindowClose } from './shell/close-to-tray'
 import { createStatusNotifier } from './shell/status-notifier'
 import { createDataDirOpener } from './shell/open-data-dir'
+import { createHomepageOpener } from './shell/open-homepage'
 import { createGracefulQuit } from './shell/graceful-quit'
 import { mapAuthTransition, mapRuntimeTransition } from './audit/audit-mapping'
 import type { Vault } from './vault/vault'
@@ -167,6 +170,59 @@ function showHubWindow(): void {
 /** 从托盘退出：`before-quit` 先标记退出，再放行窗口关闭。 */
 function quitApp(): void {
   app.quit()
+}
+
+/**
+ * 打开应用内「关于」面板：广播给所有窗口（主窗口收到后渲染对话框）。
+ * 不用 `app.showAboutPanel()`：原生面板只显示名称/版本/版权，
+ * 放不下项目主页与运行组件版本（`setAboutPanelOptions.website` 仅 Linux 生效）。
+ */
+function openAboutPanel(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(ABOUT_IPC.open)
+  }
+}
+
+/**
+ * 应用菜单。macOS 的 App 菜单里「关于 DSH Hub」指向应用内面板，其余保留标准角色，
+ * 以维持复制/粘贴、重载与开发者工具等系统快捷键。
+ */
+function installApplicationMenu(): void {
+  const language = resolveLanguage(settingsRef?.read().language, app.getLocale())
+  const tr = createTranslator(language)
+  const about: MenuItemConstructorOptions = {
+    label: tr('about.title'),
+    click: () => openAboutPanel()
+  }
+  const template: MenuItemConstructorOptions[] =
+    process.platform === 'darwin'
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              about,
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' }
+            ]
+          },
+          { role: 'editMenu' },
+          { role: 'viewMenu' },
+          { role: 'windowMenu' }
+        ]
+      : [
+          { role: 'fileMenu' },
+          { role: 'editMenu' },
+          { role: 'viewMenu' },
+          { role: 'windowMenu' },
+          { role: 'help', submenu: [about] }
+        ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
 /**
@@ -440,6 +496,10 @@ void app.whenReady().then(() => {
     dataDir: () => app.getPath('userData'),
     openPath: (path) => shell.openPath(path)
   })
+  // 目标地址固定为项目主页(通道无 URL 参数),渲染层无法指定其他站点。
+  const homepageOpener = createHomepageOpener({
+    openExternal: (url) => shell.openExternal(url)
+  })
 
   /** 当前处于 running 的实例数(托盘状态行) */
   function runningInstanceCount(): number {
@@ -617,6 +677,7 @@ void app.whenReady().then(() => {
     audit: auditWrite,
     onSettingsChanged: applyNativeSettings,
     openDataDir: () => dataDirOpener.open(),
+    openHomepage: () => homepageOpener.open(),
     hideInstanceView: () => workspaceHost.hide(),
     closeInstanceView: (instanceId) => workspaceHost.disconnect(instanceId),
     setInstanceViewBounds: (bounds) => workspaceHost.setBounds(bounds),
@@ -684,6 +745,7 @@ void app.whenReady().then(() => {
   })
 
   createWindow()
+  installApplicationMenu()
 
   app.on('activate', () => {
     // macOS 惯例：点击 Dock 图标时把窗口带回前台。窗口可能仍然存在但处于隐藏状态

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { Settings } from '@shared/settings'
 import { IPC, type AppInfo, type DshHubBridge, type PingResult } from '@shared/bridge'
 import {
+  ABOUT_IPC,
   AUTH_IPC,
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
@@ -35,6 +36,15 @@ const bridge: DshHubBridge = {
   getInfo: () => ipcRenderer.invoke(IPC.info) as Promise<IpcResult<AppInfo>>,
   ping: (message?: string) =>
     ipcRenderer.invoke(IPC.ping, message ?? null) as Promise<IpcResult<PingResult>>,
+  // 无参数:目标地址由主进程固定为项目主页,渲染层传不了 URL
+  openHomepage: () => ipcRenderer.invoke(IPC.openHomepage) as Promise<IpcResult<null>>,
+  onAboutOpen: (listener: () => void) => {
+    const handler = (): void => listener()
+    ipcRenderer.on(ABOUT_IPC.open, handler)
+    return () => {
+      ipcRenderer.removeListener(ABOUT_IPC.open, handler)
+    }
+  },
   instances: {
     list: () => ipcRenderer.invoke(INSTANCE_IPC.list),
     get: (id) => ipcRenderer.invoke(INSTANCE_IPC.get, id),

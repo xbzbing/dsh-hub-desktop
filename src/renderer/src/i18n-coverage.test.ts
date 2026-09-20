@@ -870,6 +870,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/register.ts', ".refine((v) => v === null || v.trim() !== '', '口令不能为空串')"),
   debt('src/main/registry/instance-store.ts', "if (!current) throw new InstanceStoreError('not-found', `实例不存在：${id}`)"),
   debt('src/main/ipc/settings-handlers.ts', "if (!deps.openDataDir) throw new DataDirOpenError('internal', '打开数据目录不可用')"),
+  debt('src/main/ipc/register.ts', "if (!deps.openHomepage) throw new HomepageOpenError('internal', '打开项目主页不可用')"),
   debt('src/main/ipc/register.ts', "if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)"),
   debt('src/main/ipc/register.ts', "if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${instanceId}`)"),
   debt('src/main/shell/open-data-dir.ts', "if (dir === '') throw new DataDirOpenError('internal', '数据目录不可用')"),

@@ -526,7 +526,13 @@ export const MESSAGES = {
   'notify.error': { zh: '出错', en: 'Error' },
   'tray.show': { zh: '显示主窗口', en: 'Show window' },
   'tray.quit': { zh: '退出 DSH Hub', en: 'Quit DSH Hub' },
-  'tray.status': { zh: '{count} 个实例运行中', en: '{count} running' }
+  'tray.status': { zh: '{count} 个实例运行中', en: '{count} running' },
+
+  // —— 关于 ——
+  'about.title': { zh: '关于 DSH Hub', en: 'About DSH Hub' },
+  'about.homepage': { zh: '项目主页', en: 'Homepage' },
+  'about.components': { zh: '运行组件', en: 'Runtime components' },
+  'about.copyright': { zh: '版权所有 © 2026 xbzbing', en: 'Copyright © 2026 xbzbing' }
 } as const satisfies Record<string, Message>
 
 export type MessageKey = keyof typeof MESSAGES

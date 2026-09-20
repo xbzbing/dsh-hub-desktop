@@ -37,7 +37,9 @@ export const IPC = {
   /** 返回应用信息（版本 / 平台 / 数据目录），同时充当主进程存活探针 */
   info: 'app:info',
   /** 空回显，用于验证双向 IPC 通路连通 */
-  ping: 'app:ping'
+  ping: 'app:ping',
+  /** 用系统默认浏览器打开项目主页；无参数，URL 由主进程固定 */
+  openHomepage: 'app:open-homepage'
 } as const
 
 export interface AppInfo {
@@ -49,6 +51,8 @@ export interface AppInfo {
   chrome: string
   electron: string
   node: string
+  /** V8 引擎版本 */
+  v8: string
   /** 应用数据根目录：实例注册表 / 审计日志 / 隔离的 DSH_HOME 都在其下 */
   userDataPath: string
 }
@@ -65,6 +69,10 @@ export interface DshHubBridge {
   getInfo: () => Promise<IpcResult<AppInfo>>
   /** 双向 IPC 探针 */
   ping: (message?: string) => Promise<IpcResult<PingResult>>
+  /** 用系统默认浏览器打开项目主页（无参数，主进程固定 URL） */
+  openHomepage: () => Promise<IpcResult<null>>
+  /** 订阅「关于」面板打开事件（应用菜单触发）；返回取消订阅函数 */
+  onAboutOpen: (listener: () => void) => () => void
   /** 实例注册表 CRUD；通道常量与字段模型见 contracts.ts。 */
   instances: {
     list: () => Promise<IpcResult<InstanceSummary[]>>

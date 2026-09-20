@@ -5,6 +5,8 @@
 import { ipcMain } from 'electron'
 import { z } from 'zod'
 import { EndpointParseError } from '@shared/endpoint'
+import { IPC } from '@shared/bridge'
+import { HomepageOpenError } from '../shell/open-homepage'
 import {
   AUTH_IPC,
   CreateInstanceInputSchema,
@@ -106,6 +108,14 @@ export interface IpcDeps {
    */
   openDataDir?: () => Promise<void>
   /**
+   * 打开项目主页。
+   *
+   * **签名上没有 URL 参数**——地址由装配层固定为 `HOMEPAGE_URL`,渲染层只能触发
+   * 「打开」动作本身,故不可能成为任意站点 / 任意协议打开原语。
+   * 缺省时该通道返回 internal 错误信封(单测不装配)。
+   */
+  openHomepage?: () => Promise<void>
+  /**
    * 审计写入本身异步且失败隔离,不阻塞业务。
    */
   audit?: (entry: AuditEntry) => void
@@ -127,6 +137,10 @@ async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
     }
     // 打开数据目录失败:带稳定错误码(io-error/internal)显式回报,
     if (error instanceof DataDirOpenError) {
+      return { ok: false, code: error.code, message: error.message }
+    }
+    // 打开项目主页失败:同口径,不静默成功
+    if (error instanceof HomepageOpenError) {
       return { ok: false, code: error.code, message: error.message }
     }
     // 内部错误不透传细节(可能含 fs 路径),只记主进程日志
@@ -205,6 +219,18 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
   const externalAccessUrls = new Map<string, { pid: number; port: number; url: string }>()
   const processVersions = process.versions as NodeJS.ProcessVersions & { electron?: string }
   registerAppHandlers(processVersions, wrap)
+
+  // 关于 → 项目主页:空元组 schema 拒绝任何入参,URL 由主进程固定
+  ipcMain.handle(
+    IPC.openHomepage,
+    (_event, ...args: unknown[]): Promise<IpcResult<null>> =>
+      wrap(async () => {
+        z.tuple([]).parse(args)
+        if (!deps.openHomepage) throw new HomepageOpenError('internal', '打开项目主页不可用')
+        await deps.openHomepage()
+        return null
+      })
+  )
 
   // —— 实例注册表 CRUD ——
 

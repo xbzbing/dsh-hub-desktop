@@ -9,6 +9,7 @@ import Toasts from './components/Toasts'
 import SshDialogs from './components/SshDialogs'
 import AuthPanel from './components/AuthPanel'
 import SettingsView from './components/SettingsView'
+import AboutDialog from './components/AboutDialog'
 import { compactWorkspaceAddress } from './lib/format'
 import { Icon } from './lib/icons'
 
@@ -156,6 +157,7 @@ export default function App() {
         </div>
       </main>
       {wizardOpen && <Wizard />}
+      <AboutDialog />
       <SshDialogs />
       <AuthPanel />
       <Toasts />

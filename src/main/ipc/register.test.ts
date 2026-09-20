@@ -221,6 +221,7 @@ describe('registerIpc', () => {
     const expected = [
       'app:info',
       'app:ping',
+      'app:open-homepage',
       'instances:list',
       'instances:get',
       'instances:create',

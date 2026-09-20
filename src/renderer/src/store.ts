@@ -45,6 +45,8 @@ interface AppState {
   wizardOpen: boolean
   /** 设置页是否打开；打开时不显示实例详情。 */
   settingsOpen: boolean
+  /** 「关于」面板是否打开；与设置页互斥。 */
+  aboutOpen: boolean
   /** 向导创建后待自动打开的实例集合(多个实例并发启动时各自独立) */
   pendingOpen: string[]
   /** 主进程 userData 路径(app:info 快照;详情页展示实例数据目录用) */
@@ -91,6 +93,8 @@ interface AppState {
   toggleTheme: () => void
   setWizardOpen: (open: boolean) => void
   setSettingsOpen: (open: boolean) => void
+  /** 「关于」面板是否打开（由应用菜单事件触发）。 */
+  setAboutOpen: (open: boolean) => void
   /** 订阅系统主题变化，仅在 theme='system' 时生效。 */
   subscribeSystemTheme: () => () => void
   setPendingOpen: (id: string) => void
@@ -147,6 +151,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   theme: initialTheme(),
   wizardOpen: false,
   settingsOpen: false,
+  aboutOpen: false,
   pendingOpen: [],
   userDataPath: null,
   authPhases: {},
@@ -436,7 +441,25 @@ export const useAppStore = create<AppState>()((set, get) => ({
       workspaceNavigationGeneration += 1
       void window.dshHub?.runtime?.hideView()
     }
-    set({ settingsOpen: open, workspaceOpen: false, workspaceOpening: false, ...(open ? { selection: null } : {}) })
+    set({
+      settingsOpen: open,
+      workspaceOpen: false,
+      workspaceOpening: false,
+      ...(open ? { selection: null, aboutOpen: false } : {})
+    })
+  },
+
+  setAboutOpen: (open) => {
+    if (open) {
+      workspaceNavigationGeneration += 1
+      void window.dshHub?.runtime?.hideView()
+    }
+    set({
+      aboutOpen: open,
+      workspaceOpen: false,
+      workspaceOpening: false,
+      ...(open ? { selection: null, settingsOpen: false } : {})
+    })
   },
 
   setPendingOpen: (id) => set((state) => ({ pendingOpen: [...state.pendingOpen, id] })),
