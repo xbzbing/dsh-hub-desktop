@@ -39,7 +39,7 @@
 
 | 层 | 选型 |
 |---|---|
-| 桌面框架 | Electron 43 + electron-vite 5 + Vite 7 |
+| 桌面框架 | Electron 44 + electron-vite 5 + Vite 7 |
 | UI | React 18 + zustand + 手写 CSS（OKLch 明暗双主题） |
 | 语言 | TypeScript 5.9（strict + `noUncheckedIndexedAccess`） |
 | 校验 | zod 4.6.5（唯一新增运行时依赖） |
