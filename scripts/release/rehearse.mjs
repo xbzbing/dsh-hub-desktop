@@ -90,8 +90,8 @@ if (notes) {
     }
     // windows-unsigned：资产名必须与 CI 实际产出的 NSIS 安装包一致
     assert(
-      notes.artifacts.includes(`DSH Hub Setup ${version}.exe`),
-      `windows-unsigned 发布说明缺少安装包资产：DSH Hub Setup ${version}.exe`
+      notes.artifacts.includes(`DSH-Hub-Setup-${version}.exe`),
+      `windows-unsigned 发布说明缺少安装包资产：DSH-Hub-Setup-${version}.exe`
     )
     assert(notes.artifacts.includes('SHA256SUMS.txt'), 'windows-unsigned 发布说明缺少 SHA256SUMS.txt')
   })
@@ -165,7 +165,7 @@ console.log(`\n--- 人工收口步骤（${windowsMode ? 'windows-unsigned' : 'so
 console.log(`  1) git tag -a ${tag} -m "DSH Hub ${version}" && git push origin ${tag}`)
 if (windowsMode) {
   console.log('  2) 推送 tag 后由 .github/workflows/release.yml 在 windows-latest 上构建安装包，')
-  console.log('     创建 Draft Release 并上传 `DSH Hub Setup ' + version + '.exe` 与 SHA256SUMS.txt')
+  console.log('     创建 Draft Release 并上传 `DSH-Hub-Setup-' + version + '.exe` 与 SHA256SUMS.txt')
   console.log('  3) 在 GitHub 上确认 Draft Release 的资产与校验和，再点击 Publish release')
 } else {
   console.log(`  2) gh release create ${tag} --draft \\`)

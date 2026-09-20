@@ -216,7 +216,7 @@ export function validateDistributionArtifacts(distribution, version, artifacts) 
   if (artifacts.length === 0) {
     throw new UpdateMetadataError('windows-unsigned 发布说明必须声明 Windows 安装包与校验和资产')
   }
-  const allowed = [`DSH Hub Setup ${version}.exe`, 'SHA256SUMS.txt']
+  const allowed = [`DSH-Hub-Setup-${version}.exe`, 'SHA256SUMS.txt']
   for (const artifact of artifacts) {
     if (!allowed.includes(artifact)) {
       throw new UpdateMetadataError(

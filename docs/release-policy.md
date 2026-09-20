@@ -9,7 +9,7 @@
 
 两种模式都**不得**上传 `.app`、`.dmg`、`.zip`、`latest-*.yml` 等 macOS 二进制与自动更新元数据：项目尚未具备 Apple Developer ID 签名与 Apple notarization 公证能力，未签名、未公证的 macOS 应用可能被 Gatekeeper、企业 MDM 或 EDR 拦截，本地打包成功不等价于可以安全公开分发。
 
-`windows-unsigned` 的资产白名单只有两项：`DSH Hub Setup <version>.exe` 与 `SHA256SUMS.txt`。新增任何资产都必须先修改 `scripts/release/lib.mjs` 的白名单与本节说明，并由 `pnpm test` 与 `pnpm release:check` 把关。
+`windows-unsigned` 的资产白名单只有两项：`DSH-Hub-Setup-<version>.exe` 与 `SHA256SUMS.txt`。安装包名刻意不含空格 —— GitHub 上传资产时会把空格归一化成点号，会让发布说明、校验和清单与实际下载到的文件名三者不一致。新增任何资产都必须先修改 `scripts/release/lib.mjs` 的白名单与本节说明，并由 `pnpm test` 与 `pnpm release:check` 把关。
 
 ### 未签名 Windows 安装包的已知影响
 

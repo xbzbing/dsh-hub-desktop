@@ -39,6 +39,9 @@ win:
   icon: build/icon.ico
   target:
     - nsis
+  # 资产名不带空格：GitHub Release 上传时会把空格归一化成点号，
+  # 与发布说明、SHA256SUMS.txt 中的名字不一致。连字符形态三处统一。
+  artifactName: DSH-Hub-Setup-${version}.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

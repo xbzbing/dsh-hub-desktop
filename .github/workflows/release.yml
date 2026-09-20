@@ -58,7 +58,7 @@ jobs:
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tag = "${{ github.ref_name }}"
-          $installer = "dist/DSH Hub Setup $version.exe"
+          $installer = "dist/DSH-Hub-Setup-$version.exe"
           if (-not (Test-Path -LiteralPath $installer)) {
             throw "未找到安装包：$installer"
           }

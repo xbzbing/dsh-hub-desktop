@@ -57,7 +57,7 @@ describe('版本与发布说明一致性', () => {
       expect(notes.artifacts).toEqual([])
       return
     }
-    expect(notes.artifacts).toEqual([`DSH Hub Setup ${version}.exe`, 'SHA256SUMS.txt'])
+    expect(notes.artifacts).toEqual([`DSH-Hub-Setup-${version}.exe`, 'SHA256SUMS.txt'])
   })
 
   it('parseReleaseNotes 拒绝缺失或未知的分发模式', () => {
@@ -83,22 +83,22 @@ describe('版本与发布说明一致性', () => {
         ...artifacts.map((name) => `- \`${name}\``)
       ].join('\n')
 
-    expect(parseReleaseNotes(notesFor(['DSH Hub Setup 1.2.3.exe', 'SHA256SUMS.txt']))).toMatchObject({
+    expect(parseReleaseNotes(notesFor(['DSH-Hub-Setup-1.2.3.exe', 'SHA256SUMS.txt']))).toMatchObject({
       distribution: 'windows-unsigned',
-      artifacts: ['DSH Hub Setup 1.2.3.exe', 'SHA256SUMS.txt']
+      artifacts: ['DSH-Hub-Setup-1.2.3.exe', 'SHA256SUMS.txt']
     })
 
     // 版本号写错 / 夹带 macOS 二进制、更新元数据或未白名单资产，全部拒绝
     expect(() =>
-      parseReleaseNotes(notesFor(['DSH Hub Setup 1.2.4.exe', 'SHA256SUMS.txt']))
+      parseReleaseNotes(notesFor(['DSH-Hub-Setup-1.2.4.exe', 'SHA256SUMS.txt']))
     ).toThrow(/只允许/)
     expect(() =>
       parseReleaseNotes(notesFor(['DSH Hub-1.2.3-arm64-mac.zip', 'SHA256SUMS.txt']))
     ).toThrow(/不得声明资产/)
     expect(() =>
-      parseReleaseNotes(notesFor(['DSH Hub Setup 1.2.3.exe', 'latest.yml', 'SHA256SUMS.txt']))
+      parseReleaseNotes(notesFor(['DSH-Hub-Setup-1.2.3.exe', 'latest.yml', 'SHA256SUMS.txt']))
     ).toThrow(/不得声明资产/)
-    expect(() => parseReleaseNotes(notesFor(['DSH Hub Setup 1.2.3.exe']))).toThrow(/缺少资产/)
+    expect(() => parseReleaseNotes(notesFor(['DSH-Hub-Setup-1.2.3.exe']))).toThrow(/缺少资产/)
     expect(() => parseReleaseNotes(notesFor([]))).toThrow(/必须声明/)
   })
 })
