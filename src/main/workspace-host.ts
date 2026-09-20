@@ -96,8 +96,14 @@ export function createWorkspaceHost(
     webContents.on('will-redirect', (event, url) => {
       if (!isAllowedInstanceNavigation(url, entry.originUrl)) event.preventDefault()
     })
-    webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
-    webContents.session.setPermissionCheckHandler(() => false)
+    // dsh web 的复制按钮依赖 navigator.clipboard 写入；只放行剪贴板写入类权限，
+    // 读取与其他能力保持一律拒绝（最小权限，网页仍无法读取本机剪贴板内容）。
+    const isClipboardWrite = (permission: string): boolean =>
+      permission === 'clipboard-write' || permission === 'clipboard-sanitized-write'
+    webContents.session.setPermissionRequestHandler((_contents, permission, callback) =>
+      callback(isClipboardWrite(permission))
+    )
+    webContents.session.setPermissionCheckHandler((_contents, permission) => isClipboardWrite(permission))
     webContents.session.on('will-download', (event) => event.preventDefault())
   }
 
