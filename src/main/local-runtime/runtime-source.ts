@@ -246,9 +246,11 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
   }
 
   function enrichedEnv(command: string): NodeJS.ProcessEnv {
-    const dirs = [posix.dirname(command), ...searchNodeDirs(home, listDir)]
+    // Windows 的 PATH 分隔符是分号;候选目录统一按对应平台目录形态拼接
+    const separator = platform === 'win32' ? ';' : ':'
+    const dirs = [platform === 'win32' ? winDirname(command) : posix.dirname(command), ...searchNodeDirs(home, listDir)]
     const existing = process.env.PATH ?? ''
-    return { ...process.env, PATH: [...new Set(dirs)].join(':') + (existing ? `:${existing}` : '') }
+    return { ...process.env, PATH: [...new Set(dirs)].join(separator) + (existing ? `${separator}${existing}` : '') }
   }
 
   /**
@@ -385,6 +387,13 @@ interface CommandResultLike {
   code: number
   stdout: string
   stderr: string
+}
+
+/** 取命令所在目录;win32 兼容反斜杠与盘符路径 */
+function winDirname(command: string): string {
+  const normalized = command.replace(/\//g, '\\')
+  const index = normalized.lastIndexOf('\\')
+  return index > 0 ? normalized.slice(0, index) : command
 }
 
 function firstLine(stdout: string): string {

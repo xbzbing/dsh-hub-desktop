@@ -4,7 +4,8 @@
  *   node ~/.local/bin/dsh web --patch ~/.dush/cordis.dush.patch.yml --no-open
  * 于是「已经跑着的实例」既不被识别、也无法直接用视图打开。
  *
- * 本模块只做**只读探测**:`ps` 找 dsh web 进程，再由 `lsof` 确认该 PID 的监听端口。
+ * 本模块只做**只读探测**:POSIX 下 `ps` 找 dsh web 进程,再由 `lsof` 确认该 PID
+ * 的监听端口;Windows 下 `Get-CimInstance` 找进程,再由 `netstat` 确认监听端口。
  * 两个解析函数是纯函数(便于穷举测试),IO 全部可注入。
  */
 import { execFile } from 'node:child_process'
@@ -22,14 +23,24 @@ export interface ExternalDshWeb {
 
 const PS_TIMEOUT_MS = 5_000
 const LSOF_TIMEOUT_MS = 5_000
+const WIN_PS_TIMEOUT_MS = 15_000
+const NETSTAT_TIMEOUT_MS = 10_000
 /** 展示用命令行的最大长度(避免 UI 被超长命令行撑破) */
 const COMMAND_DISPLAY_MAX = 240
+
+/**
+ * Windows 进程查询:输出与 `ps -axo pid=,command=` 同构的 `pid<TAB>command` 行,
+ * 复用同一解析器。脚本刻意不用双引号,避免经过 execFile 参数转义后变形。
+ */
+const WIN_PROCESS_SCRIPT =
+  "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'dsh' } | ForEach-Object { [string]$_.ProcessId + [char]9 + $_.CommandLine }"
 
 /**
  * 判断一行 `ps` 命令是否是我们关心的 dsh web。
  *
  * 必须同时满足:
- * - 脚本/可执行部分是 dsh(`/dsh`、`dsh.js`、`@deepseek-ai/dsh` 等形态);
+ * - 脚本/可执行部分是 dsh(`/dsh`、`dsh.js`、`@deepseek-ai/dsh` 等形态;
+ *   Windows 下同为 `\dsh` 反斜杠形态);
  * - 紧跟其后有独立的 `web` 参数 —— hub 自己 spawn 的进程**没有** `web` 子命令
  *   (参数是 `--profile/--host/--port/--no-open`),因此天然被排除,不会把自己
  *   拉起的实例当成「外部实例」重复上报。
@@ -40,12 +51,12 @@ export function isDshWebCommand(command: string): boolean {
   if (/^(?:bash|sh|zsh|fish|ps|grep|pgrep|rg)\b/.test(command)) return false
   if (/\bgrep\b|\bpgrep\b/.test(command)) return false
   if (!/dsh/i.test(command)) return false
-  // dsh 脚本必须出现在**路径**里(`/…/dsh` 或 `dsh.js`),其后紧跟独立的 web 参数。
-  // 这样 `grep dsh web`(dsh 前是空格/引号)不会命中,而
-  // `node /Users/x/.local/bin/dsh web ...` 会命中。
-  if (/\/dsh(?:\.js)?\s+web(?:\s|$)/i.test(command)) return true
+  // dsh 脚本必须出现在**路径**里(`/…/dsh`、`dsh.js` 或 Windows `\dsh`),
+  // 其后紧跟独立的 web 参数。这样 `grep dsh web`(dsh 前是空格/引号)不会命中,
+  // 而 `node /Users/x/.local/bin/dsh web ...` 会命中。
+  if (/[/\\]dsh(?:\.js)?\s+web(?:\s|$)/i.test(command)) return true
   // node …/@deepseek-ai/dsh/lib/bin.js web …
-  if (/@deepseek-ai\/dsh\b/.test(command) && /\/bin\.js\s+web(?:\s|$)/.test(command)) return true
+  if (/@deepseek-ai[/\\]dsh\b/i.test(command) && /[/\\]bin\.js\s+web(?:\s|$)/i.test(command)) return true
   return false
 }
 
@@ -108,6 +119,28 @@ export function parseListeningPorts(lsofOutput: string): Map<number, number> {
   return ports
 }
 
+/**
+ * 解析 `netstat -ano -p tcp` 输出 → pid → 首个 TCP 监听端口。
+ * 行形如:`  TCP    127.0.0.1:3080    0.0.0.0:0    LISTENING    84758`。
+ * UDP 行没有状态列,IPv6 本地地址形如 `[::]:3080`,都按列位与状态过滤。
+ */
+export function parseWindowsListeningPorts(netstatOutput: string): Map<number, number> {
+  const ports = new Map<number, number>()
+  for (const line of netstatOutput.split('\n')) {
+    const columns = line.trim().split(/\s+/)
+    if (columns.length < 4) continue
+    const [proto, local, , state, pidText] = columns
+    if ((proto ?? '').toUpperCase() !== 'TCP') continue
+    if ((state ?? '').toUpperCase() !== 'LISTENING') continue
+    const port = Number(/:(\d+)$/.exec(local ?? '')?.[1])
+    const pid = Number(pidText)
+    if (!Number.isInteger(pid) || pid <= 0) continue
+    if (!(port >= 1 && port <= 65_535)) continue
+    if (!ports.has(pid)) ports.set(pid, port)
+  }
+  return ports
+}
+
 export interface ExternalDshScannerOptions {
   /** 执行器注入(测试用);默认 execFile */
   run?: (command: string, args: string[]) => Promise<{ code: number; stdout: string }>
@@ -127,8 +160,16 @@ export function createExternalDshScanner(
     options.run ??
     ((command: string, args: string[]) =>
       new Promise<{ code: number; stdout: string }>((resolve, reject) => {
-        // ps 与 lsof 各自的上限不同:lsof 列出所有监听 socket,给更宽裕的超时
-        const timeout = command === 'lsof' ? LSOF_TIMEOUT_MS : PS_TIMEOUT_MS
+        // ps 与 lsof 各自的上限不同:lsof 列出所有监听 socket,给更宽裕的超时;
+        // Windows 的 PowerShell/CIM 查询冷启动慢,给最宽裕的超时
+        const timeout =
+          command === 'lsof'
+            ? LSOF_TIMEOUT_MS
+            : command === 'powershell.exe'
+              ? WIN_PS_TIMEOUT_MS
+              : command === 'netstat'
+                ? NETSTAT_TIMEOUT_MS
+                : PS_TIMEOUT_MS
         execFile(
           command,
           args,
@@ -145,7 +186,26 @@ export function createExternalDshScanner(
 
   return {
     async scan(): Promise<ExternalDshWeb[]> {
-      if (platform === 'win32') return [] // Windows 走 tasklist 分支待补,当前不误报
+      if (platform === 'win32') {
+        let processes: ExternalDshWeb[]
+        try {
+          const ps = await run('powershell.exe', ['-NoProfile', '-Command', WIN_PROCESS_SCRIPT])
+          processes = parseDshWebProcesses(ps.stdout)
+        } catch {
+          return []
+        }
+        if (processes.length === 0) return processes
+
+        // 与 POSIX 分支同一口径:端口必须由该 PID 的监听 socket 确认,
+        // 命令行 --port 仅作显示提示。
+        try {
+          const netstat = await run('netstat', ['-ano', '-p', 'tcp'])
+          const ports = parseWindowsListeningPorts(netstat.stdout)
+          return processes.map((item) => ({ ...item, port: ports.get(item.pid) ?? null }))
+        } catch {
+          return processes.map((item) => ({ ...item, port: null }))
+        }
+      }
       let processes: ExternalDshWeb[]
       try {
         const ps = await run('ps', ['-axo', 'pid=,command='])

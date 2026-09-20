@@ -6,6 +6,7 @@ import {
   isDshWebCommand,
   parseDshWebProcesses,
   parseListeningPorts,
+  parseWindowsListeningPorts,
   patchOf,
   portOf
 } from './external-dsh'
@@ -67,6 +68,14 @@ describe('isDshWebCommand(命令行判定)', () => {
     ).toBe(false)
     expect(isDshWebCommand(`node ${DSH_BIN} --version`)).toBe(false)
   })
+
+  it('识别 Windows 路径形态:\\dsh web 与 @deepseek-ai\\dsh\\lib\\bin.js web', () => {
+    expect(isDshWebCommand('node C:\\Users\\me\\.local\\bin\\dsh web --no-open')).toBe(true)
+    expect(
+      isDshWebCommand('node C:\\opt\\hub\\runtimes\\0.1.5\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --port 52300')
+    ).toBe(true)
+    expect(isDshWebCommand('C:\\Windows\\system32\\cmd.exe /c dsh --version')).toBe(false)
+  })
 })
 
 describe('patchOf / portOf(参数解析)', () => {
@@ -124,6 +133,71 @@ describe('parseListeningPorts(lsof 解析)', () => {
     const ports = parseListeningPorts(output)
     expect(ports.get(84758)).toBe(3080) // 首个 LISTEN;ESTABLISHED 不算
     expect(ports.get(4323)).toBe(49152)
+  })
+})
+
+describe('parseWindowsListeningPorts(netstat 解析)', () => {
+  it('pid → 首个 TCP LISTENING 端口,IPv6/UDP/其他状态被过滤', () => {
+    const output = [
+      '',
+      '活动连接',
+      '',
+      '  协议  本地地址          外部地址        状态           PID',
+      '  TCP    127.0.0.1:3080         0.0.0.0:0              LISTENING       84758',
+      '  TCP    [::]:3080              [::]:0                 LISTENING       84758',
+      '  TCP    127.0.0.1:49152        127.0.0.1:52300        ESTABLISHED     4323',
+      '  UDP    0.0.0.0:5353           *:*                                    900',
+      '  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1234'
+    ].join('\n')
+    const ports = parseWindowsListeningPorts(output)
+    expect(ports.get(84758)).toBe(3080) // 首个 LISTENING;ESTABLISHED 不算
+    expect(ports.get(1234)).toBe(135)
+    expect(ports.get(4323)).toBeUndefined()
+    expect(ports.get(900)).toBeUndefined() // UDP 无状态列
+  })
+
+  it('pid 无监听端口 → scan 返回 port=null', async () => {
+    const scanner = createExternalDshScanner({
+      platform: 'win32',
+      run: async (command) => {
+        if (command === 'powershell.exe') {
+          return { code: 0, stdout: `84758\tnode C:\\Users\\me\\.local\\bin\\dsh web --no-open\n` }
+        }
+        return { code: 0, stdout: '  TCP    127.0.0.1:135           0.0.0.0:0              LISTENING       999\n' }
+      }
+    })
+    await expect(scanner.scan()).resolves.toEqual([
+      {
+        pid: 84758,
+        port: null,
+        patch: null,
+        command: 'node C:\\Users\\me\\.local\\bin\\dsh web --no-open'
+      }
+    ])
+  })
+
+  it('win32 分支由 netstat 确认端口', async () => {
+    const scanner = createExternalDshScanner({
+      platform: 'win32',
+      run: async (command) => {
+        if (command === 'powershell.exe') {
+          return {
+            code: 0,
+            stdout: `84758\tC:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --port 3080\n`
+          }
+        }
+        return { code: 0, stdout: '  TCP    127.0.0.1:3080         0.0.0.0:0              LISTENING       84758\n' }
+      }
+    })
+    await expect(scanner.scan()).resolves.toEqual([
+      {
+        pid: 84758,
+        port: 3080,
+        patch: null,
+        command:
+          'C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --port 3080'
+      }
+    ])
   })
 })
 
@@ -200,8 +274,13 @@ describe('createExternalDshScanner(注入 IO)', () => {
     await expect(scanner.scan()).resolves.toEqual([])
   })
 
-  it("win32 暂不探测(避免误报),返回空数组", async () => {
-    const scanner = createExternalDshScanner({ platform: 'win32', run: async () => ({ code: 0, stdout: '1 node /x/dsh web\n' }) })
+  it("win32 进程查询失败时返回空数组,不抛异常", async () => {
+    const scanner = createExternalDshScanner({
+      platform: 'win32',
+      run: async () => {
+        throw new Error('powershell 不可用')
+      }
+    })
     await expect(scanner.scan()).resolves.toEqual([])
   })
 })
