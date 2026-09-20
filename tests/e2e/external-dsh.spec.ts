@@ -152,16 +152,18 @@ test('HTTP 实例未启动也能直接打开视图', async () => {
 })
 
 test('重启后接管同一外部 dsh 会复用端口实例和已保存 token，不新建实例', async () => {
+  // Windows 首次扫描走 PowerShell/CIM,冷启动明显慢于 POSIX 的 ps+lsof
+  test.setTimeout(90_000)
   await win.getByTestId('new-instance-btn').click()
   await win.getByRole('button', { name: '下一步' }).click()
   const external = win.getByTestId('wizard-external-dsh')
-  await expect(external).toBeVisible({ timeout: 10_000 })
+  await expect(external).toBeVisible({ timeout: 20_000 })
   await win.getByTestId('wizard-name').fill('重启后复用实例')
   await external.getByRole('checkbox').check()
   await win.getByTestId('wizard-external-access').fill('test-restart-token')
   await win.getByRole('button', { name: '下一步' }).click()
   await win.getByTestId('wizard-create').click()
-  await expect(win.getByTestId('wizard')).toBeHidden({ timeout: 15_000 })
+  await expect(win.getByTestId('wizard')).toBeHidden({ timeout: 30_000 })
   await expect.poll(async () =>
     win.evaluate(async () => {
       const result = await window.dshHub.instances.list()
@@ -186,13 +188,13 @@ test('重启后接管同一外部 dsh 会复用端口实例和已保存 token，
   await win.getByTestId('new-instance-btn').click()
   await win.getByRole('button', { name: '下一步' }).click()
   const reopenedExternal = win.getByTestId('wizard-external-dsh')
-  await expect(reopenedExternal).toBeVisible({ timeout: 10_000 })
+  await expect(reopenedExternal).toBeVisible({ timeout: 20_000 })
   await reopenedExternal.getByRole('checkbox').check()
   await expect(win.getByTestId('wizard-name')).toHaveValue('重启后复用实例')
   await expect(win.getByTestId('wizard-external-access')).toHaveValue('')
   await win.getByRole('button', { name: '下一步' }).click()
   await win.getByTestId('wizard-create').click()
-  await expect(win.getByTestId('wizard')).toBeHidden({ timeout: 15_000 })
+  await expect(win.getByTestId('wizard')).toBeHidden({ timeout: 30_000 })
   await expect.poll(async () =>
     win.evaluate(async () => {
       const result = await window.dshHub.instances.list()
@@ -209,6 +211,7 @@ test('重启后接管同一外部 dsh 会复用端口实例和已保存 token，
 
 
 test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
+  test.setTimeout(60_000)
   // 接管和断开都不应产生运行信息回写错误。
   const mainErrors: string[] = []
   app.process().stderr?.on('data', (chunk: Buffer) => mainErrors.push(String(chunk)))
@@ -230,7 +233,7 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
 
   // 详情页出现「本机已在运行的 dsh web」卡片(只读探测命中假 dsh web)
   const card = win.getByTestId('external-dsh-card')
-  await expect(card).toBeVisible({ timeout: 10_000 })
+  await expect(card).toBeVisible({ timeout: 25_000 })
   await win.screenshot({ path: join(SHOT_DIR, 'external-dsh-detected.png'), animations: 'disabled' })
 
   await card.locator('[data-testid^="external-access-"]').first().fill('external-token')
