@@ -432,8 +432,12 @@ void app.whenReady().then(() => {
   nativeApplier.apply(settings.read(), { startup: true })
   audit = createAuditLog({ dir: join(dataRoot, 'audit') })
   if (!safeStorageAvailable) {
-    // 降级必须留痕,且只记枚举不记内容
-    auditWrite({ event: 'vault-unavailable', result: 'degraded' })
+    // 降级必须留痕,且只记枚举不记内容;后端枚举用于排查系统钥匙串选择失败
+    const backend = safeStorage.getSelectedStorageBackend?.() ?? undefined
+    auditWrite({
+      event: 'vault-unavailable',
+      result: backend ? `degraded:${backend}` : 'degraded'
+    })
   }
   // 启动时清理过期归档(不阻塞启动)
   void audit.prune().catch((error: unknown) => console.error('[main] 审计归档清理失败：', error))
