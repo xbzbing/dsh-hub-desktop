@@ -59,6 +59,8 @@ git push origin v<version>
 
 最后确认 Draft Release 的资产与校验和（`source-only` 只应有发布说明与自动生成的源码归档），再点击 Publish release。任何命令都不得添加 `dist/` 参数。
 
+发布时优先使用网页上的 Publish 按钮：它会自动把 "Latest" 徽标移到新版本。若改用 API（`PATCH draft=false`）发布，GitHub **不会**自动迁移 Latest 徽标，必须同时带上 `make_latest="true"`，否则徽标会留在更早的版本上。
+
 ## 恢复 macOS 二进制发布的门槛
 
 只有满足全部条件后，才可通过独立变更引入 `signed-binary` 分发模式：
