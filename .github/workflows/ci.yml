@@ -59,6 +59,8 @@ jobs:
           path: |
             test-results/
             hub-data/ui-polish-shots/
+            hub-data/e2e-external/vault/
+            hub-data/e2e-external/audit/
           if-no-files-found: ignore
           retention-days: 7
 
