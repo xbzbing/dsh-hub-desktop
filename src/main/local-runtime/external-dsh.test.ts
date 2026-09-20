@@ -8,7 +8,8 @@ import {
   parseListeningPorts,
   parseWindowsListeningPorts,
   patchOf,
-  portOf
+  portOf,
+  WIN_PROCESS_SCRIPT
 } from './external-dsh'
 
 /**
@@ -175,6 +176,13 @@ describe('parseWindowsListeningPorts(netstat 解析)', () => {
         command: 'node C:\\Users\\me\\.local\\bin\\dsh web --no-open'
       }
     ])
+  })
+
+  it('PowerShell 查询脚本把命令行内的换行/制表符折叠成空格', () => {
+    // Win32_Process.CommandLine 原样保留 `-e` 脚本里的换行:条目一旦断行,
+    // `dsh web` 参数会落在无 pid 的续行上,被逐行解析器丢弃(POSIX 的 ps 会自行折叠)
+    expect(WIN_PROCESS_SCRIPT).toContain("[char]9")
+    expect(WIN_PROCESS_SCRIPT).toContain("-replace '[\\r\\n\\t]+'")
   })
 
   it('win32 分支由 netstat 确认端口', async () => {

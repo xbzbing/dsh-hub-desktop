@@ -31,9 +31,14 @@ const COMMAND_DISPLAY_MAX = 240
 /**
  * Windows 进程查询:输出与 `ps -axo pid=,command=` 同构的 `pid<TAB>command` 行,
  * 复用同一解析器。脚本刻意不用双引号,避免经过 execFile 参数转义后变形。
+ *
+ * `Win32_Process.CommandLine` 保留原始换行(`-e` 脚本等含换行的 argv 会把条目
+ * 断成多行,`dsh web` 落在无 pid 的续行上被解析器丢弃);POSIX 的 `ps` 会把
+ * argv 内的换行规范化为空格,这里必须在输出前做同样的折叠。
  */
-const WIN_PROCESS_SCRIPT =
-  "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'dsh' } | ForEach-Object { [string]$_.ProcessId + [char]9 + $_.CommandLine }"
+export const WIN_PROCESS_SCRIPT =
+  "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'dsh' } | " +
+  "ForEach-Object { [string]$_.ProcessId + [char]9 + ($_.CommandLine -replace '[\\r\\n\\t]+', ' ') }"
 
 /**
  * 判断一行 `ps` 命令是否是我们关心的 dsh web。
