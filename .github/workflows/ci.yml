@@ -32,7 +32,23 @@ jobs:
           DSH_HUB_E2E_DECLINE_DOWNLOAD: '1'
         run: |
           dbus-run-session -- sh -c '
-            eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets)"
+            echo "ci-unlock" | gnome-keyring-daemon --unlock --replace --components=secrets >/tmp/keyring.env 2>/tmp/keyring.err &
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+              grep -q GNOME_KEYRING_CONTROL /tmp/keyring.env 2>/dev/null && break
+              sleep 0.5
+            done
+            eval "$(tr -d ";" </tmp/keyring.env)"
+            ok=""
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              if busctl --user list 2>/dev/null | grep -q org.freedesktop.secrets; then ok=1; break; fi
+              sleep 0.5
+            done
+            if [ -z "$ok" ]; then
+              echo "--- keyring.env ---"; cat /tmp/keyring.env
+              echo "--- keyring.err ---"; cat /tmp/keyring.err
+              echo "Secret Service 不可用,凭据保险库会降级为纯内存"
+              exit 1
+            fi
             xvfb-run -a pnpm test:e2e
           '
       - name: Upload E2E failure artifacts
