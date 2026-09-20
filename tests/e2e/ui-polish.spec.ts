@@ -300,8 +300,9 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   expect(layout.topbarW).toBe(layout.shellW)
   // sidebar 从顶栏底缘开始(边框不再直达窗口顶部)
   expect(layout.sidebarTop).toBeGreaterThanOrEqual(layout.topbarBottom - 1)
-  // macOS 展开态:标题与 sidebar 内容轴对齐，而不是紧贴红绿灯。
-  if (layout.titleX !== null) expect(layout.titleX).toBeGreaterThanOrEqual(layout.sidebarWidth - 1)
+  // macOS 展开态:标题与 sidebar 内容轴对齐，而不是紧贴红绿灯。Linux 无此约束。
+  const isMac = process.platform === 'darwin'
+  if (isMac && layout.titleX !== null) expect(layout.titleX).toBeGreaterThanOrEqual(layout.sidebarWidth - 1)
   const railItemId = await win.evaluate(async () => {
     const result = await window.dshHub.instances.create({
       transport: 'http',

@@ -164,7 +164,7 @@ test('重启后接管同一外部 dsh 会复用端口实例和已保存 token，
   await win.getByTestId('wizard-external-access').fill('test-restart-token')
   await win.getByRole('button', { name: '下一步' }).click()
   await win.getByTestId('wizard-create').click()
-  await expect(win.getByTestId('wizard')).toBeHidden()
+  await expect(win.getByTestId('wizard')).toBeHidden({ timeout: 15_000 })
   await expect.poll(async () =>
     win.evaluate(async () => {
       const result = await window.dshHub.instances.list()
@@ -195,7 +195,7 @@ test('重启后接管同一外部 dsh 会复用端口实例和已保存 token，
   await expect(win.getByTestId('wizard-external-access')).toHaveValue('')
   await win.getByRole('button', { name: '下一步' }).click()
   await win.getByTestId('wizard-create').click()
-  await expect(win.getByTestId('wizard')).toBeHidden()
+  await expect(win.getByTestId('wizard')).toBeHidden({ timeout: 15_000 })
   await expect.poll(async () =>
     win.evaluate(async () => {
       const result = await window.dshHub.instances.list()

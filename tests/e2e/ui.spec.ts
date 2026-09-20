@@ -75,6 +75,8 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
 })
 
 test('侧栏实例名称进入工作区或错误详情，随后可删除实例', async () => {
+  // 确保在首页视图
+  await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 10_000 })
   await expect(win.getByTestId('instances-table')).toBeVisible()
   const firstSidebarItem = win.locator('[data-testid^="inst-"]').first()
   await firstSidebarItem.click()
@@ -85,6 +87,8 @@ test('侧栏实例名称进入工作区或错误详情，随后可删除实例',
   }).toBe(true)
   const workspaceOpened = await win.getByTestId('workspace-loading').isVisible().catch(() => false)
   if (workspaceOpened) {
+    // 等待工作区完全加载(loading 消失)
+    await expect(win.getByTestId('workspace-loading')).toBeHidden({ timeout: 15_000 })
     await expect(win.getByTestId('workspace-toolbar')).toHaveCount(0)
     await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
     const toolbarLayout = await win.evaluate(() => {
