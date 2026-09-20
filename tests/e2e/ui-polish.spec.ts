@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { _electron as electron, expect, test } from '@playwright/test'
+import { buildLaunchArgs } from './launch-args'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -136,11 +137,7 @@ const SHOT_DIR = resolve(__dirname, '..', '..', 'hub-data', 'ui-polish-shots')
 let app: ElectronApplication
 let win: Page
 
-const launchArgs = ['.']
-if (process.env.CI) launchArgs.push('--no-sandbox')
-for (const arg of (process.env.DSH_HUB_E2E_ARGS ?? '').split(' ').filter(Boolean)) {
-  launchArgs.push(arg)
-}
+const launchArgs = buildLaunchArgs()
 
 /** 假网关:requireOtp=false 时首登直接 200;true 时首登 400 otp-required、带码 200 */
 function startFakeGateway(requireOtp: boolean): Promise<{ server: Server; port: number }> {

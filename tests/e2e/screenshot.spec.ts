@@ -1,6 +1,7 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, _electron as electron } from '@playwright/test'
+import { buildLaunchArgs } from './launch-args'
 
 const SHOT_DIR = resolve(process.cwd(), 'docs', 'images')
 const DATA_DIR = resolve(process.cwd(), 'hub-data', 'e2e-screenshot')
@@ -11,11 +12,7 @@ test('截图：首页 + 暗色主题 + 收起侧边栏', async () => {
   await mkdir(SHOT_DIR, { recursive: true })
   await mkdir(DATA_DIR, { recursive: true })
 
-  const args = ['.']
-  if (process.env.CI) args.push('--no-sandbox')
-  for (const arg of (process.env.DSH_HUB_E2E_ARGS ?? '').split(' ').filter(Boolean)) {
-    args.push(arg)
-  }
+  const args = buildLaunchArgs()
 
   const app = await electron.launch({
     args,

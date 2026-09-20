@@ -1,4 +1,5 @@
 import { _electron as electron, expect, test } from '@playwright/test'
+import { buildLaunchArgs } from './launch-args'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -14,11 +15,7 @@ const DATA_DIR = resolve(__dirname, '..', '..', 'hub-data', 'e2e-ui')
 let app: ElectronApplication
 let win: Page
 
-const launchArgs = ['.']
-if (process.env.CI) launchArgs.push('--no-sandbox')
-for (const arg of (process.env.DSH_HUB_E2E_ARGS ?? '').split(' ').filter(Boolean)) {
-  launchArgs.push(arg)
-}
+const launchArgs = buildLaunchArgs()
 
 test.beforeAll(async () => {
   await rm(DATA_DIR, { recursive: true, force: true })

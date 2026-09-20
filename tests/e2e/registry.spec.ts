@@ -1,4 +1,5 @@
 import { _electron as electron, expect, test } from '@playwright/test'
+import { buildLaunchArgs } from './launch-args'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -15,11 +16,7 @@ const REGISTRY_FILE = join(DATA_DIR, 'registry', 'instances.json')
 let app: ElectronApplication
 let win: Page
 
-const launchArgs = ['.']
-if (process.env.CI) launchArgs.push('--no-sandbox')
-for (const arg of (process.env.DSH_HUB_E2E_ARGS ?? '').split(' ').filter(Boolean)) {
-  launchArgs.push(arg)
-}
+const launchArgs = buildLaunchArgs()
 
 test.beforeAll(async () => {
   await rm(DATA_DIR, { recursive: true, force: true })
