@@ -408,7 +408,7 @@ describe('createInstanceStore / 损坏恢复与迁移', () => {
   })
 })
 
-describe('createInstanceStore / 写盘失败不产生幻影()', () => {
+describe.skipIf(process.platform === 'win32')('createInstanceStore / 写盘失败不产生幻影()', () => {
   it('目录只读时 create 失败,内存不残留幻影;恢复可写后幻影不会补落盘', async () => {
     const base = asLocal(await store.create(localInput({ name: '基准' })))
     expect(await store.list()).toHaveLength(1)
@@ -461,7 +461,7 @@ describe('createInstanceStore / 写盘失败不产生幻影()', () => {
   })
 })
 
-describe('createInstanceStore / 落盘权限 0600', () => {
+describe.skipIf(process.platform === 'win32')('createInstanceStore / 落盘权限 0600', () => {
   it('新建的注册表主文件为 0600', async () => {
     await store.create(localInput())
     expect(await modeOf(join(dir, 'instances.json'))).toBe(0o600)

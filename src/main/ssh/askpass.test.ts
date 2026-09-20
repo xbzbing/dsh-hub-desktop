@@ -40,7 +40,10 @@ function askpassRoundTrip(socketPath: string, prompt: string): Promise<string> {
   })
 }
 
-describe('askpass（口令通道）', () => {
+// askpass 走 AF_UNIX socket + POSIX 权限收紧,是 OpenSSH 在 POSIX 上的接线;
+// Windows 的 OpenSSH 不使用该通道,相关行为仅在 POSIX 平台验证
+const posixOnly = process.platform !== 'win32'
+describe.skipIf(!posixOnly)('askpass（口令通道）', () => {
   it('runtime 写入 helper + 包装脚本,权限收紧,argv 不经 shell', async () => {
     const scripts = await ensureAskpassScripts(dir, '/usr/bin/node', ['--no-warnings'])
     expect(scripts.wrapperPath.endsWith(ASKPASS_WRAPPER_NAME)).toBe(true)
@@ -107,7 +110,7 @@ describe('askpass（口令通道）', () => {
   })
 })
 
-describe('socket 残留自愈', () => {
+describe.skipIf(!posixOnly)('socket 残留自愈', () => {
   it('陈旧 socket/普通文件残留在路径上时仍能启动(先清理再 listen)', async () => {
     const socketPath = join(dir, 'stale.sock')
     // 模拟进程被强杀后残留的路径占用(普通文件同样会让 listen 报 EADDRINUSE)

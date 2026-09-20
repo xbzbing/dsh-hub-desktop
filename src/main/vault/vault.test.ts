@@ -104,7 +104,8 @@ describe('vault（ 凭据存储策略）', () => {
     expect(Object.keys(parsed.items)).toEqual(['i1'])
   })
 
-  it('落盘文件权限为 0600', async () => {
+  // Windows 文件系统没有 POSIX mode 位,0600 语义仅在 POSIX 平台可验证
+  it.skipIf(process.platform === 'win32')('落盘文件权限为 0600', async () => {
     const vault = await optIn()
     await vault.rememberPassword('i1', 'hunter2')
     const info = await stat(filePath)

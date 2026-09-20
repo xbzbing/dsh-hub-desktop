@@ -109,7 +109,8 @@ describe('host-trust（TOFU 纯逻辑）', () => {
     expect(fps[0]?.fingerprint).toBe(publicKeyFingerprint(ED25519_BLOB))
   })
 
-  it('recordHostTrust:append 追加并去重,replace 轮换旧行', async () => {
+  // Windows 文件系统没有 POSIX mode 位;known_hosts 的 0600 语义仅 POSIX 可验证
+  it.skipIf(process.platform === 'win32')('recordHostTrust:append 追加并去重,replace 轮换旧行', async () => {
     const path = join(dir, 'known_hosts')
     const hostField = '[h]:2222'
     await recordHostTrust(path, hostField, [{ type: 'ssh-ed25519', blob: ED25519_BLOB }], 'append')

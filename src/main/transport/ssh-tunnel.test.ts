@@ -66,7 +66,8 @@ async function waitForStatus(
 }
 
 describe('createSshTunnels（隧道管理器 + 看门狗）', () => {
-  it('start → 隧道建立(参数含 -L 转发/私有 known_hosts) → 探测通过 → running', async () => {
+  // 隧道参数里的 ControlPath/askpass 是 OpenSSH 的 POSIX 接线,Windows 侧另有通道
+  it.skipIf(process.platform === 'win32')('start → 隧道建立(参数含 -L 转发/私有 known_hosts) → 探测通过 → running', async () => {
     const child = makeFakeChild()
     let lastInvocation!: { args: string[]; env: NodeJS.ProcessEnv }
     const spawnImpl = vi.fn((invocation: { args: string[]; env: NodeJS.ProcessEnv }) => {
@@ -485,7 +486,8 @@ describe('createSshTunnels（隧道管理器 + 看门狗）', () => {
     expect(manager.statusOf(instance.id)?.detail).toContain('忽略重复启动')
   })
 })
-describe("ControlPath 路径规则（unix socket 104 字节上限）", () => {
+// unix socket 104 字节上限是 POSIX AF_UNIX 约束,Windows 无此语义
+describe.skipIf(process.platform === 'win32')("ControlPath 路径规则（unix socket 104 字节上限）", () => {
   it('socket slug 按实例隔离且短（12 hex,UUID 去横线）', () => {
     const instance = sshInstance({ id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
     expect(controlSlug(instance)).toBe('f47ac10b58cc')

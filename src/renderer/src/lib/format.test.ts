@@ -89,7 +89,8 @@ describe('工作区标题地址', () => {
 
 describe('向导与状态语义色', () => {
   it('选择态和信息提示使用 info 语义色，而非风险色', () => {
-    const css = readFileSync(join(process.cwd(), 'src/renderer/src/styles.css'), 'utf8')
+    // Windows 检出是 CRLF,先归一化再比对跨行片段
+    const css = readFileSync(join(process.cwd(), 'src/renderer/src/styles.css'), 'utf8').replace(/\r\n/g, '\n')
     expect(css).toContain(".type-card[aria-pressed='true'] {\n  border-color: var(--info);\n  background: var(--selection-soft);")
     expect(css).toContain('.n-info {\n  background: var(--info-soft);')
   })
