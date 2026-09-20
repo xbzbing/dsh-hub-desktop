@@ -35,6 +35,11 @@ jobs:
       - name: 发布演练
         run: pnpm release:check
 
+      # Electron 44 起二进制按需下载：安装阶段不会生成 node_modules/electron/dist，
+      # 而 electron-builder 的 electronDist 指向它，必须显式准备（幂等，已存在则跳过）。
+      - name: 准备 Electron 二进制
+        run: pnpm electron:prepare
+
       - run: pnpm build
       - run: pnpm dist:win
 

@@ -86,6 +86,7 @@ pnpm release:check
 ## 环境
 
 - `$HOME/pnpm-workspace.yaml` 可能影响子项目识别；保留仓库内的 `pnpm-workspace.yaml`。
+- Electron 44 起二进制按需下载：`pnpm install` 不会生成 `node_modules/electron/dist`（该包的 package.json 已无 postinstall）。E2E 首次启动会自行下载；打包前必须存在该目录（`electronDist` 指向它），四个 `dist*` 脚本已内置 `pnpm electron:prepare`。
 - 受限环境安装依赖时使用 `--store-dir=/tmp/pnpm-store --cache-dir=/tmp/pnpm-cache`。
 - Electron 缓存使用 `ELECTRON_CACHE=/tmp/electron-cache`。
 - 受限环境运行 E2E：`DSH_HUB_E2E_ARGS="--no-sandbox --disable-gpu" CI=true pnpm test:e2e`。
