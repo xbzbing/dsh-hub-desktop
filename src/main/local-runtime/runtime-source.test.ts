@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import {
   compareDshVersions,
   createPathProbe,
@@ -13,9 +11,6 @@ import type { CommandRunner } from './runtime-installer'
  * #2 运行时获取策略(用户决策:「优先 hub 已装同版本 → 再探测 PATH →
  * 都没有才下载,真要下载时需要用户确认」)—— 纯决策函数穷举 + PATH 探测。
  */
-
-/** PATH 探测在未注入 home 时回落到 os.homedir();fixture 与生产同源 */
-const HOME_DSH = join(homedir(), '.local/bin/dsh')
 
 const PATH_DSH: PathRuntime = { command: '/usr/local/bin/dsh', version: '0.1.5-rc.2' }
 
@@ -223,15 +218,17 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
   })
 
   it('-version 输出多行 → 取第一行(带尾随空白也容忍)', async () => {
+    // HERMETIC 固定 darwin,路径也要用 POSIX 形态,不能用真实 home(Windows 是盘符反斜杠)
+    const whichPath = '/usr/local/bin/dsh'
     const probe = createPathProbe({
       ...HERMETIC,
       run: scriptedRunner({
-        'which dsh': { code: 0, stdout: `${HOME_DSH}\n` },
-        [`${HOME_DSH} --version`]: { code: 0, stdout: '0.1.5\nextra line\n' }
+        'which dsh': { code: 0, stdout: `${whichPath}\n` },
+        [`${whichPath} --version`]: { code: 0, stdout: '0.1.5\nextra line\n' }
       })
     })
     await expect(probe.probe()).resolves.toEqual({
-      command: HOME_DSH,
+      command: whichPath,
       version: '0.1.5'
     })
   })
