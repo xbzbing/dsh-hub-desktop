@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          repository: deepseek-ai/dsh-auth-gateway
+          repository: xbzbing/dsh-auth-gateway
           path: dsh-auth-gateway
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
