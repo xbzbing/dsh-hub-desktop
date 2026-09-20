@@ -446,13 +446,16 @@ void app.whenReady().then(() => {
     ...(npmRegistry ? { registry: npmRegistry } : {})
   })
   // 确认用原生对话框(始终可用,含托盘启动场景;文案无凭据);拒绝则该次启动取消。
+  // 无头 E2E 无法点击原生对话框,设 DSH_HUB_E2E_DECLINE_DOWNLOAD=1 时按「取消」
+  // 处理,让本地实例启动快速到达确定的 stopped 终态而非无限等待。
   const pathProbe = createPathProbe()
   runtime = createLocalRuntime({
     installer,
     dataRoot,
     pathProbe,
-    confirmDownload: (version) =>
-      dialog
+    confirmDownload: (version) => {
+      if (process.env['DSH_HUB_E2E_DECLINE_DOWNLOAD'] === '1') return Promise.resolve(false)
+      return dialog
         .showMessageBox({
           type: 'question',
           title: 'DSH Hub',
@@ -464,6 +467,7 @@ void app.whenReady().then(() => {
           noLink: true
         })
         .then((result) => result.response === 0)
+    }
   })
 
   prompts = createPromptBroker({
