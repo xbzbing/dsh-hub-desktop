@@ -32,7 +32,8 @@ test.beforeAll(async () => {
 
   const script = [
     "const http = require('node:http')",
-    `const server = http.createServer((req, res) => { if (req.url.startsWith('/login')) { res.end('<html><body><h1>本地网关登录</h1></body></html>'); return } const token = new URL(req.url, 'http://127.0.0.1').searchParams.get('token'); if (!['external-token', 'test-restart-token'].includes(token ?? '')) { res.writeHead(302, { location: '/login' }); res.end(); return } res.end('<html><body><h1 id="external-dsh">外部 dsh web</h1></body></html>') }); server.listen(0, '127.0.0.1', () => { console.log('PORT=' + server.address().port); setTimeout(() => {}, 600000) })`
+    // HTML 必须显式声明 UTF-8(响应头 + meta):缺省时 Chromium 按非 UTF-8 猜测编码,中文渲染成乱码
+    `const server = http.createServer((req, res) => { const page = (body) => { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end('<html><head><meta charset="utf-8"></head>' + body + '</html>') }; if (req.url.startsWith('/login')) { page('<body><h1>本地网关登录</h1></body>'); return } const token = new URL(req.url, 'http://127.0.0.1').searchParams.get('token'); if (!['external-token', 'test-restart-token'].includes(token ?? '')) { res.writeHead(302, { location: '/login' }); res.end(); return } page('<body><h1 id="external-dsh">外部 dsh web</h1></body>') }); server.listen(0, '127.0.0.1', () => { console.log('PORT=' + server.address().port); setTimeout(() => {}, 600000) })`
   ].join('\n')
   fakeDsh = spawn(
     process.execPath,
