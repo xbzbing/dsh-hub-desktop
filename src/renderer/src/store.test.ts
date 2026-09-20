@@ -349,6 +349,23 @@ describe('store settings', () => {
     expect(useAppStore.getState().workspaceOpen).toBe(true)
   })
 
+  it('工作区已打开时重复打开同一实例不再隐藏和重开原生视图', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    const hideView = vi.fn()
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView } }
+    })
+    useAppStore.setState({ selection: 'instance-1', workspaceOpen: true })
+
+    await useAppStore.getState().openWorkspace('instance-1')
+    expect(hideView).not.toHaveBeenCalled()
+    expect(openView).not.toHaveBeenCalled()
+    expect(useAppStore.getState().workspaceOpen).toBe(true)
+    expect(useAppStore.getState().workspaceOpening).toBe(false)
+  })
+
   it('工作区打开失败后退出加载状态并保留实例详情', async () => {
     const useAppStore = await freshStore()
     vi.stubGlobal('window', {

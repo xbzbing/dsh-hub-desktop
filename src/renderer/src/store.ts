@@ -328,6 +328,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   openWorkspace: async (id) => {
+    // 已在同一实例的工作区内时不重开:重开会先隐藏原生视图,而重开请求若被
+    // 主进程按同实例去重合并,渲染层不会再回传内容区边界,视图会停在零尺寸。
+    if (get().selection === id && get().workspaceOpen) return
     const generation = ++workspaceNavigationGeneration
     void window.dshHub?.runtime?.hideView()
     set({ selection: id, workspaceOpen: false, workspaceOpening: true, settingsOpen: false })
