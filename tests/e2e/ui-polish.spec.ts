@@ -793,7 +793,7 @@ test('侧边栏拖拽排序 + 首页表格同步', async () => {
       if (!r.ok) throw new Error(`create failed: ${JSON.stringify(r)}`)
       return r.value.id
     }, name)
-    ids.push(result)
+    ids.push(result!)
   }
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
@@ -807,8 +807,9 @@ test('侧边栏拖拽排序 + 首页表格同步', async () => {
   expect(listBefore.slice(-3).map((i) => i.name)).toEqual(['排序实例 C', '排序实例 A', '排序实例 B'])
 
   // 把三个新实例重排为 A → B → C,同时保留其他实例在前面
-  const others = listBefore.slice(0, -3).map((i) => i.id)
-  const newOrder = [...others, ids[1], ids[2], ids[0]]
+  const others = listBefore.slice(0, -3).map((i) => i.id).filter((id): id is string => id !== undefined)
+  const [idC, idA, idB] = ids
+  const newOrder: string[] = [...others, idA!, idB!, idC!]
   const reordered = await win.evaluate(async (reorderedIds) => {
     const result = await window.dshHub.instances.reorder(reorderedIds)
     return result.ok ? result.value.map((i) => i.id) : null
