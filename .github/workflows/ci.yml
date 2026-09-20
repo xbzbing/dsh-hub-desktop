@@ -30,10 +30,6 @@ jobs:
         env:
           # 无头环境无法点击下载确认原生对话框;本地实例启动按拒绝处理,快速到达确定终态
           DSH_HUB_E2E_DECLINE_DOWNLOAD: '1'
-          # Electron 的 Chromium 依据桌面环境选择 safeStorage 后端;
-          # 无头会话缺桌面环境标识时会选不到 gnome-keyring,凭据保险库降级为纯内存
-          XDG_CURRENT_DESKTOP: GNOME
-          DESKTOP_SESSION: gnome
         run: |
           dbus-run-session -- sh -c '
             echo "ci-unlock" | gnome-keyring-daemon --unlock --replace --components=secrets >/tmp/keyring.env 2>/tmp/keyring.err &
