@@ -496,6 +496,8 @@ export const INSTANCE_IPC = {
 export const INSTANCE_RUNTIME_IPC = {
   start: 'instances:start',
   stop: 'instances:stop',
+  /** 重启 hub 托管的本地 dsh 进程：先完全停止再按注册表配置重新拉起。 */
+  restart: 'instances:restart',
   openView: 'instances:openView',
   updateViewBounds: 'instances:updateViewBounds',
   showTooltip: 'instances:showTooltip',

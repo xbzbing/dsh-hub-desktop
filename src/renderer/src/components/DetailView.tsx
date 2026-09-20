@@ -43,6 +43,7 @@ export default function DetailView(): ReactNode {
     Array<{ pid: number; port: number | null; patch: string | null; command: string }>
   >([])
   const [adopting, setAdopting] = useState<number | null>(null)
+  const [restarting, setRestarting] = useState(false)
   const [externalAccess, setExternalAccess] = useState<Record<number, string>>({})
   const [showExternalTokenEditor, setShowExternalTokenEditor] = useState(false)
   const [externalToken, setExternalToken] = useState('')
@@ -116,6 +117,26 @@ export default function DetailView(): ReactNode {
 
   const disconnectView = async (): Promise<void> => {
     await disconnectWorkspace(record.id)
+  }
+
+  /** 重启 hub 托管的本地 dsh 进程；进程归用户所有的外部接管实例不提供该操作。 */
+  const restartRuntime = async (): Promise<void> => {
+    if (!record || restarting) return
+    // 在调用前捕获连接态：重启内部的停止事件会先于 IPC 返回把它置为 false
+    const wasConnected = workspaceConnected
+    setRestarting(true)
+    try {
+      const result = await window.dshHub?.runtime.restart(record.id)
+      if (!result?.ok) {
+        toast('err', t('detail.restartFailed'), result?.message)
+        return
+      }
+      // 重启可能分配新端口与新 browser-auth URL：工作区开着时置 pendingOpen，
+      // 由 running 状态事件自动重开，避免停留在已失效的旧页面。
+      if (wasConnected) setPendingOpen(record.id)
+    } finally {
+      setRestarting(false)
+    }
   }
 
   const deleteInstance = async (): Promise<void> => {
@@ -345,6 +366,17 @@ export default function DetailView(): ReactNode {
                   ? t('detail.openWorkspace')
                   : t('detail.startWorkspace')}
             </button>
+            {/* 重启只针对 hub 拉起的运行中进程；外部接管的进程归用户所有。 */}
+            {record.transport === 'local' && status?.status === 'running' && status.runtimeSource !== 'external' && (
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={() => void restartRuntime()}
+                disabled={restarting}
+                data-testid="restart-btn"
+              >
+                <Icon name="refresh" /> {restarting ? t('detail.restarting') : t('detail.restart')}
+              </button>
+            )}
             {/* transport 不可修改；端口留空时自动分配，运行中修改在下次启动生效。 */}
             <button
               className="btn btn-secondary btn-sm"

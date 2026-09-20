@@ -229,6 +229,7 @@ describe('registerIpc', () => {
       'instances:reorder',
       'instances:start',
       'instances:stop',
+      'instances:restart',
       'instances:openView',
       'instances:updateViewBounds',
       'instances:showTooltip',
@@ -295,6 +296,62 @@ describe('registerIpc', () => {
     expect(authFake.forget).not.toHaveBeenCalled()
     expect(vaultFake['forgetInstance']).not.toHaveBeenCalled()
     expect(vaultFake['forgetSession']).not.toHaveBeenCalled()
+  })
+
+  it('restart:运行中的 hub 托管实例先停止再按注册表记录重新拉起', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    currentStatus = { id: created.value.id, status: 'running', runtimeSource: 'hub', at: new Date().toISOString() }
+
+    const result = (await invoke('instances:restart', created.value.id)) as { ok: boolean; value: null }
+
+    expect(result).toEqual({ ok: true, value: null })
+    expect(runtimeFake.stop).toHaveBeenCalledWith(created.value.id)
+    expect(runtimeFake.start).toHaveBeenCalledTimes(1)
+    const started = runtimeFake.start.mock.calls[0]?.[0] as { id: string }
+    expect(started.id).toBe(created.value.id)
+  })
+
+  it('restart:非 local 传输被拒绝且不触碰运行时', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: 'HTTP 实例',
+      authMode: 'auto',
+      endpointUrl: 'http://127.0.0.1:1/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const result = (await invoke('instances:restart', created.value.id)) as { ok: boolean; code?: string }
+
+    expect(result).toMatchObject({ ok: false, code: 'invalid-input' })
+    expect(runtimeFake.stop).not.toHaveBeenCalled()
+    expect(runtimeFake.start).not.toHaveBeenCalled()
+  })
+
+  it('restart:未运行或外部接管被拒绝', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    // 未运行:statusOf 返回 null
+    currentStatus = null
+    const idle = (await invoke('instances:restart', created.value.id)) as { ok: boolean; code?: string }
+    expect(idle).toMatchObject({ ok: false, code: 'invalid-state' })
+
+    // 外部接管:进程归用户所有,hub 无权重启
+    currentStatus = { id: created.value.id, status: 'running', runtimeSource: 'external', at: new Date().toISOString() }
+    const external = (await invoke('instances:restart', created.value.id)) as { ok: boolean; code?: string }
+    expect(external).toMatchObject({ ok: false, code: 'invalid-state' })
+
+    expect(runtimeFake.stop).not.toHaveBeenCalled()
+    expect(runtimeFake.start).not.toHaveBeenCalled()
+  })
+
+  it('restart:实例不存在报 not-found', async () => {
+    const result = (await invoke('instances:restart', '00000000-0000-4000-8000-000000000000')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(result).toMatchObject({ ok: false, code: 'not-found' })
   })
   it('ssh:hostKeyForget:入参走 zod 边界,只有 ssh 实例才转交 tunnels.forgetHostKey', async () => {
     // 非 ssh 实例没有主机指纹 → invalid-input。三种情况都不许触碰隧道管理器。

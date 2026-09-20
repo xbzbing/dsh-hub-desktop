@@ -79,6 +79,8 @@ export interface DshHubBridge {
   runtime: {
     start: (id: string) => Promise<IpcResult<null>>
     stop: (id: string) => Promise<IpcResult<null>>
+    /** 重启 hub 托管的本地实例：等待完全停止后重新拉起；外部接管的进程会被拒绝。 */
+    restart: (id: string) => Promise<IpcResult<null>>
     openView: (id: string) => Promise<IpcResult<null>>
     updateViewBounds: (bounds: WorkspaceViewBounds) => Promise<IpcResult<null>>
     /** 显示位于原生工作区视图之上的只读名称提示。 */

@@ -332,6 +332,31 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
     })
   )
 
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.restart, (_event, id: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      const instanceId = parseId(id)
+      const instance = await store.get(instanceId)
+      if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
+      if (instance.transport !== 'local') {
+        throw new InstanceStoreError('invalid-input', '只有本机实例支持重启')
+      }
+      // 外部接管的进程归用户所有,hub 无权重启;未运行的实例没有进程可重启。
+      const status = deps.runtime.statusOf(instanceId)
+      if (!status || status.status !== 'running') {
+        throw new InstanceStoreError('invalid-state', '实例未在运行，无法重启')
+      }
+      if (status.runtimeSource === 'external') {
+        throw new InstanceStoreError('invalid-state', '外部接管的 dsh 进程归用户所有，不能由 hub 重启')
+      }
+      // 先完全停止（等待进程退出并发出 stopped），再按当前注册表配置重新拉起。
+      // 重启可能分配新端口/新 browser-auth URL：启动耗时较长，不 await，
+      // 进展与失败都经状态事件回推，渲染层据 running 事件重开工作区。
+      await deps.runtime.stop(instanceId)
+      void deps.runtime.start(instance)
+      return null
+    })
+  )
+
   const openViewTasks = new Map<string, Promise<void>>()
   let workspaceTargetId: string | null = null
 
