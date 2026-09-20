@@ -23,13 +23,17 @@ jobs:
       # Electron E2E 需要显示服务;Linux CI 无显示器,用 xvfb 虚拟屏(R4)。
       # safeStorage 依赖 Secret Service(dbus + gnome-keyring);缺失时凭据保险库
       # 降级为纯内存,与真实 Linux 桌面行为不一致,跨重启的用例会失败。
+      # libsecret-1-0 是 gnome-libsecret 后端运行时 dlopen 的库,缺失会静默回退 basic_text。
       - run: |
           sudo apt-get update
-          sudo apt-get install -y gnome-keyring dbus-x11
+          sudo apt-get install -y gnome-keyring dbus-x11 libsecret-1-0
       - name: Run E2E
         env:
           # 无头环境无法点击下载确认原生对话框;本地实例启动按拒绝处理,快速到达确定终态
           DSH_HUB_E2E_DECLINE_DOWNLOAD: '1'
+          # 无头会话探测不到桌面环境时 safeStorage 回退 basic_text;显式声明后端,
+          # 凭据保险库行为与真实桌面一致(跨重启的用例依赖它)
+          DSH_HUB_E2E_PASSWORD_STORE: gnome-libsecret
         run: |
           dbus-run-session -- sh -c '
             echo "ci-unlock" | gnome-keyring-daemon --unlock --replace --components=secrets >/tmp/keyring.env 2>/tmp/keyring.err &
