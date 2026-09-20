@@ -353,6 +353,20 @@ void app.whenReady().then(() => {
       return false
     }
   })()
+  if (process.env.DSH_HUB_E2E_PASSWORD_STORE) {
+    // E2E 显式指定了 safeStorage 后端:打印开关是否送达与最终选中的后端,
+    // 否则 CI 上「开关已传但保险库仍降级」无法区分是注入丢失还是后端初始化失败
+    console.error(
+      '[main] safeStorage 诊断：',
+      JSON.stringify({
+        switch: app.commandLine.hasSwitch('password-store'),
+        value: app.commandLine.getSwitchValue('password-store'),
+        available: safeStorageAvailable,
+        backend: safeStorage.getSelectedStorageBackend?.() ?? null,
+        dbus: Boolean(process.env.DBUS_SESSION_BUS_ADDRESS)
+      })
+    )
+  }
   vault = createVault({
     filePath: join(dataRoot, 'vault', 'credentials.json'),
     crypto: {
