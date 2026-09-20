@@ -145,8 +145,11 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
   /**
    * 纯注入环境:候选探测**不看真实文件系统**、不起登录 shell。
    * `~/.local/bin/dsh`),测试结果就会随开发机环境漂移。
+   * platform 显式固定为 darwin:候选表/which 行为按 POSIX 断言,避免随宿主系统漂移;
+   * win32 分支由下方专属用例单独覆盖。
    */
   const HERMETIC = {
+    platform: 'darwin' as const,
     exists: () => false,
     listDir: () => [],
     loginShell: false
@@ -263,6 +266,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('which 失败 → 回退探测候选绝对路径(~/.local/bin/dsh 命中)', async () => {
     const probe = createPathProbe({
+      platform: 'darwin' as const,
       home: '/Users/tester',
       exists: (path) => path === '/Users/tester/.local/bin/dsh',
       listDir: () => [],
@@ -281,6 +285,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
   it('候选路径按优先级:homebrew 与 nvm 多版本都在时,先命中列表靠前者', async () => {
     const probed: string[] = []
     const probe = createPathProbe({
+      platform: 'darwin' as const,
       home: '/Users/tester',
       exists: () => true,
       listDir: (path) => (path === '/Users/tester/.nvm/versions/node' ? ['v22.0.0'] : []),
@@ -302,6 +307,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('候选都不存在 → 登录 shell 兜底(command -v dsh + dsh --version 在 shell 内一次跑完)', async () => {
     const probe = createPathProbe({
+      platform: 'darwin' as const,
       home: '/Users/tester',
       exists: () => false,
       listDir: () => [],
@@ -323,6 +329,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('登录 shell 输出缺版本行 → 不采信(避免「找得到路径但跑不动」的假阳性)', async () => {
     const probe = createPathProbe({
+      platform: 'darwin' as const,
       home: '/Users/tester',
       exists: () => false,
       listDir: () => [],
@@ -337,6 +344,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('登录 shell 也不可用 → null(不抛异常、不阻塞启动)', async () => {
     const probe = createPathProbe({
+      platform: 'darwin' as const,
       home: '/Users/tester',
       exists: () => false,
       listDir: () => [],
@@ -351,6 +359,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 
   it('候选存在但 --version 失败 → 继续尝试后续候选,不误判为可用', async () => {
     const probe = createPathProbe({
+      platform: 'darwin' as const,
       home: '/Users/tester',
       exists: (path) => path.endsWith('/dsh'),
       listDir: () => [],
@@ -394,8 +403,9 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
 })
 
 describe('probeLauncher(向导检测本机 dsh/dush)', () => {
-  /** 纯注入环境:候选探测不看真实文件系统 */
+  /** 纯注入环境:候选探测不看真实文件系统;platform 固定 darwin,win32 分支另有专属用例 */
   const HERMETIC = {
+    platform: 'darwin' as const,
     home: '/Users/example',
     listDir: () => [],
     loginShell: false

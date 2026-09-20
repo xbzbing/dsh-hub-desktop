@@ -102,7 +102,8 @@ describe('parseDshWebProcesses(ps 解析)', () => {
       patch: PATCH,
       port: null // 命令行没写 --port → 交 lsof 兜底
     })
-    expect(found[0]?.command).toContain('/.local/bin/dsh web')
+    // DSH_BIN 由 join 生成(Windows 下为反斜杠),REAL_PS 用同一变量构造,直接比对
+    expect(found[0]?.command).toContain(`${DSH_BIN} web`)
   })
 
   it('同一 pid 只上报一次;空输出返回空数组', () => {
@@ -204,6 +205,7 @@ describe('parseWindowsListeningPorts(netstat 解析)', () => {
 describe('createExternalDshScanner(注入 IO)', () => {
   it('ps 找到进程且命令行无 --port → 用 lsof 补端口', async () => {
     const scanner = createExternalDshScanner({
+      platform: 'linux',
       run: async (command) => {
         if (command === 'ps') {
           return {
@@ -227,6 +229,7 @@ describe('createExternalDshScanner(注入 IO)', () => {
   it('命令行带 --port 时仍由 lsof 确认 PID 的监听端口', async () => {
     const calls: string[] = []
     const scanner = createExternalDshScanner({
+      platform: 'linux',
       run: async (command) => {
         calls.push(command)
         if (command === 'ps') return { code: 0, stdout: '1 node /x/dsh web --port 52300\n' }
@@ -240,6 +243,7 @@ describe('createExternalDshScanner(注入 IO)', () => {
 
   it('命令行端口没有对应的 PID 监听 socket 时不返回可打开端口', async () => {
     const scanner = createExternalDshScanner({
+      platform: 'linux',
       run: async (command) =>
         command === 'ps'
           ? { code: 0, stdout: '1 node /x/dsh web --port 52300\n' }
@@ -250,6 +254,7 @@ describe('createExternalDshScanner(注入 IO)', () => {
 
   it('ps 失败 / lsof 失败都退化为空数组或 null 端口,不抛异常', async () => {
     const failing = createExternalDshScanner({
+      platform: 'linux',
       run: async () => {
         throw new Error('ps not available')
       }
@@ -257,6 +262,7 @@ describe('createExternalDshScanner(注入 IO)', () => {
     await expect(failing.scan()).resolves.toEqual([])
 
     const lsofFails = createExternalDshScanner({
+      platform: 'linux',
       run: async (command) => {
         if (command === 'ps') return { code: 0, stdout: '1 node /x/dsh web\n' }
         throw new Error('lsof failed')
@@ -269,6 +275,7 @@ describe('createExternalDshScanner(注入 IO)', () => {
 
   it('没有 dsh web 进程时返回空数组', async () => {
     const scanner = createExternalDshScanner({
+      platform: 'linux',
       run: async () => ({ code: 0, stdout: '1 /sbin/launchd\n2 node /x/other.js\n' })
     })
     await expect(scanner.scan()).resolves.toEqual([])

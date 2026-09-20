@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { InstanceStatusEvent, LocalInstance } from '@shared/contracts'
 import type { RuntimeInstaller } from './runtime-installer'
@@ -257,8 +258,10 @@ describe('createLocalRuntime', () => {
     child.stdout.write(readyLine())
     await starting
 
+    // 实现用 path.join 拼 home,期望值也用 join 构造,避免分隔符随平台漂移
+    const defaultSpaceHome = join('/tmp/default-space-home', '.dsh')
     expect(spawnImpl).toHaveBeenCalledWith(
-      expect.objectContaining({ cwd: '/tmp/default-space-home/.dsh', env: expect.objectContaining({ DSH_HOME: '/tmp/default-space-home/.dsh' }) })
+      expect.objectContaining({ cwd: defaultSpaceHome, env: expect.objectContaining({ DSH_HOME: defaultSpaceHome }) })
     )
   })
 
