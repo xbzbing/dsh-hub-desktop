@@ -366,6 +366,40 @@ describe('store settings', () => {
     expect(useAppStore.getState().workspaceOpening).toBe(false)
   })
 
+  it('openView 在途时收到 running 状态不重复触发打开', async () => {
+    const useAppStore = await freshStore()
+    let resolveOpen!: (value: { ok: true; value: null }) => void
+    const openView = vi.fn(
+      () =>
+        new Promise<{ ok: true; value: null }>((resolve) => {
+          resolveOpen = resolve
+        })
+    )
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({
+      selection: 'instance-1',
+      workspaceOpening: true,
+      statuses: { 'instance-1': { id: 'instance-1', status: 'starting', at: '2026-09-18T00:00:00.000Z' } }
+    })
+
+    const opening = useAppStore.getState().openWorkspace('instance-1')
+    useAppStore.getState().applyStatus({
+      id: 'instance-1',
+      status: 'running',
+      at: '2026-09-18T00:00:01.000Z'
+    })
+    expect(openView).toHaveBeenCalledTimes(1)
+    resolveOpen({ ok: true, value: null })
+    await opening
+    expect(useAppStore.getState()).toMatchObject({
+      workspaceOpen: true,
+      workspaceOpening: false
+    })
+  })
+
   it('工作区打开失败后退出加载状态并保留实例详情', async () => {
     const useAppStore = await freshStore()
     vi.stubGlobal('window', {

@@ -105,6 +105,8 @@ interface AppState {
 let toastSeq = 0
 /** 最近一次工作区导航意图；过期 IPC 完成不得覆盖当前实例视图。 */
 let workspaceNavigationGeneration = 0
+/** 正在等待主进程 openView 返回的实例；状态事件不得对同一实例重复触发打开。 */
+let openViewInFlight: string | null = null
 
   /** 系统主题监听的取消函数，避免重复订阅。 */
 let systemThemeUnsubscribe: (() => void) | null = null
@@ -276,7 +278,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         }
       }
       if (state.workspaceOpening && state.selection === event.id) {
-        if (event.status === 'running') shouldOpen = event.id
+        // 在途打开尚未返回时不重复触发:重复触发会先隐藏原生视图,而主进程会把
+        // 两次打开按同实例合并,渲染层状态不再变化,内容区边界不会重新回传。
+        if (event.status === 'running' && openViewInFlight !== event.id) shouldOpen = event.id
         if (event.status === 'error' || event.status === 'stopped') {
           return {
             instances,
@@ -332,21 +336,26 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // 主进程按同实例去重合并,渲染层不会再回传内容区边界,视图会停在零尺寸。
     if (get().selection === id && get().workspaceOpen) return
     const generation = ++workspaceNavigationGeneration
-    void window.dshHub?.runtime?.hideView()
-    set({ selection: id, workspaceOpen: false, workspaceOpening: true, settingsOpen: false })
-    const result = await window.dshHub?.runtime.openView(id)
-    // A later selection/open request owns the native view. Stale responses only stop themselves.
-    if (generation !== workspaceNavigationGeneration || get().selection !== id) return
-    if (result?.ok) {
-      set((state) => ({
-        workspaceOpen: true,
-        workspaceOpening: false,
-        workspaceConnected: { ...state.workspaceConnected, [id]: true }
-      }))
-      return
+    openViewInFlight = id
+    try {
+      void window.dshHub?.runtime?.hideView()
+      set({ selection: id, workspaceOpen: false, workspaceOpening: true, settingsOpen: false })
+      const result = await window.dshHub?.runtime.openView(id)
+      // A later selection/open request owns the native view. Stale responses only stop themselves.
+      if (generation !== workspaceNavigationGeneration || get().selection !== id) return
+      if (result?.ok) {
+        set((state) => ({
+          workspaceOpen: true,
+          workspaceOpening: false,
+          workspaceConnected: { ...state.workspaceConnected, [id]: true }
+        }))
+        return
+      }
+      set({ workspaceOpening: false })
+      if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
+    } finally {
+      if (openViewInFlight === id) openViewInFlight = null
     }
-    set({ workspaceOpening: false })
-    if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
   },
 
   disconnectWorkspace: async (id) => {
