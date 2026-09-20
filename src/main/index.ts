@@ -106,6 +106,14 @@ const userDataOverride = process.env['DSH_HUB_DATA_DIR']?.trim()
 if (userDataOverride) app.setPath('userData', userDataOverride)
 
 /**
+ * E2E 隐藏窗口模式（`DSH_HUB_E2E_HIDDEN=1`）：测试仍启动真实应用，但窗口不显示、
+ * 应用不进 Dock，避免打断本机正在进行的其他工作；渲染进程关闭后台节流，计时器、
+ * 扫描与截图行为与可见窗口一致。CI 的 Linux E2E 走 xvfb 虚拟屏，无需此开关。
+ */
+const e2eHidden = process.env.DSH_HUB_E2E_HIDDEN === '1'
+if (e2eHidden && process.platform === 'darwin') app.dock?.hide()
+
+/**
  * 实例窗口没有 preload，收到也无消费者；`auth:state` 仍广播（详情页可能在任一窗口）。
  */
 let hubWindow: BrowserWindow | null = null
@@ -145,8 +153,9 @@ function trayIconPath(): string {
   return candidates[candidates.length - 1] as string
 }
 
-/** 从托盘召出主窗口(没有窗口就重建) */
+/** 从托盘召出主窗口(没有窗口就重建)；E2E 隐藏模式下保持不可见。 */
 function showHubWindow(): void {
+  if (e2eHidden) return
   if (hubWindow && !hubWindow.isDestroyed()) {
     hubWindow.show()
     hubWindow.focus()
@@ -226,11 +235,14 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       webviewTag: false,
-      spellcheck: false
+      spellcheck: false,
+      backgroundThrottling: !e2eHidden
     }
   })
 
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    if (!e2eHidden) win.show()
+  })
 
   // Hub renderer 不接受 popup；外部跳转必须由显式、受校验的用户操作触发。
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))

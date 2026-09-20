@@ -89,5 +89,6 @@ pnpm release:check
 - 受限环境安装依赖时使用 `--store-dir=/tmp/pnpm-store --cache-dir=/tmp/pnpm-cache`。
 - Electron 缓存使用 `ELECTRON_CACHE=/tmp/electron-cache`。
 - 受限环境运行 E2E：`DSH_HUB_E2E_ARGS="--no-sandbox --disable-gpu" CI=true pnpm test:e2e`。
+- 本机边工作边跑 E2E：`DSH_HUB_E2E_HIDDEN=1 CI=true pnpm test:e2e`（窗口不显示、应用不进 Dock、不抢焦点；CI 的 Linux 走 xvfb 无需此开关）。
 - 无 TTY 时运行 pnpm 脚本必须设置 `CI=true`。
 - 后台命令使用 `cd <workspace> && ...` 或 `pnpm --dir <workspace>`，确保在正确目录执行。
