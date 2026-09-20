@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * 生成 `dist/SHA256SUMS.txt`。
  *
@@ -11,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { readdir, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const SUMS_FILE = 'SHA256SUMS.txt'
 /** `*.blockmap` 是给自动更新做差分的中间产物,不属于「分发给人的产物」 */
@@ -62,7 +62,8 @@ async function main() {
   console.log(`[release] 已写出 ${target}（${files.length} 个产物）`)
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Windows 下 argv[1] 是反斜杠盘符路径,必须经 pathToFileURL 归一后才能与 import.meta.url 比较
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch((error) => {
     console.error('[release] 生成校验和失败：', error)
     process.exit(1)
