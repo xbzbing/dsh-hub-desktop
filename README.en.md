@@ -107,6 +107,8 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # If p
 | `pnpm test:e2e` | Playwright `_electron` tests |
 | `pnpm test:contract` | Auth contract tests against local dsh-auth-gateway source; requires `DSH_AUTH_GATEWAY_SRC=/path/to/dsh-auth-gateway` |
 
+**Testing notes**: E2E cases use an isolated temp directory via `DSH_HUB_DATA_DIR`; instances and credentials are synthetic data constructed in the test environment. CI failure artifacts include only Playwright error contexts, traces, UI screenshots, and audit logs; the credential vault file (`vault/credentials.json`) is never uploaded, even though its contents are ciphertext. If a future test must pre-seed vault data, it must use mock data constructed in the test environment and document its construction here.
+
 Release commands fall into two categories: "local packaging & verification" and "source release." The current GitHub Release uses a `source-only` strategy — only source code, tags, and Release Notes are published. No `.app`, `.dmg`, `.zip`, `.exe`, auto-update metadata, or checksum files are uploaded. Users must prepare their own build environment and build from source.
 
 Local packaging commands are retained, but the unsigned, notarized artifacts are only suitable for development, local verification, and controlled testing:

@@ -112,6 +112,8 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # post
 | `pnpm test:e2e` | Playwright `_electron` |
 | `pnpm test:contract` | 对本地 dsh-auth-gateway 源码运行认证契约测试；需设置 `DSH_AUTH_GATEWAY_SRC=/path/to/dsh-auth-gateway` |
 
+**测试说明**：E2E 用例使用 `DSH_HUB_DATA_DIR` 指向的隔离临时目录，实例与凭据均为测试环境构造的数据。CI 失败时收集的产物只包含 Playwright 错误上下文、trace、界面截图与审计日志；凭据保险库文件（`vault/credentials.json`）即使内容是密文也不上传。若未来某条测试必须预置保险库数据，必须使用测试环境构造的 mock 数据并在此处记录其构造方式。
+
 发布相关命令分为“本地打包与验证”和“源码发布”两类。当前 GitHub Release 采用 `source-only` 策略，只发布源码、tag 和 Release Note，不上传 `.app`、`.dmg`、`.zip`、`.exe`、自动更新元数据或校验和文件。使用者需自行准备构建环境并从源码构建。
 
 本地打包命令仍保留，但生成的未签名、未公证产物只适用于开发、本机验证和受控测试：
