@@ -25,6 +25,7 @@ jobs:
 
   contract:
     runs-on: ubuntu-latest
+    continue-on-error: true  # 私有仓库可能无权访问
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
