@@ -87,18 +87,24 @@ test('侧栏实例名称进入工作区或错误详情，随后可删除实例',
   }).toBe(true)
   const workspaceOpened = await win.getByTestId('workspace-loading').isVisible().catch(() => false)
   if (workspaceOpened) {
-    // 等待工作区完全加载(loading 消失)
-    await expect(win.getByTestId('workspace-loading')).toBeHidden({ timeout: 15_000 })
-    await expect(win.getByTestId('workspace-toolbar')).toHaveCount(0)
-    await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
-    const toolbarLayout = await win.evaluate(() => {
-      const topbar = document.querySelector('.topbar')?.getBoundingClientRect()
-      const back = document.querySelector('[data-testid="workspace-back-btn"]')?.getBoundingClientRect()
-      return topbar && back ? { topbarRight: topbar.right, backRight: back.right } : null
-    })
-    expect(toolbarLayout).not.toBeNull()
-    if (toolbarLayout) expect(toolbarLayout.topbarRight - toolbarLayout.backRight).toBeLessThanOrEqual(16)
-    await win.getByTestId('workspace-back-btn').click()
+    // loading 消失后的确定终态有两种:工作区打开(启动成功)或回落详情页(启动被拒/失败)。
+    await expect.poll(async () => {
+      const back = await win.getByTestId('workspace-back-btn').isVisible().catch(() => false)
+      const detail = await win.getByTestId('view-detail').isVisible().catch(() => false)
+      return back || detail
+    }).toBe(true)
+    const opened = await win.getByTestId('workspace-back-btn').isVisible().catch(() => false)
+    if (opened) {
+      await expect(win.getByTestId('workspace-toolbar')).toHaveCount(0)
+      const toolbarLayout = await win.evaluate(() => {
+        const topbar = document.querySelector('.topbar')?.getBoundingClientRect()
+        const back = document.querySelector('[data-testid="workspace-back-btn"]')?.getBoundingClientRect()
+        return topbar && back ? { topbarRight: topbar.right, backRight: back.right } : null
+      })
+      expect(toolbarLayout).not.toBeNull()
+      if (toolbarLayout) expect(toolbarLayout.topbarRight - toolbarLayout.backRight).toBeLessThanOrEqual(16)
+      await win.getByTestId('workspace-back-btn').click()
+    }
   }
   await expect(win.getByTestId('view-detail')).toBeVisible()
   const deleteButton = win.getByTestId('delete-btn')
