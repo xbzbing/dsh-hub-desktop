@@ -434,14 +434,24 @@ test('收起态悬停提示的四边与圆角一致', async () => {
   expect(tooltipStyle?.radius).toBe('7px')
   expect(tooltipStyle?.widths).toEqual(['1px', '1px', '1px', '1px'])
   expect(new Set(tooltipStyle?.colors).size).toBe(1)
-  // 圆角描边必须远离窗口边缘:系统窗口圆角遮罩只允许裁到透明安全区。
-  expect(tooltipStyle?.inset).toEqual({ top: 14, left: 14, right: 14, bottom: 14 })
+  // 提示盒子按文本宽度收缩(width:max-content),右侧可能留出透明的窗口余量,
+  // 因此其余三边必须恰为安全区宽度,右侧只要求不小于安全区,避免圆角描边被窗口遮罩裁掉。
+  expect(tooltipStyle?.inset.top).toBe(14)
+  expect(tooltipStyle?.inset.left).toBe(14)
+  expect(tooltipStyle?.inset.bottom).toBe(14)
+  expect(tooltipStyle?.inset.right).toBeGreaterThanOrEqual(14)
 
   // 像素级核对:直接截取提示页面并解码,确认四角圆角处存在边框像素。
   // 只看 computed style 无法发现「四角被窗口边界裁掉」这类合成层缺陷。
-  const shot = await tooltipPage?.screenshot({ omitBackground: true })
-  expect(shot).toBeDefined()
-  const corners = shot ? inspectTooltipCorners(shot) : null
+  // 隐藏窗口模式下 macOS 不为不显示的子窗口持续合成帧,page.screenshot 会等不到稳定帧,
+  // 因此经主进程用 capturePage(stayHidden) 强制离屏渲染一帧;透明窗口的截图自带 alpha。
+  const shot = await app.evaluate(({ BrowserWindow }) => {
+    const tooltip = BrowserWindow.getAllWindows().find((window) => window.webContents.getURL().startsWith('data:text/html'))
+    if (!tooltip) return null
+    return tooltip.webContents.capturePage(undefined, { stayHidden: true }).then((image) => image.toPNG())
+  })
+  expect(shot).not.toBeNull()
+  const corners = shot ? inspectTooltipCorners(Buffer.from(shot)) : null
   expect(corners).not.toBeNull()
   expect(corners?.cornerBorderPixels).toBeGreaterThanOrEqual(4)
   expect(corners?.edgeBorderPixels).toBeGreaterThanOrEqual(4)

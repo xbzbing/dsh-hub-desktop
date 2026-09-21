@@ -98,4 +98,46 @@ describe('createWorkspaceTooltipHost', () => {
 
     expect(windows()[0]?.hide).toHaveBeenCalledOnce()
   })
+
+  it('被更新请求中止的加载静默退出，只显示最新请求', async () => {
+    const hub = hubWindow()
+    // 复现真实导航语义:同一 webContents 上后一次 loadURL 会中止前一次在途导航
+    const loads: Array<{ resolve: () => void; reject: (error: Error) => void }> = []
+    class AbortableWindow {
+      options: Record<string, unknown>
+      setAlwaysOnTop = vi.fn()
+      setIgnoreMouseEvents = vi.fn()
+      setMenuBarVisibility = vi.fn()
+      setBackgroundColor = vi.fn()
+      setBounds = vi.fn()
+      showInactive = vi.fn()
+      hide = vi.fn()
+      isDestroyed = vi.fn(() => false)
+      destroy = vi.fn()
+      loadURL = vi.fn(() => new Promise<void>((resolve, reject) => { loads.push({ resolve, reject }) }))
+      constructor(options: Record<string, unknown>) {
+        this.options = options
+      }
+    }
+    const created: AbortableWindow[] = []
+    const host = createWorkspaceTooltipHost(
+      () => hub as never,
+      (options) => {
+        const win = new AbortableWindow(options as Record<string, unknown>)
+        created.push(win)
+        return win as never
+      }
+    )
+
+    const first = host.show({ text: '本机', x: 72, y: 160 })
+    const second = host.show({ text: '修复实例', x: 72, y: 160 })
+    // 第二次导航完成,同时使第一次在途导航以 ERR_ABORTED 中止
+    loads[1]?.resolve()
+    loads[0]?.reject(new Error('ERR_ABORTED (-3)'))
+
+    // 被中止的旧请求静默完成,不向 IPC 上报;只有最新请求显示提示
+    await expect(first).resolves.toBeUndefined()
+    await expect(second).resolves.toBeUndefined()
+    expect(created[0]?.showInactive).toHaveBeenCalledOnce()
+  })
 })

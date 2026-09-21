@@ -18,13 +18,14 @@ const TOOLTIP_MIN_WIDTH = 96
 const TOOLTIP_MAX_WIDTH = 320
 
 function tooltipWidth(text: string): number {
-  // 中文字符与西文混排时按较保守的平均宽度预留，避免原生窗口在工作区上方截断。
+  // 预置窗口宽度,按每字符 14px 从宽估算,保证就位前文本不被裁剪;
+  // 可见盒子的实际宽度由页面 CSS 按文本收缩,窗口多出的部分是透明区域。
   return Math.max(TOOLTIP_MIN_WIDTH, Math.min(TOOLTIP_MAX_WIDTH, Math.ceil(text.length * 14 + 22)))
 }
 
 function tooltipHtml(text: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-html,body{margin:0;background:transparent;overflow:hidden}body{padding:${TOOLTIP_PADDING}px;font:12px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#1f2937}main{box-sizing:border-box;height:${TOOLTIP_HEIGHT}px;padding:6px 9px;border:1px solid #d8dce4;border-radius:7px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .08);line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}</style></head><body><main>${escapeHtml(text)}</main></body></html>`
+html,body{margin:0;background:transparent;overflow:hidden}body{padding:${TOOLTIP_PADDING}px;font:12px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#1f2937}main{box-sizing:border-box;width:max-content;max-width:min(320px,calc(100vw - 28px));height:${TOOLTIP_HEIGHT}px;padding:6px 9px;border:1px solid #d8dce4;border-radius:7px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .08);line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}</style></head><body><main>${escapeHtml(text)}</main></body></html>`
 }
 
 function escapeHtml(value: string): string {
@@ -102,7 +103,14 @@ export function createWorkspaceTooltipHost(
         height: TOOLTIP_WINDOW_HEIGHT
       })
       if (displayedText !== tooltip.text) {
-        await nativeTooltip.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(tooltipHtml(tooltip.text))}`)
+        try {
+          await nativeTooltip.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(tooltipHtml(tooltip.text))}`)
+        } catch (error) {
+          // 指针快速划过多个实例时,后一次 show 的导航会中止前一次在途导航(Err_ABORTED);
+          // 展示结果以最新请求为准,被中止的旧请求静默退出,不作为故障上报。
+          if (request === displayRequest && !nativeTooltip.isDestroyed()) throw error
+          return
+        }
         displayedText = tooltip.text
       }
       if (request === displayRequest && !nativeTooltip.isDestroyed()) nativeTooltip.showInactive()
