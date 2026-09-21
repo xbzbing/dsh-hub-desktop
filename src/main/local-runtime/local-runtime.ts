@@ -512,7 +512,10 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
                   : `准备 dsh ${version} 运行时（首次需要安装，可能较慢）`
             })
             // path 来源运行的是用户本机安装,不需要(也不许)往应用隔离目录安装
-            if (runtimeSource === 'hub') await options.installer.ensureInstalled(version)
+            if (runtimeSource === 'hub')
+              await options.installer.ensureInstalled(version, (progress) => {
+                emit(id, 'installing', { version: progress.version, detail: progress.detail })
+              })
             if ((cancelGeneration.get(id) ?? -1) >= gen) return 'cancelled'
 
             // 优先实例记录里用户选定的端口(向导高级设置);被占则向上递增,启动后仍回写实际端口。

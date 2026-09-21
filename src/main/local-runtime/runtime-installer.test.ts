@@ -2,12 +2,15 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CommandResult } from './runtime-installer'
+import type { CommandResult, NpmInvocation } from './runtime-installer'
 import {
   createRuntimeInstaller,
+  npmFetchPath,
   readInstallingMarker,
+  resolveNpmInvocation,
   runtimeDirFor,
   runtimeEntryFor,
+  spawnNpm,
   type InstalledRuntime
 } from './runtime-installer'
 
@@ -44,7 +47,12 @@ describe('createRuntimeInstaller', () => {
       if (cmd === 'which' || cmd === 'where') return okRun('/usr/local/bin/npm')
       return okRun(JSON.stringify(['0.1.2-rc.1', '0.1.5-rc.1', '0.1.5-rc.2', { bad: 1 }, 'x/y']))
     })
-    const installer = createRuntimeInstaller({ runtimesDir: tmpDir(), cacheDir: tmpDir(), run })
+    const installer = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      run,
+      exists: () => false
+    })
     const versions = await installer.listAvailableVersions()
     expect(versions).toEqual(['0.1.2-rc.1', '0.1.5-rc.1', '0.1.5-rc.2'])
     expect(run).toHaveBeenCalledWith(
@@ -161,5 +169,136 @@ describe('createRuntimeInstaller', () => {
 
     const installed = await installer.listInstalled()
     expect(installed.map((item: InstalledRuntime) => item.version)).toEqual(['0.1.5-rc.1'])
+  })
+
+  it('ensureInstalled 进度分支:stderr fetch 行驱动 onProgress(经 runNpm 注入覆盖生产路径)', async () => {
+    const version = '0.1.5-rc.1'
+    const runtimesDir = tmpDir()
+    const run = vi.fn(async (cmd: string) => (cmd === 'which' ? okRun('/usr/local/bin/npm') : okRun('[]')))
+    const runNpm = vi.fn(async (
+      _npm: NpmInvocation,
+      _args: string[],
+      opts: { onStderrLine?: (line: string) => void }
+    ) => {
+      opts.onStderrLine?.('npm http fetch GET 200 https://registry.npmjs.org/a 1ms (cache miss)')
+      opts.onStderrLine?.('npm http fetch GET 200 https://registry.npmjs.org/b/-/b-1.0.0.tgz 2ms (cache miss)')
+      opts.onStderrLine?.('added 2 packages')
+      await fakeInstallArtifacts(runtimesDir, version)
+      return okRun('')
+    })
+    const installer = createRuntimeInstaller({
+      runtimesDir,
+      cacheDir: tmpDir(),
+      run,
+      runNpm,
+      exists: () => false
+    })
+
+    const details: Array<string | undefined> = []
+    await installer.ensureInstalled(version, (progress) => details.push(progress.detail))
+
+    expect(details[0]).toBe(`安装 @deepseek-ai/dsh@${version}`)
+    expect(details).toContain('下载依赖 (1)：a')
+    expect(details).toContain('下载依赖 (2)：b/-/b-1.0.0.tgz')
+    // 非 fetch 行不推进进度
+    expect(details.filter((detail) => detail?.includes('added'))).toHaveLength(0)
+  })
+
+  it('进度分支失败:错误消息只保留 stderr 尾部结论(http 日志不整段进入消息)', async () => {
+    const runtimesDir = tmpDir()
+    const run = vi.fn(async (cmd: string) => (cmd === 'which' ? okRun('/usr/local/bin/npm') : okRun('[]')))
+    const stderrLines = [
+      ...Array.from({ length: 40 }, (_, index) => `npm http fetch GET 200 https://registry.npmjs.org/pkg-${index} 1ms`),
+      'npm error 404 Not Found'
+    ]
+    const runNpm = vi.fn(async (
+      _npm: NpmInvocation,
+      _args: string[],
+      opts: { onStderrLine?: (line: string) => void }
+    ) => {
+      for (const line of stderrLines) opts.onStderrLine?.(line)
+      return { code: 1, stdout: '', stderr: stderrLines.join('\n') }
+    })
+    const installer = createRuntimeInstaller({
+      runtimesDir,
+      cacheDir: tmpDir(),
+      run,
+      runNpm,
+      exists: () => false
+    })
+
+    const message = await installer
+      .ensureInstalled('0.1.5-rc.1', () => undefined)
+      .catch((error: Error) => error.message)
+    expect(message).toContain('npm error 404 Not Found')
+    expect(message).not.toContain('pkg-0')
+  })
+})
+
+describe('npmFetchPath', () => {
+  it('完成行提取相对路径(状态码在 URL 之前)', () => {
+    expect(npmFetchPath('npm http fetch GET 200 https://registry.npmjs.org/is-odd 772ms (cache miss)')).toBe('is-odd')
+    expect(npmFetchPath('npm http fetch GET 200 https://registry.npmmirror.com/dsh 1ms')).toBe('dsh')
+  })
+
+  it('请求行与非 fetch 行返回 null', () => {
+    expect(npmFetchPath('npm http fetch GET https://registry.npmjs.org/x')).toBeNull()
+    expect(npmFetchPath('npm http fetch POST 200 https://registry.npmjs.org/-/user 5ms')).toBeNull()
+    expect(npmFetchPath('added 2 packages in 4s')).toBeNull()
+  })
+})
+
+describe('spawnNpm', () => {
+  it('收集 stdout/stderr,stderr 逐行回调(跨 chunk 行缓冲)', async () => {
+    const lines: string[] = []
+    const script = [
+      "process.stderr.write('npm http fetch GET 200 https://registry.npmmir')",
+      "setTimeout(() => {",
+      "  process.stderr.write('ror.com/x 1ms\\ndone-line\\n')",
+      "  process.stdout.write('OUT')",
+      '}, 20)'
+    ].join(';')
+    const result = await spawnNpm({ command: process.execPath, prefixArgs: ['-e', script] }, [], {
+      env: process.env,
+      onStderrLine: (line) => lines.push(line)
+    })
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain('OUT')
+    expect(result.stderr).toContain('done-line')
+    expect(lines).toEqual(['npm http fetch GET 200 https://registry.npmmirror.com/x 1ms', 'done-line'])
+  })
+
+  it('启动失败时 reject(与 runCommand 语义一致)', async () => {
+    await expect(
+      spawnNpm({ command: 'dsh-hub-no-such-binary', prefixArgs: [] }, [], { env: process.env })
+    ).rejects.toThrow()
+  })
+})
+
+describe('resolveNpmInvocation (win32)', () => {
+  it('返回 node.exe 直跑自带 npm-cli.js,绝不返回 .cmd', async () => {
+    const originalPlatform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      // 用同一 join 构造期望路径:POSIX 下 join 产生混合分隔符,与实现一致
+      const nodeExe = join('C:\\Program Files', 'nodejs', 'node.exe')
+      const bundledCli = join('C:\\Program Files', 'nodejs', 'node_modules', 'npm', 'bin', 'npm-cli.js')
+      const exists = vi.fn((path: string) => path === nodeExe || path === bundledCli)
+      const invocation = await resolveNpmInvocation(vi.fn(), exists)
+      expect(invocation).toEqual({ command: nodeExe, prefixArgs: [bundledCli] })
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+  })
+
+  it('node.exe 与 npm-cli.js 不成对出现时返回 null(不落到 .cmd)', async () => {
+    const originalPlatform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      const invocation = await resolveNpmInvocation(vi.fn(), () => false)
+      expect(invocation).toBeNull()
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
   })
 })

@@ -15,6 +15,7 @@ export type DisplayStatus =
   | 'interrupted'
   | 'error'
   | 'locked'
+  | 'installing'
 
 export interface DisplayStatusInfo {
   chipClass: string
@@ -46,7 +47,8 @@ export const STATUS_INFO: Record<DisplayStatus, DisplayStatusInfo> = {
     icon: 'wifi'
   },
   error: { labelKey: 'state.error', chipClass: 'c-err', dotClass: 's-error', icon: 'alert' },
-  locked: { labelKey: 'state.locked', chipClass: 'c-err', dotClass: 's-locked', icon: 'lock' }
+  locked: { labelKey: 'state.locked', chipClass: 'c-err', dotClass: 's-locked', icon: 'lock' },
+  installing: { labelKey: 'state.installing', chipClass: 'c-info', dotClass: 's-connecting', icon: 'refresh' }
 }
 
 /** 将运行时状态映射为展示状态。 */
@@ -55,6 +57,8 @@ export function toDisplayStatus(status?: InstanceRuntimeStatus, workspaceConnect
   switch (status) {
     case 'starting':
       return 'connecting'
+    case 'installing':
+      return 'installing'
     case 'running':
       return 'connected'
     case 'error':

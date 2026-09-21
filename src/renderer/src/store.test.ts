@@ -13,7 +13,8 @@ const DEFAULTS: Settings = {
   tray: false,
   autoStart: false,
   notifications: true,
-  workspaceCacheSize: 3
+  workspaceCacheSize: 3,
+  npmRegistry: ''
 }
 
 type SettingsResult = { ok: true; value: Settings } | { ok: false; message: string }

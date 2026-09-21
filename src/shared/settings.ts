@@ -13,6 +13,12 @@ export type LanguagePreference = (typeof LANGUAGES)[number]
 export type Language = Exclude<LanguagePreference, 'system'>
 export type Theme = (typeof THEMES)[number]
 
+/** npm 镜像预设；labelKey 供渲染层经 i18n 取显示文案。 */
+export const REGISTRY_PRESETS = [
+  { value: 'https://registry.npmmirror.com', labelKey: 'wizard.registryNpmmirror' },
+  { value: 'https://registry.npmjs.org', labelKey: 'wizard.registryNpmjs' }
+] as const
+
 export const SettingsSchema = z.object({
   /** 界面语言偏好；system 时解析为 OS locale 对应的 zh|en。 */
   language: z.enum(LANGUAGES).default('system'),
@@ -24,7 +30,9 @@ export const SettingsSchema = z.object({
   /** 实例状态变化弹系统通知 */
   notifications: z.boolean().default(true),
   /** 内嵌工作区 WebContentsView 的 LRU 缓存上限(默认 3,防内存膨胀)。 */
-  workspaceCacheSize: z.number().int().min(1).max(10).default(3)
+  workspaceCacheSize: z.number().int().min(1).max(10).default(3),
+  /** npm 安装镜像地址；留空跟随系统 npm 配置。 */
+  npmRegistry: z.string().trim().url().or(z.literal('')).default('')
 })
 
 export type Settings = z.infer<typeof SettingsSchema>
@@ -65,6 +73,7 @@ export function normalizeSettings(value: unknown): Settings {
     tray: pick('tray'),
     autoStart: pick('autoStart'),
     notifications: pick('notifications'),
-    workspaceCacheSize: pick('workspaceCacheSize')
+    workspaceCacheSize: pick('workspaceCacheSize'),
+    npmRegistry: pick('npmRegistry')
   }
 }

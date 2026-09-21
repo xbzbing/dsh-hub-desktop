@@ -78,6 +78,7 @@ export const MESSAGES = {
   'state.interrupted': { zh: '重连中', en: 'Reconnecting' },
   'state.error': { zh: '连接错误', en: 'Connection error' },
   'state.locked': { zh: '已锁定', en: 'Locked' },
+  'state.installing': { zh: '安装中', en: 'Installing' },
 
   // —— 详情页 ——
   'detail.login': { zh: '登录', en: 'Sign in' },
@@ -313,6 +314,15 @@ export const MESSAGES = {
     zh: '复用系统 ssh-agent 与 ~/.ssh/config；密钥内容绝不展示、也不会写入应用存储。',
     en: 'Reuses the system ssh-agent and ~/.ssh/config; key contents are never displayed or stored by the app.'
   },
+  'wizard.registryLabel': { zh: '安装镜像', en: 'Registry mirror' },
+  'wizard.registryHint': {
+    zh: '下载 dsh 时使用的 npm 镜像；中国大陆推荐 npmmirror，海外推荐 npmjs。',
+    en: 'The npm registry used to download dsh. Use npmmirror in China, npmjs elsewhere.'
+  },
+  'wizard.registryNpmmirror': { zh: 'npmmirror（国内加速）', en: 'npmmirror (China)' },
+  'wizard.registryNpmjs': { zh: 'npmjs（官方源）', en: 'npmjs (Global)' },
+  'wizard.registryCustom': { zh: '自定义', en: 'Custom' },
+  'wizard.registrySystem': { zh: '跟随系统 npm 配置', en: 'Follow system npm config' },
 
   // —— 实例详情 ——
   'detail.loggedOut': { zh: '已登出', en: 'Signed out' },

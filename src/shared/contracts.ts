@@ -573,7 +573,7 @@ export interface ExternalDshWebSnapshot {
 /** 主进程 → 渲染进程的状态推送通道（状态机推进的唯一来源） */
 export const INSTANCE_STATUS_EVENT = 'instance:status'
 
-export type InstanceRuntimeStatus = 'stopped' | 'starting' | 'running' | 'error'
+export type InstanceRuntimeStatus = 'stopped' | 'starting' | 'installing' | 'running' | 'error'
 
 export interface InstanceStatusEvent {
   id: string

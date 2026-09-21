@@ -418,7 +418,9 @@ describe('createLocalRuntime', () => {
     const starting = manager.start(instance)
     child.stdout.write(readyLine())
     await starting
-    await vi.waitFor(() => expect(installer.ensureInstalled).toHaveBeenCalledWith('0.1.5-rc.1'))
+    await vi.waitFor(() =>
+      expect(installer.ensureInstalled).toHaveBeenCalledWith('0.1.5-rc.1', expect.any(Function))
+    )
 
     // 指定版本的实例:直接把该版本交给 ensureInstalled
     const pinned = makeFakeInstaller()
@@ -434,7 +436,9 @@ describe('createLocalRuntime', () => {
     )
     child.stdout.write(readyLine())
     await startingPinned
-    await vi.waitFor(() => expect(pinned.ensureInstalled).toHaveBeenCalledWith('0.1.4-rc.1'))
+    await vi.waitFor(() =>
+      expect(pinned.ensureInstalled).toHaveBeenCalledWith('0.1.4-rc.1', expect.any(Function))
+    )
   })
 
   it('并发启动串行化:A 就绪后才拉起 B(TOCTOU 防线)', async () => {
@@ -1129,7 +1133,7 @@ describe('#2 运行时来源与下载确认', () => {
     await waitForStatus(manager, instance.id, 'running')
 
     expect(confirm).toHaveBeenCalledWith('0.1.5-rc.1') // resolveDefaultVersion 的返回值
-    expect(installer.ensureInstalled).toHaveBeenCalledWith('0.1.5-rc.1')
+    expect(installer.ensureInstalled).toHaveBeenCalledWith('0.1.5-rc.1', expect.any(Function))
     expect(manager.statusOf(instance.id)?.runtimeSource).toBe('hub')
   })
 })

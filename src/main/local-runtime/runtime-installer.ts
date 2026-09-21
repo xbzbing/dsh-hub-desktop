@@ -3,62 +3,124 @@
  * 按版本把 `@deepseek-ai/dsh` 装进隔离目录 `runtimes/dsh-<version>/`，版本间零干扰；
  * 安装中写 `installing.json` 支持断点恢复；列表来自 npm registry。
  */
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { statSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /**
- * 解析 npm 可执行文件路径，按优先级尝试：
- * 1. node_modules 里 require.resolve（开发环境/有 npm 依赖时）
- * 2. 系统 PATH 上的 npm（which/where 可定位）
- * 3. 常见全局安装位置
- * 返回 null 表示所有路径均不可用。
+ * 一次可执行的 npm 调用方式。
+ *
+ * Windows 不返回 .cmd 路径：其一，shim 损坏时报 "shim integrity check failed"；
+ * 其二，Node ≥ 20.12 出于命令注入防护（CVE-2024-27980）禁止 spawn 直接执行
+ * .cmd/.bat。因此 Windows 统一用 node.exe 直跑 npm-cli.js。
  */
-export async function resolveNpmPath(
-  run: CommandRunner = runCommand
-): Promise<string | null> {
-  // ① node_modules resolve（开发环境 / npm 作为依赖存在时）
+export interface NpmInvocation {
+  /** 直接可执行的程序：Unix 为 npm 入口脚本，Windows 为 node.exe */
+  command: string
+  /** 紧随程序的固定参数；Windows 下为 npm-cli.js 路径，其余为空 */
+  prefixArgs: string[]
+}
+
+function defaultExists(path: string): boolean {
+  try {
+    return statSync(path).isFile()
+  } catch {
+    return false
+  }
+}
+
+function resolveNpmCliJs(): string | null {
   try {
     // npm-cli.js 是 npm 的入口脚本
     const resolved = require.resolve('npm/bin/npm-cli.js')
-    if (resolved) return resolved
+    return typeof resolved === 'string' && resolved.length > 0 ? resolved : null
   } catch {
-    // require.resolve 失败(找不到 npm 模块)：继续尝试系统路径
+    // 找不到 npm 模块：走系统路径探测
+    return null
+  }
+}
+
+/** Windows：PATH 各目录里 node.exe 所在目录（供与 npm-cli.js 组合） */
+function findWindowsNodeDir(exists: (path: string) => boolean): string | null {
+  for (const dir of (process.env.PATH ?? '').split(';')) {
+    if (dir === '') continue
+    if (exists(join(dir, 'node.exe'))) return dir
+  }
+  return null
+}
+
+/** Windows：node.exe 可能所在的目录，PATH 优先，常见安装位置兜底 */
+function windowsNodeDirs(): string[] {
+  const dirs = (process.env.PATH ?? '')
+    .split(';')
+    .filter((dir) => dir !== '')
+  return [
+    ...dirs,
+    join(process.env['ProgramFiles'] || 'C:\\Program Files', 'nodejs'),
+    join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'nodejs')
+  ]
+}
+
+/**
+ * 解析可用的 npm 调用方式，按优先级尝试：
+ * 1. node_modules 里的 npm-cli.js（开发环境 / npm 作为依赖存在时）
+ * 2. PATH 与常见安装位置中 node.exe + 自带 npm-cli.js 的组合（仅 Windows）
+ * 3. 系统 PATH 上的 npm（which 定位，仅 Unix）
+ * 4. 常见全局安装位置（GUI 启动时 PATH 可能残缺）
+ * 返回 null 表示所有方式均不可用。
+ */
+export async function resolveNpmInvocation(
+  run: CommandRunner = runCommand,
+  exists: (path: string) => boolean = defaultExists
+): Promise<NpmInvocation | null> {
+  const npmCliJs = resolveNpmCliJs()
+
+  if (process.platform === 'win32') {
+    // ① 开发环境解析到的 npm-cli.js 配 PATH 上的 node.exe
+    if (npmCliJs) {
+      const nodeDir = findWindowsNodeDir(exists)
+      if (nodeDir) return { command: join(nodeDir, 'node.exe'), prefixArgs: [npmCliJs] }
+    }
+    // ② node.exe 与其自带 npm-cli.js 同在的目录
+    for (const dir of windowsNodeDirs()) {
+      const nodeExe = join(dir, 'node.exe')
+      const bundledCli = join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+      if (exists(nodeExe) && exists(bundledCli)) return { command: nodeExe, prefixArgs: [bundledCli] }
+    }
+    return null
   }
 
-  // ② 系统 PATH 上的 which/where
+  // Unix：npm 入口脚本带 shebang，可直接执行
+  if (npmCliJs) return { command: npmCliJs, prefixArgs: [] }
+
+  // PATH 上与 node 同目录的 npm
+  for (const dir of (process.env.PATH ?? '').split(':')) {
+    if (dir === '') continue
+    const npmInSameDir = join(dir, 'npm')
+    if (exists(join(dir, 'node')) && exists(npmInSameDir)) return { command: npmInSameDir, prefixArgs: [] }
+  }
+
+  // 系统 PATH 上的 which
   try {
-    const which = process.platform === 'win32' ? 'where' : 'which'
-    const result = await run(which, ['npm'])
+    const result = await run('which', ['npm'])
     if (result.code === 0) {
       const first = result.stdout.split('\n')[0]?.trim()
-      if (first && first.length > 0) return first
+      if (first && first.length > 0) return { command: first, prefixArgs: [] }
     }
   } catch {
-    // which/where 不存在：继续尝试候选路径
+    // which 不存在：继续尝试候选路径
   }
 
-  // ③ 常见全局安装位置（GUI 启动时 PATH 可能残缺）
-  const candidates =
-    process.platform === 'win32'
-      ? [
-          join(process.env['APPDATA'] || '', 'npm', 'npm.cmd'),
-          join(process.env['ProgramFiles'] || '', 'nodejs', 'npm.cmd')
-        ]
-      : [
-          '/usr/local/bin/npm',
-          '/usr/bin/npm',
-          join(process.env['HOME'] || '', '.nvm', 'current', 'bin', 'npm'),
-          join(process.env['HOME'] || '', '.local', 'bin', 'npm'),
-          join(process.env['HOME'] || '', '.volt', 'bin', 'npm')
-        ]
-  for (const candidate of candidates) {
-    try {
-      const info = await import('node:fs/promises').then((fs) => fs.stat(candidate))
-      if (info.isFile()) return candidate
-    } catch {
-      // 路径不存在：跳过
-    }
+  // 常见全局安装位置（GUI 启动时 PATH 可能残缺）
+  for (const candidate of [
+    '/usr/local/bin/npm',
+    '/usr/bin/npm',
+    join(process.env['HOME'] || '', '.nvm', 'current', 'bin', 'npm'),
+    join(process.env['HOME'] || '', '.local', 'bin', 'npm'),
+    join(process.env['HOME'] || '', '.volta', 'bin', 'npm')
+  ]) {
+    if (exists(candidate)) return { command: candidate, prefixArgs: [] }
   }
 
   return null
@@ -106,6 +168,56 @@ export const runCommand: CommandRunner = (command, args, options = {}) =>
     )
   })
 
+/** 流式运行 npm：stderr 逐行回调供进度解析；与 runCommand 一样只有启动失败才 reject。 */
+export type NpmRunner = (
+  npm: NpmInvocation,
+  args: string[],
+  options: { env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void }
+) => Promise<CommandResult>
+
+export const spawnNpm: NpmRunner = (npm, args, options) =>
+  new Promise<CommandResult>((resolve, reject) => {
+    const child = spawn(npm.command, [...npm.prefixArgs, ...args], {
+      env: options.env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    let stdout = ''
+    let stderr = ''
+    let pendingLine = ''
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += String(chunk)
+    })
+    child.stderr?.on('data', (chunk: Buffer) => {
+      const text = String(chunk)
+      stderr += text
+      const lines = (pendingLine + text).split(/\r?\n/)
+      pendingLine = lines.pop() ?? ''
+      for (const line of lines) options.onStderrLine?.(line)
+    })
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (pendingLine !== '') options.onStderrLine?.(pendingLine)
+      resolve({ code: code ?? 1, stdout, stderr })
+    })
+  })
+
+/**
+ * 从 npm `--loglevel http` 的 stderr 行提取下载项相对路径。
+ * 完成行形如 `npm http fetch GET 200 <url> <耗时>`；请求行与非 fetch 行返回 null。
+ */
+export function npmFetchPath(line: string): string | null {
+  const match = /^npm http fetch GET \d+ (\S+)/.exec(line)
+  const url = match?.[1]
+  if (!url) return null
+  return url.replace(/https?:\/\/[^/]+\//, '').split('?')[0] || null
+}
+
+/** 取文本最后 max 行——npm 失败的结论性输出在日志末尾。 */
+function tailLines(text: string, max: number): string {
+  const lines = text.trim().split('\n')
+  return lines.slice(-max).join('\n')
+}
+
 export interface InstalledRuntime {
   version: string
   /** runtimes/dsh-<version> */
@@ -128,8 +240,13 @@ export interface RuntimeInstallerOptions {
   /** npm 缓存目录（放在应用数据目录内，避免污染/受限的用户级缓存） */
   cacheDir: string
   registry?: string
+  /** 动态获取 registry（每次安装时读取最新设置）；优先级高于静态 registry。 */
+  getRegistry?: () => string | undefined
   run?: CommandRunner
-  onProgress?: (progress: InstallProgress) => void
+  /** 流式运行 npm（注入便于测试）；默认 spawnNpm。 */
+  runNpm?: NpmRunner
+  /** 文件存在性检查（注入便于测试）；默认使用 fs.statSync */
+  exists?: (path: string) => boolean
 }
 
 export interface RuntimeInstaller {
@@ -142,7 +259,7 @@ export interface RuntimeInstaller {
    * 原子「检查并安装」：同一版本只会安装一次 —— 并发调用（多实例同时首次启动）
    * 会在队列里串行，后来者直接复用已完成的安装结果。
    */
-  ensureInstalled(version: string): Promise<InstalledRuntime>
+  ensureInstalled(version: string, onProgress?: (progress: InstallProgress) => void): Promise<InstalledRuntime>
   resolveEntry(version: string): string
   /** 安装中断标记（installing.json）是否残留 */
   hasIncompleteInstall(version: string): Promise<boolean>
@@ -167,7 +284,16 @@ function assertVersion(version: string): void {
 
 export function createRuntimeInstaller(options: RuntimeInstallerOptions): RuntimeInstaller {
   const run = options.run ?? runCommand
-  const registryArgs = options.registry ? ['--registry', options.registry] : []
+  const runNpm = options.runNpm ?? spawnNpm
+
+  /** 解析当前生效的 registry：动态回调优先，其次静态配置。 */
+  function currentRegistry(): string | undefined {
+    return options.getRegistry?.() ?? options.registry
+  }
+  function registryArgs(): string[] {
+    const r = currentRegistry()
+    return r ? ['--registry', r] : []
+  }
 
   // 同名目录的安装/检查必须串行(双实例并发启动会撞同一 runtimes/dsh-<v> 目录)
   let installChain: Promise<unknown> = Promise.resolve()
@@ -177,13 +303,13 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     return next
   }
 
-  // 缓存 npm 路径解析结果(只解析一次,避免重复探测)
-  let resolvedNpm: string | null = null
+  // 缓存 npm 调用方式解析结果(只解析一次,避免重复探测)
+  let resolvedNpm: NpmInvocation | null = null
   let npmResolved = false
 
-  async function getNpmPath(): Promise<string> {
+  async function getNpmInvocation(): Promise<NpmInvocation> {
     if (!npmResolved) {
-      resolvedNpm = await resolveNpmPath(run)
+      resolvedNpm = await resolveNpmInvocation(run, options.exists)
       npmResolved = true
     }
     if (resolvedNpm === null) {
@@ -195,10 +321,10 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
   async function npmView(args: string[]): Promise<CommandResult> {
     // 所有 npm 调用统一走应用私有 cache：用户级 ~/.npm 可能有权限问题(如 root 残留)，
     // 且避免污染用户缓存；调用本身经串行队列(见 enqueueSerial),避免并发 npm 争抢 cacache 锁
-    const npmPath = await getNpmPath()
+    const npm = await getNpmInvocation()
     return run(
-      npmPath,
-      ['view', DSH_PACKAGE_NAME, ...args, '--cache', options.cacheDir, ...registryArgs],
+      npm.command,
+      [...npm.prefixArgs, 'view', DSH_PACKAGE_NAME, ...args, '--cache', options.cacheDir, ...registryArgs()],
       { env: { npm_config_cache: options.cacheDir } }
     )
   }
@@ -278,10 +404,10 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       return enqueueSerial(() => doInstall(version))
     },
 
-    ensureInstalled(version: string): Promise<InstalledRuntime> {
+    ensureInstalled(version: string, onProgress?: (progress: InstallProgress) => void): Promise<InstalledRuntime> {
       return enqueueSerial(async () => {
         assertVersion(version)
-        if (!(await unsafeIsInstalled(version))) return doInstall(version)
+        if (!(await unsafeIsInstalled(version))) return doInstall(version, onProgress)
         const dir = runtimeDirFor(options.runtimesDir, version)
         const stats = await stat(dir)
         return {
@@ -314,7 +440,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     }
   }
 
-  async function doInstall(version: string): Promise<InstalledRuntime> {
+  async function doInstall(version: string, onProgress?: (progress: InstallProgress) => void): Promise<InstalledRuntime> {
     assertVersion(version)
     const dir = runtimeDirFor(options.runtimesDir, version)
     const markerPath = join(dir, INSTALLING_MARKER)
@@ -326,38 +452,60 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       JSON.stringify({ version, startedAt: new Date().toISOString(), pid: process.pid }, null, 2),
       'utf8'
     )
-    options.onProgress?.({
+    onProgress?.({
       phase: 'installing',
       version,
       detail: `安装 ${DSH_PACKAGE_NAME}@${version}`
     })
 
-    const npmPath = await getNpmPath()
-    const result = await run(
-      npmPath,
-      [
-        'install',
-        '--prefix',
-        dir,
-        '--no-audit',
-        '--no-fund',
-        '--loglevel',
-        'error',
-        '--cache',
-        options.cacheDir,
-        `${DSH_PACKAGE_NAME}@${version}`,
-        ...registryArgs
-      ],
-      { env: { npm_config_cache: options.cacheDir } }
-    )
+    const npm = await getNpmInvocation()
+    const installArgs = [
+      'install',
+      '--prefix',
+      dir,
+      '--no-audit',
+      '--no-fund',
+      '--loglevel',
+      'http',
+      '--cache',
+      options.cacheDir,
+      `${DSH_PACKAGE_NAME}@${version}`,
+      ...registryArgs()
+    ]
+
+    let result: CommandResult
+    if (onProgress) {
+      // 进度分支：stderr 逐行解析 npm 的 fetch 完成日志驱动进度回调
+      let fetchCount = 0
+      let lastDetail = ''
+      result = await runNpm(npm, installArgs, {
+        env: { ...process.env, npm_config_cache: options.cacheDir },
+        onStderrLine: (line) => {
+          const path = npmFetchPath(line)
+          if (!path) return
+          fetchCount += 1
+          const detail = `下载依赖 (${fetchCount})：${path}`
+          if (detail !== lastDetail) {
+            lastDetail = detail
+            onProgress({ phase: 'installing', version, detail })
+          }
+        }
+      })
+    } else {
+      // 无进度回调走 execFile 汇总（便于测试 mock）
+      result = await run(npm.command, [...npm.prefixArgs, ...installArgs], {
+        env: { npm_config_cache: options.cacheDir }
+      })
+    }
+
     if (result.code !== 0) {
-      // 失败时保留 installing.json：下次可识别为「未完成安装」(断点恢复依据)
+      // http 级日志的 stderr 含全部 fetch 行，只保留尾部的结论性输出
       throw new Error(
-        `安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${result.stderr.trim() || '无 stderr'}`
+        `安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${tailLines(result.stderr, 20) || '无 stderr'}`
       )
     }
     const entry = runtimeEntryFor(options.runtimesDir, version)
-    await stat(entry) // 入口不存在视为安装失败
+    await stat(entry)
     await rm(markerPath, { force: true })
     const stats = await stat(dir)
     return { version, dir, entry, installedAt: stats.mtime.toISOString() }

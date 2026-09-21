@@ -9,7 +9,8 @@ describe('settings（非敏感偏好）', () => {
       tray: false,
       autoStart: false,
       notifications: true,
-      workspaceCacheSize: 3
+      workspaceCacheSize: 3,
+      npmRegistry: ''
     })
   })
 
@@ -33,7 +34,8 @@ describe('settings（非敏感偏好）', () => {
       tray: true,
       autoStart: true,
       notifications: false,
-      workspaceCacheSize: 7
+      workspaceCacheSize: 7,
+      npmRegistry: 'https://registry.npmmirror.com'
     }
     expect(normalizeSettings(input)).toEqual(input)
   })
@@ -53,7 +55,8 @@ describe('settings（非敏感偏好）', () => {
       tray: false, // 回落默认
       autoStart: true, // 保留
       notifications: false, // 保留
-      workspaceCacheSize: 3 // 缺失回落默认
+      workspaceCacheSize: 3, // 缺失回落默认
+      npmRegistry: '' // 缺失回落默认
     })
   })
 

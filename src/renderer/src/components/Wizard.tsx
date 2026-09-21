@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { CreateInstanceInput } from '@shared/contracts'
 import { tryParseEndpoint } from '@shared/endpoint'
+import { REGISTRY_PRESETS } from '@shared/settings'
 import { Icon } from '../lib/icons'
 import KeyPreview from './KeyPreview'
 import UrlDetect from './UrlDetect'
@@ -19,6 +20,7 @@ interface WizardForm {
   port: string
   launcher: 'dsh' | 'dush'
   useDefaultSpace: boolean
+  registry: string
   host: string
   username: string
   sshPort: string
@@ -34,12 +36,19 @@ const EMPTY_FORM: WizardForm = {
   port: '',
   launcher: 'dsh',
   useDefaultSpace: false,
+  registry: '',
   host: '',
   username: '',
   sshPort: '22',
   remotePort: '3080',
   endpointUrl: '',
   externalAccess: ''
+}
+
+/** 将注册表值映射到下拉选项：'' 为跟随系统，预设 URL 为对应选项，其余为自定义。 */
+function registryOptionKey(url: string): string {
+  if (url === '') return 'system'
+  return REGISTRY_PRESETS.some((preset) => preset.value === url) ? url : 'custom'
 }
 
 /**
@@ -76,6 +85,7 @@ export default function Wizard(): ReactNode {
   const [useExistingExternal, setUseExistingExternal] = useState(false)
   const [localProbeDone, setLocalProbeDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -109,6 +119,27 @@ export default function Wizard(): ReactNode {
       cancelled = true
     }
   }, [step, transport, localProbeDone])
+
+  // 加载当前设置以初始化安装镜像默认值
+  useEffect(() => {
+    if (settingsLoaded) return
+    void window.dshHub?.settings.get().then((result) => {
+      if (result.ok && !settingsLoaded) {
+        setForm((current) => ({
+          ...current,
+          registry: current.registry === '' ? (result.value.npmRegistry ?? '') : current.registry
+        }))
+        setSettingsLoaded(true)
+      }
+    })
+  }, [settingsLoaded])
+
+  /** 镜像选择落盘；写失败以 toast 提示，避免用户以为已生效。 */
+  const persistRegistry = (url: string): void => {
+    void window.dshHub?.settings.update({ npmRegistry: url }).then((result) => {
+      if (!result.ok) toast('err', t('settings.saveFailed'), result.message)
+    })
+  }
 
 
   const set = (key: Exclude<keyof WizardForm, 'useDefaultSpace'>) => (event: { target: { value: string } }) => {
@@ -447,6 +478,45 @@ export default function Wizard(): ReactNode {
                         <option value="shared">{t('wizard.spaceShared')}</option>
                       </select>
                       <span className="hint">{t('wizard.spaceHint')}</span>
+                    </div>
+                    <div className="field" style={{ gridColumn: '1 / -1' }}>
+                      <label htmlFor="wizard-registry">{t('wizard.registryLabel')}</label>
+                      <select
+                        className="input"
+                        id="wizard-registry"
+                        value={registryOptionKey(form.registry)}
+                        onChange={(event) => {
+                          const key = event.target.value
+                          if (key === 'custom') return // 仅切出输入框；当前值保持原样，由输入框失焦落盘
+                          const url = key === 'system' ? '' : key
+                          setForm((current) => ({ ...current, registry: url }))
+                          persistRegistry(url)
+                        }}
+                        data-testid="wizard-registry"
+                      >
+                        <option value="system">{t('wizard.registrySystem')}</option>
+                        {REGISTRY_PRESETS.map((preset) => (
+                          <option key={preset.value} value={preset.value}>
+                            {t(preset.labelKey)}
+                          </option>
+                        ))}
+                        <option value="custom">{t('wizard.registryCustom')}</option>
+                      </select>
+                      {registryOptionKey(form.registry) === 'custom' && (
+                        <input
+                          className="input num mt4"
+                          id="wizard-registry-url"
+                          placeholder="https://registry.npmmirror.com"
+                          value={form.registry}
+                          onChange={(event) => {
+                            const url = event.target.value.trim()
+                            setForm((current) => ({ ...current, registry: url }))
+                          }}
+                          onBlur={() => persistRegistry(form.registry)}
+                          data-testid="wizard-registry-url"
+                        />
+                      )}
+                      <span className="hint">{t('wizard.registryHint')}</span>
                     </div>
                   </div>
                 </details>

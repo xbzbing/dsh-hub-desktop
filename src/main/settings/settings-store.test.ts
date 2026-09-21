@@ -36,7 +36,7 @@ describe('settings-store（偏好落盘）', () => {
     await store.update({ tray: true })
     const raw = JSON.parse(await readFile(store.filePath(), 'utf8')) as Record<string, unknown>
     expect(Object.keys(raw).sort()).toEqual(
-      ['autoStart', 'language', 'notifications', 'theme', 'tray', 'workspaceCacheSize'].sort()
+      ['autoStart', 'language', 'notifications', 'npmRegistry', 'theme', 'tray', 'workspaceCacheSize'].sort()
     )
     expect(raw['tray']).toBe(true)
   })
@@ -90,7 +90,8 @@ describe('settings-store（偏好落盘）', () => {
       tray: true,
       autoStart: false,
       notifications: false,
-      workspaceCacheSize: 3
+      workspaceCacheSize: 3,
+      npmRegistry: ''
     })
     // 内存缓存也必须与落盘一致
     expect(store.read()).toEqual(persisted)

@@ -15,7 +15,7 @@
  */
 import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { posix } from 'node:path'
+import { join, posix } from 'node:path'
 import { VERSION_PATTERN } from './runtime-installer'
 import type { CommandRunner } from './runtime-installer'
 
@@ -323,17 +323,17 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
  */
 function searchNodeDirs(home: string, listDir: (path: string) => string[]): string[] {
   const dirs = [
-    `${home}/.local/bin`,
-    `${home}/Library/pnpm`,
-    `${home}/.local/share/pnpm`,
-    `${home}/.volta/bin`,
-    `${home}/.bun/bin`,
+    join(home, '.local', 'bin'),
+    join(home, 'Library', 'pnpm'),
+    join(home, '.local', 'share', 'pnpm'),
+    join(home, '.volta', 'bin'),
+    join(home, '.bun', 'bin'),
     '/opt/homebrew/bin',
     '/usr/local/bin'
   ]
-  const nvmRoot = `${home}/.nvm/versions/node`
+  const nvmRoot = join(home, '.nvm', 'versions', 'node')
   for (const entry of listDir(nvmRoot).sort().reverse()) {
-    dirs.push(`${nvmRoot}/${entry}/bin`)
+    dirs.push(join(nvmRoot, entry, 'bin'))
   }
   return dirs
 }

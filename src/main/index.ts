@@ -537,11 +537,15 @@ void app.whenReady().then(() => {
   void audit.prune().catch((error: unknown) => console.error('[main] 审计归档清理失败：', error))
   // npm registry 可经环境变量覆盖：默认跟随系统 npm 配置；
   // 内网/海外网络慢时可指到镜像，如 DSH_HUB_NPM_REGISTRY=https://registry.npmmirror.com
-  const npmRegistry = process.env['DSH_HUB_NPM_REGISTRY']?.trim() || undefined
+  const envNpmRegistry = process.env['DSH_HUB_NPM_REGISTRY']?.trim() || undefined
   const installer = createRuntimeInstaller({
     runtimesDir: join(dataRoot, 'runtimes'),
     cacheDir: join(dataRoot, 'npm-cache'),
-    ...(npmRegistry ? { registry: npmRegistry } : {})
+    getRegistry: () => {
+      const saved = settings.read().npmRegistry
+      if (saved) return saved
+      return envNpmRegistry
+    }
   })
   // 确认用原生对话框(始终可用,含托盘启动场景;文案无凭据);拒绝则该次启动取消。
   // 无头 E2E 无法点击原生对话框,设 DSH_HUB_E2E_DECLINE_DOWNLOAD=1 时按「取消」
