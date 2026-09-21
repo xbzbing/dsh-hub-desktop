@@ -1596,11 +1596,13 @@ details.adv summary::before {
 details.adv[open] summary::before {
   content: '▾ ';
 }
-/* 空间管理卡片：折叠标记靠标题栏最右侧 */
+/* 空间管理卡片：折叠标记靠标题栏最右侧，收起时指向左侧 */
 details.adv.spaces-card summary::before {
-  content: '▸';
+  content: '◂';
   order: 9;
   margin-left: auto;
+  font-size: 17px;
+  line-height: 1;
 }
 details.adv.spaces-card[open] summary::before {
   content: '▾';
