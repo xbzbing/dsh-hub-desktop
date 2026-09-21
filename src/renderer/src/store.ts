@@ -43,6 +43,8 @@ interface AppState {
   rail: boolean
   theme: 'light' | 'dark'
   wizardOpen: boolean
+  /** 设置页选择的已有隔离空间；打开向导后仅用于本次创建。 */
+  wizardExistingSpaceId: string | null
   /** 设置页是否打开；打开时不显示实例详情。 */
   settingsOpen: boolean
   /** 「关于」面板是否打开；与设置页互斥。 */
@@ -92,6 +94,8 @@ interface AppState {
   toggleRail: () => void
   toggleTheme: () => void
   setWizardOpen: (open: boolean) => void
+  /** 打开向导并指定一个由主进程验证过的隔离空间。 */
+  createWithExistingSpace: (id: string) => void
   setSettingsOpen: (open: boolean) => void
   /** 「关于」面板是否打开（由应用菜单事件触发）。 */
   setAboutOpen: (open: boolean) => void
@@ -150,6 +154,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   rail: false,
   theme: initialTheme(),
   wizardOpen: false,
+  wizardExistingSpaceId: null,
   settingsOpen: false,
   aboutOpen: false,
   pendingOpen: [],
@@ -413,6 +418,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   setWizardOpen: (open) => {
     const state = get()
+    if (!open) set({ wizardExistingSpaceId: null })
     if (open) {
       const suspendWorkspace = state.workspaceOpen && state.selection !== null
       if (suspendWorkspace) {
@@ -435,6 +441,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     void window.dshHub?.runtime.openView(resumeId).then((result) => {
       if (result?.ok && get().selection === resumeId && !get().wizardOpen) set({ workspaceOpen: true })
     })
+  },
+  createWithExistingSpace: (id) => {
+    set({ wizardExistingSpaceId: id, settingsOpen: false })
+    get().setWizardOpen(true)
   },
   setSettingsOpen: (open) => {
     if (open) {

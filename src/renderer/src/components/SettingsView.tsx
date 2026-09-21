@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { VaultStatusSnapshot } from '@shared/contracts'
+import type { VaultStatusSnapshot, LocalSpaceSnapshot } from '@shared/contracts'
 import { LANGUAGES, THEMES } from '@shared/settings'
-import type { Language, Theme } from '@shared/settings'
+import type { LanguagePreference, Theme } from '@shared/settings'
 import { Icon } from '../lib/icons'
+import { Modal } from './Modal'
 import { useAppStore } from '../store'
 
 const BRIDGE = window.dshHub
@@ -18,7 +19,12 @@ export default function SettingsView(): ReactNode {
   const updateSettings = useAppStore((state) => state.updateSettings)
   const toast = useAppStore((state) => state.toast)
   const userDataPath = useAppStore((state) => state.userDataPath)
+  const createWithExistingSpace = useAppStore((state) => state.createWithExistingSpace)
+  const select = useAppStore((state) => state.select)
+  const ensureRecord = useAppStore((state) => state.ensureRecord)
   const [vault, setVault] = useState<VaultStatusSnapshot | null>(null)
+  const [spaces, setSpaces] = useState<LocalSpaceSnapshot[]>([])
+  const [trashTarget, setTrashTarget] = useState<LocalSpaceSnapshot | null>(null)
 
   useEffect(() => {
     void BRIDGE?.vault.status().then((result) => {
@@ -26,6 +32,44 @@ export default function SettingsView(): ReactNode {
     })
   }, [])
 
+  useEffect(() => {
+    void BRIDGE?.spaces.list().then((result) => {
+      if (result.ok) setSpaces(result.value)
+    })
+  }, [])
+
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+  }
+
+  const formatTime = (value: string): string => new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(value))
+
+  const totalSpaceBytes = spaces.reduce((total, space) => total + space.sizeBytes, 0)
+
+  const openInstanceDetail = (id: string): void => {
+    void ensureRecord(id)
+    select(id)
+  }
+
+  const trashSpace = (): void => {
+    const space = trashTarget
+    if (!space || space.inUse) return
+    void BRIDGE?.spaces.trash(space.id).then((result) => {
+      if (!result.ok) {
+        toast('err', t('spaces.trashFailed'), result.message)
+        return
+      }
+      setSpaces((current) => current.filter((item) => item.id !== space.id))
+      setTrashTarget(null)
+      toast('ok', t('spaces.trashed'))
+    })
+  }
   const apply = (patch: Parameters<typeof updateSettings>[0]): void => {
     // 仅在设置持久化成功后显示确认。
     void updateSettings(patch).then(
@@ -62,14 +106,18 @@ export default function SettingsView(): ReactNode {
           <span className="meta">{t('settings.languageHint')}</span>
         </div>
         <div className="row mt12" style={{ gap: 8 }}>
-          {LANGUAGES.map((language: Language) => (
+          {LANGUAGES.map((language: LanguagePreference) => (
             <button
               key={language}
               className={`btn btn-sm ${settings.language === language ? 'btn-primary' : 'btn-secondary'}`}
               data-testid={`settings-language-${language}`}
               onClick={() => apply({ language })}
             >
-              {language === 'zh' ? '中文' : 'English'}
+              {language === 'system'
+                ? t('settings.languageSystem')
+                : language === 'zh'
+                  ? t('settings.languageChinese')
+                  : t('settings.languageEnglish')}
             </button>
           ))}
         </div>
@@ -164,6 +212,62 @@ export default function SettingsView(): ReactNode {
         </div>
       </div>
 
+      <details className="adv card spaces-card mt12" data-testid="settings-spaces">
+        <summary>
+          <h3>{t('spaces.title')}</h3>
+          <span className="meta num spaces-summary">
+            {t('spaces.summary', { count: spaces.length, size: formatSize(totalSpaceBytes) })}
+          </span>
+        </summary>
+        <span className="meta">{t('spaces.description')}</span>
+        {spaces.length === 0 ? (
+          <p className="meta mt12">{t('spaces.empty')}</p>
+        ) : (
+          <div className="spaces-table mt12" role="table">
+            <div className="spaces-row spaces-head meta" role="row">
+              <span role="columnheader">{t('spaces.columnIndex')}</span>
+              <span role="columnheader">{t('spaces.columnTitle')}</span>
+              <span role="columnheader">{t('spaces.columnSize')}</span>
+              <span role="columnheader">{t('spaces.columnModified')}</span>
+              <span aria-hidden="true" />
+            </div>
+            {spaces.map((space, index) => (
+              <div className="spaces-row" key={space.id} role="row">
+                <span className="meta num" role="cell">{index + 1}</span>
+                <span role="cell" style={{ minWidth: 0 }}>
+                  {space.instanceName ? (
+                    <>
+                      <strong>{space.instanceName}</strong>
+                      <span className="meta num" style={{ display: 'block', marginTop: 2, overflowWrap: 'anywhere' }}>{space.id}</span>
+                    </>
+                  ) : (
+                    <span className="num" style={{ overflowWrap: 'anywhere' }}>{space.id}</span>
+                  )}
+                </span>
+                <span className="meta num" role="cell">{t('spaces.size', { size: formatSize(space.sizeBytes) })}</span>
+                <span className="meta num" role="cell">{t('spaces.modifiedAt', { time: formatTime(space.modifiedAt) })}</span>
+                <span className="spaces-actions" role="cell">
+                  {space.inUse ? (
+                    <button className="btn btn-secondary btn-sm" onClick={() => openInstanceDetail(space.id)}>
+                      {t('spaces.instanceDetail')}
+                    </button>
+                  ) : (
+                    <>
+                      <button className="btn btn-secondary btn-sm" onClick={() => createWithExistingSpace(space.id)}>
+                        {t('spaces.createInstance')}
+                      </button>
+                      <button className="btn btn-danger btn-sm" onClick={() => setTrashTarget(space)}>
+                        <Icon name="trash" /> {t('spaces.delete')}
+                      </button>
+                    </>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </details>
+
       <div className="card mt12" data-testid="settings-vault">
         <div className="card-head">
           <h3>{t('vault.title')}</h3>
@@ -192,6 +296,25 @@ export default function SettingsView(): ReactNode {
           </span>
         </div>
       </div>
+      {trashTarget && (
+        <Modal
+          title={t('spaces.trashTitle')}
+          closeLabel={t('common.close')}
+          initialFocus="dialog"
+          closeButtonInTabOrder={false}
+          onClose={() => setTrashTarget(null)}
+          testId="settings-confirm-trash-space"
+          footer={
+            <div className="right">
+              <button className="btn btn-secondary btn-sm" onClick={() => setTrashTarget(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-danger btn-sm" onClick={trashSpace}>{t('spaces.delete')}</button>
+            </div>
+          }
+        >
+          <p className="meta">{t('spaces.trashConfirm')}</p>
+          <p className="meta num mt12" style={{ overflowWrap: 'anywhere' }}>{trashTarget.id}</p>
+        </Modal>
+      )}
     </section>
   )
 }

@@ -25,6 +25,7 @@ function HomeContent(): ReactNode {
   const toast = useAppStore((state) => state.toast)
   const ensureRecord = useAppStore((state) => state.ensureRecord)
   const [deleteTarget, setDeleteTarget] = useState<InstanceSummary | null>(null)
+  const [trashSpace, setTrashSpace] = useState(false)
 
   const connected = instances.filter(
     (item) => toDisplayStatus(statuses[item.id]?.status, workspaceConnected[item.id] ?? true) === 'connected'
@@ -40,13 +41,14 @@ function HomeContent(): ReactNode {
 
   const deleteInstance = async (): Promise<void> => {
     if (!deleteTarget) return
-    const result = await window.dshHub?.instances.remove(deleteTarget.id)
+    const result = await window.dshHub?.instances.remove(deleteTarget.id, { trashSpace })
     if (!result?.ok) {
       if (result) toast('err', t('detail.deleteFailed'), result.message)
       return
     }
     toast('ok', t('detail.deleted', { name: deleteTarget.name }))
     setDeleteTarget(null)
+    setTrashSpace(false)
     await refreshList()
   }
 
@@ -99,13 +101,13 @@ function HomeContent(): ReactNode {
         <Modal
           closeLabel={t('common.close')}
           title={t('detail.deleteTitle')}
-          onClose={() => setDeleteTarget(null)}
+          onClose={() => { setDeleteTarget(null); setTrashSpace(false) }}
           testId="home-confirm-delete"
           footer={
             <>
               <span className="meta">{t('detail.deleteCannotUndo')}</span>
               <div className="right">
-                <button className="btn btn-secondary btn-sm" onClick={() => setDeleteTarget(null)}>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setDeleteTarget(null); setTrashSpace(false) }}>
                   {t('common.cancel')}
                 </button>
                 <button className="btn btn-danger btn-sm" onClick={() => void deleteInstance()}>
@@ -116,6 +118,12 @@ function HomeContent(): ReactNode {
           }
         >
           <p className="meta">{t('detail.deleteConfirm', { name: deleteTarget.name })}</p>
+          {deleteTarget.transport === 'local' && !deleteTarget.useDefaultSpace && (
+            <label className="check mt12">
+              <input type="checkbox" checked={trashSpace} onChange={(event) => setTrashSpace(event.target.checked)} />
+              {t('detail.deleteSpace')}
+            </label>
+          )}
         </Modal>
       )}
     </section>

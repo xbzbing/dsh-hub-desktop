@@ -61,6 +61,7 @@ export default function Wizard(): ReactNode {
   const select = useAppStore((state) => state.select)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
   const toast = useAppStore((state) => state.toast)
+  const existingSpaceId = useAppStore((state) => state.wizardExistingSpaceId)
 
   const [step, setStep] = useState(1)
   const [transport, setTransport] = useState<'local' | 'ssh' | 'http'>('local')
@@ -201,7 +202,8 @@ export default function Wizard(): ReactNode {
             ...(form.profile.trim() !== '' ? { profile: form.profile.trim() } : {}),
             ...(form.port.trim() !== '' ? { port: Number(form.port) } : {}),
             ...(form.launcher !== 'dsh' ? { launcher: form.launcher } : {}),
-            ...(form.useDefaultSpace ? { useDefaultSpace: true } : {})
+            ...(form.useDefaultSpace ? { useDefaultSpace: true } : {}),
+            ...(existingSpaceId ? { existingSpaceId } : {})
           }
         : transport === 'ssh'
           ? {

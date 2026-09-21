@@ -26,6 +26,7 @@ import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createExternalDshScanner } from './local-runtime/external-dsh'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import { createPathProbe } from './local-runtime/runtime-source'
+import { listLocalSpaces, localSpacePath } from './local-runtime/local-spaces'
 import { createSshTunnels } from './transport/ssh-tunnel'
 import { authEndpointOf } from './transport/endpoint-resolver'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
@@ -684,6 +685,8 @@ void app.whenReady().then(() => {
     showInstanceTooltip: (tooltip) => workspaceTooltipHost.show(tooltip),
     hideInstanceTooltip: () => workspaceTooltipHost.hide(),
     instanceViewUrl: (instanceId) => workspaceHost.loadedUrl(instanceId),
+    listLocalSpaces: () => listLocalSpaces(dataRoot),
+    trashLocalSpace: (instanceId) => shell.trashItem(localSpacePath(dataRoot, instanceId)),
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
       // 否则「先停隧道再清 Cookie」会静默 no-op

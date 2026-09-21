@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, normalizeSettings, resolveLanguage, SettingsSchema } from './settings'
 
 describe('settings（非敏感偏好）', () => {
-  it('默认值:中文、跟随系统主题、不驻留托盘、不自启、开通知', () => {
+  it('默认值:跟随系统语言与主题、不驻留托盘、不自启、开通知', () => {
     expect(DEFAULT_SETTINGS).toEqual({
-      language: 'zh',
+      language: 'system',
       theme: 'system',
       tray: false,
       autoStart: false,
@@ -16,6 +16,8 @@ describe('settings（非敏感偏好）', () => {
   it('resolveLanguage:显式偏好优先,缺失时按系统语言推断', () => {
     expect(resolveLanguage('zh', 'en-US')).toBe('zh')
     expect(resolveLanguage('en', 'zh-CN')).toBe('en')
+    expect(resolveLanguage('system', 'zh-CN')).toBe('zh')
+    expect(resolveLanguage('system', 'en-US')).toBe('en')
     expect(resolveLanguage(null, 'zh-CN')).toBe('zh')
     expect(resolveLanguage(null, 'zh-Hant-TW')).toBe('zh')
     expect(resolveLanguage(undefined, 'en-GB')).toBe('en')

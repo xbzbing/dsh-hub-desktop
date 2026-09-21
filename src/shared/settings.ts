@@ -6,15 +6,16 @@
  */
 import { z } from 'zod'
 
-export const LANGUAGES = ['zh', 'en'] as const
+export const LANGUAGES = ['system', 'zh', 'en'] as const
 export const THEMES = ['system', 'light', 'dark'] as const
 
-export type Language = (typeof LANGUAGES)[number]
+export type LanguagePreference = (typeof LANGUAGES)[number]
+export type Language = Exclude<LanguagePreference, 'system'>
 export type Theme = (typeof THEMES)[number]
 
 export const SettingsSchema = z.object({
-  /** 界面语言;`system` 不做持久化取值 —— 解析后落到 zh|en(resolveLanguage) */
-  language: z.enum(LANGUAGES).default('zh'),
+  /** 界面语言偏好；system 时解析为 OS locale 对应的 zh|en。 */
+  language: z.enum(LANGUAGES).default('system'),
   theme: z.enum(THEMES).default('system'),
   /** 关闭窗口后最小化到托盘而非退出 */
   tray: z.boolean().default(false),
@@ -33,11 +34,11 @@ export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({})
 /**
  * 解析实际生效的语言。
  *
- * 偏好是显式 `zh`/`en` 时直接用它;偏好缺失或无法判定时按系统语言推断
+ * 偏好是显式 `zh`/`en` 时直接用它;偏好为 `system`、缺失或无法判定时按系统语言推断
  * (中文环境 → zh,其余 → en)。单独抽出来是为了让「系统语言推断」可被穷举单测,
  * 而不是散落在渲染层的三元表达式里。
  */
-export function resolveLanguage(preference: Language | null | undefined, systemLocale?: string | null): Language {
+export function resolveLanguage(preference: LanguagePreference | null | undefined, systemLocale?: string | null): Language {
   if (preference === 'zh' || preference === 'en') return preference
   const locale = (systemLocale ?? '').toLowerCase()
   return locale.startsWith('zh') ? 'zh' : 'en'

@@ -6,6 +6,7 @@ import {
   AUTH_IPC,
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
+  SPACE_IPC,
   HTTP_IPC,
   INSTANCE_STATUS_EVENT,
   SETTINGS_IPC,
@@ -45,12 +46,16 @@ const bridge: DshHubBridge = {
       ipcRenderer.removeListener(ABOUT_IPC.open, handler)
     }
   },
+  spaces: {
+    list: () => ipcRenderer.invoke(SPACE_IPC.list),
+    trash: (id) => ipcRenderer.invoke(SPACE_IPC.trash, id)
+  },
   instances: {
     list: () => ipcRenderer.invoke(INSTANCE_IPC.list),
     get: (id) => ipcRenderer.invoke(INSTANCE_IPC.get, id),
     create: (input) => ipcRenderer.invoke(INSTANCE_IPC.create, input),
     update: (id, patch) => ipcRenderer.invoke(INSTANCE_IPC.update, id, patch),
-    remove: (id) => ipcRenderer.invoke(INSTANCE_IPC.delete, id),
+    remove: (id, options) => ipcRenderer.invoke(INSTANCE_IPC.delete, id, options ?? {}),
     reorder: (orderedIds) => ipcRenderer.invoke(INSTANCE_IPC.reorder, orderedIds)
   },
   runtime: {

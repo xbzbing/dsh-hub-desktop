@@ -80,6 +80,8 @@ let promptsFake: {
 }
 let currentStatus: InstanceStatusEvent | null
 let verifyExternalAccess: ReturnType<typeof vi.fn>
+let listLocalSpaces: ReturnType<typeof vi.fn>
+let trashLocalSpace: ReturnType<typeof vi.fn>
 
 beforeEach(async () => {
   await mkdir(TEST_BASE, { recursive: true })
@@ -91,6 +93,8 @@ beforeEach(async () => {
   })
   currentStatus = null
   verifyExternalAccess = vi.fn(async () => true)
+  listLocalSpaces = vi.fn(async () => [])
+  trashLocalSpace = vi.fn(async () => undefined)
   runtimeFake = {
     onStatus: vi.fn(() => () => undefined),
     statusOf: vi.fn(() => currentStatus),
@@ -190,6 +194,8 @@ beforeEach(async () => {
     auth: authFake as never,
     externalDsh: externalDshFake as never,
     verifyExternalAccess: verifyExternalAccess as (url: string) => Promise<boolean>,
+    listLocalSpaces: listLocalSpaces as never,
+    trashLocalSpace: trashLocalSpace as never,
     vault: vaultFake as never,
     settings: settingsFake as never,
     audit: auditSpy,
@@ -255,7 +261,9 @@ describe('registerIpc', () => {
       'vault:clear',
       'settings:get',
       'settings:openDataDir',
-      'settings:update'
+      'settings:update',
+      'spaces:list',
+      'spaces:trash'
     ]
     expect([...handlers.keys()].sort()).toEqual(expected.sort())
   })
@@ -425,6 +433,50 @@ describe('registerIpc', () => {
     }
   })
 
+  it('删除隔离本地实例时仅在明确请求后移入废纸篓', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const withoutTrash = (await invoke('instances:delete', created.value.id, {})) as { ok: boolean }
+    expect(withoutTrash.ok).toBe(true)
+    expect(trashLocalSpace).not.toHaveBeenCalled()
+
+    const another = (await invoke('instances:create', { transport: 'local', name: '移入废纸篓' })) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!another.ok) throw new Error('创建失败')
+    const withTrash = (await invoke('instances:delete', another.value.id, { trashSpace: true })) as { ok: boolean }
+    expect(withTrash.ok).toBe(true)
+    expect(trashLocalSpace).toHaveBeenCalledWith(another.value.id)
+  })
+
+  it('列出空间时标注已被本地实例使用的空间', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    listLocalSpaces.mockResolvedValueOnce([
+      { id: '11111111-1111-4111-8111-111111111111', sizeBytes: 4, modifiedAt: '2026-09-20T00:00:00.000Z' },
+      { id: created.value.id, sizeBytes: 3, modifiedAt: '2026-09-21T00:00:00.000Z' }
+    ])
+
+    const result = (await invoke('spaces:list')) as { ok: boolean; value: Array<{ id: string; inUse: boolean }> }
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual([
+      { id: created.value.id, sizeBytes: 3, modifiedAt: '2026-09-21T00:00:00.000Z', inUse: true, instanceName: 'IPC 实例' },
+      { id: '11111111-1111-4111-8111-111111111111', sizeBytes: 4, modifiedAt: '2026-09-20T00:00:00.000Z', inUse: false, instanceName: null }
+    ])
+  })
+
+  it('reuses only an unassigned existing local space', async () => {
+    const id = '11111111-1111-4111-8111-111111111111'
+    listLocalSpaces.mockResolvedValueOnce([{ id, sizeBytes: 4, modifiedAt: '2026-09-20T00:00:00.000Z' }])
+    const created = (await invoke('instances:create', { transport: 'local', name: '复用空间', existingSpaceId: id })) as {
+      ok: boolean
+      value: { id: string }
+    }
+    expect(created.ok).toBe(true)
+    if (created.ok) expect(created.value.id).toBe(id)
+  })
   it('删除实例一并清理认证客户端与分区会话', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',

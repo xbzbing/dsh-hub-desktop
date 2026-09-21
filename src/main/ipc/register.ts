@@ -3,6 +3,7 @@
  * 白名单通道（preload 再暴露一层）；非法入参返回 `IpcResult` 错误信封而非抛异常，
  */
 import { ipcMain } from 'electron'
+import type { LocalSpaceSnapshot } from '@shared/contracts'
 import { z } from 'zod'
 import { EndpointParseError } from '@shared/endpoint'
 import { IPC } from '@shared/bridge'
@@ -13,6 +14,7 @@ import {
   formatZodIssues,
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
+  SPACE_IPC,
   PatchInstanceSchema,
   SSH_IPC,
   SshKeyPreviewInputSchema,
@@ -89,6 +91,10 @@ export interface IpcDeps {
   http: HttpEndpointManager
   auth: AuthRegistry
   clearPartitionSession?: (instanceId: string) => Promise<void>
+  /** 只列出 Hub 自己管理的隔离空间；调用方不能提供路径。 */
+  listLocalSpaces?: () => Promise<Array<{ id: string; sizeBytes: number; modifiedAt: string }>>
+  /** 将已验证的隔离空间移至系统废纸篓；调用方不能提供路径。 */
+  trashLocalSpace?: (instanceId: string) => Promise<void>
   /**
    * 才在登录成功时写入,勾选取消即忘掉。
    */
@@ -203,6 +209,7 @@ function toSummary(record: InstanceRecord, runtimeStatus?: InstanceRuntimeStatus
     id: record.id,
     name: record.name,
     transport: record.transport,
+    ...(record.transport === 'local' ? { useDefaultSpace: record.useDefaultSpace } : {}),
     authMode: record.authMode,
     address,
     ...(runtimeStatus ? { runtimeStatus } : {}),
@@ -250,10 +257,40 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
     wrap(() => store.get(parseId(id)))
   )
 
+  async function localSpaces(): Promise<LocalSpaceSnapshot[]> {
+    if (!deps.listLocalSpaces) throw new InstanceStoreError('invalid-state', 'local-space-unavailable')
+    const records = await store.list()
+    const localsById = new Map(
+      records.filter((record) => record.transport === 'local').map((record) => [record.id, record.name])
+    )
+    return (await deps.listLocalSpaces())
+      .map((space) => ({ ...space, inUse: localsById.has(space.id), instanceName: localsById.get(space.id) ?? null }))
+      .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
+  }
+
+  ipcMain.handle(SPACE_IPC.list, (): Promise<IpcResult<LocalSpaceSnapshot[]>> => wrap(localSpaces))
+
+  ipcMain.handle(SPACE_IPC.trash, (_event, id: unknown): Promise<IpcResult<{ trashed: boolean }>> =>
+    wrap(async () => {
+      const instanceId = parseId(id)
+      const space = (await localSpaces()).find((item) => item.id === instanceId)
+      if (!space) throw new InstanceStoreError('not-found', 'local-space-not-found')
+      if (space.inUse) throw new InstanceStoreError('invalid-state', 'local-space-in-use')
+      if (!deps.trashLocalSpace) throw new InstanceStoreError('invalid-state', 'local-space-unavailable')
+      await deps.trashLocalSpace(instanceId)
+      return { trashed: true }
+    })
+  )
+
   ipcMain.handle(INSTANCE_IPC.create, (_event, input: unknown): Promise<IpcResult<InstanceRecord>> =>
     wrap(async () => {
       const parsed = CreateInstanceInputSchema.parse(input)
       if (parsed.transport !== 'local') return store.create(parsed)
+      if (parsed.existingSpaceId) {
+        const space = (await localSpaces()).find((item) => item.id === parsed.existingSpaceId)
+        if (!space) throw new InstanceStoreError('not-found', 'local-space-not-found')
+        if (space.inUse) throw new InstanceStoreError('invalid-state', 'local-space-in-use')
+      }
       const { useExistingExternal, externalPid, externalAccess, ...recordInput } = parsed
       if (useExistingExternal !== true) return store.create(recordInput)
       if (!deps.externalDsh) throw new InstanceStoreError('invalid-state', '本机进程探测能力不可用')
@@ -293,9 +330,10 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
 
   ipcMain.handle(
     INSTANCE_IPC.delete,
-    (_event, id: unknown): Promise<IpcResult<{ removed: boolean }>> =>
+    (_event, id: unknown, options: unknown): Promise<IpcResult<{ removed: boolean }>> =>
       wrap(async () => {
         const instanceId = parseId(id)
+        const deleteOptions = z.object({ trashSpace: z.boolean().default(false) }).strict().parse(options ?? {})
         // 详情页文案承诺「删除运行中的实例会先停止其进程」:先回收进程树再移除记录,
         // 否则 dsh/ssh 进程继续存活(独占端口与 DSH_HOME),窗口也无 stopped 事件可回收
         const record = await store.get(instanceId)
@@ -304,6 +342,10 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
         if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
         else if (record?.transport === 'http') await deps.http.stop(instanceId)
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
+        if (deleteOptions.trashSpace && record?.transport === 'local' && !record.useDefaultSpace) {
+          if (!deps.trashLocalSpace) throw new InstanceStoreError('invalid-state', 'local-space-unavailable')
+          await deps.trashLocalSpace(instanceId)
+        }
         deps.hideInstanceView?.()
         deps.auth.forget(instanceId)
         await deps.vault.forgetInstance(instanceId)

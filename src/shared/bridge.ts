@@ -22,6 +22,7 @@ import type {
   InstanceStatusEvent,
   InstanceSummary,
   LocalLauncherSnapshot,
+  LocalSpaceSnapshot,
   VaultPolicy,
   VaultStatusSnapshot,
   IpcResult,
@@ -73,13 +74,18 @@ export interface DshHubBridge {
   openHomepage: () => Promise<IpcResult<null>>
   /** 订阅「关于」面板打开事件（应用菜单触发）；返回取消订阅函数 */
   onAboutOpen: (listener: () => void) => () => void
+  /** 已有本机隔离空间；路径只由主进程决定。 */
+  spaces: {
+    list: () => Promise<IpcResult<LocalSpaceSnapshot[]>>
+    trash: (id: string) => Promise<IpcResult<{ trashed: boolean }>>
+  }
   /** 实例注册表 CRUD；通道常量与字段模型见 contracts.ts。 */
   instances: {
     list: () => Promise<IpcResult<InstanceSummary[]>>
     get: (id: string) => Promise<IpcResult<InstanceRecord | null>>
     create: (input: CreateInstanceInput) => Promise<IpcResult<InstanceRecord>>
     update: (id: string, patch: PatchInstanceInput) => Promise<IpcResult<InstanceRecord>>
-    remove: (id: string) => Promise<IpcResult<{ removed: boolean }>>
+    remove: (id: string, options?: { trashSpace?: boolean }) => Promise<IpcResult<{ removed: boolean }>>
     /** 按给定 ID 列表重排实例顺序；ID 必须与当前注册表完全一致。 */
     reorder: (orderedIds: string[]) => Promise<IpcResult<InstanceSummary[]>>
   }

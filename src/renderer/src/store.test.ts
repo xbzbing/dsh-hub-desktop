@@ -8,7 +8,7 @@ import { toStatusInfo } from './lib/format'
  */
 
 const DEFAULTS: Settings = {
-  language: 'zh',
+  language: 'system',
   theme: 'system',
   tray: false,
   autoStart: false,
@@ -136,7 +136,7 @@ describe('store settings', () => {
     updateResult = { ok: false, message: '磁盘满' }
     await expect(useAppStore.getState().updateSettings({ language: 'en' })).rejects.toThrow('磁盘满')
     // 失败不得污染本地偏好
-    expect(useAppStore.getState().settings.language).toBe('zh')
+    expect(useAppStore.getState().settings.language).toBe('system')
   })
 
   it('subscribeSystemTheme 仅在偏好为 system 时跟随系统变化', async () => {

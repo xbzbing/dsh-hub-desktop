@@ -166,7 +166,9 @@ export const CreateInstanceInputSchema = z.discriminatedUnion('transport', [
       useExistingExternal: z.boolean().optional(),
       externalPid: z.number().int().positive().optional(),
       externalAccess: z.string().trim().min(1).max(4096).optional(),
-      autoStart: z.boolean().optional()
+      autoStart: z.boolean().optional(),
+      /** 复用 Hub 已有隔离空间；主进程会验证它确实存在且没有已关联实例。 */
+      existingSpaceId: z.uuid().optional()
     })
     .strict(),
   z
@@ -473,6 +475,8 @@ export interface InstanceSummary {
   id: string
   name: string
   transport: Transport
+  /** 本地实例是否复用用户的 ~/.dsh；仅在 local 时有意义。 */
+  useDefaultSpace?: boolean
   authMode: AuthMode
   /** 展示用地址一次算好(避免渲染层为每行再发 get) */
   address: string
@@ -482,6 +486,21 @@ export interface InstanceSummary {
 }
 
 /** 实例注册表 CRUD + 排序通道。 */
+export const SPACE_IPC = {
+  list: 'spaces:list',
+  trash: 'spaces:trash'
+} as const
+
+export interface LocalSpaceSnapshot {
+  id: string
+  sizeBytes: number
+  modifiedAt: string
+  /** 关联的本地实例名称；未关联时为 null。 */
+  instanceName: string | null
+  /** 是否已被注册表中的本地实例占用。 */
+  inUse: boolean
+}
+
 export const INSTANCE_IPC = {
   list: 'instances:list',
   get: 'instances:get',

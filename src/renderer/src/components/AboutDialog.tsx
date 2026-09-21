@@ -50,6 +50,7 @@ export default function AboutDialog() {
       title={t('about.title')}
       onClose={() => setAboutOpen(false)}
       closeLabel={t('common.close')}
+      initialFocus="dialog"
       testId="about-dialog"
     >
       <div className="about">

@@ -37,6 +37,7 @@ export default function DetailView(): ReactNode {
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
   const userDataPath = useAppStore((state) => state.userDataPath)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [trashSpace, setTrashSpace] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   /** 检测尚未由 Hub 管理的本地 dsh web 进程。 */
   const [externalDsh, setExternalDsh] = useState<
@@ -142,12 +143,13 @@ export default function DetailView(): ReactNode {
   const deleteInstance = async (): Promise<void> => {
     const bridge = window.dshHub
     if (!bridge) return
-    const result = await bridge.instances.remove(record.id)
+    const result = await bridge.instances.remove(record.id, { trashSpace })
     if (!result.ok) {
       toast('err', t('detail.deleteFailed'), result.message)
       return
     }
     toast('ok', t('detail.deleted', { name: record.name }))
+    setTrashSpace(false)
     select(null)
     void refreshList()
   }
@@ -502,13 +504,13 @@ export default function DetailView(): ReactNode {
         <Modal
       closeLabel={t('common.close')}
           title={t('detail.deleteTitle')}
-          onClose={() => setConfirmDelete(false)}
+          onClose={() => { setConfirmDelete(false); setTrashSpace(false) }}
           testId="confirm-delete"
           footer={
             <>
               <span className="meta">{t('detail.deleteCannotUndo')}</span>
               <div className="right">
-                <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDelete(false)}>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setConfirmDelete(false); setTrashSpace(false) }}>
                  {t('common.cancel')}
                 </button>
                 <button className="btn btn-danger btn-sm" onClick={() => void deleteInstance()}>
@@ -521,6 +523,12 @@ export default function DetailView(): ReactNode {
           <p className="meta">
             {t('detail.deleteConfirm', { name: record.name })}
           </p>
+          {record.transport === 'local' && !record.useDefaultSpace && (
+            <label className="check mt12">
+              <input type="checkbox" checked={trashSpace} onChange={(event) => setTrashSpace(event.target.checked)} />
+              {t('detail.deleteSpace')}
+            </label>
+          )}
         </Modal>
       )}
 

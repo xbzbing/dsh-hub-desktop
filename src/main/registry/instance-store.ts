@@ -380,7 +380,12 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
         const parsed = parseOrThrow(() => CreateInstanceInputSchema.parse(input))
         const now = new Date().toISOString()
         const record = parseOrThrow(() =>
-          stamp({ ...normalizeCreate(parsed), id: randomUUID(), createdAt: now, updatedAt: now })
+          stamp({
+            ...normalizeCreate(parsed),
+            id: parsed.transport === 'local' && parsed.existingSpaceId ? parsed.existingSpaceId : randomUUID(),
+            createdAt: now,
+            updatedAt: now
+          })
         )
         await persist([...(instances ?? []), record])
         return structuredClone(record)
