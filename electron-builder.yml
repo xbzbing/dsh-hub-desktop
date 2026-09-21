@@ -45,3 +45,6 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  # 辅助安装器默认预选「为所有用户安装」（Program Files + UAC），
+  # 页面上仍可切换为仅当前用户；安装目录由用户在向导中选择。
+  selectPerMachineByDefault: true
