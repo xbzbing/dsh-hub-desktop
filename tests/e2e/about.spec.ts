@@ -39,26 +39,30 @@ const ABOUT_LABEL = /^(关于 DSH Hub|About DSH Hub)$/
 
 test('应用菜单的「关于」项打开面板,并展示版本与运行组件版本', async () => {
   await expect(win.getByTestId('about-dialog')).toBeHidden()
+  // 订阅 about:open 的监听在 AboutDialog 挂载后才注册,必须先等渲染层挂载完再点菜单。
+  await expect(win.getByTestId('app-shell')).toBeVisible()
 
   // 走真实菜单项（不是直接发通道）：菜单未接上时本用例必须失败。
-  const clicked = await app.evaluate(({ Menu }, pattern) => {
-    const matches = new RegExp(pattern)
-    const walk = (items: Electron.MenuItem[]): Electron.MenuItem | null => {
-      for (const item of items) {
-        if (matches.test(item.label ?? '')) return item
-        const found = item.submenu ? walk(item.submenu.items) : null
-        if (found) return found
+  // 启动极慢时点击仍可能落在订阅注册之前(事件被丢弃),此时重发即可,打开面板是幂等的。
+  await expect(async () => {
+    const clicked = await app.evaluate(({ Menu }, pattern) => {
+      const matches = new RegExp(pattern)
+      const walk = (items: Electron.MenuItem[]): Electron.MenuItem | null => {
+        for (const item of items) {
+          if (matches.test(item.label ?? '')) return item
+          const found = item.submenu ? walk(item.submenu.items) : null
+          if (found) return found
+        }
+        return null
       }
-      return null
-    }
-    const target = walk(Menu.getApplicationMenu()?.items ?? [])
-    if (!target) return false
-    target.click()
-    return true
-  }, ABOUT_LABEL)
-  expect(clicked).toBe(true)
-
-  await expect(win.getByTestId('about-dialog')).toBeVisible()
+      const target = walk(Menu.getApplicationMenu()?.items ?? [])
+      if (!target) return false
+      target.click()
+      return true
+    }, ABOUT_LABEL)
+    expect(clicked).toBe(true)
+    await expect(win.getByTestId('about-dialog')).toBeVisible()
+  }).toPass({ timeout: 15_000 })
   await expect(win.getByTestId('about-version')).toHaveText(`DSH Hub v${expectedVersion}`)
   await expect(win.getByTestId('about-homepage')).toBeVisible()
 
