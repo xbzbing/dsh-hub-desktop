@@ -11,6 +11,7 @@ import {
 } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { registerRendererAssets } from './renderer-assets'
 import type {
@@ -691,6 +692,10 @@ void app.whenReady().then(() => {
     instanceViewUrl: (instanceId) => workspaceHost.loadedUrl(instanceId),
     listLocalSpaces: () => listLocalSpaces(dataRoot),
     trashLocalSpace: (instanceId) => shell.trashItem(localSpacePath(dataRoot, instanceId)),
+    localHomePath: (record) =>
+      record.transport === 'local' && !record.useDefaultSpace
+        ? join(dataRoot, 'homes', record.id)
+        : join(homedir(), '.dsh'),
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
       // 否则「先停隧道再清 Cookie」会静默 no-op

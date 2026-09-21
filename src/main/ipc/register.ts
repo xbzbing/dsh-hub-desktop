@@ -95,6 +95,8 @@ export interface IpcDeps {
   listLocalSpaces?: () => Promise<Array<{ id: string; sizeBytes: number; modifiedAt: string }>>
   /** 将已验证的隔离空间移至系统废纸篓；调用方不能提供路径。 */
   trashLocalSpace?: (instanceId: string) => Promise<void>
+  /** 本机实例的数据目录（展示用，主进程按平台分隔符拼装）；缺省时 summary 不带 localHome。 */
+  localHomePath?: (record: InstanceRecord) => string
   /**
    * 才在登录成功时写入,勾选取消即忘掉。
    */
@@ -198,7 +200,11 @@ function externalAccessUrl(token: string, port: number): string {
   return `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`
 }
 
-function toSummary(record: InstanceRecord, runtimeStatus?: InstanceRuntimeStatus): InstanceSummary {
+function toSummary(
+  record: InstanceRecord,
+  runtimeStatus?: InstanceRuntimeStatus,
+  localHome?: string
+): InstanceSummary {
   const address =
     record.transport === 'local'
       ? `127.0.0.1:${record.port ?? '—'}`
@@ -210,6 +216,7 @@ function toSummary(record: InstanceRecord, runtimeStatus?: InstanceRuntimeStatus
     name: record.name,
     transport: record.transport,
     ...(record.transport === 'local' ? { useDefaultSpace: record.useDefaultSpace } : {}),
+    ...(record.transport === 'local' && localHome ? { localHome } : {}),
     authMode: record.authMode,
     address,
     ...(runtimeStatus ? { runtimeStatus } : {}),
@@ -250,7 +257,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
   }
 
   ipcMain.handle(INSTANCE_IPC.list, (): Promise<IpcResult<InstanceSummary[]>> =>
-    wrap(() => store.list().then((records) => records.map((record) => toSummary(record, statusFor(record)))))
+    wrap(() => store.list().then((records) => records.map((record) => toSummary(record, statusFor(record), deps.localHomePath?.(record)))))
   )
 
   ipcMain.handle(INSTANCE_IPC.get, (_event, id: unknown): Promise<IpcResult<InstanceRecord | null>> =>
@@ -363,7 +370,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
         }
         const ids = orderedIds.map((id) => parseId(id))
         const records = await store.reorder(ids)
-        return records.map((record) => toSummary(record, statusFor(record)))
+        return records.map((record) => toSummary(record, statusFor(record), deps.localHomePath?.(record)))
       })
   )
 

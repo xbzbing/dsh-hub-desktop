@@ -196,6 +196,7 @@ beforeEach(async () => {
     verifyExternalAccess: verifyExternalAccess as (url: string) => Promise<boolean>,
     listLocalSpaces: listLocalSpaces as never,
     trashLocalSpace: trashLocalSpace as never,
+    localHomePath: (record: { id: string }) => join(TEST_BASE, 'homes', record.id),
     vault: vaultFake as never,
     settings: settingsFake as never,
     audit: auditSpy,
@@ -1403,6 +1404,11 @@ describe('registerIpc', () => {
       expect(summary).not.toHaveProperty('notes')
       expect(summary).toHaveProperty('transport')
       expect(summary).toHaveProperty('authMode')
+      // 数据目录由主进程按平台分隔符拼好，渲染层不再自行拼接
+      expect(summary).toHaveProperty(
+        'localHome',
+        join(TEST_BASE, 'homes', (summary as { id: string }).id)
+      )
     }
   })
 

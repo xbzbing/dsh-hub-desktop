@@ -35,7 +35,9 @@ export default function DetailView(): ReactNode {
   const toast = useAppStore((state) => state.toast)
   const openWorkspace = useAppStore((state) => state.openWorkspace)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
-  const userDataPath = useAppStore((state) => state.userDataPath)
+  const localHome = useAppStore((state) =>
+    selection ? state.instances.find((instance) => instance.id === selection)?.localHome : undefined
+  )
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [trashSpace, setTrashSpace] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -334,9 +336,7 @@ export default function DetailView(): ReactNode {
                 <dd className="num" title={t('detail.dataDirTitle')}>
                   {status?.runtimeSource === 'external'
                     ? t('detail.externalDataDir')
-                    : userDataPath
-                      ? `${userDataPath}/homes/${record.id}`
-                      : `…/homes/${record.id}`}
+                    : (localHome ?? `…/homes/${record.id}`)}
                 </dd>
               </>
             )}

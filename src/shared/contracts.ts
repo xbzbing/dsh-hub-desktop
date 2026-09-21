@@ -477,6 +477,8 @@ export interface InstanceSummary {
   transport: Transport
   /** 本地实例是否复用用户的 ~/.dsh；仅在 local 时有意义。 */
   useDefaultSpace?: boolean
+  /** 本机实例的数据目录（展示用，主进程按平台分隔符拼好）；仅在 local 时存在。 */
+  localHome?: string
   authMode: AuthMode
   /** 展示用地址一次算好(避免渲染层为每行再发 get) */
   address: string
