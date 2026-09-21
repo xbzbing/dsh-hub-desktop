@@ -121,13 +121,14 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # post
 ```bash
 pnpm dist:mac:zip      # mac zip，本地验证用
 pnpm dist:mac          # 仅生成未封装的 macOS .app，本地验证用
-pnpm dist:win          # Windows NSIS，本地验证用
+pnpm dist:win          # Windows NSIS，需在 Windows 上执行
+pnpm dist:win:local    # Windows NSIS（x64），mac 交叉构建出测试包
 pnpm electron:prepare  # 按需下载 Electron 二进制（dist* 已内置，无需手动执行）
 pnpm release:checksums # 生成 SHA256SUMS.txt（发布流水线使用）
 pnpm release:check     # 发布演练：校验发布说明与分发模式、资产清单自洽
 ```
 
-Electron 44 起二进制按需下载：`pnpm install` 之后 `node_modules/electron/dist` 可能不存在，而打包配置的 `electronDist` 指向它，因此四个 `dist*` 脚本都会先执行 `pnpm electron:prepare`（已存在则立即跳过）。
+Electron 44 起二进制按需下载：`pnpm install` 之后 `node_modules/electron/dist` 可能不存在，而打包配置的 `electronDist` 指向它，因此 `dist`、`dist:mac`、`dist:mac:zip`、`dist:win` 都会先执行 `pnpm electron:prepare`（已存在则立即跳过）。`dist:win:local` 在 mac 上交叉构建 Windows 包：`-c.electronDist=` 置空后 electron-builder 改为自行下载 win 版 Electron zip（缓存在 `~/Library/Caches/electron`，复用构建），不使用本机 dist；`dist:win` 在 mac 上直接执行会把 mac 版 Electron 打进 Windows 包，不要这样用。
 
 发布前运行 `CI=true pnpm release:check -- --pre`，确认发布说明的分发模式与资产清单自洽。`windows-unsigned` 模式下推送 tag 即触发 `.github/workflows/release.yml` 构建并上传资产到 Draft Release；`source-only` 模式按演练输出创建无资产 Draft Release。两种模式都由人工确认后再 Publish；详见 [`docs/release-policy.md`](docs/release-policy.md)。恢复 macOS 二进制分发前，必须具备 Apple Developer ID 签名、公证、干净机器验证和可复核的更新元数据校验。
 
