@@ -17,7 +17,7 @@ import { notificationPlan } from './native-decisions'
 export interface StatusNotifierDeps {
   /** 当前偏好(每次通知都重新读取:运行中可能改了语言或关掉通知) */
   readSettings(): Pick<Settings, 'language' | 'notifications'>
-  /** 系统语言(`app.getLocale()`),偏好为 null 时兜底 */
+  /** 系统语言(OS preferred languages 首项),偏好为 null 时兜底 */
   locale(): string
   /** 缺省 = electron `Notification.isSupported`(测试可注入) */
   isSupported?(): boolean

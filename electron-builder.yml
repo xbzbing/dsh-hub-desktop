@@ -22,8 +22,12 @@ extraResources:
     to: trayTemplate@2x.png
 mac:
   icon: build/icon.icns
-  # 不限制 Chromium 语言包：保留全部 .lproj 使 app.getLocale() 正确返回系统语言。
-  # 应用 UI 翻译由 app.asar 内的 i18n 模块处理，不受此处影响。
+  # 只保留应用实际支持的 Chromium 语言包，控制包体积。
+  # 「跟随系统」语言由主进程 OS preferred languages 解析，不依赖这里的 .lproj。
+  # 应用 UI 翻译由 app.asar 内的 i18n 模块处理（仅 zh/en），不受此处影响。
+  electronLanguages:
+    - en
+    - zh_CN
   category: public.app-category.developer-tools
   # 默认仅输出解包的 .app，避免本地验证额外生成 dmg / zip。
   target:

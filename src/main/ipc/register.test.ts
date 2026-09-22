@@ -6,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // electron 在 vitest node 环境不可加载——整体 mock 掉,只验证注册与边界行为
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
-  app: { getVersion: () => '9.9.9', getPath: () => '/tmp/fake-userdata', getLocale: () => 'zh-CN' }
+  app: {
+    getVersion: () => '9.9.9',
+    getPath: () => '/tmp/fake-userdata',
+    getLocale: () => 'zh-CN',
+    getPreferredSystemLanguages: () => ['zh-Hans-CN', 'en']
+  }
 }))
 
 import { ipcMain } from 'electron'
