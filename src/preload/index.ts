@@ -9,6 +9,8 @@ import {
   SPACE_IPC,
   HTTP_IPC,
   INSTANCE_STATUS_EVENT,
+  DSH_VERSION_IPC,
+  DSH_VERSION_PROGRESS_EVENT,
   SETTINGS_IPC,
   SSH_IPC,
   VAULT_IPC,
@@ -20,6 +22,7 @@ import {
   type HostKeyPromptPayload,
   type HttpAuthDetection,
   type InstanceStatusEvent,
+  type DshVersionProgressEvent,
   type IpcResult,
   type SshHostKeyForgetInput,
   type SshKeyPreviewInput,
@@ -72,7 +75,9 @@ const bridge: DshHubBridge = {
     // 扫描不接收渲染层指定的目标；接管只接收 pid，主进程重新确认端口和 patch。
     scanExternal: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.scanExternal),
     adoptExternal: (id: string, pid: number, access: string) =>
-      ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.adoptExternal, id, pid, access)
+      ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.adoptExternal, id, pid, access),
+    checkDshVersion: (id: string) => ipcRenderer.invoke(DSH_VERSION_IPC.check, id),
+    upgradeDshVersion: (id: string) => ipcRenderer.invoke(DSH_VERSION_IPC.upgrade, id)
   },
   onInstanceStatus: (listener) => {
     // 只把载荷转给渲染层，不透传 IpcRendererEvent（其中含 sender 等能力对象）
@@ -80,6 +85,13 @@ const bridge: DshHubBridge = {
     ipcRenderer.on(INSTANCE_STATUS_EVENT, handler)
     return () => {
       ipcRenderer.removeListener(INSTANCE_STATUS_EVENT, handler)
+    }
+  },
+  onDshVersionProgress: (listener) => {
+    const handler = (_event: unknown, payload: DshVersionProgressEvent): void => listener(payload)
+    ipcRenderer.on(DSH_VERSION_PROGRESS_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(DSH_VERSION_PROGRESS_EVENT, handler)
     }
   },
   ssh: {

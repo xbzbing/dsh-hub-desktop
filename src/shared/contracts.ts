@@ -534,6 +534,45 @@ export const INSTANCE_RUNTIME_IPC = {
   adoptExternal: 'instances:adoptExternal',
 } as const
 
+/** dsh 版本管理通道：check 立即返回，upgrade 异步执行并经进度事件回推。 */
+export const DSH_VERSION_IPC = {
+  /** 检查本实例当前 dsh 版本与最新可用版本。 */
+  check: 'instances:checkDshVersion',
+  /** 升级到最新版本；立即返回，进展由 `dsh:version-progress` 事件回推。 */
+  upgrade: 'instances:upgradeDshVersion',
+} as const
+
+/** dsh 版本检查结果。 */
+export interface DshVersionCheck {
+  /** 当前实例使用的 dsh 版本（状态事件优先，其次注册表）。 */
+  current: string | null
+  /** npm registry 上的最新稳定版本。 */
+  latest: string
+  /** 是否有可用更新。 */
+  hasUpdate: boolean
+  /** 是否允许执行升级；false 时 reason 给出原因。 */
+  canUpgrade: boolean
+  /** 不可升级的原因代码（transport/launcher/runtimeSource 限制）。 */
+  reason?: 'not-local' | 'dush-launcher' | 'path-external' | null
+}
+
+/** dsh 版本升级进度事件载荷。 */
+export interface DshVersionProgressEvent {
+  instanceId: string
+  phase: 'checking' | 'downloading' | 'installing' | 'done' | 'error'
+  /** 0-100 百分比；checking/downloading 阶段可为估算值。 */
+  percent: number
+  /** 当前阶段的补充说明（如 npm 下载的包路径）。 */
+  detail?: string
+  /** done 阶段携带的新版本号。 */
+  version?: string
+  /** error 阶段的失败原因。 */
+  error?: string
+}
+
+/** 主进程 → 渲染进程的 dsh 版本升级进度事件。 */
+export const DSH_VERSION_PROGRESS_EVENT = 'dsh:version-progress'
+
 export const WorkspaceViewBoundsSchema = z
   .object({
     x: z.number().int().min(0).max(10_000),

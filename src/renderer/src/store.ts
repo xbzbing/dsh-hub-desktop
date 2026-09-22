@@ -5,6 +5,7 @@ import type {
   InstanceRecord,
   InstanceStatusEvent,
   InstanceSummary,
+  DshVersionProgressEvent,
   VaultStatusSnapshot
 } from '@shared/contracts'
 import { DEFAULT_SETTINGS, resolveLanguage } from '@shared/settings'
@@ -60,6 +61,15 @@ interface AppState {
   authPhases: Record<string, AuthPhase>
   /** 写入/清除实例的认证相位(登出后为最新相位,无需特判) */
   applyAuthPhase: (instanceId: string, phase: AuthPhase) => void
+  /**
+   * 各实例的 dsh 版本升级进度快照（id → 最新事件）。done/error 后由 UI 决定何时清除。
+   * 未处于升级流程的实例不在 map 中。
+   */
+  upgradeProgress: Record<string, DshVersionProgressEvent>
+  /** 应用一条升级进度事件。 */
+  applyUpgradeProgress: (event: DshVersionProgressEvent) => void
+  /** 清除某实例的升级进度快照（关闭进度条时调用）。 */
+  clearUpgradeProgress: (instanceId: string) => void
   /**
    * 凭据保险库快照。登录成功时主进程会**静默**写入凭据，渲染层不会收到任何事件，
    * 因此必须由登录流程显式刷新，否则详情页的「凭据存储」会一直停留在旧状态。
@@ -167,6 +177,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   pendingOpen: [],
   userDataPath: null,
   authPhases: {},
+  upgradeProgress: {},
   vaultStatus: null,
   toasts: [],
   settings: DEFAULT_SETTINGS,
@@ -264,6 +275,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   applyAuthPhase: (instanceId, phase) => {
     set((state) => ({ authPhases: { ...state.authPhases, [instanceId]: phase } }))
+  },
+
+  applyUpgradeProgress: (event) => {
+    set((state) => ({ upgradeProgress: { ...state.upgradeProgress, [event.instanceId]: event } }))
+  },
+
+  clearUpgradeProgress: (instanceId) => {
+    set((state) => {
+      if (!(instanceId in state.upgradeProgress)) return state
+      const upgradeProgress = { ...state.upgradeProgress }
+      delete upgradeProgress[instanceId]
+      return { upgradeProgress }
+    })
   },
 
   setVaultStatus: (status) => set({ vaultStatus: status }),

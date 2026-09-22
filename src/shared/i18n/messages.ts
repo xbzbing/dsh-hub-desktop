@@ -352,6 +352,27 @@ export const MESSAGES = {
   'detail.localSide': { zh: '本机', en: 'local' },
   'detail.remoteSide': { zh: '远端', en: 'remote' },
   'detail.dshVersion': { zh: 'dsh 版本', en: 'dsh version' },
+  'detail.checkVersion': { zh: '检测更新', en: 'Check for updates' },
+  'detail.checkingVersion': { zh: '检测中…', en: 'Checking…' },
+  'detail.checkVersionFailed': { zh: '版本检测失败', en: 'Version check failed' },
+  'detail.latestVersion': { zh: '可升级到 {version}', en: 'Update available: {version}' },
+  'detail.upToDate': { zh: '已是最新版本', en: 'Up to date' },
+  'detail.upgrade': { zh: '升级', en: 'Upgrade' },
+  'detail.upgrading': { zh: '升级中…', en: 'Upgrading…' },
+  'detail.upgradeDone': { zh: '已升级到 {version}', en: 'Upgraded to {version}' },
+  'detail.upgradeFailed': { zh: '升级失败', en: 'Upgrade failed' },
+  'detail.upgradeNotLocalNote': {
+    zh: '仅本机实例支持升级',
+    en: 'Only local instances can be upgraded'
+  },
+  'detail.upgradeDushNote': {
+    zh: 'dush 启动器的实例不能通过本应用升级',
+    en: 'Instances using the dush launcher cannot be upgraded here'
+  },
+  'detail.upgradePathNote': {
+    zh: '该实例的 dsh 二进制由你自行管理，本应用不升级',
+    en: 'This instance uses a self-managed dsh binary and is not upgraded here'
+  },
   'detail.port': { zh: '端口', en: 'Port' },
   'detail.dataDirTitle': { zh: '该实例隔离的 DSH_HOME', en: 'Isolated DSH_HOME for this instance' },
   'detail.stop': { zh: '停止', en: 'Stop' },

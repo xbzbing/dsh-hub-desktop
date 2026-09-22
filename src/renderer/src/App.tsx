@@ -46,9 +46,14 @@ export default function App() {
     const unsubscribeAuth = BRIDGE.auth.onState((event) =>
       useAppStore.getState().applyAuthPhase(event.instanceId, event.state.phase)
     )
+    // dsh 版本升级进度 → store；详情页据此渲染进度条。
+    const unsubscribeUpgrade = BRIDGE.onDshVersionProgress((event) =>
+      useAppStore.getState().applyUpgradeProgress(event)
+    )
     return () => {
       unsubscribeStatus()
       unsubscribeAuth()
+      unsubscribeUpgrade()
     }
   }, [])
 

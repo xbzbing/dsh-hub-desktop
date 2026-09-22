@@ -19,7 +19,7 @@ import type {
   InstanceRuntimeStatus,
   InstanceStatusEvent
 } from '@shared/contracts'
-import { AUTH_IPC, ABOUT_IPC, INSTANCE_STATUS_EVENT } from '@shared/contracts'
+import { AUTH_IPC, ABOUT_IPC, INSTANCE_STATUS_EVENT, DSH_VERSION_PROGRESS_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
 import type { AuthProbeController } from './ipc/register'
 import { createLocalRuntime } from './local-runtime/local-runtime'
@@ -677,6 +677,12 @@ void app.whenReady().then(() => {
     tunnels,
     http: httpEndpoints,
     auth,
+    installer,
+    onVersionProgress: (event) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send(DSH_VERSION_PROGRESS_EVENT, event)
+      }
+    },
     externalDsh: createExternalDshScanner(),
     pathProbe,
     vault: vault as Vault,

@@ -58,6 +58,7 @@ function makeFakeInstaller(overrides: Partial<RuntimeInstaller> = {}): RuntimeIn
   const base: RuntimeInstaller = {
     listAvailableVersions: async () => ['0.1.5-rc.1'],
     resolveDefaultVersion: async () => '0.1.5-rc.1',
+    resolveLatestVersion: async () => '0.1.5-rc.1',
     listInstalled: async () => [],
     isInstalled: async (version) => version === '0.1.5-rc.1',
     install: vi.fn(async () => installed()),

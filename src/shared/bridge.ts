@@ -14,6 +14,8 @@ import type {
   AuthStateEvent,
   AuthStateSnapshot,
   CreateInstanceInput,
+  DshVersionCheck,
+  DshVersionProgressEvent,
   ExternalDshWebSnapshot,
   HostKeyDecision,
   HostKeyPromptPayload,
@@ -114,9 +116,15 @@ export interface DshHubBridge {
      * 接管检测到的外部 dsh web。`access` 是用户提供的 token 或完整 URL，只在主进程会话内保留。
      */
     adoptExternal: (id: string, pid: number, access: string) => Promise<IpcResult<null>>
+    /** 检查本实例当前 dsh 版本与最新可用版本；仅 hub 托管的 local 实例可升级。 */
+    checkDshVersion: (id: string) => Promise<IpcResult<DshVersionCheck>>
+    /** 升级到最新版本；立即返回 accepted，进展经 onDshVersionProgress 回推。 */
+    upgradeDshVersion: (id: string) => Promise<IpcResult<{ accepted: true }>>
   }
   /** 订阅实例状态事件；返回取消订阅函数（渲染层不接触原始 IPC 事件对象） */
   onInstanceStatus: (listener: (event: InstanceStatusEvent) => void) => () => void
+  /** 订阅 dsh 版本升级进度事件；返回取消订阅函数。 */
+  onDshVersionProgress: (listener: (event: DshVersionProgressEvent) => void) => () => void
   /** SSH 传输辅助：密钥预览、主机指纹确认和口令输入。 */
   ssh: {
     /** 只读密钥预览（ssh -G + ssh-add -L）；不含私钥内容 */

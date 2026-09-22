@@ -232,6 +232,8 @@ export interface InstallProgress {
   phase: 'resolving' | 'installing'
   version: string
   detail?: string
+  /** 0–100 整数百分比；未知阶段为 undefined。 */
+  percent?: number
 }
 
 export interface RuntimeInstallerOptions {
@@ -263,6 +265,8 @@ export interface RuntimeInstaller {
   resolveEntry(version: string): string
   /** 安装中断标记（installing.json）是否残留 */
   hasIncompleteInstall(version: string): Promise<boolean>
+  /** npm registry 上的最新稳定版本（listAvailableVersions 取末项）。 */
+  resolveLatestVersion(): Promise<string>
 }
 
 const INSTALLING_MARKER = 'installing.json'
@@ -360,6 +364,14 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
 
     resolveDefaultVersion(): Promise<string> {
       return enqueueSerial(() => unsafeResolveDefaultVersion())
+    },
+
+    resolveLatestVersion(): Promise<string> {
+      return enqueueSerial(async () => {
+        const versions = await unsafeListAvailableVersions()
+        if (versions.length === 0) throw new Error('registry 中没有可用的 dsh 版本')
+        return versions[versions.length - 1] as string
+      })
     },
 
     async listInstalled(): Promise<InstalledRuntime[]> {
@@ -487,7 +499,8 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
           const detail = `下载依赖 (${fetchCount})：${path}`
           if (detail !== lastDetail) {
             lastDetail = detail
-            onProgress({ phase: 'installing', version, detail })
+            // 百分比上限 90%，校验与收尾留给 95/100
+            onProgress({ phase: 'installing', version, detail, percent: Math.min(90, 10 + fetchCount * 3) })
           }
         }
       })
@@ -504,9 +517,11 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
         `安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${tailLines(result.stderr, 20) || '无 stderr'}`
       )
     }
+    onProgress?.({ phase: 'installing', version, detail: '校验安装结果', percent: 95 })
     const entry = runtimeEntryFor(options.runtimesDir, version)
     await stat(entry)
     await rm(markerPath, { force: true })
+    onProgress?.({ phase: 'installing', version, percent: 100 })
     const stats = await stat(dir)
     return { version, dir, entry, installedAt: stats.mtime.toISOString() }
   }

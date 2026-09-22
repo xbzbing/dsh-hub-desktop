@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { tryParseEndpoint } from '@shared/endpoint'
+import type { DshVersionCheck } from '@shared/contracts'
 import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, addressOf, toDisplayStatus } from '../lib/format'
 import { useAppStore } from '../store'
@@ -28,6 +29,10 @@ export default function DetailView(): ReactNode {
     selection ? state.workspaceConnected[selection] ?? true : true
   )
   const authPhase = useAppStore((state) => (selection ? state.authPhases[selection] : undefined))
+  const upgradeProgress = useAppStore((state) =>
+    selection ? state.upgradeProgress[selection] : undefined
+  )
+  const clearUpgradeProgress = useAppStore((state) => state.clearUpgradeProgress)
   const ensureRecord = useAppStore((state) => state.ensureRecord)
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
@@ -50,10 +55,19 @@ export default function DetailView(): ReactNode {
   const [externalAccess, setExternalAccess] = useState<Record<number, string>>({})
   const [showExternalTokenEditor, setShowExternalTokenEditor] = useState(false)
   const [externalToken, setExternalToken] = useState('')
+  /** dsh 版本检测结果；null = 尚未检测。 */
+  const [versionCheck, setVersionCheck] = useState<DshVersionCheck | null>(null)
+  const [checkingVersion, setCheckingVersion] = useState(false)
 
   useEffect(() => {
     if (selection) void ensureRecord(selection)
   }, [selection, ensureRecord])
+
+  // 切换实例时清空上一次的版本检测结果，避免串号。
+  useEffect(() => {
+    setVersionCheck(null)
+    setCheckingVersion(false)
+  }, [selection])
 
   // 认证相位未知时探测一次，使操作按钮反映当前会话状态。
   useEffect(() => {
@@ -140,6 +154,30 @@ export default function DetailView(): ReactNode {
     } finally {
       setRestarting(false)
     }
+  }
+
+  /** 检测当前实例的 dsh 版本与最新可用版本。 */
+  const checkVersion = async (): Promise<void> => {
+    if (!record || checkingVersion) return
+    setCheckingVersion(true)
+    try {
+      const result = await window.dshHub?.runtime.checkDshVersion(record.id)
+      if (!result?.ok) {
+        toast('err', t('detail.checkVersionFailed'), result?.message)
+        return
+      }
+      setVersionCheck(result.value)
+    } finally {
+      setCheckingVersion(false)
+    }
+  }
+
+  /** 触发升级；进展经进度事件回推到 store。 */
+  const upgradeVersion = async (): Promise<void> => {
+    if (!record) return
+    clearUpgradeProgress(record.id)
+    const result = await window.dshHub?.runtime.upgradeDshVersion(record.id)
+    if (!result?.ok) toast('err', t('detail.upgradeFailed'), result?.message)
   }
 
   const deleteInstance = async (): Promise<void> => {
@@ -388,6 +426,83 @@ export default function DetailView(): ReactNode {
               <Icon name="edit" /> {t('edit.openButton')}
             </button>
           </div>
+          {record.transport === 'local' &&
+            (() => {
+              const active =
+                upgradeProgress !== undefined &&
+                upgradeProgress.phase !== 'done' &&
+                upgradeProgress.phase !== 'error'
+              const canUpgrade =
+                versionCheck !== null && versionCheck.canUpgrade && versionCheck.hasUpdate
+              return (
+                <div className="version-manage mt12" data-testid="version-manage">
+                  <div className="row runtime-actions">
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => void checkVersion()}
+                      disabled={checkingVersion || active}
+                      data-testid="check-version-btn"
+                    >
+                      <Icon name="check" />
+                      {checkingVersion ? t('detail.checkingVersion') : t('detail.checkVersion')}
+                    </button>
+                    {canUpgrade && (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => void upgradeVersion()}
+                        disabled={active}
+                        data-testid="upgrade-btn"
+                      >
+                        <Icon name="refresh" />
+                        {active ? t('detail.upgrading') : t('detail.upgrade')}
+                      </button>
+                    )}
+                  </div>
+                  {/* 检测结果：不可升级给原因，可升级给最新版本，已是最新给提示。 */}
+                  {versionCheck !== null && !active && (
+                    <p className="meta mt8" data-testid="version-check-result">
+                      {!versionCheck.canUpgrade
+                        ? versionCheck.reason === 'not-local'
+                          ? t('detail.upgradeNotLocalNote')
+                          : versionCheck.reason === 'dush-launcher'
+                            ? t('detail.upgradeDushNote')
+                            : t('detail.upgradePathNote')
+                        : versionCheck.hasUpdate
+                          ? t('detail.latestVersion', { version: versionCheck.latest })
+                          : t('detail.upToDate')}
+                    </p>
+                  )}
+                  {/* 升级进度：done/error 保留一行提示，其余显示百分比进度条。 */}
+                  {upgradeProgress !== undefined && (
+                    <div className="mt8" data-testid="upgrade-progress">
+                      {active ? (
+                        <>
+                          <div className="progress-line">
+                            <span
+                              className="progress-fill"
+                              style={{ width: `${Math.max(0, Math.min(100, upgradeProgress.percent))}%` }}
+                            />
+                          </div>
+                          <p className="meta mt8">
+                            {t('detail.upgrading')} · {Math.round(upgradeProgress.percent)}%
+                            {upgradeProgress.detail ? ` · ${upgradeProgress.detail}` : ''}
+                          </p>
+                        </>
+                      ) : upgradeProgress.phase === 'done' ? (
+                        <p className="meta" data-testid="upgrade-done">
+                          {t('detail.upgradeDone', { version: upgradeProgress.version ?? '' })}
+                        </p>
+                      ) : (
+                        <p className="meta err-text" data-testid="upgrade-error">
+                          {t('detail.upgradeFailed')}
+                          {upgradeProgress.error ? ` · ${upgradeProgress.error}` : ''}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
         </div>
 
         {record.transport === 'local' && (externalRuntime || showExternalTokenEditor) && (

@@ -911,6 +911,11 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '未勾选「记住密码」，没有已保存的密码可用')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '保险库中没有该实例的已存密码')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('not-found', `实例不存在：${parsed.instanceId}`)"),
+  debt('src/main/ipc/register.ts', "if (!record) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)"),
+  debt('src/main/ipc/register.ts', "if (!installer) throw new InstanceStoreError('invalid-state', 'dsh 版本管理能力不可用')"),
+  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', 'dsh 版本管理能力不可用')"),
+  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '当前实例不支持由本应用升级 dsh')"),
+  debt('src/main/local-runtime/runtime-installer.ts', "onProgress?.({ phase: 'installing', version, detail: '校验安装结果', percent: 95 })"),
 
   // Runtime status messages displayed by App.tsx and DetailView.
   debt('src/main/local-runtime/local-runtime.ts', ": '分配端口并启动进程（端口区间不可用，改由 dsh 自动选择）'"),

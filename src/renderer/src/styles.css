@@ -1157,6 +1157,21 @@ h3,
     transform: translateX(320%);
   }
 }
+/* 版本升级：确定进度条（percent 已知），复用 .progress-line 的槽底色但改用固定宽度填充。 */
+.version-manage .progress-line {
+  height: 4px;
+  border-radius: 2px;
+}
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 0.2s ease;
+}
+.err-text {
+  color: var(--danger);
+}
 .kv {
   display: grid;
   grid-template-columns: 104px 1fr;
