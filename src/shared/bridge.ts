@@ -56,6 +56,8 @@ export interface AppInfo {
   v8: string
   /** 应用数据根目录：实例注册表 / 审计日志 / 隔离的 DSH_HOME 都在其下 */
   userDataPath: string
+  /** 系统区域设置（app.getLocale()），供渲染层解析「跟随系统」语言偏好 */
+  locale: string
 }
 
 export interface PingResult {

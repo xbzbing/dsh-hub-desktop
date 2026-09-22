@@ -15,7 +15,8 @@ export function registerAppHandlers(
       electron: processVersions.electron ?? '',
       node: process.versions.node,
       v8: process.versions.v8,
-      userDataPath: app.getPath('userData')
+      userDataPath: app.getPath('userData'),
+      locale: app.getLocale()
     }))
   )
 

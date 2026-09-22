@@ -74,6 +74,8 @@ interface AppState {
   language: Language
   /** 当前语言的翻译函数(组件统一从这里取文案) */
   t: Translator
+  /** 主进程提供的系统区域设置；hydrate 前用 navigator.language 兜底 */
+  systemLocale: string
 
   load: () => Promise<void>
   refreshList: () => Promise<void>
@@ -141,6 +143,11 @@ function initialLanguage(): Language {
   return resolveLanguage(null, navigator.language)
 }
 
+/** 主进程提供的系统区域设置;hydrate 前用 navigator.language 兜底 */
+function systemLocaleFallback(): string {
+  return navigator.language
+}
+
 export const useAppStore = create<AppState>()((set, get) => ({
   loaded: false,
   instances: [],
@@ -165,6 +172,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   settings: DEFAULT_SETTINGS,
   language: initialLanguage(),
   t: createTranslator(initialLanguage()),
+  systemLocale: systemLocaleFallback(),
 
   /**
    * 在 theme='system' 时随系统外观更新实际主题，不改变用户偏好。
@@ -187,7 +195,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const result = await window.dshHub?.settings.get()
     if (!result?.ok) return
     const settings = result.value
-    const language = resolveLanguage(settings.language, navigator.language)
+    const locale = get().systemLocale
+    const language = resolveLanguage(settings.language, locale)
     applyTheme(resolveTheme(settings.theme))
     set({ settings, language, theme: resolveTheme(settings.theme), t: createTranslator(language) })
   },
@@ -198,23 +207,24 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (!result) throw new Error('settings-unavailable')
     if (!result.ok) throw new Error(result.message)
     const settings = result.value
-    const language = resolveLanguage(settings.language, navigator.language)
+    const locale = get().systemLocale
+    const language = resolveLanguage(settings.language, locale)
     applyTheme(resolveTheme(settings.theme))
     set({ settings, language, theme: resolveTheme(settings.theme), t: createTranslator(language) })
   },
 
   load: async () => {
+    // 先获取主进程快照(含系统区域设置),再用它解析「跟随系统」语言偏好。
+    const info = await window.dshHub?.getInfo()
+    if (info?.ok) {
+      document.documentElement.dataset.platform = info.value.platform
+      set({ userDataPath: info.value.userDataPath, systemLocale: info.value.locale })
+    }
     await get().hydrateSettings()
     // 重新订阅前先取消旧订阅，避免重复监听。
     systemThemeUnsubscribe?.()
     systemThemeUnsubscribe = get().subscribeSystemTheme()
     applyTheme(resolveTheme(get().settings.theme))
-    // 平台信息(隐藏标题栏布局 / 平台差异化)与 userData 路径由主进程快照提供
-    const info = await window.dshHub?.getInfo()
-    if (info?.ok) {
-      document.documentElement.dataset.platform = info.value.platform
-      set({ userDataPath: info.value.userDataPath })
-    }
     await get().refreshList()
     set({ loaded: true })
   },
