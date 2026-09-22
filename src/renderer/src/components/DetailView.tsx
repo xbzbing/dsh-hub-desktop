@@ -52,6 +52,7 @@ export default function DetailView(): ReactNode {
   >([])
   const [adopting, setAdopting] = useState<number | null>(null)
   const [restarting, setRestarting] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [externalAccess, setExternalAccess] = useState<Record<number, string>>({})
   const [showExternalTokenEditor, setShowExternalTokenEditor] = useState(false)
   const [externalToken, setExternalToken] = useState('')
@@ -153,6 +154,23 @@ export default function DetailView(): ReactNode {
       if (wasConnected) setPendingOpen(record.id)
     } finally {
       setRestarting(false)
+    }
+  }
+
+  /** 关闭本地实例：先断开内嵌工作区，再停止运行时；状态由 stopped 事件推进。 */
+  const stopRuntime = async (): Promise<void> => {
+    if (!record || stopping) return
+    setStopping(true)
+    try {
+      await disconnectWorkspace(record.id)
+      const result = await window.dshHub?.runtime.stop(record.id)
+      if (!result?.ok) {
+        toast('err', t('detail.stopFailed'), result?.message)
+        return
+      }
+      toast('ok', t('detail.stopped'))
+    } finally {
+      setStopping(false)
     }
   }
 
@@ -415,6 +433,17 @@ export default function DetailView(): ReactNode {
                 data-testid="restart-btn"
               >
                 <Icon name="refresh" /> {restarting ? t('detail.restarting') : t('detail.restart')}
+              </button>
+            )}
+            {/* 关闭实例：断开工作区并停止 hub 托管的运行中进程；外部接管进程归用户所有，不提供。 */}
+            {record.transport === 'local' && status?.status === 'running' && status.runtimeSource !== 'external' && (
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={() => void stopRuntime()}
+                disabled={stopping}
+                data-testid="stop-btn"
+              >
+                <Icon name="power" /> {stopping ? t('detail.stopping') : t('detail.stop')}
               </button>
             )}
             {/* transport 不可修改；端口留空时自动分配，运行中修改在下次启动生效。 */}
