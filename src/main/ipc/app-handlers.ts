@@ -1,7 +1,6 @@
 import { app, ipcMain } from 'electron'
 import { IPC, type AppInfo, type PingResult } from '@shared/bridge'
 import type { IpcResult } from '@shared/contracts'
-import { getCachedLocale } from '../locale'
 
 export function registerAppHandlers(
   processVersions: NodeJS.ProcessVersions & { electron?: string },
@@ -17,7 +16,7 @@ export function registerAppHandlers(
       node: process.versions.node,
       v8: process.versions.v8,
       userDataPath: app.getPath('userData'),
-      locale: getCachedLocale()
+      locale: app.getLocale()
     }))
   )
 

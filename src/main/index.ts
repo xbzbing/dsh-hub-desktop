@@ -71,7 +71,6 @@ import type { Settings } from '@shared/settings'
 import type { AuditLog } from './audit/audit-log'
 import { createWorkspaceHost } from './workspace-host'
 import { createWorkspaceTooltipHost } from './workspace-tooltip'
-import { initLocale, getCachedLocale } from './locale'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'] ?? null
@@ -125,7 +124,7 @@ if (e2eHidden && process.platform === 'darwin') app.dock?.hide()
 let hubWindow: BrowserWindow | null = null
 const workspaceHost = createWorkspaceHost(
   () => hubWindow,
-  () => resolveLanguage(settingsRef?.read().language, getCachedLocale())
+  () => resolveLanguage(settingsRef?.read().language, app.getLocale())
 )
 const workspaceTooltipHost = createWorkspaceTooltipHost(() => hubWindow)
 
@@ -191,7 +190,7 @@ function openAboutPanel(): void {
  * 以维持复制/粘贴、重载与开发者工具等系统快捷键。
  */
 function installApplicationMenu(): void {
-  const language = resolveLanguage(settingsRef?.read().language, getCachedLocale())
+  const language = resolveLanguage(settingsRef?.read().language, app.getLocale())
   const tr = createTranslator(language)
   const about: MenuItemConstructorOptions = {
     label: tr('about.title'),
@@ -410,9 +409,8 @@ if (process.env.DSH_HUB_E2E_PASSWORD_STORE) {
   app.commandLine.appendSwitch('password-store', process.env.DSH_HUB_E2E_PASSWORD_STORE)
 }
 
-void app.whenReady().then(async () => {
+void app.whenReady().then(() => {
   if (!hasSingleInstanceLock) return
-  await initLocale()
   registerRendererProtocol()
 
   const dataRoot = app.getPath('userData')
@@ -491,7 +489,7 @@ void app.whenReady().then(async () => {
   // 这里只注入「偏好/语言」两个取值端口(三审 Finding 2)
   const notifier = createStatusNotifier({
     readSettings: () => settings.read(),
-    locale: () => getCachedLocale(),
+    locale: () => app.getLocale(),
     onError: (error) => console.error('[main] 发送系统通知失败：', error)
   })
 
@@ -514,7 +512,7 @@ void app.whenReady().then(async () => {
 
   /** 托盘文案跟随当前语言(与设置页一致) */
   function trayLabels(): HubTrayLabels {
-    const language = resolveLanguage(settings.read().language, getCachedLocale())
+    const language = resolveLanguage(settings.read().language, app.getLocale())
     const tr = createTranslator(language)
     return {
       tooltip: tr('app.name'),
