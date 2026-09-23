@@ -778,16 +778,37 @@ describe('registerIpc', () => {
     })
   })
 
-  it('logout 清理失败：登出动作仍完成，清理链在失败点终止并回错误信封', async () => {
-    clearPartitionSession.mockRejectedValueOnce(new Error('partition 不可用'))
-    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-    const result = (await invoke('auth:logout', id)) as { ok: boolean; code?: string }
-    // 会话吊销发生在清理之前，已完成；清理异常由 wrap 转成错误信封，调用方不面对异常。
-    expect(authFake.logout).toHaveBeenCalledWith(id)
-    expect(result).toMatchObject({ ok: false, code: 'internal' })
-    // 失败点之后的 best-effort 链不再执行：忘记 vault 会话与两条审计都不会发生。
-    expect(vaultFake.forgetSession).not.toHaveBeenCalled()
-    expect(auditSpy).not.toHaveBeenCalled()
+  it('logout 清理失败：登出仍回成功信封，清理降级为留痕，后续步骤必达', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      clearPartitionSession.mockRejectedValueOnce(new Error('partition 不可用'))
+      const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+      const result = (await invoke('auth:logout', id)) as { ok: boolean }
+      // 登出成功 → 成功信封（渲染层只在 ok 时提示「已登出」，报错信封会让用户失去反馈）。
+      expect(result).toMatchObject({ ok: true })
+      expect(authFake.logout).toHaveBeenCalledWith(id)
+      // 失败点之后的步骤必达：vault 会话被遗忘、两条安全审计都记录。
+      expect(vaultFake.forgetSession).toHaveBeenCalledWith(id)
+      expect(auditSpy).toHaveBeenCalledWith({
+        instanceId: id,
+        event: 'session-revoked',
+        result: 'logout'
+      })
+      // cookie 清理失败如实标记，而不是让这条审计消失。
+      expect(auditSpy).toHaveBeenCalledWith({
+        instanceId: id,
+        event: 'cookie-cleared',
+        result: 'failed'
+      })
+      // 留痕（二）：console 记录失败原因，主进程日志可查。
+      expect(errSpy).toHaveBeenCalledWith(
+        '[ipc] 登出时清理分区会话失败：',
+        id,
+        expect.any(Error)
+      )
+    } finally {
+      errSpy.mockRestore()
+    }
   })
 
   it('auth:loginStored requires an enabled password policy', async () => {

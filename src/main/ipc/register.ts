@@ -973,11 +973,19 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
       const snapshot = authSnapshot(await deps.auth.logout(instanceId))
       // 「登出 → 任何探测」会立刻用已存密码复活会话。手动登录成功才解除。
       logoutSuppressed.add(instanceId)
-      await deps.clearPartitionSession?.(instanceId)
+      // 清理是尽力而为：单步失败不拖垮后续步骤（否则 vault 遗忘与两条审计都会被跳过），
+      // 但失败必须留痕——console 记原因，审计把 cookie-cleared 如实标 failed。
+      let cookieCleared = true
+      try {
+        await deps.clearPartitionSession?.(instanceId)
+      } catch (error) {
+        cookieCleared = false
+        console.error('[ipc] 登出时清理分区会话失败：', instanceId, error)
+      }
       // 登出时忘掉 vault 中的会话:否则重启后 restoreSessionFromVault 会恢复已失效的登录态
       await deps.vault.forgetSession(instanceId).catch(() => undefined)
       deps.audit?.({ instanceId, event: 'session-revoked', result: 'logout' })
-      deps.audit?.({ instanceId, event: 'cookie-cleared', result: 'logout' })
+      deps.audit?.({ instanceId, event: 'cookie-cleared', result: cookieCleared ? 'logout' : 'failed' })
       return snapshot
     })
   )
