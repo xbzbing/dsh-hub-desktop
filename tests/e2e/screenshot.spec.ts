@@ -3,7 +3,12 @@ import { join, resolve } from 'node:path'
 import { expect, test, _electron as electron } from '@playwright/test'
 import { buildLaunchArgs } from './launch-args'
 
-const SHOT_DIR = resolve(process.cwd(), 'docs', 'images')
+// 默认写进被 Git 忽略的 hub-data/，避免每次跑 E2E 都弄脏受版本控制的文档截图；
+// 需要刷新 README 里的文档截图时显式 DOCS_SHOTS=1 才写回 docs/images。
+const SHOT_DIR =
+  process.env.DOCS_SHOTS === '1'
+    ? resolve(process.cwd(), 'docs', 'images')
+    : resolve(process.cwd(), 'hub-data', 'e2e-shots')
 const DATA_DIR = resolve(process.cwd(), 'hub-data', 'e2e-screenshot')
 
 test('截图：首页 + 暗色主题 + 收起侧边栏', async () => {
