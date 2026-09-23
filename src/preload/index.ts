@@ -77,7 +77,8 @@ const bridge: DshHubBridge = {
     adoptExternal: (id: string, pid: number, access: string) =>
       ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.adoptExternal, id, pid, access),
     checkDshVersion: (id: string) => ipcRenderer.invoke(DSH_VERSION_IPC.check, id),
-    upgradeDshVersion: (id: string) => ipcRenderer.invoke(DSH_VERSION_IPC.upgrade, id)
+    upgradeDshVersion: (id: string) => ipcRenderer.invoke(DSH_VERSION_IPC.upgrade, id),
+    listDshVersions: () => ipcRenderer.invoke(DSH_VERSION_IPC.list)
   },
   onInstanceStatus: (listener) => {
     // 只把载荷转给渲染层，不透传 IpcRendererEvent（其中含 sender 等能力对象）
@@ -87,7 +88,7 @@ const bridge: DshHubBridge = {
       ipcRenderer.removeListener(INSTANCE_STATUS_EVENT, handler)
     }
   },
-  onDshVersionProgress: (listener) => {
+  onVersionProgress: (listener) => {
     const handler = (_event: unknown, payload: DshVersionProgressEvent): void => listener(payload)
     ipcRenderer.on(DSH_VERSION_PROGRESS_EVENT, handler)
     return () => {

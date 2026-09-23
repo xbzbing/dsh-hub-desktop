@@ -764,3 +764,44 @@ describe('store vault', () => {
     expect(useAppStore.getState().vaultStatus?.rememberedInstances).toEqual(['instance-1'])
   })
 })
+
+describe('store 活动日志（详情页底部信息栏）', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('追加运行状态与升级进度行，连续重复行去重', async () => {
+    const store = await freshStore()
+    const id = 'activity-dedupe'
+    store
+      .getState()
+      .appendActivity(id, { source: 'runtime', at: '2026-09-23T00:00:00.000Z', detail: '准备 dsh 0.1.6 运行时' })
+    store
+      .getState()
+      .appendActivity(id, { source: 'runtime', at: '2026-09-23T00:00:01.000Z', detail: '准备 dsh 0.1.6 运行时' })
+    store
+      .getState()
+      .appendActivity(id, { source: 'runtime', at: '2026-09-23T00:00:02.000Z', detail: '分配端口并启动进程（端口 3080）' })
+    expect(store.getState().activityLog[id]).toHaveLength(2)
+
+    const checking = { instanceId: id, phase: 'checking' as const, at: '2026-09-23T00:00:03.000Z' }
+    store.getState().appendActivity(id, { source: 'version', event: checking })
+    store.getState().appendActivity(id, { source: 'version', event: { ...checking, at: '2026-09-23T00:00:04.000Z' } })
+    expect(store.getState().activityLog[id]).toHaveLength(3)
+  })
+
+  it('超限丢弃最旧行，clearActivity 清空', async () => {
+    const store = await freshStore()
+    const id = 'activity-cap'
+    for (let index = 0; index < 205; index += 1) {
+      store.getState().appendActivity(id, { source: 'runtime', at: `t${index}`, detail: `行 ${index}` })
+    }
+    const lines = store.getState().activityLog[id]
+    expect(lines).toHaveLength(200)
+    expect(lines?.[0]).toMatchObject({ source: 'runtime', detail: '行 5' })
+    expect(lines?.[lines.length - 1]).toMatchObject({ source: 'runtime', detail: '行 204' })
+
+    store.getState().clearActivity(id)
+    expect(store.getState().activityLog[id]).toBeUndefined()
+  })
+})

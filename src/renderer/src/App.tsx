@@ -10,7 +10,7 @@ import SshDialogs from './components/SshDialogs'
 import AuthPanel from './components/AuthPanel'
 import SettingsView from './components/SettingsView'
 import AboutDialog from './components/AboutDialog'
-import { compactWorkspaceAddress } from './lib/format'
+import { compactWorkspaceAddress, STATUS_INFO, toDisplayStatus } from './lib/format'
 import { Icon } from './lib/icons'
 
 const BRIDGE = window.dshHub
@@ -30,6 +30,7 @@ export default function App() {
   const toggleRail = useAppStore((state) => state.toggleRail)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
   const statuses = useAppStore((state) => state.statuses)
+  const workspaceConnected = useAppStore((state) => state.workspaceConnected)
   const workspaceOpen = useAppStore((state) => state.workspaceOpen)
   const workspaceOpening = useAppStore((state) => state.workspaceOpening)
   const setWorkspaceOpen = useAppStore((state) => state.setWorkspaceOpen)
@@ -38,22 +39,27 @@ export default function App() {
   useEffect(() => {
     if (!BRIDGE) return
     void useAppStore.getState().load()
-    // 状态事件 → store(主进程 → preload → 渲染,唯一状态推进来源)
-    const unsubscribeStatus = BRIDGE.onInstanceStatus((event) =>
-      useAppStore.getState().applyStatus(event)
+    // 状态事件 → store(主进程 → preload → 渲染,唯一状态推进来源)；
+    // 带 detail 的状态行同时进入详情页底部信息栏（标题区不再展示原始日志）。
+    const unsubscribeStatus = BRIDGE.onInstanceStatus((event) => {
+      const state = useAppStore.getState()
+      state.applyStatus(event)
+      if (event.detail) {
+        state.appendActivity(event.id, { source: 'runtime', at: event.at, detail: event.detail })
+      }
+    })
+    // 版本升级进度 → 底部信息栏的安装进度日志；进度条本身由组件本地订阅渲染。
+    const unsubscribeVersion = BRIDGE.onVersionProgress((event) =>
+      useAppStore.getState().appendActivity(event.instanceId, { source: 'version', event })
     )
     // 认证相位写入 store；应用级订阅确保详情按钮收到状态更新。
     const unsubscribeAuth = BRIDGE.auth.onState((event) =>
       useAppStore.getState().applyAuthPhase(event.instanceId, event.state.phase)
     )
-    // dsh 版本升级进度 → store；详情页据此渲染进度条。
-    const unsubscribeUpgrade = BRIDGE.onDshVersionProgress((event) =>
-      useAppStore.getState().applyUpgradeProgress(event)
-    )
     return () => {
       unsubscribeStatus()
+      unsubscribeVersion()
       unsubscribeAuth()
-      unsubscribeUpgrade()
     }
   }, [])
 
@@ -121,7 +127,15 @@ export default function App() {
                     : title}
           </span>
           <span className="tb-sub" data-testid="tb-sub">
-            {workspaceOpen ? workspaceAddress ?? selectedInstance?.name ?? t('common.unknown') : selectedStatus?.detail ?? t('nav.instanceCount', { n: instances.length })}
+            {/* 副标题只给必要信息（地址 / 状态短标签 / 实例数）；状态详情在详情页底部信息栏。 */}
+            {workspaceOpen
+              ? workspaceAddress ?? selectedInstance?.name ?? t('common.unknown')
+              : selectedStatus !== undefined && selection !== null
+                ? t(
+                    STATUS_INFO[toDisplayStatus(selectedStatus.status, workspaceConnected[selection] ?? true)]
+                      .labelKey
+                  )
+                : t('nav.instanceCount', { n: instances.length })}
           </span>
         </div>
         {workspaceOpen && (

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { CreateInstanceInput } from '@shared/contracts'
+import type { CreateInstanceInput, DshVersionCatalog } from '@shared/contracts'
 import { tryParseEndpoint } from '@shared/endpoint'
 import { REGISTRY_PRESETS } from '@shared/settings'
 import { Icon } from '../lib/icons'
+import { buildVersionOptions } from '../lib/version-options'
 import KeyPreview from './KeyPreview'
 import UrlDetect from './UrlDetect'
 import { TYPE_INFO } from '../lib/format'
@@ -86,6 +87,14 @@ export default function Wizard(): ReactNode {
   const [localProbeDone, setLocalProbeDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+  /** 版本下拉数据源；null = 尚未取到。 */
+  const [versionCatalog, setVersionCatalog] = useState<DshVersionCatalog | null>(null)
+  /** 版本列表获取失败原因；非 null 时在下拉下方提示。 */
+  const [versionCatalogError, setVersionCatalogError] = useState<string | null>(null)
+  /** 用户是否手动选过版本；选过则本地版本不再覆盖默认值。 */
+  const [versionTouched, setVersionTouched] = useState(false)
+  /** 自增触发版本目录重取（切换安装镜像后按新源刷新）。 */
+  const [catalogEpoch, setCatalogEpoch] = useState(0)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -120,6 +129,31 @@ export default function Wizard(): ReactNode {
     }
   }, [step, transport, localProbeDone])
 
+  // 本地实例：向导一打开就预取版本目录（走到第 2 步时通常已就绪）；切换安装镜像后按新源重取。
+  useEffect(() => {
+    if (transport !== 'local') return
+    let cancelled = false
+    setVersionCatalogError(null)
+    void window.dshHub?.runtime.listDshVersions().then((result) => {
+      if (cancelled) return
+      if (result?.ok) setVersionCatalog(result.value)
+      else setVersionCatalogError(result?.message ?? t('common.unknown'))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [transport, catalogEpoch, t])
+
+  // 版本默认与本地版本相同：本机探测到的 dsh 优先，其次 hub 已安装的最新；用户改过不覆盖。
+  useEffect(() => {
+    if (versionTouched || form.version !== '') return
+    const preset =
+      localLaunchers.find((item) => item.launcher === 'dsh')?.version ?? versionCatalog?.installed[0]
+    if (preset) {
+      setForm((current) => (current.version === '' ? { ...current, version: preset } : current))
+    }
+  }, [versionTouched, form.version, localLaunchers, versionCatalog])
+
   // 加载当前设置以初始化安装镜像默认值
   useEffect(() => {
     if (settingsLoaded) return
@@ -134,10 +168,11 @@ export default function Wizard(): ReactNode {
     })
   }, [settingsLoaded])
 
-  /** 镜像选择落盘；写失败以 toast 提示，避免用户以为已生效。 */
+  /** 镜像选择落盘；写失败以 toast 提示，避免用户以为已生效。成功后按新源重取版本列表。 */
   const persistRegistry = (url: string): void => {
     void window.dshHub?.settings.update({ npmRegistry: url }).then((result) => {
       if (!result.ok) toast('err', t('settings.saveFailed'), result.message)
+      else setCatalogEpoch((epoch) => epoch + 1)
     })
   }
 
@@ -155,6 +190,14 @@ export default function Wizard(): ReactNode {
         )
       : undefined
   const configuredName = reusableExternalInstance?.name ?? form.name
+
+  // 版本下拉：registry 最近 10 个（从新到旧、最新在上）；本地版本/当前选中值不在其中时补在末尾。
+  const localDshVersion = localLaunchers.find((item) => item.launcher === 'dsh')?.version
+  const versionOptions = buildVersionOptions(
+    versionCatalog?.versions ?? [],
+    localDshVersion,
+    form.version
+  )
 
   const formError = (): string | null => {
     if (!form.name.trim() && !reusableExternalInstance) return t('wizard.errName')
@@ -435,13 +478,31 @@ export default function Wizard(): ReactNode {
                     </div>
                     <div className="field">
                       <label htmlFor="wizard-version">{t('wizard.versionLabel')}</label>
-                      <input
+                      <select
                         className="input num"
                         id="wizard-version"
-                        placeholder={t('wizard.versionPlaceholder')}
                         value={form.version}
-                        onChange={set('version')}
-                      />
+                        onChange={(event) => {
+                          setVersionTouched(true)
+                          setForm((current) => ({ ...current, version: event.target.value }))
+                        }}
+                        disabled={versionCatalog === null && versionCatalogError === null}
+                        data-testid="wizard-version"
+                      >
+                        <option value="">{t('wizard.versionLatest')}</option>
+                        {versionOptions.map((version) => (
+                          <option key={version} value={version}>
+                            {version}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="hint" data-testid="wizard-version-hint">
+                        {versionCatalogError !== null
+                          ? t('wizard.versionFetchFailed', { msg: versionCatalogError })
+                          : versionCatalog === null
+                            ? t('wizard.versionLoading')
+                            : t('wizard.versionHint')}
+                      </span>
                     </div>
                     <div className="field">
                       <label htmlFor="wizard-profile">{t('wizard.profileLabel')}</label>

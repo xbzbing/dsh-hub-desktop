@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { tryParseEndpoint } from '@shared/endpoint'
-import type { DshVersionCheck } from '@shared/contracts'
 import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, addressOf, toDisplayStatus } from '../lib/format'
-import { useAppStore } from '../store'
+import { useAppStore, type ActivityLine } from '../store'
 import { Modal } from './Modal'
 import EditInstanceDialog from './EditInstanceDialog'
 import VaultCard from './VaultCard'
+import DshVersionControl from './DshVersionControl'
+import { PHASE_KEYS } from '../lib/version-phases'
 import { showAuthActions } from '../lib/auth-actions'
 
 /**
@@ -29,10 +30,6 @@ export default function DetailView(): ReactNode {
     selection ? state.workspaceConnected[selection] ?? true : true
   )
   const authPhase = useAppStore((state) => (selection ? state.authPhases[selection] : undefined))
-  const upgradeProgress = useAppStore((state) =>
-    selection ? state.upgradeProgress[selection] : undefined
-  )
-  const clearUpgradeProgress = useAppStore((state) => state.clearUpgradeProgress)
   const ensureRecord = useAppStore((state) => state.ensureRecord)
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
@@ -43,6 +40,11 @@ export default function DetailView(): ReactNode {
   const localHome = useAppStore((state) =>
     selection ? state.instances.find((instance) => instance.id === selection)?.localHome : undefined
   )
+  const activity = useAppStore((state) => (selection ? state.activityLog[selection] : undefined))
+  const clearActivity = useAppStore((state) => state.clearActivity)
+  const logBodyRef = useRef<HTMLDivElement | null>(null)
+  const logMoreRef = useRef<HTMLDivElement | null>(null)
+  const [showLogMore, setShowLogMore] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [trashSpace, setTrashSpace] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -56,19 +58,22 @@ export default function DetailView(): ReactNode {
   const [externalAccess, setExternalAccess] = useState<Record<number, string>>({})
   const [showExternalTokenEditor, setShowExternalTokenEditor] = useState(false)
   const [externalToken, setExternalToken] = useState('')
-  /** dsh 版本检测结果；null = 尚未检测。 */
-  const [versionCheck, setVersionCheck] = useState<DshVersionCheck | null>(null)
-  const [checkingVersion, setCheckingVersion] = useState(false)
 
   useEffect(() => {
     if (selection) void ensureRecord(selection)
   }, [selection, ensureRecord])
 
-  // 切换实例时清空上一次的版本检测结果，避免串号。
+  // 底部信息栏：新行到达后回到行首，保证时间与阶段可见（其余内容可横向滚动）。
   useEffect(() => {
-    setVersionCheck(null)
-    setCheckingVersion(false)
-  }, [selection])
+    const element = logBodyRef.current
+    if (element) element.scrollLeft = 0
+  }, [activity])
+
+  // 「更多」弹层：打开与新行到达时滚到最新。
+  useEffect(() => {
+    const element = logMoreRef.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [activity, showLogMore])
 
   // 认证相位未知时探测一次，使操作按钮反映当前会话状态。
   useEffect(() => {
@@ -133,6 +138,41 @@ export default function DetailView(): ReactNode {
     }
   }
 
+  /** 底部信息栏行格式：时间 + 状态原文；升级进度按阶段措辞，失败与完成单独成句。 */
+  const formatActivity = (line: ActivityLine): string => {
+    if (line.source === 'runtime') {
+      return `${new Date(line.at).toLocaleTimeString()}  ${line.detail}`
+    }
+    const event = line.event
+    const time = new Date(event.at).toLocaleTimeString()
+    if (event.phase === 'error') {
+      return `${time}  ${t('detail.version.upgradeFailed', {
+        msg: event.error ?? t('common.unknown')
+      })}`
+    }
+    const phaseText =
+      event.phase === 'done'
+        ? `${t(PHASE_KEYS.done)}${event.version ? ` v${event.version}` : ''}`
+        : `${t(PHASE_KEYS[event.phase])}${
+            event.percent !== undefined ? ` ${Math.round(event.percent)}%` : ''
+          }`
+    return `${time}  ${phaseText}${event.detail ? `  ${event.detail}` : ''}`
+  }
+
+  /** 最新一行日志：信息栏单行展示它，历史在「更多」弹层里看。 */
+  const latestLine = activity?.at(-1)
+
+  /** 复制全部日志（时间 + 阶段原文，逐行）。 */
+  const copyActivity = async (): Promise<void> => {
+    if (activity === undefined || activity.length === 0) return
+    try {
+      await navigator.clipboard.writeText(activity.map(formatActivity).join('\n'))
+      toast('ok', t('detail.log.copied'))
+    } catch {
+      toast('err', t('detail.copyFailed'))
+    }
+  }
+
   const disconnectView = async (): Promise<void> => {
     await disconnectWorkspace(record.id)
   }
@@ -172,30 +212,6 @@ export default function DetailView(): ReactNode {
     } finally {
       setStopping(false)
     }
-  }
-
-  /** 检测当前实例的 dsh 版本与最新可用版本。 */
-  const checkVersion = async (): Promise<void> => {
-    if (!record || checkingVersion) return
-    setCheckingVersion(true)
-    try {
-      const result = await window.dshHub?.runtime.checkDshVersion(record.id)
-      if (!result?.ok) {
-        toast('err', t('detail.checkVersionFailed'), result?.message)
-        return
-      }
-      setVersionCheck(result.value)
-    } finally {
-      setCheckingVersion(false)
-    }
-  }
-
-  /** 触发升级；进展经进度事件回推到 store。 */
-  const upgradeVersion = async (): Promise<void> => {
-    if (!record) return
-    clearUpgradeProgress(record.id)
-    const result = await window.dshHub?.runtime.upgradeDshVersion(record.id)
-    if (!result?.ok) toast('err', t('detail.upgradeFailed'), result?.message)
   }
 
   const deleteInstance = async (): Promise<void> => {
@@ -244,7 +260,7 @@ export default function DetailView(): ReactNode {
   }
 
   return (
-    <section data-od-id="view-detail" data-testid="view-detail">
+    <section className="detail-page" data-od-id="view-detail" data-testid="view-detail">
       <div className="row-between" style={{ alignItems: 'flex-start' }}>
         <div className="row" style={{ gap: 12 }}>
           <span className="brand-mark">
@@ -263,7 +279,6 @@ export default function DetailView(): ReactNode {
                 <span className={`status-dot ${info.dotClass}`} aria-hidden="true" />
                 {t(info.labelKey)}
               </span>
-              {status?.detail ? ` · ${status.detail}` : ''}
             </p>
           </div>
         </div>
@@ -397,6 +412,8 @@ export default function DetailView(): ReactNode {
               </>
             )}
           </dl>
+          {/* dsh 版本管理仅本机实例：检查更新对比的是本机 npm 镜像，远程实例版本 hub 无从得知也不受 hub 管。 */}
+          {record.transport === 'local' && <DshVersionControl instanceId={record.id} />}
           <div className="row mt12 runtime-actions">
             <button
               className="btn btn-primary btn-sm"
@@ -455,83 +472,6 @@ export default function DetailView(): ReactNode {
               <Icon name="edit" /> {t('edit.openButton')}
             </button>
           </div>
-          {record.transport === 'local' &&
-            (() => {
-              const active =
-                upgradeProgress !== undefined &&
-                upgradeProgress.phase !== 'done' &&
-                upgradeProgress.phase !== 'error'
-              const canUpgrade =
-                versionCheck !== null && versionCheck.canUpgrade && versionCheck.hasUpdate
-              return (
-                <div className="version-manage mt12" data-testid="version-manage">
-                  <div className="row runtime-actions">
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => void checkVersion()}
-                      disabled={checkingVersion || active}
-                      data-testid="check-version-btn"
-                    >
-                      <Icon name="check" />
-                      {checkingVersion ? t('detail.checkingVersion') : t('detail.checkVersion')}
-                    </button>
-                    {canUpgrade && (
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={() => void upgradeVersion()}
-                        disabled={active}
-                        data-testid="upgrade-btn"
-                      >
-                        <Icon name="refresh" />
-                        {active ? t('detail.upgrading') : t('detail.upgrade')}
-                      </button>
-                    )}
-                  </div>
-                  {/* 检测结果：不可升级给原因，可升级给最新版本，已是最新给提示。 */}
-                  {versionCheck !== null && !active && (
-                    <p className="meta mt8" data-testid="version-check-result">
-                      {!versionCheck.canUpgrade
-                        ? versionCheck.reason === 'not-local'
-                          ? t('detail.upgradeNotLocalNote')
-                          : versionCheck.reason === 'dush-launcher'
-                            ? t('detail.upgradeDushNote')
-                            : t('detail.upgradePathNote')
-                        : versionCheck.hasUpdate
-                          ? t('detail.latestVersion', { version: versionCheck.latest })
-                          : t('detail.upToDate')}
-                    </p>
-                  )}
-                  {/* 升级进度：done/error 保留一行提示，其余显示百分比进度条。 */}
-                  {upgradeProgress !== undefined && (
-                    <div className="mt8" data-testid="upgrade-progress">
-                      {active ? (
-                        <>
-                          <div className="progress-line">
-                            <span
-                              className="progress-fill"
-                              style={{ width: `${Math.max(0, Math.min(100, upgradeProgress.percent))}%` }}
-                            />
-                          </div>
-                          <p className="meta mt8">
-                            {t('detail.upgrading')} · {Math.round(upgradeProgress.percent)}%
-                            {upgradeProgress.detail ? ` · ${upgradeProgress.detail}` : ''}
-                          </p>
-                        </>
-                      ) : upgradeProgress.phase === 'done' ? (
-                        <p className="meta" data-testid="upgrade-done">
-                          {t('detail.upgradeDone', { version: upgradeProgress.version ?? '' })}
-                        </p>
-                      ) : (
-                        <p className="meta err-text" data-testid="upgrade-error">
-                          {t('detail.upgradeFailed')}
-                          {upgradeProgress.error ? ` · ${upgradeProgress.error}` : ''}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
         </div>
 
         {record.transport === 'local' && (externalRuntime || showExternalTokenEditor) && (
@@ -631,6 +571,22 @@ export default function DetailView(): ReactNode {
         )}
       </div>
 
+      {/* 底部信息栏：固定在详情页最底部，单行展示最新日志（可横向滚动），右侧「更多」查看历史。 */}
+      <div className="detail-logbar" data-testid="detail-logbar">
+        <div className="detail-logbar__body" ref={logBodyRef} data-testid="detail-logbar-body">
+          <p className="detail-logbar__line num">
+            {latestLine !== undefined ? formatActivity(latestLine) : t('detail.log.empty')}
+          </p>
+        </div>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => setShowLogMore(true)}
+          data-testid="detail-logbar-more"
+        >
+          {t('detail.log.more')}
+        </button>
+      </div>
+
       <div className="detail-delete" data-testid="detail-delete-area">
         <span className="meta">{t('detail.deleteBody')}</span>
         <button
@@ -643,6 +599,51 @@ export default function DetailView(): ReactNode {
           <span>{t('detail.deleteInstance')}</span>
         </button>
       </div>
+
+      {showLogMore && (
+        <Modal
+          closeLabel={t('common.close')}
+          title={t('detail.log.title')}
+          onClose={() => setShowLogMore(false)}
+          testId="log-more"
+          initialFocus="dialog"
+          closeButtonInTabOrder={false}
+          footer={
+            <div className="right">
+              {latestLine !== undefined && (
+                <>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => void copyActivity()}
+                    data-testid="log-more-copy"
+                  >
+                    {t('detail.log.copy')}
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => clearActivity(record.id)}
+                    data-testid="log-more-clear"
+                  >
+                    {t('detail.log.clear')}
+                  </button>
+                </>
+              )}
+            </div>
+          }
+        >
+          <div className="detail-logmore" ref={logMoreRef} data-testid="log-more-body">
+            {activity === undefined || activity.length === 0 ? (
+              <p className="meta">{t('detail.log.empty')}</p>
+            ) : (
+              activity.map((line, index) => (
+                <p className="detail-logmore__line num" key={index}>
+                  {formatActivity(line)}
+                </p>
+              ))
+            )}
+          </div>
+        </Modal>
+      )}
 
       {confirmDelete && (
         <Modal

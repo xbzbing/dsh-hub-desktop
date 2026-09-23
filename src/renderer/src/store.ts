@@ -2,16 +2,23 @@
 import { create } from 'zustand'
 import type {
   AuthPhase,
+  DshVersionProgressEvent,
   InstanceRecord,
   InstanceStatusEvent,
   InstanceSummary,
-  DshVersionProgressEvent,
   VaultStatusSnapshot
 } from '@shared/contracts'
 import { DEFAULT_SETTINGS, resolveLanguage } from '@shared/settings'
 import type { Language, Settings, Theme } from '@shared/settings'
 import { createTranslator } from '@shared/i18n'
 import type { Translator } from '@shared/i18n'
+
+/**
+ * 渲染层出生或热重置时默认没有工作区：主进程的清零钩子只覆盖主框架导航（Cmd+R），
+ * HMR 重执行本模块不产生导航 —— 这里无条件撤销一次，避免原生视图以旧几何悬浮。
+ * 主进程没有活动工作区时该调用是幂等 no-op。
+ */
+window.dshHub?.runtime?.hideView?.()
 
 export interface ToastItem {
   id: number
@@ -21,6 +28,14 @@ export interface ToastItem {
 }
 
 export type ToastKind = ToastItem['kind']
+
+/**
+ * 实例活动日志行：运行状态事件的 detail 原文，或一次版本升级进度事件。
+ * 详情页底部信息栏按时间顺序展示，标题区不再承载原始日志。
+ */
+export type ActivityLine =
+  | { source: 'runtime'; at: string; detail: string }
+  | { source: 'version'; event: DshVersionProgressEvent }
 
 interface AppState {
   /** 首次列表是否已加载；加载时显示骨架屏。 */
@@ -62,14 +77,14 @@ interface AppState {
   /** 写入/清除实例的认证相位(登出后为最新相位,无需特判) */
   applyAuthPhase: (instanceId: string, phase: AuthPhase) => void
   /**
-   * 各实例的 dsh 版本升级进度快照（id → 最新事件）。done/error 后由 UI 决定何时清除。
-   * 未处于升级流程的实例不在 map 中。
+   * 实例活动日志（运行状态 detail + 版本升级进度），详情页底部信息栏展示。
+   * 每实例保留最近 200 行；未产生过活动的实例不在 map 中。
    */
-  upgradeProgress: Record<string, DshVersionProgressEvent>
-  /** 应用一条升级进度事件。 */
-  applyUpgradeProgress: (event: DshVersionProgressEvent) => void
-  /** 清除某实例的升级进度快照（关闭进度条时调用）。 */
-  clearUpgradeProgress: (instanceId: string) => void
+  activityLog: Record<string, ActivityLine[]>
+  /** 追加一行活动日志；连续重复行去重，超限丢弃最旧。 */
+  appendActivity: (instanceId: string, line: ActivityLine) => void
+  /** 清空某实例的活动日志。 */
+  clearActivity: (instanceId: string) => void
   /**
    * 凭据保险库快照。登录成功时主进程会**静默**写入凭据，渲染层不会收到任何事件，
    * 因此必须由登录流程显式刷新，否则详情页的「凭据存储」会一直停留在旧状态。
@@ -142,6 +157,11 @@ function applyTheme(theme: 'light' | 'dark'): void {
   localStorage.setItem('dshhub-theme', theme)
 }
 
+/** 侧栏收起态按视图偏好持久化：刷新与 HMR 重置后保留，避免布局在用户没操作时跳变。 */
+function initialRail(): boolean {
+  return localStorage.getItem('dshhub-rail') === '1'
+}
+
 /** 偏好主题(system/light/dark)解析为实际明暗 */
 function resolveTheme(preference: Theme): 'light' | 'dark' {
   if (preference === 'light' || preference === 'dark') return preference
@@ -168,7 +188,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   workspaceOpening: false,
   workspaceSuspendedForWizard: false,
   workspaceConnected: {},
-  rail: false,
+  rail: initialRail(),
   theme: initialTheme(),
   wizardOpen: false,
   wizardExistingSpaceId: null,
@@ -177,7 +197,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   pendingOpen: [],
   userDataPath: null,
   authPhases: {},
-  upgradeProgress: {},
+  activityLog: {},
   vaultStatus: null,
   toasts: [],
   settings: DEFAULT_SETTINGS,
@@ -277,16 +297,41 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((state) => ({ authPhases: { ...state.authPhases, [instanceId]: phase } }))
   },
 
-  applyUpgradeProgress: (event) => {
-    set((state) => ({ upgradeProgress: { ...state.upgradeProgress, [event.instanceId]: event } }))
+  appendActivity: (instanceId, line) => {
+    set((state) => {
+      const current = state.activityLog[instanceId] ?? []
+      const last = current[current.length - 1]
+      const duplicateRuntime =
+        last !== undefined &&
+        last.source === 'runtime' &&
+        line.source === 'runtime' &&
+        last.detail === line.detail
+      const duplicateVersion =
+        last !== undefined &&
+        last.source === 'version' &&
+        line.source === 'version' &&
+        last.event.phase === line.event.phase &&
+        last.event.percent === line.event.percent &&
+        last.event.detail === line.event.detail &&
+        last.event.error === line.event.error
+      // 连续重复行去重：状态重播与同值进度事件不刷屏。
+      if (duplicateRuntime || duplicateVersion) return state
+      const next = [...current, line]
+      return {
+        activityLog: {
+          ...state.activityLog,
+          [instanceId]: next.length > 200 ? next.slice(next.length - 200) : next
+        }
+      }
+    })
   },
 
-  clearUpgradeProgress: (instanceId) => {
+  clearActivity: (instanceId) => {
     set((state) => {
-      if (!(instanceId in state.upgradeProgress)) return state
-      const upgradeProgress = { ...state.upgradeProgress }
-      delete upgradeProgress[instanceId]
-      return { upgradeProgress }
+      if (!(instanceId in state.activityLog)) return state
+      const activityLog = { ...state.activityLog }
+      delete activityLog[instanceId]
+      return { activityLog }
     })
   },
 
@@ -436,7 +481,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   setWorkspaceOpen: (open) => set({ workspaceOpen: open, workspaceOpening: false }),
 
-  toggleRail: () => set((state) => ({ rail: !state.rail })),
+  toggleRail: () =>
+    set((state) => {
+      const rail = !state.rail
+      localStorage.setItem('dshhub-rail', rail ? '1' : '0')
+      return { rail }
+    }),
 
   toggleTheme: () => {
     // 只改本地状态会让灯箱(设置页高亮)与偏好分叉:重启后 hydrateSettings 会把选择覆盖回去。

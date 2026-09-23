@@ -18,15 +18,9 @@ export const MESSAGES = {
   // —— 应用外壳 / 通用 ——
   'app.name': { zh: 'DSH Hub', en: 'DSH Hub' },
   'common.cancel': { zh: '取消', en: 'Cancel' },
-  'common.confirm': { zh: '确认', en: 'Confirm' },
   'common.save': { zh: '保存', en: 'Save' },
-  'common.delete': { zh: '删除', en: 'Delete' },
   'common.close': { zh: '关闭', en: 'Close' },
-  'common.back': { zh: '返回', en: 'Back' },
-  'common.next': { zh: '下一步', en: 'Next' },
-  'common.retry': { zh: '重试', en: 'Retry' },
   'common.copy': { zh: '复制', en: 'Copy' },
-  'common.copied': { zh: '已复制', en: 'Copied' },
   'common.loading': { zh: '加载中…', en: 'Loading…' },
   'common.backToOverview': { zh: '回到总览', en: 'Back to overview' },
   'common.unknown': { zh: '未知', en: 'Unknown' },
@@ -34,7 +28,6 @@ export const MESSAGES = {
   // —— 侧栏 / 导航 ——
   'nav.overview': { zh: '总览', en: 'Overview' },
   'nav.backToWorkbench': { zh: '回到实例工作台', en: 'Back to the workbench' },
-  'nav.workbench': { zh: '实例工作台', en: 'Instance workbench' },
   'nav.brandTagline': { zh: '实例管理', en: 'Instance manager' },
   'nav.searchPlaceholder': { zh: '搜索实例或地址', en: 'Search instances or addresses' },
   'nav.searchLabel': { zh: '搜索实例', en: 'Search instances' },
@@ -60,10 +53,6 @@ export const MESSAGES = {
   'empty.shortcut': { zh: '快捷键 ⌘N', en: 'Shortcut ⌘N' },
 
   // —— 运行时状态 ——
-  'status.stopped': { zh: '已停止', en: 'Stopped' },
-  'status.starting': { zh: '启动中', en: 'Starting' },
-  'status.running': { zh: '运行中', en: 'Running' },
-  'status.error': { zh: '错误', en: 'Error' },
 
   // —— 传输类型 ——
   'transport.local': { zh: '本地', en: 'Local' },
@@ -87,9 +76,6 @@ export const MESSAGES = {
   'detail.runtime': { zh: '运行环境', en: 'Runtime' },
   'detail.relogin': { zh: '重新登录', en: 'Re-sign in' },
   'detail.address': { zh: '地址', en: 'Address' },
-  'detail.transport': { zh: '连接方式', en: 'Transport' },
-  'detail.uptime': { zh: '运行时长', en: 'Uptime' },
-  'detail.missing': { zh: '实例不存在或已被删除', en: 'This instance no longer exists' },
   'detail.deleteConfirm': { zh: '删除后不可恢复，确认删除？', en: 'This cannot be undone. Delete?' },
 
   // —— 认证面板 ——
@@ -210,9 +196,6 @@ export const MESSAGES = {
   'spaces.summary': { zh: '已有空间 {count} 个 · 占用 {size}', en: '{count} existing spaces · {size}' },
   'spaces.description': { zh: '管理 Hub 创建但尚未关联实例的隔离 DSH_HOME。', en: 'Manage isolated DSH_HOME directories created by Hub but not linked to an instance.' },
   'spaces.empty': { zh: '没有可管理的隔离空间', en: 'No isolated spaces to manage' },
-  'spaces.inUse': { zh: '正在使用', en: 'In use' },
-  'spaces.deleteInstanceInfo': { zh: '删除实例信息', en: 'Delete instance info' },
-  'spaces.deleteInstanceInfoHint': { zh: '只删除实例记录，保留隔离空间数据', en: 'Removes only the instance record and keeps its isolated space data.' },
   'spaces.createInstance': { zh: '以此空间创建实例', en: 'Create instance with this space' },
   'spaces.delete': { zh: '移入废纸篓', en: 'Move to Trash' },
   'spaces.trashTitle': { zh: '移入废纸篓', en: 'Move to Trash' },
@@ -224,7 +207,6 @@ export const MESSAGES = {
   'spaces.modifiedAt': { zh: '修改于 {time}', en: 'Modified {time}' },
   'spaces.columnIndex': { zh: '序号', en: '#' },
   'spaces.columnTitle': { zh: '标题', en: 'Title' },
-  'spaces.columnSpace': { zh: '空间', en: 'Space' },
   'spaces.columnSize': { zh: '占用', en: 'Size' },
   'spaces.columnModified': { zh: '最后修改', en: 'Last modified' },
 
@@ -233,7 +215,6 @@ export const MESSAGES = {
   'duration.minutes': { zh: '{n} 分钟', en: '{n}m' },
   'duration.hours': { zh: '{h} 小时 {m} 分', en: '{h}h {m}m' },
   'duration.days': { zh: '{d} 天 {h} 小时', en: '{d}d {h}h' },
-  'detail.notRunning': { zh: '未运行', en: 'Not running' },
   'detail.instanceDetail': { zh: '实例详情', en: 'Instance details' },
 
   // —— 新建向导 ——
@@ -255,9 +236,13 @@ export const MESSAGES = {
   'wizard.nameHint': { zh: '只在本机使用，便于在侧边栏区分不同环境。', en: 'Local only; helps tell environments apart in the sidebar.' },
   'wizard.advanced': { zh: '高级设置（启动器 / 版本 / 端口）', en: 'Advanced (launcher / version / port)' },
   'wizard.versionLabel': { zh: 'dsh 版本', en: 'dsh version' },
-  'wizard.versionPlaceholder': { zh: '留空 = 自动选择最新稳定版', en: 'Blank = latest stable' },
-  'wizard.localDetected': { zh: '检测到本机 dsh {version}', en: 'Local dsh {version} detected' },
-  'wizard.localDetectedPath': { zh: '将直接复用本机安装，无需填写版本。', en: 'The local installation will be reused; no version is required.' },
+  'wizard.versionLatest': { zh: '跟随最新稳定版', en: 'Follow latest stable' },
+  'wizard.versionLoading': { zh: '正在获取版本列表…', en: 'Loading version list…' },
+  'wizard.versionFetchFailed': { zh: '获取版本列表失败：{msg}', en: 'Failed to load version list: {msg}' },
+  'wizard.versionHint': {
+    zh: '版本列表来自当前镜像，仅显示最近 10 个（最新在前）；默认与本地版本相同，选择后将固定该版本。',
+    en: 'From the current registry: the latest 10 versions (newest first); defaults to your local version, and a selection pins it.'
+  },
   'wizard.externalDetected': { zh: '检测到正在运行的 dsh web（127.0.0.1:{port}）', en: 'A running dsh web was detected (127.0.0.1:{port})' },
   'wizard.currentWorkspace': { zh: '当前工作区', en: 'Current workspace' },
   'wizard.externalPatch': { zh: '补丁：{patch}', en: 'Patch: {patch}' },
@@ -268,7 +253,6 @@ export const MESSAGES = {
   'wizard.externalAccessLabel': { zh: '访问 token 或完整链接', en: 'Access token or full URL' },
   'wizard.externalAccessHint': { zh: '粘贴 dsh web 输出的完整 URL，或仅粘贴其中的 token。验证成功后会加密保存在本机，dsh 重启并更换 token 后可在实例详情中更新。', en: 'Paste the full URL printed by dsh web, or just its token. After verification it is encrypted on this machine; update it in the instance details if dsh restarts with a new token.' },
   'wizard.errExternalAccess': { zh: '请填写当前工作区的访问 token 或完整链接', en: 'Enter the current workspace access token or full URL' },
-  'wizard.createNewLocal': { zh: '创建新的本机实例', en: 'Create a new local instance' },
   'wizard.portLabel': { zh: '端口', en: 'Port' },
   'wizard.portPlaceholder': { zh: '留空 = 自动分配（30000+）', en: 'Blank = auto-assign (30000+)' },
   'wizard.profileLabel': { zh: 'Profile', en: 'Profile' },
@@ -348,31 +332,42 @@ export const MESSAGES = {
   'detail.authNone': { zh: '无需登录', en: 'no sign-in required' },
   'detail.authGateway': { zh: '网关登录（密码 + 动态验证码）', en: 'gateway (password + TOTP)' },
   'detail.authAuto': { zh: '自动探测（连接后识别）', en: 'auto-detect on connect' },
-  'detail.runInfo': { zh: '运行信息', en: 'Runtime' },
   'detail.localSide': { zh: '本机', en: 'local' },
   'detail.remoteSide': { zh: '远端', en: 'remote' },
   'detail.dshVersion': { zh: 'dsh 版本', en: 'dsh version' },
-  'detail.checkVersion': { zh: '检测更新', en: 'Check for updates' },
-  'detail.checkingVersion': { zh: '检测中…', en: 'Checking…' },
-  'detail.checkVersionFailed': { zh: '版本检测失败', en: 'Version check failed' },
-  'detail.latestVersion': { zh: '可升级到 {version}', en: 'Update available: {version}' },
-  'detail.upToDate': { zh: '已是最新版本', en: 'Up to date' },
-  'detail.upgrade': { zh: '升级', en: 'Upgrade' },
-  'detail.upgrading': { zh: '升级中…', en: 'Upgrading…' },
-  'detail.upgradeDone': { zh: '已升级到 {version}', en: 'Upgraded to {version}' },
-  'detail.upgradeFailed': { zh: '升级失败', en: 'Upgrade failed' },
-  'detail.upgradeNotLocalNote': {
-    zh: '仅本机实例支持升级',
-    en: 'Only local instances can be upgraded'
+  'detail.version.check': { zh: '检查更新', en: 'Check for updates' },
+  'detail.version.checking': { zh: '检查中…', en: 'Checking…' },
+  'detail.version.upToDate': { zh: '已是最新版本', en: 'Up to date' },
+  'detail.version.found': {
+    zh: '发现新版本 {latest}（当前 {current}）',
+    en: 'New version {latest} available (current {current})'
   },
-  'detail.upgradeDushNote': {
-    zh: 'dush 启动器的实例不能通过本应用升级',
-    en: 'Instances using the dush launcher cannot be upgraded here'
+  'detail.version.upgrade': { zh: '升级', en: 'Upgrade' },
+  'detail.version.retry': { zh: '重试', en: 'Retry' },
+  'detail.version.checkFailed': { zh: '检查失败：{msg}', en: 'Check failed: {msg}' },
+  'detail.version.upgradeFailed': { zh: '升级失败：{msg}', en: 'Upgrade failed: {msg}' },
+  'detail.version.phase.checking': { zh: '检查中', en: 'Checking' },
+  'detail.version.phase.downloading': { zh: '下载中', en: 'Downloading' },
+  'detail.version.phase.installing': { zh: '安装中', en: 'Installing' },
+  'detail.version.phase.done': { zh: '已完成', en: 'Done' },
+  'detail.version.reason.notLocal': {
+    zh: '仅本地实例支持版本管理',
+    en: 'Only local instances support version management'
   },
-  'detail.upgradePathNote': {
-    zh: '该实例的 dsh 二进制由你自行管理，本应用不升级',
-    en: 'This instance uses a self-managed dsh binary and is not upgraded here'
+  'detail.version.reason.launcherDush': {
+    zh: 'dsh 启动器暂不支持代管升级',
+    en: 'Managed upgrade is unavailable for the dush launcher'
   },
+  'detail.version.reason.runtimeExternal': {
+    zh: '外部接管的 dsh 由你自行管理',
+    en: 'Externally managed dsh is maintained by you'
+  },
+  'detail.log.title': { zh: '安装与运行日志', en: 'Install & runtime log' },
+  'detail.log.empty': { zh: '暂无日志', en: 'No log yet' },
+  'detail.log.clear': { zh: '清空', en: 'Clear' },
+  'detail.log.copy': { zh: '复制', en: 'Copy' },
+  'detail.log.copied': { zh: '日志已复制', en: 'Log copied' },
+  'detail.log.more': { zh: '更多', en: 'More' },
   'detail.port': { zh: '端口', en: 'Port' },
   'detail.dataDirTitle': { zh: '该实例隔离的 DSH_HOME', en: 'Isolated DSH_HOME for this instance' },
   'detail.stop': { zh: '关闭实例', en: 'Stop instance' },
@@ -384,10 +379,6 @@ export const MESSAGES = {
   'detail.restartFailed': { zh: '重启失败', en: 'Failed to restart' },
   'detail.disconnect': { zh: '断开工作区', en: 'Disconnect workspace' },
   'detail.disconnected': { zh: '工作区已断开', en: 'Workspace disconnected' },
-  'detail.starting': { zh: '启动中…', en: 'Starting…' },
-  'detail.start': { zh: '启动', en: 'Start' },
-  'detail.openView': { zh: '打开视图', en: 'Open view' },
-  'detail.noRuntimeControl': { zh: '该传输类型暂不支持运行时控制', en: 'Runtime control is not supported for this transport' },
   'detail.externalTitle': { zh: '本机已在运行的 dsh web', en: 'dsh web already running on this machine' },
   'detail.externalCount': { zh: '检测到 {n} 个', en: '{n} detected' },
   'detail.externalBody': {
@@ -408,8 +399,6 @@ export const MESSAGES = {
     zh: '（外部进程，由你自己管理）',
     en: '(external process, managed by you)'
   },
-  'detail.dangerZone': { zh: '危险操作', en: 'Danger zone' },
-  'detail.irreversible': { zh: '不可撤销', en: 'irreversible' },
   'detail.deleteInstance': { zh: '删除实例', en: 'Delete instance' },
   'detail.deleteTitle': { zh: '删除实例', en: 'Delete instance' },
   'detail.deleteCannotUndo': { zh: '此操作不可撤销', en: 'This cannot be undone' },
@@ -417,10 +406,6 @@ export const MESSAGES = {
   'detail.missingHint': { zh: '实例不存在或已被删除。', en: 'This instance no longer exists.' },
   'detail.logout': { zh: '登出', en: 'Sign out' },
   'detail.deleted': { zh: '「{name}」已删除', en: 'Deleted "{name}"' },
-  'detail.loopbackWarning': {
-    zh: '本机回环连接未加密。仅本机可访问，不会经过网络；实例页面由 dsh 自带的浏览器令牌保护（browser-auth）。',
-    en: 'The loopback connection is unencrypted. Only this machine can reach it and no traffic leaves the host; the instance page is protected by dsh\u2019s built-in browser token (browser-auth).'
-  },
   // 直连 HTTP 实例持续显示数据面明文警告。
   'detail.cleartextWarning': {
     zh: '未加密连接：直连 http:// 端点的数据面为明文，密码、动态验证码与会话 Cookie 都会以明文经过网络。http 实例完全可用；若希望数据面也被加密，https 端点或 SSH 隧道更稳妥。',
