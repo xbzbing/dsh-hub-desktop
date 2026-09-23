@@ -34,6 +34,8 @@ jobs:
           # 无头会话探测不到桌面环境时 safeStorage 回退 basic_text;显式声明后端,
           # 凭据保险库行为与真实桌面一致(跨重启的用例依赖它)
           DSH_HUB_E2E_PASSWORD_STORE: gnome-libsecret
+          # 断言钉中文,不随 runner 系统语言漂移
+          DSH_HUB_E2E_LOCALE: zh-CN
         run: |
           dbus-run-session -- sh -c '
             echo "ci-unlock" | gnome-keyring-daemon --unlock --replace --components=secrets >/tmp/keyring.env 2>/tmp/keyring.err &
@@ -103,6 +105,8 @@ jobs:
       - name: Run E2E
         env:
           DSH_HUB_E2E_DECLINE_DOWNLOAD: '1'
+          # 断言钉中文,不随 runner 系统语言漂移
+          DSH_HUB_E2E_LOCALE: zh-CN
         run: pnpm test:e2e
       - name: Upload E2E failure artifacts
         if: failure()
