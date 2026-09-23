@@ -602,6 +602,7 @@ export default function DetailView(): ReactNode {
 
       {showLogMore && (
         <Modal
+          wide
           closeLabel={t('common.close')}
           title={t('detail.log.title')}
           onClose={() => setShowLogMore(false)}
