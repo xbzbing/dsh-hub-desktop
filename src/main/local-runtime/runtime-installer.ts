@@ -4,9 +4,11 @@
  * 安装中写 `installing.json` 支持断点恢复；列表来自 npm registry。
  */
 import { execFile, spawn } from 'node:child_process'
-import { statSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { delimiter, dirname, join } from 'node:path'
+import { searchNodeDirs } from './node-dirs'
 import { compareDshVersions } from './version-compare'
 
 /**
@@ -63,6 +65,15 @@ function windowsNodeDirs(): string[] {
   ]
 }
 
+/** 列目录；目录不存在或不可读时返回空数组（候选探测只关心能列出的项）。 */
+function defaultListDir(path: string): string[] {
+  try {
+    return readdirSync(path)
+  } catch {
+    return []
+  }
+}
+
 /**
  * 解析可用的 npm 调用方式，按优先级尝试：
  * 1. node_modules 里的 npm-cli.js（开发环境 / npm 作为依赖存在时）
@@ -113,18 +124,33 @@ export async function resolveNpmInvocation(
     // which 不存在：继续尝试候选路径
   }
 
-  // 常见全局安装位置（GUI 启动时 PATH 可能残缺）
-  for (const candidate of [
+  // 常见全局安装位置（GUI 启动时 PATH 可能残缺，which 探不到）；
+  // 其余落点（homebrew、pnpm、bun、nvm 逐版本）复用 node 探测的同一份清单。
+  const home = homedir()
+  const candidates = [
     '/usr/local/bin/npm',
     '/usr/bin/npm',
-    join(process.env['HOME'] || '', '.nvm', 'current', 'bin', 'npm'),
-    join(process.env['HOME'] || '', '.local', 'bin', 'npm'),
-    join(process.env['HOME'] || '', '.volta', 'bin', 'npm')
-  ]) {
+    join(home, '.nvm', 'current', 'bin', 'npm'),
+    join(home, '.local', 'bin', 'npm'),
+    join(home, '.volta', 'bin', 'npm'),
+    ...searchNodeDirs(home, defaultListDir).map((dir) => join(dir, 'npm'))
+  ]
+  for (const candidate of [...new Set(candidates)]) {
     if (exists(candidate)) return { command: candidate, prefixArgs: [] }
   }
 
   return null
+}
+
+/**
+ * npm 子进程的 env：把 npm 自身目录与常见 node 落点前置到 PATH。
+ * GUI 启动（Finder/Dock）只继承 launchd 最小 PATH，node 目录常不在其中，
+ * npm 入口脚本的 `#!/usr/bin/env node` 会以 `env: node: No such file or directory` 失败。
+ */
+function npmChildEnv(npm: NpmInvocation, extra: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const dirs = [dirname(npm.command), ...searchNodeDirs(homedir(), defaultListDir)]
+  const path = [...new Set([...dirs, ...(process.env.PATH ?? '').split(delimiter)])].join(delimiter)
+  return { ...process.env, PATH: path, ...extra }
 }
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
@@ -358,7 +384,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     return run(
       npm.command,
       [...npm.prefixArgs, 'view', DSH_PACKAGE_NAME, ...args, '--cache', options.cacheDir, ...registryArgs()],
-      { env: { npm_config_cache: options.cacheDir } }
+      { env: npmChildEnv(npm, { npm_config_cache: options.cacheDir }) }
     )
   }
 
@@ -521,7 +547,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       let fetchCount = 0
       let lastDetail = ''
       result = await runNpm(npm, installArgs, {
-        env: { ...process.env, npm_config_cache: options.cacheDir },
+        env: npmChildEnv(npm, { npm_config_cache: options.cacheDir }),
         onStderrLine: (line) => {
           const path = npmFetchPath(line)
           if (!path) return
@@ -537,7 +563,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     } else {
       // 无进度回调走 execFile 汇总（便于测试 mock）
       result = await run(npm.command, [...npm.prefixArgs, ...installArgs], {
-        env: { npm_config_cache: options.cacheDir }
+        env: npmChildEnv(npm, { npm_config_cache: options.cacheDir })
       })
     }
 

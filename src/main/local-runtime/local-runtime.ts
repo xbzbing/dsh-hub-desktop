@@ -19,7 +19,8 @@ import { DEFAULT_PORT_RANGE_END, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
 import type { RuntimeInstaller } from './runtime-installer'
 import type { InstanceStore } from '../registry/instance-store'
-import { planRuntimeSource, searchNodeDirs, type PathProbe } from './runtime-source'
+import { planRuntimeSource, type PathProbe } from './runtime-source'
+import { searchNodeDirs } from './node-dirs'
 import { httpHealthProbe, type HealthProbe } from '../transport/probe'
 
 export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。

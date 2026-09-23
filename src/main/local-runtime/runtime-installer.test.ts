@@ -1,5 +1,6 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { delimiter, dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CommandResult, NpmInvocation } from './runtime-installer'
@@ -326,6 +327,91 @@ describe('resolveNpmInvocation (win32)', () => {
     }
   })
 })
+describe('resolveNpmInvocation (unix)', () => {
+  it('PATH 与 which 都找不到时，从常见安装位置解析 npm（如 homebrew）', async () => {
+    // 该分支只在 Unix 语义下存在；测试在任意宿主平台固定 platform 后执行
+    const originalPlatform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    try {
+      // Windows 宿主上 join 产生反斜杠，与实现一致，比较前统一为正斜杠
+      const posix = (path: string): string => path.replace(/\\/g, '/')
+      const exists = (path: string): boolean => posix(path) === '/opt/homebrew/bin/npm'
+      const run = vi.fn(async () => ({ code: 1, stdout: '', stderr: '' }))
+      const invocation = await resolveNpmInvocation(run, exists)
+      expect(invocation).not.toBeNull()
+      expect(posix(invocation!.command)).toBe('/opt/homebrew/bin/npm')
+      expect(invocation!.prefixArgs).toEqual([])
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+  })
+})
+
+describe('npm 子进程 PATH（GUI 启动时 node 不在 PATH 的场景）', () => {
+  const pathDirs = (path: string | undefined): string[] => (path ?? '').split(delimiter)
+  const envOf = (call: unknown[] | undefined): NodeJS.ProcessEnv =>
+    (call?.[2] as { env?: NodeJS.ProcessEnv } | undefined)?.env ?? {}
+
+  it('view 调用：npm 目录与常见 node 落点前置，原 PATH 目录全部保留', async () => {
+    const run = vi.fn(async () => okRun(JSON.stringify(['0.1.5'])))
+    const command = join('/opt', 'custom', 'npm')
+    const installer = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      run,
+      resolveNpm: async () => ({ command, prefixArgs: [] })
+    })
+    await installer.listAvailableVersions()
+
+    const dirs = pathDirs(envOf(run.mock.calls[0]).PATH)
+    // npm 自身目录在最前：PATH 缺它时 npm 入口脚本的 `#!/usr/bin/env node` 解析不到 node
+    expect(dirs[0]).toBe(dirname(command))
+    // 常见 node 落点兜底：npm 与 node 不在同目录时仍能找到 node
+    expect(dirs).toContain(join(homedir(), '.local', 'bin'))
+    expect(dirs).toContain('/opt/homebrew/bin')
+    for (const original of pathDirs(process.env.PATH)) expect(dirs).toContain(original)
+  })
+
+  it('install 调用（无进度走 run、进度走 runNpm）同样带上增强后的 PATH', async () => {
+    const version = '0.1.5-rc.1'
+    const command = join('/opt', 'custom', 'npm')
+    const resolveNpm = async () => ({ command, prefixArgs: [] })
+
+    // 无进度分支
+    const plainDir = tmpDir()
+    const run = vi.fn(async (_cmd: string, args: string[]) => {
+      if (args.includes('install')) await fakeInstallArtifacts(plainDir, version)
+      return okRun('')
+    })
+    const plain = createRuntimeInstaller({ runtimesDir: plainDir, cacheDir: tmpDir(), run, resolveNpm })
+    await plain.install(version)
+    const installCall = run.mock.calls.find(([, args]) => (args as string[]).includes('install'))
+    expect(pathDirs(envOf(installCall).PATH)[0]).toBe(dirname(command))
+
+    // 进度分支
+    const progressDir = tmpDir()
+    let progressPath: string | undefined
+    const runNpm = vi.fn(async (
+      _npm: NpmInvocation,
+      _args: string[],
+      opts: { env: NodeJS.ProcessEnv }
+    ) => {
+      progressPath = opts.env.PATH
+      await fakeInstallArtifacts(progressDir, version)
+      return okRun('')
+    })
+    const progress = createRuntimeInstaller({
+      runtimesDir: progressDir,
+      cacheDir: tmpDir(),
+      run: vi.fn(async () => okRun('')),
+      runNpm,
+      resolveNpm
+    })
+    await progress.ensureInstalled(version, () => undefined)
+    expect(pathDirs(progressPath)[0]).toBe(dirname(command))
+  })
+})
+
 describe('元数据读取提速（分队列 + TTL 缓存）', () => {
   const viewCount = (run: ReturnType<typeof vi.fn>): number =>
     run.mock.calls.filter(([, args]) => (args as string[]).includes('view')).length

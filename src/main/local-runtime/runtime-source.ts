@@ -15,8 +15,9 @@
  */
 import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, posix } from 'node:path'
+import { posix } from 'node:path'
 import type { LocalLauncher } from '@shared/local-launch'
+import { searchNodeDirs } from './node-dirs'
 import { VERSION_PATTERN } from './runtime-installer'
 import type { CommandRunner } from './runtime-installer'
 
@@ -293,29 +294,6 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
     probeLauncher: (launcher) => probeFor(launcher),
     probe: () => probeFor('dsh')
   }
-}
-
-/**
- * 常见 node 落点(用于增强候选校验的 PATH;顺序 = 优先级)。
- * nvm 逐版本枚举,取不到就跳过。
- */
-/** 常见 node 落点(用于增强候选校验的 PATH;顺序 = 优先级)。
- * nvm 逐版本枚举,取不到就跳过。 */
-export function searchNodeDirs(home: string, listDir: (path: string) => string[]): string[] {
-  const dirs = [
-    join(home, '.local', 'bin'),
-    join(home, 'Library', 'pnpm'),
-    join(home, '.local', 'share', 'pnpm'),
-    join(home, '.volta', 'bin'),
-    join(home, '.bun', 'bin'),
-    '/opt/homebrew/bin',
-    '/usr/local/bin'
-  ]
-  const nvmRoot = join(home, '.nvm', 'versions', 'node')
-  for (const entry of listDir(nvmRoot).sort().reverse()) {
-    dirs.push(join(nvmRoot, entry, 'bin'))
-  }
-  return dirs
 }
 
 /**
