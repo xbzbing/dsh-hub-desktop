@@ -238,6 +238,33 @@ describe('createWorkspaceHost', () => {
     expect(fakeViews()[2]?.webContents.close).not.toHaveBeenCalled()
   })
 
+  it('白名单转发工作区的 ⌘/Ctrl 与其数字组合,其余输入不转发、不拦截', () => {
+    const forward = vi.fn()
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never, () => 'en-US', forward)
+    host.prepare('22222222-2222-4222-8222-222222222222', 'https://gw.example.com/')
+    const beforeInput = fakeViews()[0]?.webContents.handlers.get('before-input-event')
+    expect(beforeInput).toBeDefined()
+
+    const base = { isAutoRepeat: false, isComposing: false, shift: false, alt: false, location: 0, modifiers: [] }
+    const guard = { preventDefault: vi.fn() }
+    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'Meta', code: 'MetaLeft', meta: false, control: false })
+    beforeInput?.(guard, { ...base, type: 'keyDown', key: '2', code: 'Digit2', meta: true, control: false })
+    beforeInput?.(guard, { ...base, type: 'keyUp', key: 'Meta', code: 'MetaLeft', meta: false, control: false })
+    expect(forward.mock.calls.map((call) => call[0])).toEqual([
+      { phase: 'down', key: 'Meta', code: 'MetaLeft', meta: false, ctrl: false },
+      { phase: 'down', key: '2', code: 'Digit2', meta: true, ctrl: false },
+      { phase: 'up', key: 'Meta', code: 'MetaLeft', meta: false, ctrl: false }
+    ])
+
+    // 工作区页面自己的键盘输入既不转发,也绝不被 preventDefault 拦截。
+    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'a', code: 'KeyA', meta: false, control: false })
+    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'c', code: 'KeyC', meta: true, control: false })
+    beforeInput?.(guard, { ...base, type: 'char', key: '1', code: 'Digit1', meta: true, control: false })
+    expect(forward).toHaveBeenCalledTimes(3)
+    expect(guard.preventDefault).not.toHaveBeenCalled()
+  })
+
   it('disconnect destroys only the selected guest view so reopening creates a fresh one', () => {
     const hub = hubWindow()
     const host = createWorkspaceHost(() => hub as never)

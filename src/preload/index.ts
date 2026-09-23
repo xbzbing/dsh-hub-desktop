@@ -11,6 +11,7 @@ import {
   INSTANCE_STATUS_EVENT,
   DSH_VERSION_IPC,
   DSH_VERSION_PROGRESS_EVENT,
+  WORKSPACE_HOTKEY_EVENT,
   SETTINGS_IPC,
   SSH_IPC,
   VAULT_IPC,
@@ -23,6 +24,7 @@ import {
   type HttpAuthDetection,
   type InstanceStatusEvent,
   type DshVersionProgressEvent,
+  type WorkspaceHotkeyEvent,
   type IpcResult,
   type SshHostKeyForgetInput,
   type SshKeyPreviewInput,
@@ -93,6 +95,13 @@ const bridge: DshHubBridge = {
     ipcRenderer.on(DSH_VERSION_PROGRESS_EVENT, handler)
     return () => {
       ipcRenderer.removeListener(DSH_VERSION_PROGRESS_EVENT, handler)
+    }
+  },
+  onWorkspaceHotkey: (listener) => {
+    const handler = (_event: unknown, payload: WorkspaceHotkeyEvent): void => listener(payload)
+    ipcRenderer.on(WORKSPACE_HOTKEY_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(WORKSPACE_HOTKEY_EVENT, handler)
     }
   },
   ssh: {

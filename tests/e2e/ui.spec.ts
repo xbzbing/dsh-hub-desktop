@@ -74,6 +74,162 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await expect(win.getByTestId('home-confirm-delete')).toBeHidden()
 })
 
+test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
+  test.setTimeout(60_000)
+  const listIds = async (): Promise<string[]> => {
+    const listed = await win.evaluate(async () => {
+      const r = await window.dshHub.instances.list()
+      return r.ok ? r.value.map((instance) => instance.id) : []
+    })
+    return listed
+  }
+  const createHttpInstance = async (name: string, endpointUrl: string): Promise<string> =>
+    win.evaluate(
+      async (input) => {
+        const created = await window.dshHub.instances.create({
+          transport: 'http',
+          name: input.name,
+          authMode: 'none',
+          endpointUrl: input.endpointUrl
+        })
+        if (!created.ok) throw new Error(created.message)
+        return created.value.id
+      },
+      { name, endpointUrl }
+    )
+
+  // 演示实例挪到末尾:切换只落在本用例的实例上,后置用例依赖演示实例排在侧栏首位。
+  const demoId = (await listIds())[0]!
+  const aId = await createHttpInstance('快捷键实例一', 'https://hotkey-a.example.com/dsh')
+  const bId = await createHttpInstance('快捷键实例二', 'https://hotkey-b.example.com/dsh')
+  const reordered = await win.evaluate(async (order) => {
+    const r = await window.dshHub.instances.reorder(order)
+    return r.ok
+  }, [aId, bId, demoId])
+  expect(reordered).toBe(true)
+  await win.reload()
+  await expect(win.getByTestId('view-home')).toBeVisible()
+  expect(await listIds()).toEqual([aId, bId, demoId])
+
+  const reachedTerminal = async (): Promise<boolean> => {
+    const back = await win.getByTestId('workspace-back-btn').isVisible().catch(() => false)
+    const detail = await win.getByTestId('view-detail').isVisible().catch(() => false)
+    return back || detail
+  }
+  // 切换的终态有两种:工作区打开,或回落详情页(启动失败/被拒)。
+  const expectShowing = async (name: string): Promise<void> => {
+    if (await win.getByTestId('workspace-back-btn').isVisible().catch(() => false)) {
+      await expect(win.getByTestId('tb-title')).toHaveText(name)
+    } else {
+      await expect(win.getByRole('heading', { name })).toBeVisible()
+    }
+  }
+  const backHome = async (): Promise<void> => {
+    const back = win.getByTestId('workspace-back-btn')
+    if (await back.isVisible().catch(() => false)) {
+      await back.click()
+      await expect(win.getByTestId('view-detail')).toBeVisible()
+    }
+    await win.getByTestId('detail-overview-btn').click()
+    await expect(win.getByTestId('view-home')).toBeVisible()
+  }
+
+  const badge1 = win.getByTestId('hotkey-badge-1')
+  // 不按修饰键时不显示序号
+  await expect(badge1).toBeHidden()
+
+  // 按住 Control(与 ⌘ 同为切换修饰键):满 0.5 秒延迟窗口后序号才显示,松开即收起
+  await win.keyboard.down('Control')
+  await expect(badge1).toBeHidden()
+  await expect(badge1).toBeVisible()
+  await expect(badge1).toHaveText('#1')
+  await expect(win.getByTestId(`inst-${aId}`).getByTestId('hotkey-badge-1')).toBeVisible()
+  await expect(win.getByTestId(`inst-${bId}`).getByTestId('hotkey-badge-2')).toHaveText('#2')
+  await expect(win.getByTestId(`inst-${demoId}`).getByTestId('hotkey-badge-3')).toHaveText('#3')
+  // 序号只覆盖存在的行,不存在的 #4 不渲染
+  await expect(win.getByTestId('hotkey-badge-4')).toHaveCount(0)
+  await win.keyboard.up('Control')
+  await expect(badge1).toBeHidden()
+
+  // 切换不等显示:角标还在延迟窗口内,数字键已切到首行实例
+  await win.keyboard.down('Control')
+  await expect(badge1).toBeHidden()
+  await win.keyboard.down('1')
+  await win.keyboard.up('1')
+  await expect(win.getByTestId(`inst-${aId}`)).toHaveAttribute('aria-current', 'true')
+  // 切换完成时角标仍未显示 → 切换没有等这 0.5 秒
+  await expect(badge1).toBeHidden()
+  await win.keyboard.up('Control')
+  await expect.poll(reachedTerminal, { timeout: 20_000 }).toBe(true)
+  await expectShowing('快捷键实例一')
+  await backHome()
+
+  // Control+2 → 切换到第二行实例
+  await win.keyboard.press('Control+2')
+  await expect.poll(reachedTerminal, { timeout: 20_000 }).toBe(true)
+  await expectShowing('快捷键实例二')
+
+  // 工作区可能回落到了详情页:补开工作区,进入原生视图持焦的场景。
+  const back = win.getByTestId('workspace-back-btn')
+  if (!(await back.isVisible().catch(() => false))) {
+    const openBtn = win.getByTestId('open-view-btn')
+    await expect(openBtn).toBeVisible()
+    await openBtn.click()
+    await expect(back).toBeVisible({ timeout: 20_000 })
+  }
+
+  // 原生工作区持有真实键盘焦点:按键只进原生视图,需经主进程白名单转发。
+  // Playwright 的键盘事件直接注入 hub 渲染层,因此这里用 sendInputEvent 注入视图。
+  const sendToWorkspace = async (events: unknown[]): Promise<void> => {
+    await app.evaluate((_electron, sent) => {
+      const area = (view: { getBounds?: () => { width: number; height: number } }): number => {
+        const bounds = view.getBounds?.()
+        return (bounds?.width ?? 0) * (bounds?.height ?? 0)
+      }
+      const host = _electron.BrowserWindow.getAllWindows().find(
+        (candidate) => candidate.contentView.children.length > 0
+      )
+      const target = (host?.contentView.children ?? [])
+        .map(
+          (child) =>
+            child as {
+              getBounds?: () => { width: number; height: number }
+              webContents?: { sendInputEvent: (event: unknown) => void }
+            }
+        )
+        .filter((child) => child.webContents !== undefined)
+        .sort((a, b) => area(b) - area(a))[0]
+      if (!target?.webContents) throw new Error('工作区视图不存在')
+      for (const event of sent) target.webContents.sendInputEvent(event)
+    }, events)
+  }
+
+  // ⌘ 注入原生视图 → hub 渲染层收到转发,序号照常显示
+  await sendToWorkspace([{ type: 'keyDown', keyCode: 'Meta' }])
+  await expect(badge1).toBeVisible()
+
+  // 视图内 ⌘+1 → 切回首行实例(转发链路:视图输入 → 白名单过滤 → 窗口事件)
+  await sendToWorkspace([{ type: 'keyDown', keyCode: '1', modifiers: ['meta'] }])
+  await expect.poll(reachedTerminal, { timeout: 20_000 }).toBe(true)
+  await expectShowing('快捷键实例一')
+
+  // 释放 ⌘ 从窗口侧注入(切换后焦点已离开原视图)→ 序号收起
+  await win.keyboard.up('Meta')
+  await expect(badge1).toBeHidden()
+
+  // 清理:回首页并删除本用例创建的实例,演示实例回到侧栏首位(后置用例的前置)
+  await backHome()
+  const table = win.getByTestId('instances-table')
+  for (const id of [aId, bId]) {
+    await table.getByTestId(`delete-${id}`).click()
+    await expect(win.getByTestId('home-confirm-delete')).toBeVisible()
+    await win.getByTestId('home-confirm-delete').getByRole('button', { name: '删除', exact: true }).click()
+    await expect(win.getByTestId(`inst-${id}`)).toBeHidden()
+  }
+  await expect(win.getByTestId('view-home')).toBeVisible()
+  await expect(win.locator('[data-testid^="inst-"]').first()).toHaveAttribute('data-testid', `inst-${demoId}`)
+})
+
 test('侧栏实例名称进入工作区或错误详情，随后可删除实例', async () => {
   // 确保在首页视图
   await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 10_000 })

@@ -33,6 +33,7 @@ import type {
   SshHostKeyForgetInput,
   SshKeyPreviewInput,
   SshKeyPreviewResult,
+  WorkspaceHotkeyEvent,
   WorkspaceTooltip,
   WorkspaceViewBounds
 } from './contracts'
@@ -128,6 +129,8 @@ export interface DshHubBridge {
   onInstanceStatus: (listener: (event: InstanceStatusEvent) => void) => () => void
   /** 订阅 dsh 版本升级进度事件；返回取消订阅函数。 */
   onVersionProgress: (listener: (event: DshVersionProgressEvent) => void) => () => void
+  /** 订阅工作区白名单快捷键转发(⌘/Ctrl 与其数字组合);返回取消订阅函数。 */
+  onWorkspaceHotkey: (listener: (event: WorkspaceHotkeyEvent) => void) => () => void
   /** SSH 传输辅助：密钥预览、主机指纹确认和口令输入。 */
   ssh: {
     /** 只读密钥预览（ssh -G + ssh-add -L）；不含私钥内容 */

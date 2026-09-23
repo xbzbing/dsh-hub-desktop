@@ -858,6 +858,36 @@ h3,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 快捷键序号:按住 ⌘/Ctrl 时替换行尾类型徽标显示 #1-#9,平时不参与布局。 */
+.inst-hotkey {
+  display: none;
+}
+.sidebar.hotkey-mode .inst-hotkey {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in oklch, var(--accent) 45%, var(--border));
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  /* 角标浮层不拦截行的点击与拖拽。 */
+  pointer-events: none;
+}
+.sidebar.hotkey-mode .inst .badge {
+  visibility: hidden;
+}
+.app-shell.rail .sidebar.hotkey-mode .inst-hotkey {
+  right: 50%;
+  transform: translate(50%, -50%);
+}
 .status-dot {
   width: 8px;
   height: 8px;

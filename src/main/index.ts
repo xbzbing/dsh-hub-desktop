@@ -19,7 +19,13 @@ import type {
   InstanceRuntimeStatus,
   InstanceStatusEvent
 } from '@shared/contracts'
-import { AUTH_IPC, ABOUT_IPC, INSTANCE_STATUS_EVENT, DSH_VERSION_PROGRESS_EVENT } from '@shared/contracts'
+import {
+  AUTH_IPC,
+  ABOUT_IPC,
+  INSTANCE_STATUS_EVENT,
+  DSH_VERSION_PROGRESS_EVENT,
+  WORKSPACE_HOTKEY_EVENT
+} from '@shared/contracts'
 import { registerIpc } from './ipc/register'
 import type { AuthProbeController } from './ipc/register'
 import { createLocalRuntime } from './local-runtime/local-runtime'
@@ -125,7 +131,11 @@ if (e2eHidden && process.platform === 'darwin') app.dock?.hide()
 let hubWindow: BrowserWindow | null = null
 const workspaceHost = createWorkspaceHost(
   () => hubWindow,
-  () => resolveLanguage(settingsRef?.read().language, systemLocale())
+  () => resolveLanguage(settingsRef?.read().language, systemLocale()),
+  // 工作区视图持焦期间,白名单快捷键输入转发给 hub 渲染层还原为窗口事件。
+  (event) => {
+    if (hubWindow && !hubWindow.isDestroyed()) hubWindow.webContents.send(WORKSPACE_HOTKEY_EVENT, event)
+  }
 )
 const workspaceTooltipHost = createWorkspaceTooltipHost(() => hubWindow)
 

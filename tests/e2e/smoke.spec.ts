@@ -48,6 +48,7 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
       'onAboutOpen',
       'onInstanceStatus',
       'onVersionProgress',
+      'onWorkspaceHotkey',
       'openHomepage',
       'ping',
       'runtime',

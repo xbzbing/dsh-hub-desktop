@@ -610,6 +610,26 @@ export const WorkspaceTooltipSchema = z
 
 export type WorkspaceTooltip = z.infer<typeof WorkspaceTooltipSchema>
 
+/**
+ * 原生工作区转发给 hub 渲染层的按键事件。
+ * 只含会话切换所需的白名单输入:⌘/Ctrl 键本身与按住它们时的数字键 1-9;
+ * 其余输入不转发,由工作区页面自行处理。
+ */
+export interface WorkspaceHotkeyEvent {
+  phase: 'down' | 'up'
+  /** 按下的键名:Meta / Control 或数字键 */
+  key: string
+  /** 物理键位(MetaLeft / Digit1 等) */
+  code: string
+  /** 该瞬间 ⌘ 是否按住 */
+  meta: boolean
+  /** 该瞬间 Ctrl 是否按住 */
+  ctrl: boolean
+}
+
+/** 主进程 → 渲染进程的工作区快捷键白名单转发事件。 */
+export const WORKSPACE_HOTKEY_EVENT = 'dsh:workspace-hotkey'
+
 export interface LocalLauncherSnapshot {
   launcher: 'dsh' | 'dush'
   version: string

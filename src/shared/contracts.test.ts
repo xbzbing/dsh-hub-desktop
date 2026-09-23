@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DSH_VERSION_IPC, DSH_VERSION_PROGRESS_EVENT } from './contracts'
+import { DSH_VERSION_IPC, DSH_VERSION_PROGRESS_EVENT, WORKSPACE_HOTKEY_EVENT } from './contracts'
 
 /**
  * 运行时可断言的契约:通道常量(拼错/改名会让注册表测试与桥接白名单一起红)。
@@ -16,5 +16,11 @@ describe('dsh 版本管理契约', () => {
     expect(DSH_VERSION_IPC.upgrade).toBe('dsh-version:upgrade')
     expect(DSH_VERSION_IPC.list).toBe('dsh-version:list')
     expect(DSH_VERSION_PROGRESS_EVENT).toBe('dsh:version-progress')
+  })
+})
+
+describe('工作区快捷键契约', () => {
+  it('白名单转发事件名是唯一的既定值', () => {
+    expect(WORKSPACE_HOTKEY_EVENT).toBe('dsh:workspace-hotkey')
   })
 })

@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { InstanceSummary, Transport } from '@shared/contracts'
+import type { InstanceSummary, Transport, WorkspaceHotkeyEvent } from '@shared/contracts'
 import { Icon } from '../lib/icons'
 import logoUrl from '../../../../design/dsh-hub-logo.svg'
 import { STATUS_INFO, TYPE_INFO, toDisplayStatus } from '../lib/format'
+import { instanceSwitchIndex } from '../lib/hotkeys'
 import { useAppStore } from '../store'
+
+/** 快捷键序号上限:⌘+1..9,超出上限的实例不参与切换。 */
+const HOTKEY_LIMIT = 9
+/** 序号角标的延迟显示窗口:按住满该时长才显示,避免快速的 ⌘B/⌘N 组合闪出角标。 */
+const HOTKEY_HINT_DELAY_MS = 500
 
 /** 侧边栏:品牌 / 搜索 / 分组 / 实例列表 / 底部操作 */
 export default function Sidebar(): ReactNode {
@@ -23,6 +29,8 @@ export default function Sidebar(): ReactNode {
 
   const [query, setQuery] = useState('')
   const [groupByType, setGroupByType] = useState(false)
+  /** 序号角标是否显示;按住修饰键满延迟窗口后显示,松开或失焦收起。 */
+  const [hotkeyHeld, setHotkeyHeld] = useState(false)
   const hoveredInstanceRef = useRef<{ element: HTMLButtonElement; name: string } | null>(null)
 
   // —— 拖拽排序状态 ——
@@ -105,6 +113,99 @@ export default function Sidebar(): ReactNode {
       .filter((group) => group.items.length > 0)
   }, [filtered, groupByType])
 
+  // —— 快捷键序号:按住 ⌘/Ctrl 满 0.5 秒显示 #1-#9;修饰键+数字立即切换,不等显示 ——
+  // 序号跟随当前可见顺序(搜索/分组后随之变化),与用户看到的行序一致。
+  const switchOrder = useMemo(
+    () => (grouped ? grouped.flatMap((group) => group.items) : filtered).map((item) => item.id),
+    [grouped, filtered]
+  )
+  const hotkeyNumbers = useMemo(() => {
+    const numbers = new Map<string, number>()
+    switchOrder.forEach((id, index) => {
+      if (index < HOTKEY_LIMIT) numbers.set(id, index + 1)
+    })
+    return numbers
+  }, [switchOrder])
+
+  // 序号经 ref 取最新顺序:状态事件会重建列表引用,监听器因此只绑定一次。
+  const switchOrderRef = useRef(switchOrder)
+  useEffect(() => {
+    switchOrderRef.current = switchOrder
+  }, [switchOrder])
+
+  useEffect(() => {
+    const heldModifiers = new Set<string>()
+    const isSwitchModifier = (keyName: string): boolean => keyName === 'Meta' || keyName === 'Control'
+    let hintTimer: ReturnType<typeof setTimeout> | null = null
+    let hintVisible = false
+    /** 收起角标并取消未到期的显示计时(松开全部修饰键或窗口失焦时)。 */
+    const hideHint = (): void => {
+      if (hintTimer !== null) {
+        clearTimeout(hintTimer)
+        hintTimer = null
+      }
+      if (hintVisible) {
+        hintVisible = false
+        setHotkeyHeld(false)
+      }
+    }
+    /** 排一次延迟显示计时;同一轮按住只排一次,按键自动重复不重启窗口。 */
+    const scheduleHint = (): void => {
+      if (hintTimer !== null || hintVisible) return
+      hintTimer = setTimeout(() => {
+        hintTimer = null
+        hintVisible = true
+        setHotkeyHeld(true)
+      }, HOTKEY_HINT_DELAY_MS)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (isSwitchModifier(event.key)) {
+        const firstModifier = heldModifiers.size === 0
+        heldModifiers.add(event.key)
+        if (firstModifier) scheduleHint()
+        return
+      }
+      // 切换路径不经过显示计时:数字键按下即生效。
+      const index = instanceSwitchIndex(event)
+      if (index === null) return
+      const id = switchOrderRef.current[index]
+      if (id === undefined) return
+      event.preventDefault()
+      useAppStore.getState().openFromSidebar(id)
+    }
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (!isSwitchModifier(event.key)) return
+      heldModifiers.delete(event.key)
+      if (heldModifiers.size === 0) hideHint()
+    }
+    // 失焦后 keyup 可能不再到达:离开窗口即收起序号,避免角标残留。
+    const onBlur = (): void => {
+      heldModifiers.clear()
+      hideHint()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    // 工作区原生视图持焦时按键不经过本窗口:主进程白名单转发后在此还原为窗口事件。
+    const unsubscribe = window.dshHub?.onWorkspaceHotkey((event: WorkspaceHotkeyEvent) => {
+      window.dispatchEvent(
+        new KeyboardEvent(event.phase === 'down' ? 'keydown' : 'keyup', {
+          key: event.key,
+          code: event.code,
+          metaKey: event.meta,
+          ctrlKey: event.ctrl
+        })
+      )
+    })
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+      hideHint()
+      unsubscribe?.()
+    }
+  }, [])
+
   // —— 拖拽事件回调 ——
 
   const handleDragStart = useCallback(
@@ -170,7 +271,7 @@ export default function Sidebar(): ReactNode {
   }, [])
 
   return (
-    <aside className="sidebar" data-testid="sidebar">
+    <aside className={`sidebar${hotkeyHeld ? ' hotkey-mode' : ''}`} data-testid="sidebar">
       <div className="side-head">
         <button
           className="brand"
@@ -224,6 +325,7 @@ export default function Sidebar(): ReactNode {
                   onClick={openFromSidebar}
                   selected={selection === item.id}
                   rail={rail}
+                  hotkey={hotkeyNumbers.get(item.id)}
                   onRailTooltip={showRailTooltip}
                   onRailTooltipHide={hideRailTooltip}
                   draggable={false}
@@ -245,6 +347,7 @@ export default function Sidebar(): ReactNode {
               onClick={openFromSidebar}
               selected={selection === item.id}
               rail={rail}
+              hotkey={hotkeyNumbers.get(item.id)}
               onRailTooltip={showRailTooltip}
               onRailTooltipHide={hideRailTooltip}
               draggable={!grouped}
@@ -314,6 +417,8 @@ function InstanceItem(props: {
   item: InstanceSummary
   selected: boolean
   rail: boolean
+  /** 快捷键序号(1-9);undefined = 不参与序号展示与切换。 */
+  hotkey?: number
   onClick: (id: string) => void
   onRailTooltip: (element: HTMLButtonElement, name: string) => void
   onRailTooltipHide: () => void
@@ -347,6 +452,9 @@ function InstanceItem(props: {
       onPointerCancel={props.onRailTooltipHide}
       onFocus={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
       onBlur={props.onRailTooltipHide}
+      aria-keyshortcuts={
+        props.hotkey !== undefined ? `Meta+${props.hotkey} Control+${props.hotkey}` : undefined
+      }
       data-testid={`inst-${props.item.id}`}
       title={props.rail ? props.item.name : props.item.address}
       draggable={props.draggable}
@@ -364,6 +472,11 @@ function InstanceItem(props: {
         <Icon name={TYPE_INFO[props.item.transport].icon} size={11} />
         <span className="type-label">{t(TYPE_INFO[props.item.transport].labelKey)}</span>
       </span>
+      {props.hotkey !== undefined && (
+        <span className="inst-hotkey" data-testid={`hotkey-badge-${props.hotkey}`} aria-hidden="true">
+          #{props.hotkey}
+        </span>
+      )}
     </button>
   )
 }

@@ -1,6 +1,7 @@
 import { shell, WebContentsView, type BrowserWindow } from 'electron'
-import type { WorkspaceViewBounds } from '@shared/contracts'
+import type { WorkspaceHotkeyEvent, WorkspaceViewBounds } from '@shared/contracts'
 import { isAllowedInstanceNavigation } from './window-host-policy'
+import { toWorkspaceHotkey } from './workspace-hotkey'
 
 export interface WorkspaceView {
   loadURL(url: string): Promise<void>
@@ -49,7 +50,8 @@ export interface WorkspaceHost {
  */
 export function createWorkspaceHost(
   getHubWindow: () => BrowserWindow | null,
-  workspaceLocale: () => string = () => 'en-US'
+  workspaceLocale: () => string = () => 'en-US',
+  forwardHotkey: (event: WorkspaceHotkeyEvent) => void = () => undefined
 ): WorkspaceHost {
   const entries = new Map<string, Entry>()
   let activeId: string | null = null
@@ -95,6 +97,12 @@ export function createWorkspaceHost(
     })
     webContents.on('will-redirect', (event, url) => {
       if (!isAllowedInstanceNavigation(url, entry.originUrl)) event.preventDefault()
+    })
+    // 工作区视图持有键盘焦点时,主窗口收不到按键;会话切换所需的白名单输入
+    // (⌘/Ctrl 与其数字组合)在此转发给 hub 渲染层,其余输入原样交回页面。
+    webContents.on('before-input-event', (_event, input) => {
+      const hotkey = toWorkspaceHotkey(input)
+      if (hotkey) forwardHotkey(hotkey)
     })
     // dsh web 的复制按钮依赖 navigator.clipboard 写入；只放行剪贴板写入类权限，
     // 读取与其他能力保持一律拒绝（最小权限，网页仍无法读取本机剪贴板内容）。
