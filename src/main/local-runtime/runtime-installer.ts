@@ -248,6 +248,8 @@ export interface RuntimeInstallerOptions {
   run?: CommandRunner
   /** 流式运行 npm（注入便于测试）；默认 spawnNpm。 */
   runNpm?: NpmRunner
+  /** npm 调用方式解析（注入便于测试）；默认按平台探测系统 npm。 */
+  resolveNpm?: () => Promise<NpmInvocation | null>
   /** 文件存在性检查（注入便于测试）；默认使用 fs.statSync */
   exists?: (path: string) => boolean
   /** 只读元数据（versions 列表）内存缓存时长；0 = 关闭缓存。默认 60s（注入便于测试）。 */
@@ -292,6 +294,7 @@ function assertVersion(version: string): void {
 export function createRuntimeInstaller(options: RuntimeInstallerOptions): RuntimeInstaller {
   const run = options.run ?? runCommand
   const runNpm = options.runNpm ?? spawnNpm
+  const resolveNpm = options.resolveNpm ?? (() => resolveNpmInvocation(run, options.exists))
 
   /** 解析当前生效的 registry：动态回调优先，其次静态配置。 */
   function currentRegistry(): string | undefined {
@@ -339,7 +342,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
 
   async function getNpmInvocation(): Promise<NpmInvocation> {
     if (!npmResolved) {
-      resolvedNpm = await resolveNpmInvocation(run, options.exists)
+      resolvedNpm = await resolveNpm()
       npmResolved = true
     }
     if (resolvedNpm === null) {

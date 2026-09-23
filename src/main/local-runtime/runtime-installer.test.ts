@@ -42,21 +42,18 @@ async function fakeInstallArtifacts(runtimesDir: string, version: string): Promi
 
 describe('createRuntimeInstaller', () => {
   it('listAvailableVersions 解析 npm view 输出(剔除非字符串/含斜杠项)', async () => {
-    const run = vi.fn(async (cmd: string) => {
-      // resolveNpmPath 会先调 which/where 探测 npm 路径
-      if (cmd === 'which' || cmd === 'where') return okRun('/usr/local/bin/npm')
-      return okRun(JSON.stringify(['0.1.2-rc.1', '0.1.5-rc.1', '0.1.5-rc.2', { bad: 1 }, 'x/y']))
-    })
+    // npm 解析注入固定值:聚焦 view 输出解析,断言不随宿主平台探测结果漂移
+    const run = vi.fn(async () => okRun(JSON.stringify(['0.1.2-rc.1', '0.1.5-rc.1', '0.1.5-rc.2', { bad: 1 }, 'x/y'])))
     const installer = createRuntimeInstaller({
       runtimesDir: tmpDir(),
       cacheDir: tmpDir(),
       run,
-      exists: () => false
+      resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
     })
     const versions = await installer.listAvailableVersions()
     expect(versions).toEqual(['0.1.2-rc.1', '0.1.5-rc.1', '0.1.5-rc.2'])
     expect(run).toHaveBeenCalledWith(
-      '/usr/local/bin/npm',
+      '/fake/npm',
       expect.arrayContaining(['view', '@deepseek-ai/dsh', 'versions', '--json']),
       expect.anything()
     )
@@ -201,7 +198,7 @@ describe('createRuntimeInstaller', () => {
   it('ensureInstalled 进度分支:stderr fetch 行驱动 onProgress(经 runNpm 注入覆盖生产路径)', async () => {
     const version = '0.1.5-rc.1'
     const runtimesDir = tmpDir()
-    const run = vi.fn(async (cmd: string) => (cmd === 'which' ? okRun('/usr/local/bin/npm') : okRun('[]')))
+    const run = vi.fn(async () => okRun('[]'))
     const runNpm = vi.fn(async (
       _npm: NpmInvocation,
       _args: string[],
@@ -218,7 +215,7 @@ describe('createRuntimeInstaller', () => {
       cacheDir: tmpDir(),
       run,
       runNpm,
-      exists: () => false
+      resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
     })
 
     const details: Array<string | undefined> = []
@@ -233,7 +230,7 @@ describe('createRuntimeInstaller', () => {
 
   it('进度分支失败:错误消息只保留 stderr 尾部结论(http 日志不整段进入消息)', async () => {
     const runtimesDir = tmpDir()
-    const run = vi.fn(async (cmd: string) => (cmd === 'which' ? okRun('/usr/local/bin/npm') : okRun('[]')))
+    const run = vi.fn(async () => okRun('[]'))
     const stderrLines = [
       ...Array.from({ length: 40 }, (_, index) => `npm http fetch GET 200 https://registry.npmjs.org/pkg-${index} 1ms`),
       'npm error 404 Not Found'
@@ -251,7 +248,7 @@ describe('createRuntimeInstaller', () => {
       cacheDir: tmpDir(),
       run,
       runNpm,
-      exists: () => false
+      resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
     })
 
     const message = await installer
