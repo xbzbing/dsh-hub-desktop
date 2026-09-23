@@ -2,16 +2,12 @@
 /**
  * 发布演练。
  *
- * 支持两种公开分发模式（见 `docs/release-policy.md`）：
- * - `source-only`：只发布 tag、发布说明与 GitHub 自动生成的源码归档；
- * - `windows-unsigned`：额外由 CI 在 windows-latest 上构建**未签名**的 Windows 安装包与校验和。
- *
- * macOS 二进制一律不发布（未签名未公证的 .app 在 Gatekeeper 下不可用）。脚本只做离线校验，
- * 推送 tag、创建/发布 Release 由人工与 CI 完成。
+ * 公开发布只用 `source-only` 分发模式（见 `docs/release-policy.md`）：
+ * 只发布 tag、发布说明与 GitHub 自动生成的源码归档，不上传任何二进制资产。
+ * 脚本只做离线校验，推送 tag、创建/发布 Release 由人工完成。
  */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { findPlaceholders, parseReleaseNotes } from './lib.mjs'
 
@@ -80,28 +76,8 @@ if (notes) {
     assert(/^\d{4}-\d{2}-\d{2}$/.test(notes.date), `发布日期 "${notes.date}" 不是 YYYY-MM-DD`)
   })
   await check('发布说明的分发方式与资产清单自洽', () => {
-    assert(
-      notes.distribution === 'source-only' || notes.distribution === 'windows-unsigned',
-      `未知分发方式：${notes.distribution}`
-    )
-    if (notes.distribution === 'source-only') {
-      assert(notes.artifacts.length === 0, `source-only 发布说明声明了资产：${notes.artifacts.join(', ')}`)
-      return
-    }
-    // windows-unsigned：资产名必须与 CI 实际产出的 NSIS 安装包一致
-    assert(
-      notes.artifacts.includes(`DSH-Hub-Setup-${version}.exe`),
-      `windows-unsigned 发布说明缺少安装包资产：DSH-Hub-Setup-${version}.exe`
-    )
-    assert(notes.artifacts.includes('SHA256SUMS.txt'), 'windows-unsigned 发布说明缺少 SHA256SUMS.txt')
-  })
-  await check('发布说明声明的 Windows 资产有可执行的流水线', () => {
-    if (notes.distribution !== 'windows-unsigned') return
-    const workflow = '.github/workflows/release.yml'
-    assert(existsSync(join(ROOT, workflow)), `windows-unsigned 需要 ${workflow}`)
-    const text = readText(workflow)
-    assert(/dist:win/.test(text), `${workflow} 未调用 dist:win`)
-    assert(/release:checksums/.test(text), `${workflow} 未生成校验和清单`)
+    assert(notes.distribution === 'source-only', `未知分发方式：${notes.distribution}`)
+    assert(notes.artifacts.length === 0, `source-only 发布说明声明了资产：${notes.artifacts.join(', ')}`)
   })
   await check('发布说明不含占位符', () => {
     const found = findPlaceholders(readText(releaseNotesPath))
@@ -160,21 +136,14 @@ const skipped = results.filter((item) => item.status === 'SKIP')
 const passed = results.length - failed.length - skipped.length
 console.log(`\n=== 汇总：PASS ${passed} / SKIP ${skipped.length} / FAIL ${failed.length} ===`)
 
-const windowsMode = notes !== null && notes.distribution === 'windows-unsigned'
-console.log(`\n--- 人工收口步骤（${windowsMode ? 'windows-unsigned' : 'source-only'}；脚本不代做）---`)
+console.log(`\n--- 人工收口步骤（source-only；脚本不代做）---`)
 console.log(`  1) git tag -a ${tag} -m "DSH Hub ${version}" && git push origin ${tag}`)
-if (windowsMode) {
-  console.log('  2) 推送 tag 后由 .github/workflows/release.yml 在 windows-latest 上构建安装包，')
-  console.log('     创建 Draft Release 并上传 `DSH-Hub-Setup-' + version + '.exe` 与 SHA256SUMS.txt')
-  console.log('  3) 在 GitHub 上确认 Draft Release 的资产与校验和，再点击 Publish release')
-} else {
-  console.log(`  2) gh release create ${tag} --draft \\`)
-  console.log(`       --title "DSH Hub ${version}" \\`)
-  console.log(`       --notes-file ${releaseNotesPath}`)
-  console.log('  3) 在 GitHub 上确认 Draft Release 只保留 Release Note 与自动生成的源码归档，再点击 Publish release')
-}
-console.log('\n  不上传 .app、.dmg、.zip（macOS 二进制）或 latest-*.yml（自动更新元数据）。')
-console.log('  macOS 本地打包仅用于开发、本机验证和受控测试；恢复 macOS 二进制发行前须满足 docs/release-policy.md 的签名与公证条件。')
+console.log(`  2) gh release create ${tag} --draft \\`)
+console.log(`       --title "DSH Hub ${version}" \\`)
+console.log(`       --notes-file ${releaseNotesPath}`)
+console.log('  3) 在 GitHub 上确认 Draft Release 只保留 Release Note 与自动生成的源码归档，再点击 Publish release')
+console.log('\n  不上传任何二进制资产：.exe、.app、.dmg、.zip、SHA256SUMS.txt、latest-*.yml 一律不上传。')
+console.log('  本地打包仅用于开发、本机验证和受控测试；恢复二进制发行前须满足 docs/release-policy.md 的签名与公证条件。')
 
 if (failed.length > 0) {
   console.log('\n发布演练失败：')

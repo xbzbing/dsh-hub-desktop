@@ -178,16 +178,15 @@ export function verifyUpdateMetadata({ metadata, appVersion, artifacts }) {
 }
 
 /**
- * 允许出现在公开 Release 的分发模式。
- *
- * - `source-only`:只有 tag、发布说明与 GitHub 自动生成的源码归档;
- * - `windows-unsigned`:额外提供**未签名**的 Windows 安装包与校验和清单。
- *   macOS 二进制仍不发布 —— 未签名未公证的 .app 在 Gatekeeper 下不可用。
+ * 允许出现在公开 Release 的分发模式:只有 `source-only` ——
+ * tag、发布说明与 GitHub 自动生成的源码归档,不上传任何二进制资产。
  */
-export const DISTRIBUTION_MODES = ['source-only', 'windows-unsigned']
+export const DISTRIBUTION_MODES = ['source-only']
 
-/** 公开 Release 一律不得出现的资产形态(macOS 二进制 / 自动更新元数据 / 差分中间产物) */
+/** 公开 Release 一律不得出现的资产形态(二进制安装包 / 自动更新元数据 / 差分中间产物) */
 const FORBIDDEN_ARTIFACT_PATTERNS = [
+  { pattern: /\.exe$/i, reason: '公开发布只提供源码,不发布二进制安装包' },
+  { pattern: /^sha256sums.*\.txt$/i, reason: '校验和清单服务于二进制分发,不随源码发布上传' },
   { pattern: /\.(dmg|app)$/i, reason: 'macOS 二进制在未签名未公证前不得公开分发' },
   { pattern: /\.zip$/i, reason: 'zip 归档不是本版本声明的分发形态' },
   { pattern: /^latest(-.*)?\.ya?ml$/i, reason: '自动更新元数据不对未签名安装包提供' },
@@ -195,10 +194,8 @@ const FORBIDDEN_ARTIFACT_PATTERNS = [
 ]
 
 /**
- * 校验「分发方式 ↔ 产物清单」是否自洽。
- *
- * windows-unsigned 用**白名单**而不是黑名单:只允许这一版的 NSIS 安装包与 SHA256SUMS.txt,
- * 任何新增资产都必须先改这里 —— 避免某次发布顺手带上不该公开的文件。
+ * 校验「分发方式 ↔ 产物清单」是否自洽:source-only 一律无资产,
+ * 声明任何资产(安装包、校验和清单、更新元数据)都拒绝。
  */
 export function validateDistributionArtifacts(distribution, version, artifacts) {
   for (const artifact of artifacts) {
@@ -207,26 +204,11 @@ export function validateDistributionArtifacts(distribution, version, artifacts) 
       throw new UpdateMetadataError(`发布说明不得声明资产 ${artifact}：${forbidden.reason}`)
     }
   }
-  if (distribution === 'source-only') {
-    if (artifacts.length > 0) {
-      throw new UpdateMetadataError('source-only 发布说明不得声明桌面安装包、更新元数据或校验和资产')
-    }
-    return
+  if (distribution !== 'source-only') {
+    throw new UpdateMetadataError(`不支持的分发方式：${distribution}`)
   }
-  if (artifacts.length === 0) {
-    throw new UpdateMetadataError('windows-unsigned 发布说明必须声明 Windows 安装包与校验和资产')
-  }
-  const allowed = [`DSH-Hub-Setup-${version}.exe`, 'SHA256SUMS.txt']
-  for (const artifact of artifacts) {
-    if (!allowed.includes(artifact)) {
-      throw new UpdateMetadataError(
-        `windows-unsigned 只允许 ${allowed.join(' 与 ')}，不接受 ${artifact}`
-      )
-    }
-  }
-  const missing = allowed.filter((name) => !artifacts.includes(name))
-  if (missing.length > 0) {
-    throw new UpdateMetadataError(`windows-unsigned 缺少资产：${missing.join('、')}`)
+  if (artifacts.length > 0) {
+    throw new UpdateMetadataError('source-only 发布说明不得声明桌面安装包、更新元数据或校验和资产')
   }
 }
 
@@ -234,7 +216,7 @@ export function validateDistributionArtifacts(distribution, version, artifacts) 
  * 从发布说明里抽出机器可校验的发布字段。
  * 只接受 `DISTRIBUTION_MODES` 中显式声明的模式,避免把未签名桌面包误当作官方资产。
  *
- * @returns {{version: string, date: string, distribution: 'source-only'|'windows-unsigned', artifacts: string[]}}
+ * @returns {{version: string, date: string, distribution: 'source-only', artifacts: string[]}}
  */
 export function parseReleaseNotes(markdown) {
   if (typeof markdown !== 'string' || markdown.trim() === '') {

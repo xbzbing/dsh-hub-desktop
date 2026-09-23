@@ -44,20 +44,16 @@ describe('版本与发布说明一致性', () => {
     const notes = parseReleaseNotes(readText(`docs/releases/${tag}.md`))
     expect(notes.version).toBe(version)
     expect(notes.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(['source-only', 'windows-unsigned']).toContain(notes.distribution)
+    expect(notes.distribution).toBe('source-only')
   })
 
   it('发布说明不含占位符', () => {
     expect(findPlaceholders(readText(`docs/releases/${tag}.md`))).toEqual([])
   })
 
-  it('分发方式与资产清单自洽（source-only 无资产 / windows-unsigned 只带白名单资产）', () => {
+  it('分发方式与资产清单自洽：source-only 不得声明任何资产', () => {
     const notes = parseReleaseNotes(readText(`docs/releases/${tag}.md`))
-    if (notes.distribution === 'source-only') {
-      expect(notes.artifacts).toEqual([])
-      return
-    }
-    expect(notes.artifacts).toEqual([`DSH-Hub-Setup-${version}.exe`, 'SHA256SUMS.txt'])
+    expect(notes.artifacts).toEqual([])
   })
 
   it('parseReleaseNotes 拒绝缺失或未知的分发模式', () => {
@@ -67,8 +63,8 @@ describe('版本与发布说明一致性', () => {
     expect(() => parseReleaseNotes(valid.replace('source-only', 'signed-binary'))).toThrow(/分发方式/)
   })
 
-  it('windows-unsigned 只接受本版安装包与校验和清单', () => {
-    const notesFor = (artifacts: string[]): string =>
+  it('二进制分发模式与任何资产声明一律拒绝（发布只允许 source-only）', () => {
+    const notesFor = (mode: string, artifacts: string[]): string =>
       [
         '# DSH Hub v1.2.3',
         '',
@@ -76,30 +72,24 @@ describe('版本与发布说明一致性', () => {
         '',
         '## 分发方式',
         '',
-        '- `windows-unsigned`',
+        `- \`${mode}\``,
         '',
         '## 产物',
         '',
         ...artifacts.map((name) => `- \`${name}\``)
       ].join('\n')
 
-    expect(parseReleaseNotes(notesFor(['DSH-Hub-Setup-1.2.3.exe', 'SHA256SUMS.txt']))).toMatchObject({
-      distribution: 'windows-unsigned',
-      artifacts: ['DSH-Hub-Setup-1.2.3.exe', 'SHA256SUMS.txt']
-    })
+    // windows-unsigned 不再是合法分发方式
+    expect(() =>
+      parseReleaseNotes(notesFor('windows-unsigned', ['DSH-Hub-Setup-1.2.3.exe', 'SHA256SUMS.txt']))
+    ).toThrow(/分发方式/)
 
-    // 版本号写错 / 夹带 macOS 二进制、更新元数据或未白名单资产，全部拒绝
+    // source-only 声明安装包、校验和或更新元数据同样拒绝
     expect(() =>
-      parseReleaseNotes(notesFor(['DSH-Hub-Setup-1.2.4.exe', 'SHA256SUMS.txt']))
-    ).toThrow(/只允许/)
-    expect(() =>
-      parseReleaseNotes(notesFor(['DSH Hub-1.2.3-arm64-mac.zip', 'SHA256SUMS.txt']))
+      parseReleaseNotes(notesFor('source-only', ['DSH-Hub-Setup-1.2.3.exe', 'SHA256SUMS.txt']))
     ).toThrow(/不得声明资产/)
-    expect(() =>
-      parseReleaseNotes(notesFor(['DSH-Hub-Setup-1.2.3.exe', 'latest.yml', 'SHA256SUMS.txt']))
-    ).toThrow(/不得声明资产/)
-    expect(() => parseReleaseNotes(notesFor(['DSH-Hub-Setup-1.2.3.exe']))).toThrow(/缺少资产/)
-    expect(() => parseReleaseNotes(notesFor([]))).toThrow(/必须声明/)
+    expect(() => parseReleaseNotes(notesFor('source-only', ['latest.yml']))).toThrow(/不得声明资产/)
+    expect(() => parseReleaseNotes(notesFor('source-only', ['SHA256SUMS.txt']))).toThrow(/不得声明资产/)
   })
 })
 

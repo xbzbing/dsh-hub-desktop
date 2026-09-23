@@ -114,7 +114,7 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # post
 
 **测试说明**：E2E 用例使用 `DSH_HUB_DATA_DIR` 指向的隔离临时目录，实例与凭据均为测试环境构造的数据。CI 失败时收集的产物只包含 Playwright 错误上下文、trace、界面截图与审计日志；凭据保险库文件（`vault/credentials.json`）即使内容是密文也不上传。若未来某条测试必须预置保险库数据，必须使用测试环境构造的 mock 数据并在此处记录其构造方式。
 
-发布相关命令分为“本地打包与验证”和“公开 Release”两类。公开 Release 由发布说明的「分发方式」决定：`source-only` 只发布源码、tag 和 Release Note；`windows-unsigned` 额外提供未签名的 64 位 Windows 安装包与 SHA-256 校验和，由标签流水线在 `windows-latest` 上构建。两种模式都不上传 `.app`、`.dmg`、`.zip` 等 macOS 二进制与自动更新元数据：macOS 未签名未公证的产物在 Gatekeeper 下不可用，使用者需自行准备构建环境并从源码构建。
+发布相关命令分为“本地打包与验证”和“公开 Release”两类。公开 Release 只使用 `source-only` 分发模式：只发布源码、tag 和 Release Note，不上传任何二进制资产（`.exe`、`.app`、`.dmg`、`.zip`、`SHA256SUMS.txt`、自动更新元数据一律不允许），仓库中也没有自动构建或上传二进制的发布流水线。使用者需自行准备构建环境并从源码构建。
 
 本地打包命令仍保留，但生成的未签名、未公证产物只适用于开发、本机验证和受控测试：
 
@@ -124,13 +124,13 @@ pnpm dist:mac          # 仅生成未封装的 macOS .app，本地验证用
 pnpm dist:win          # Windows NSIS，需在 Windows 上执行
 pnpm dist:win:local    # Windows NSIS（x64），mac 交叉构建出测试包
 pnpm electron:prepare  # 按需下载 Electron 二进制（dist* 已内置，无需手动执行）
-pnpm release:checksums # 生成 SHA256SUMS.txt（发布流水线使用）
+pnpm release:checksums # 生成 SHA256SUMS.txt（本地校验用，不随发布上传）
 pnpm release:check     # 发布演练：校验发布说明与分发模式、资产清单自洽
 ```
 
 Electron 44 起二进制按需下载：`pnpm install` 之后 `node_modules/electron/dist` 可能不存在，而打包配置的 `electronDist` 指向它，因此 `dist`、`dist:mac`、`dist:mac:zip`、`dist:win` 都会先执行 `pnpm electron:prepare`（已存在则立即跳过）。`dist:win:local` 在 mac 上交叉构建 Windows 包：`-c.electronDist=` 置空后 electron-builder 改为自行下载 win 版 Electron zip（缓存在 `~/Library/Caches/electron`，复用构建），不使用本机 dist；`dist:win` 在 mac 上直接执行会把 mac 版 Electron 打进 Windows 包，不要这样用。
 
-发布前运行 `CI=true pnpm release:check -- --pre`，确认发布说明的分发模式与资产清单自洽。`windows-unsigned` 模式下推送 tag 即触发 `.github/workflows/release.yml` 构建并上传资产到 Draft Release；`source-only` 模式按演练输出创建无资产 Draft Release。两种模式都由人工确认后再 Publish；详见 [`docs/release-policy.md`](docs/release-policy.md)。恢复 macOS 二进制分发前，必须具备 Apple Developer ID 签名、公证、干净机器验证和可复核的更新元数据校验。
+发布前运行 `CI=true pnpm release:check -- --pre`，确认发布说明的分发模式与资产清单自洽。发布只使用 `source-only`：按演练输出创建无资产 Draft Release，人工确认后再 Publish；详见 [`docs/release-policy.md`](docs/release-policy.md)。任何平台的二进制分发都需先满足该文档中的签名、公证与验证门槛。
 
 > 无 TTY 环境跑 `pnpm <script>` 需带 `CI=true`（pnpm 11 依赖检查在无 TTY 时会中止）。
 
