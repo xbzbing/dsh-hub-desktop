@@ -9,6 +9,7 @@ import { Modal } from './Modal'
 /**
  * 编辑当前 transport 支持的实例字段。transport 不可变更；如需变更则删除后重建。
  * 端口留空时恢复自动分配；运行中实例的配置在下次启动时生效。
+ * 对话框取与「更多」日志浮层一致的 wide 宽度：两列表单字段与长端点输入不被挤压。
  */
 export default function EditInstanceDialog({
   record,
@@ -93,6 +94,7 @@ export default function EditInstanceDialog({
 
   return (
     <Modal
+      wide
       title={t('edit.title')}
       sub={t('edit.sub', { name: record.name })}
       onClose={onClose}
