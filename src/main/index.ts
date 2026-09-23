@@ -556,6 +556,7 @@ void app.whenReady().then(() => {
   runtime = createLocalRuntime({
     installer,
     dataRoot,
+    store: instanceStore,
     pathProbe,
     confirmDownload: (version) => {
       if (process.env['DSH_HUB_E2E_DECLINE_DOWNLOAD'] === '1') return Promise.resolve(false)
@@ -632,6 +633,12 @@ void app.whenReady().then(() => {
   runtime.onStatus(handleStatusEvent)
   tunnels.onStatus(handleStatusEvent)
   httpEndpoints.onStatus(handleStatusEvent)
+  // dsh 升级进度 → 广播到所有窗口（独立通道，不占用实例状态事件）。
+  runtime.onUpgradeProgress((event) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(DSH_VERSION_PROGRESS_EVENT, event)
+    }
+  })
 
   auth = createAuthRegistry({
     restore: async (instanceId, client) => {
@@ -678,11 +685,6 @@ void app.whenReady().then(() => {
     http: httpEndpoints,
     auth,
     installer,
-    onVersionProgress: (event) => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.isDestroyed()) win.webContents.send(DSH_VERSION_PROGRESS_EVENT, event)
-      }
-    },
     externalDsh: createExternalDshScanner(),
     pathProbe,
     vault: vault as Vault,

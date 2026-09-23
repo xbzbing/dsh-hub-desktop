@@ -912,9 +912,8 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '保险库中没有该实例的已存密码')"),
   debt('src/main/ipc/register.ts', "throw new InstanceStoreError('not-found', `实例不存在：${parsed.instanceId}`)"),
   debt('src/main/ipc/register.ts', "if (!record) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)"),
-  debt('src/main/ipc/register.ts', "if (!installer) throw new InstanceStoreError('invalid-state', 'dsh 版本管理能力不可用')"),
-  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', 'dsh 版本管理能力不可用')"),
-  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-state', '当前实例不支持由本应用升级 dsh')"),
+  debt('src/main/ipc/register.ts', "if (!deps.installer) throw new InstanceStoreError('internal', 'dsh 版本管理能力不可用')"),
+  debt('src/main/ipc/register.ts', "throw new InstanceStoreError('invalid-input', '该实例不支持升级')"),
   debt('src/main/local-runtime/runtime-installer.ts', "onProgress?.({ phase: 'installing', version, detail: '校验安装结果', percent: 95 })"),
 
   // Runtime status messages displayed by App.tsx and DetailView.
@@ -1129,10 +1128,9 @@ const NON_RENDERER_COPY_DEBT_INTERNAL: readonly DebtEntry[] = [
 
 /**
  * 两份清单的并集:(a) 用户可见待迁移 + (b) 内部诊断。
- * 当前 **(a) 129 个 (路径, 文案) 站点 / (b) 20 个 —— 去重文案后 125 + 20 = 145 条**。
- * 三个文案在两个/三个文件里各有一处(如 `已取消启动` 同时在 local-runtime 与 ssh-tunnel),
- * 身份含路径后它们必须逐站点登记,所以站点数比文案数多 4。
- * 下面「主进程文案受约束」用例把它与扫描结果钉成等号。
+ * 站点身份 = (路径, 文案):同一文案出现在不同文件必须逐站点登记,同文件同文案只算一个
+ * 站点(身份不含行号)。站点数随特性增删而变化,以下方「主进程文案受约束」用例的
+ * 等号断言为准 —— 计数不写死在注释里,避免注释与清单脱节。
  */
 const NON_RENDERER_COPY_DEBT: readonly DebtEntry[] = [
   ...NON_RENDERER_COPY_DEBT_USER_VISIBLE,

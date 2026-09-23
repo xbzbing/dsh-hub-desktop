@@ -19,6 +19,11 @@ import { join, posix } from 'node:path'
 import { VERSION_PATTERN } from './runtime-installer'
 import type { CommandRunner } from './runtime-installer'
 
+// 版本比较实现独立在 version-compare.ts（安装器与本模块共用，避免循环依赖）；
+// 此处保留导出，调用方仍可从本模块取得。
+export { compareDshVersions } from './version-compare'
+import { compareDshVersions } from './version-compare'
+
 /** PATH 上探测到的 dsh 运行时 */
 export interface PathRuntime {
   /** dsh 可执行文件的绝对路径 */
@@ -58,36 +63,8 @@ export interface PlanInput {
 }
 
 /**
- * 版本比较:按 `.` 分段,先比每段的前导数字(0.10.0 > 0.9.0),
- * 数字相同再比后缀 —— 无后缀(正式)> 有 rc 后缀(0.1.5 > 0.1.5-rc.2)。
- * 非数字开头段按 0 处理再比后缀字典序。返回负数 = a < b。
+ * 版本比较见 `./version-compare.ts`（数字感知：0.10.0 > 0.9.0；正式 > 同号 rc）。
  */
-export function compareDshVersions(a: string, b: string): number {
-  const pa = a.split('.')
-  const pb = b.split('.')
-  const len = Math.max(pa.length, pb.length)
-  for (let i = 0; i < len; i += 1) {
-    const segA = pa[i] ?? ''
-    const segB = pb[i] ?? ''
-    const numA = leadingNumber(segA)
-    const numB = leadingNumber(segB)
-    if (numA !== numB) return numA - numB
-    const suffixA = segA.slice(String(numA).length)
-    const suffixB = segB.slice(String(numB).length)
-    if (suffixA !== suffixB) {
-      // 正式(无后缀)> 预发布(有 rc 等后缀)
-      if (suffixA === '') return 1
-      if (suffixB === '') return -1
-      return suffixA < suffixB ? -1 : 1
-    }
-  }
-  return 0
-}
-
-function leadingNumber(segment: string): number {
-  const match = /^[0-9]+/.exec(segment)
-  return match ? Number(match[0]) : 0
-}
 
 /**
  * 来源决策(纯函数):
@@ -321,7 +298,9 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
  * 常见 node 落点(用于增强候选校验的 PATH;顺序 = 优先级)。
  * nvm 逐版本枚举,取不到就跳过。
  */
-function searchNodeDirs(home: string, listDir: (path: string) => string[]): string[] {
+/** 常见 node 落点(用于增强候选校验的 PATH;顺序 = 优先级)。
+ * nvm 逐版本枚举,取不到就跳过。 */
+export function searchNodeDirs(home: string, listDir: (path: string) => string[]): string[] {
   const dirs = [
     join(home, '.local', 'bin'),
     join(home, 'Library', 'pnpm'),

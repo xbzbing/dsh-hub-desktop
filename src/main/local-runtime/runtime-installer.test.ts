@@ -84,6 +84,33 @@ describe('createRuntimeInstaller', () => {
     expect(await fallback.resolveDefaultVersion()).toBe('0.1.5-rc.2')
   })
 
+  it('resolveLatestVersion 取版本列表最大值(dist-tags.latest 滞后于新发布也不受影响)', async () => {
+    const run = vi.fn(async (_cmd: string, args: string[]) =>
+      args.includes('dist-tags')
+        ? okRun(JSON.stringify({ latest: '0.1.5-rc.2' }))
+        : okRun(JSON.stringify(['0.1.5-rc.2', '0.1.6-alpha.2', '0.1.7-alpha.2']))
+    )
+    const installer = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      run: run as never
+    })
+    expect(await installer.resolveLatestVersion()).toBe('0.1.7-alpha.2')
+
+    // 不假设 registry 返回顺序：乱序也按版本比较取最大。
+    const unordered = vi.fn(async (_cmd: string, args: string[]) =>
+      args.includes('dist-tags')
+        ? okRun('{}')
+        : okRun(JSON.stringify(['0.1.7-alpha.2', '0.1.5-rc.4', '0.1.6']))
+    )
+    const shuffled = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      run: unordered as never
+    })
+    expect(await shuffled.resolveLatestVersion()).toBe('0.1.7-alpha.2')
+  })
+
   it('install 流程:写 installing.json → npm install → 校验入口 → 移除标记', async () => {
     const version = '0.1.5-rc.1'
     const runtimesDir = tmpDir()
@@ -113,8 +140,8 @@ describe('createRuntimeInstaller', () => {
     expect(await readInstallingMarker(runtimesDir, version)).toMatchObject({ version })
   })
 
-  it('install 成功后遇到入口缺失视为已安装(stat 校验)', async () => {
-    // 已通过 fakeInstallArtifacts 造好入口 → isInstalled 直接为 true
+  it('isInstalled 按入口存在性 stat 判断:有入口→已安装,无入口/无目录→未安装', async () => {
+    // 已通过 fakeInstallArtifacts 造好 0.1.5-rc.2 的入口;0.1.4-rc.1 目录与入口都不存在。
     const runtimesDir = tmpDir()
     const installer = createRuntimeInstaller({ runtimesDir, cacheDir: tmpDir(), run: async () => okRun('') })
     await fakeInstallArtifacts(runtimesDir, '0.1.5-rc.2')
@@ -300,5 +327,90 @@ describe('resolveNpmInvocation (win32)', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform })
     }
+  })
+})
+describe('元数据读取提速（分队列 + TTL 缓存）', () => {
+  const viewCount = (run: ReturnType<typeof vi.fn>): number =>
+    run.mock.calls.filter(([, args]) => (args as string[]).includes('view')).length
+
+  it('元数据读取不排在安装链后面：安装挂起时版本列表仍立即返回', async () => {
+    const runtimesDir = tmpDir()
+    const version = '0.1.5-rc.1'
+    let releaseInstall!: () => void
+    const gate = new Promise<void>((resolve) => {
+      releaseInstall = resolve
+    })
+    const run = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === 'which') return okRun('/usr/local/bin/npm')
+      if (args.includes('view')) return okRun(JSON.stringify([version]))
+      if (args.includes('install')) {
+        await gate
+        await fakeInstallArtifacts(runtimesDir, version)
+        return okRun('')
+      }
+      return okRun('')
+    })
+    const installer = createRuntimeInstaller({ runtimesDir, cacheDir: tmpDir(), run })
+
+    // 安装占住安装链并卡在 gate 上。
+    const installing = installer.install(version)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // 若元数据与安装同队，这一行会一直挂到 gate 放开（测试超时即失败）。
+    await expect(installer.listAvailableVersions()).resolves.toEqual([version])
+
+    releaseInstall()
+    await installing
+  })
+
+  it('versions 列表在 TTL 内只打一次 npm view；metadataTtlMs=0 时每次都打', async () => {
+    const cachedRun = vi.fn(async (cmd: string) =>
+      cmd === 'which' ? okRun('/usr/local/bin/npm') : okRun(JSON.stringify(['0.1.5']))
+    )
+    const cached = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      run: cachedRun
+    })
+    await cached.listAvailableVersions()
+    await cached.listAvailableVersions()
+    expect(viewCount(cachedRun)).toBe(1)
+
+    const freshRun = vi.fn(async (cmd: string) =>
+      cmd === 'which' ? okRun('/usr/local/bin/npm') : okRun(JSON.stringify(['0.1.5']))
+    )
+    const uncached = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      run: freshRun,
+      metadataTtlMs: 0
+    })
+    await uncached.listAvailableVersions()
+    await uncached.listAvailableVersions()
+    expect(viewCount(freshRun)).toBe(2)
+  })
+
+  it('registry 变化（切镜像）后缓存立即失效，且调用带上新 --registry', async () => {
+    let registry = 'https://mirror-a.example'
+    const run = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === 'which') return okRun('/usr/local/bin/npm')
+      if (args.includes('view')) return okRun(JSON.stringify(['0.1.5']))
+      return okRun('')
+    })
+    const installer = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      run,
+      getRegistry: () => registry
+    })
+    await installer.listAvailableVersions()
+    await installer.listAvailableVersions()
+    expect(viewCount(run)).toBe(1)
+
+    registry = 'https://mirror-b.example'
+    await installer.listAvailableVersions()
+    expect(viewCount(run)).toBe(2)
+    expect(run.mock.calls.at(-1)?.[1]).toEqual(
+      expect.arrayContaining(['--registry', 'https://mirror-b.example'])
+    )
   })
 })

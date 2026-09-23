@@ -8,7 +8,7 @@ import {
 import type { CommandRunner } from './runtime-installer'
 
 /**
- * #2 运行时获取策略(用户决策:「优先 hub 已装同版本 → 再探测 PATH →
+ * 运行时获取策略(用户决策:「优先 hub 已装同版本 → 再探测 PATH →
  * 都没有才下载,真要下载时需要用户确认」)—— 纯决策函数穷举 + PATH 探测。
  */
 
@@ -138,8 +138,8 @@ function scriptedRunner(script: Record<string, { code: number; stdout: string; s
 
 describe('createPathProbe(PATH 探测,尽力而为)', () => {
   /**
-   * 纯注入环境:候选探测**不看真实文件系统**、不起登录 shell。
-   * `~/.local/bin/dsh`),测试结果就会随开发机环境漂移。
+   * 纯注入环境:候选探测**不看真实文件系统**、不起登录 shell
+   * (否则只要开发机装了 `~/.local/bin/dsh`),测试结果就会随开发机环境漂移。
    * platform 显式固定为 darwin:候选表/which 行为按 POSIX 断言,避免随宿主系统漂移;
    * win32 分支由下方专属用例单独覆盖。
    */
@@ -233,7 +233,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     })
   })
 
-  it("wi", async () => {
+  it('win32:用 where 探测,接受盘符绝对路径', async () => {
     const probe = createPathProbe({
       ...HERMETIC,
       platform: 'win32',
@@ -248,7 +248,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     })
   })
 
-  it("wi", async () => {
+  it('win32:where 输出相对路径 → 拒绝', async () => {
     const probe = createPathProbe({
       ...HERMETIC,
       platform: 'win32',
@@ -259,8 +259,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     await expect(probe.probe()).resolves.toBeNull()
   })
 
-  // 用户实测:dsh 装在 ~/.local/bin(Finder 启动时不在 PATH)→ which 失败 →
-
+  // 用户实测:dsh 装在 ~/.local/bin(Finder 启动时不在 PATH)→ which 失败 → 候选绝对路径兜底命中
   it('which 失败 → 回退探测候选绝对路径(~/.local/bin/dsh 命中)', async () => {
     const probe = createPathProbe({
       platform: 'darwin' as const,

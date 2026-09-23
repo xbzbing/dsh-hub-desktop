@@ -24,7 +24,7 @@ import {
   WorkspaceTooltipSchema,
   WorkspaceViewBoundsSchema,
   type DshVersionCheck,
-  type DshVersionProgressEvent,
+  type DshVersionCatalog,
   type HostKeyDecision,
   type AuthStateSnapshot,
   type ExternalDshWebSnapshot,
@@ -48,7 +48,7 @@ import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { ExternalDshScanner } from '../local-runtime/external-dsh'
 import type { PathProbe } from '../local-runtime/runtime-source'
 import { compareDshVersions } from '../local-runtime/runtime-source'
-import type { RuntimeInstaller, InstallProgress } from '../local-runtime/runtime-installer'
+import type { RuntimeInstaller } from '../local-runtime/runtime-installer'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 import { DataDirOpenError } from '../shell/open-data-dir'
@@ -67,10 +67,8 @@ async function defaultVerifyExternalAccess(url: string): Promise<boolean> {
 
 export interface IpcDeps {
   runtime: LocalRuntimeManager
-  /** dsh 版本安装器；缺省时 check/upgrade 返回 internal 错误信封。 */
+  /** dsh 版本安装器；缺省时 check/list 返回 internal 错误信封。 */
   installer?: RuntimeInstaller
-  /** 升级进度广播回调；装配层接到后推给所有窗口。 */
-  onVersionProgress?: (event: DshVersionProgressEvent) => void
   /**
    * 缺省不装配(单测)→ scan 返回空列表、adopt 一律 invalid-state。
    */
@@ -449,19 +447,13 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
   function upgradeEligibility(
     record: InstanceRecord,
     runtimeSource: InstanceStatusEvent['runtimeSource'] | undefined
-  ): { canUpgrade: true; reason: null } | { canUpgrade: false; reason: NonNullable<DshVersionCheck['reason']> } {
+  ): { canUpgrade: boolean; reason?: DshVersionCheck['reason'] } {
     if (record.transport !== 'local') return { canUpgrade: false, reason: 'not-local' }
-    if (record.launcher === 'dush') return { canUpgrade: false, reason: 'dush-launcher' }
+    if (record.launcher === 'dush') return { canUpgrade: false, reason: 'launcher-dush' }
     if (runtimeSource === 'path' || runtimeSource === 'external') {
-      return { canUpgrade: false, reason: 'path-external' }
+      return { canUpgrade: false, reason: 'runtime-external' }
     }
-    return { canUpgrade: true, reason: null }
-  }
-
-  /** 安装进度（resolving/installing + 百分比）映射到版本升级事件阶段。 */
-  function toUpgradePhase(progress: InstallProgress): DshVersionProgressEvent['phase'] {
-    if (progress.phase === 'resolving') return 'checking'
-    return progress.percent !== undefined && progress.percent >= 95 ? 'installing' : 'downloading'
+    return { canUpgrade: true }
   }
 
   ipcMain.handle(DSH_VERSION_IPC.check, (_event, id: unknown): Promise<IpcResult<DshVersionCheck>> =>
@@ -469,71 +461,54 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
       const instanceId = parseId(id)
       const record = await store.get(instanceId)
       if (!record) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
-      if (!deps.installer) {
-        throw new InstanceStoreError('invalid-state', 'dsh 版本管理能力不可用')
-      }
+      if (!deps.installer) throw new InstanceStoreError('internal', 'dsh 版本管理能力不可用')
       const status = deps.runtime.statusOf(instanceId)
       const current =
         status?.version ?? (record.transport === 'local' ? record.dshVersion : null)
       const eligibility = upgradeEligibility(record, status?.runtimeSource)
       const latest = await deps.installer.resolveLatestVersion()
+      // 当前版本未知时：hub 托管的本地实例按「装上即最新」算有更新；来源不可知的实例不妄报。
       const hasUpdate =
-        eligibility.canUpgrade && current !== null && compareDshVersions(current, latest) < 0
-      return {
-        current,
-        latest,
-        hasUpdate,
-        canUpgrade: eligibility.canUpgrade,
-        reason: eligibility.reason
+        current !== null ? compareDshVersions(current, latest) < 0 : eligibility.canUpgrade
+      return { current, latest, hasUpdate, ...eligibility }
+    })
+  )
+
+  ipcMain.handle(DSH_VERSION_IPC.list, (): Promise<IpcResult<DshVersionCatalog>> =>
+    wrap(async () => {
+      if (!deps.installer) throw new InstanceStoreError('internal', 'dsh 版本管理能力不可用')
+      try {
+        const [versions, installed] = await Promise.all([
+          deps.installer.listAvailableVersions(),
+          deps.installer.listInstalled()
+        ])
+        const newestFirst = (left: string, right: string): number => compareDshVersions(right, left)
+        return {
+          versions: [...versions].sort(newestFirst),
+          installed: installed.map((item) => item.version).sort(newestFirst)
+        }
+      } catch (error) {
+        // registry 不可达等原因：把安装器的失败原因透传给向导展示。
+        throw new InstanceStoreError('internal', error instanceof Error ? error.message : String(error))
       }
     })
   )
 
-  ipcMain.handle(DSH_VERSION_IPC.upgrade, (_event, id: unknown): Promise<IpcResult<{ accepted: true }>> =>
+  ipcMain.handle(DSH_VERSION_IPC.upgrade, (_event, id: unknown): Promise<IpcResult<null>> =>
     wrap(async () => {
       const instanceId = parseId(id)
       const record = await store.get(instanceId)
       if (!record) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
-      const installer = deps.installer
-      if (!installer) throw new InstanceStoreError('invalid-state', 'dsh 版本管理能力不可用')
-      const status = deps.runtime.statusOf(instanceId)
-      const eligibility = upgradeEligibility(record, status?.runtimeSource)
-      if (!eligibility.canUpgrade) {
-        throw new InstanceStoreError('invalid-state', '当前实例不支持由本应用升级 dsh')
+      const eligibility = upgradeEligibility(
+        record,
+        deps.runtime.statusOf(instanceId)?.runtimeSource
+      )
+      if (record.transport !== 'local' || !eligibility.canUpgrade) {
+        throw new InstanceStoreError('invalid-input', '该实例不支持升级')
       }
-      const emit = deps.onVersionProgress
-      const wasRunning = status?.status === 'running'
-      // 立即返回；下载/安装/重启耗时较长，全程经进度事件回推。
-      void (async () => {
-        try {
-          emit?.({ instanceId, phase: 'checking', percent: 0 })
-          const version = await installer.resolveDefaultVersion()
-          await installer.ensureInstalled(version, (progress) => {
-            emit?.({
-              instanceId,
-              phase: toUpgradePhase(progress),
-              percent: progress.percent ?? 0,
-              detail: progress.detail
-            })
-          })
-          await store.update(instanceId, { dshVersion: version })
-          // hub 托管且升级前在运行 → 停后重启，让新版本生效。
-          if (wasRunning) {
-            await deps.runtime.stop(instanceId)
-            const latest = await store.get(instanceId)
-            if (latest && latest.transport === 'local') void deps.runtime.start(latest)
-          }
-          emit?.({ instanceId, phase: 'done', percent: 100, version })
-        } catch (error) {
-          emit?.({
-            instanceId,
-            phase: 'error',
-            percent: 0,
-            error: error instanceof Error ? error.message : String(error)
-          })
-        }
-      })()
-      return { accepted: true } as const
+      // 触发即返回：停/装/重启的编排在 runtime 层，进展经 dsh:version-progress 回推。
+      void deps.runtime.upgradeInstance(record)
+      return null
     })
   )
 

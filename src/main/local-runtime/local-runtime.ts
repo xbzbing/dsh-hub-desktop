@@ -5,15 +5,21 @@
  */
 import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { delimiter, dirname, join } from 'node:path'
 import { homedir } from 'node:os'
-import type { InstanceRuntimeStatus, InstanceStatusEvent, LocalInstance } from '@shared/contracts'
+import type {
+  DshVersionProgressEvent,
+  InstanceRuntimeStatus,
+  InstanceStatusEvent,
+  LocalInstance
+} from '@shared/contracts'
 import { redactLine } from '@shared/redact'
 import { DEFAULT_PORT_RANGE_END, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
 import type { RuntimeInstaller } from './runtime-installer'
-import { planRuntimeSource, type PathProbe } from './runtime-source'
+import type { InstanceStore } from '../registry/instance-store'
+import { planRuntimeSource, searchNodeDirs, type PathProbe } from './runtime-source'
 import { httpHealthProbe, type HealthProbe } from '../transport/probe'
 
 export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
@@ -57,6 +63,8 @@ export type SpawnLike = (invocation: SpawnInvocation) => SpawnedProcess
 export interface LocalRuntimeOptions {
   installer: RuntimeInstaller
   dataRoot: string
+  /** 实例注册表；升级编排完成后回写 dshVersion。 */
+  store: Pick<InstanceStore, 'update'>
   /** 缺省用 Electron 自带 Node（ELECTRON_RUN_AS_NODE）执行 dsh 入口 */
   nodeInvocation?: { command: string; args: string[]; env: NodeJS.ProcessEnv }
   spawnImpl?: SpawnLike
@@ -89,6 +97,14 @@ export interface LocalRuntimeOptions {
 
 export interface LocalRuntimeManager {
   onStatus(listener: (event: InstanceStatusEvent) => void): () => void
+  /** 订阅 dsh 版本升级进度；返回取消订阅函数。 */
+  onUpgradeProgress(listener: (event: DshVersionProgressEvent) => void): () => void
+  /**
+   * 升级到 registry 最新稳定版：解析版本 →（运行中先停）→ 安装 → 回写注册表 →（升级前在运行则重启）。
+   * 调用立即返回并后台执行，进展经 onUpgradeProgress 回推；
+   * 失败以 phase='error' 结束：隔离目录保留旧版，升级前在运行的实例停在停止态。
+   */
+  upgradeInstance(instance: LocalInstance): Promise<void>
   /** 面向主进程的私有工作区 URL；本地 BrowserAuth token 不得出现在状态事件中。 */
   urlOf(id: string): string | null
   statusOf(id: string): InstanceStatusEvent | null
@@ -153,19 +169,29 @@ function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS
 }
 
 /**
- * 为本机启动器（`path` 来源）解析一个真实 node 可执行文件。
+ * 解析一个真实 node 可执行文件，供 hub 与本机启动器来源执行 dsh/dush。
  *
- * 本机 dsh/dush 是 `#!/usr/bin/env node` 脚本，**不能**用 Electron 充当 Node：
- * dsh 的原生插件按运行时指纹校验，Electron 的 V8 指纹不在其白名单内，
- * 进程会以 code=1 立即退出。优先取与启动器同目录的 node（npm/pnpm 全局安装常放在一起），
- * 其次扫 PATH。
+ * dsh 的原生插件按运行时指纹校验：不在白名单的 Electron 版本启动即以 code=1 退出，
+ * 因此**能用真实 node 时一律用真实 node**。查找顺序：脚本同目录（npm/pnpm 全局常放在一起）
+ * → 常见安装落点（nvm/homebrew/pnpm 等；GUI 启动时进程 PATH 往往缺 node 目录）→ PATH。
  */
-function resolveNodeFor(scriptPath: string): string | null {
-  const sameDir = join(dirname(scriptPath), process.platform === 'win32' ? 'node.exe' : 'node')
+function resolveNodeFor(scriptPath: string, home: string): string | null {
+  const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
+  const sameDir = join(dirname(scriptPath), nodeName)
   if (existsSync(sameDir)) return sameDir
-  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    if (dir === '') continue
-    const candidate = join(dir, process.platform === 'win32' ? 'node.exe' : 'node')
+  const listDir = (dir: string): string[] => {
+    try {
+      return readdirSync(dir)
+    } catch {
+      return []
+    }
+  }
+  const dirs = [
+    ...searchNodeDirs(home, listDir),
+    ...(process.env.PATH ?? '').split(delimiter).filter((dir) => dir !== '')
+  ]
+  for (const dir of [...new Set(dirs)]) {
+    const candidate = join(dir, nodeName)
     if (existsSync(candidate)) return candidate
   }
   return null
@@ -175,9 +201,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const spawnImpl = options.spawnImpl ?? defaultSpawn
   const probe = options.probe ?? httpHealthProbe
   const nodeInvocation = options.nodeInvocation ?? defaultNodeInvocation()
-  const resolveNode = options.resolveNode ?? resolveNodeFor
   const profile = options.profile ?? 'web'
   const homeDir = options.homeDir ?? homedir
+  const resolveNode = options.resolveNode ?? ((scriptPath: string) => resolveNodeFor(scriptPath, homeDir()))
   const readyTimeoutMs = options.readyTimeoutMs ?? 60_000
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
@@ -189,6 +215,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const entries = new Map<string, Entry>()
   const statuses = new Map<string, InstanceStatusEvent>()
   const listeners = new Set<(event: InstanceStatusEvent) => void>()
+  const upgradeListeners = new Set<(event: DshVersionProgressEvent) => void>()
+  /** 正在升级的实例；升级结束（含失败）即释放。 */
+  const upgradingIds = new Set<string>()
   /** 启动阶段串行队列：同一时刻只让一个实例走完「安装 → 分配端口 → spawn → 就绪」 */
   let startChain: Promise<unknown> = Promise.resolve()
   /**
@@ -227,6 +256,16 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         listener(event)
       } catch (error) {
         console.error('[local-runtime] 状态监听器抛错：', error)
+      }
+    }
+  }
+
+  function emitUpgrade(event: DshVersionProgressEvent): void {
+    for (const listener of upgradeListeners) {
+      try {
+        listener(event)
+      } catch (error) {
+        console.error('[local-runtime] 升级进度监听器抛错：', error)
       }
     }
   }
@@ -388,6 +427,49 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       return () => listeners.delete(listener)
     },
 
+    onUpgradeProgress(listener) {
+      upgradeListeners.add(listener)
+      return () => upgradeListeners.delete(listener)
+    },
+
+    async upgradeInstance(instance) {
+      const id = instance.id
+      // 单飞守卫：同一实例的升级进行中重复触发直接忽略，避免并发写同一隔离目录。
+      if (upgradingIds.has(id)) return
+      upgradingIds.add(id)
+      const at = (): string => new Date(now()).toISOString()
+      try {
+        emitUpgrade({ instanceId: id, phase: 'checking', at: at() })
+        const latest = await options.installer.resolveLatestVersion()
+        // 运行中升级 = 停 → 装 → 自动重启；停止态只安装并回写。
+        const wasRunning = this.statusOf(id)?.status === 'running'
+        if (wasRunning) await this.stop(id)
+        emitUpgrade({ instanceId: id, phase: 'downloading', version: latest, percent: 0, at: at() })
+        await options.installer.ensureInstalled(latest, (progress) => {
+          emitUpgrade({
+            instanceId: id,
+            phase: 'installing',
+            version: latest,
+            percent: progress.percent ?? 0,
+            detail: progress.detail,
+            at: at()
+          })
+        })
+        await options.store.update(id, { dshVersion: latest })
+        if (wasRunning) await this.start({ ...instance, dshVersion: latest })
+        emitUpgrade({ instanceId: id, phase: 'done', version: latest, percent: 100, at: at() })
+      } catch (error) {
+        emitUpgrade({
+          instanceId: id,
+          phase: 'error',
+          error: error instanceof Error ? error.message : String(error),
+          at: at()
+        })
+      } finally {
+        upgradingIds.delete(id)
+      }
+    },
+
     statusOf(id) {
       return statuses.get(id) ?? null
     },
@@ -546,43 +628,43 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           // 刻意不传 --host：由 dsh 自己的默认绑定决定（与用户直接运行 `dsh --profile web --port N --no-open` 一致）。
           const profileArgs = ['--profile', instance.profile ?? profile]
           const serverArgs = ['--port', String(preferredPort), '--no-open']
-          // path 来源跑的是**用户本机**的 dsh/dush（`#!/usr/bin/env node` 脚本），必须交给真实 node：
-          // 以 Electron 充当 Node 时 dsh 的原生插件会按运行时指纹拒绝，进程 code=1 立刻退出。
-          // hub 来源是 hub 自己安装的运行时，继续用内置 Electron（不要求用户装 node）。
-          const pathNode = runtimeSource === 'path' ? resolveNode(scriptPath) : null
+          // hub 与 path 来源都优先真实 node：dsh 的原生插件按运行时指纹（Electron 版本白名单）
+          // 校验，不在白名单的 Electron 启动即以 code=1 退出；真实 node 不受该限制。
+          const runtimeNode = resolveNode(scriptPath)
           const nodeArgs = nodeInvocation.args
-          const pathEnv: NodeJS.ProcessEnv = {
+          const runtimeEnv: NodeJS.ProcessEnv = {
             ...process.env,
-            ...(pathNode !== null
-              ? { PATH: `${dirname(pathNode)}${delimiter}${process.env.PATH ?? ''}` }
+            ...(runtimeNode !== null
+              ? { PATH: `${dirname(runtimeNode)}${delimiter}${process.env.PATH ?? ''}` }
               : {}),
             DSH_HOME: home
           }
           if (instance.launcher === 'dush') {
             // dush wrapper 会把自己的隔离 patch 追加到 DUSH_PATCH_FILE；继承用户全局
             // patch 会让同一个 loader entry(id=dush) 加载两次，直接触发 duplicate 报错。
-            delete pathEnv.DUSH_PATCH_FILE
+            delete runtimeEnv.DUSH_PATCH_FILE
           }
           const invocation =
-            runtimeSource !== 'path'
+            runtimeNode !== null
               ? {
-                  command: nodeInvocation.command,
+                  command: runtimeNode,
                   args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
-                  env: { ...process.env, ...nodeInvocation.env, DSH_HOME: home }
+                  // 让 dsh 自己 spawn 的子进程也能解析到同一个 node。
+                  env: runtimeEnv
                 }
-              : pathNode !== null
+              : runtimeSource === 'path'
                 ? {
-                    command: pathNode,
-                    args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
-                    // 让 dsh 自己 spawn 的子进程也能解析到同一个 node。
-                    env: pathEnv
-                  }
-                : {
                     // 找不到 node：仍按脚本 shebang 直接执行（用户 PATH 里可能有）。
                     // 失败时退出详情会带上脱敏后的子进程日志，能看到 `env: node: ...` 这类原因。
                     command: scriptPath,
                     args: [...profileArgs, ...serverArgs],
-                    env: pathEnv
+                    env: runtimeEnv
+                  }
+                : {
+                    // hub 来源也找不到 node：回退内置 Electron（版本命中白名单时可用）。
+                    command: nodeInvocation.command,
+                    args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
+                    env: { ...process.env, ...nodeInvocation.env, DSH_HOME: home }
                   }
           const child = spawnImpl({
             ...invocation,

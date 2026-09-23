@@ -30,6 +30,7 @@ let dir: string
 let handlers: Map<string, Listener>
 let runtimeFake: {
   onStatus: ReturnType<typeof vi.fn>
+  onUpgradeProgress: ReturnType<typeof vi.fn>
   statusOf: ReturnType<typeof vi.fn>
   urlOf: ReturnType<typeof vi.fn>
   runningIds: ReturnType<typeof vi.fn>
@@ -37,6 +38,7 @@ let runtimeFake: {
   stop: ReturnType<typeof vi.fn>
   stopAll: ReturnType<typeof vi.fn>
   adopt: ReturnType<typeof vi.fn>
+  upgradeInstance: ReturnType<typeof vi.fn>
 }
 let tunnelsFake: {
   onStatus: ReturnType<typeof vi.fn>
@@ -98,7 +100,7 @@ let installerFake: {
   resolveEntry: ReturnType<typeof vi.fn>
   hasIncompleteInstall: ReturnType<typeof vi.fn>
 }
-let versionProgress: unknown[]
+let ipcDeps: Parameters<typeof registerIpc>[1]
 
 beforeEach(async () => {
   await mkdir(TEST_BASE, { recursive: true })
@@ -112,7 +114,6 @@ beforeEach(async () => {
   verifyExternalAccess = vi.fn(async () => true)
   listLocalSpaces = vi.fn(async () => [])
   trashLocalSpace = vi.fn(async () => undefined)
-  versionProgress = []
   installerFake = {
     listAvailableVersions: vi.fn(async () => ['0.1.4', '0.1.5']),
     resolveDefaultVersion: vi.fn(async () => '0.1.5'),
@@ -126,13 +127,15 @@ beforeEach(async () => {
   }
   runtimeFake = {
     onStatus: vi.fn(() => () => undefined),
+    onUpgradeProgress: vi.fn(() => () => undefined),
     statusOf: vi.fn(() => currentStatus),
     urlOf: vi.fn(() => currentStatus?.url ?? null),
     runningIds: vi.fn(() => []),
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
     stopAll: vi.fn(async () => undefined),
-    adopt: vi.fn(async () => undefined)
+    adopt: vi.fn(async () => undefined),
+    upgradeInstance: vi.fn(async () => undefined)
   }
   tunnelsFake = {
     onStatus: vi.fn(() => () => undefined),
@@ -216,7 +219,7 @@ beforeEach(async () => {
     replyAskpass: vi.fn(() => true),
     cancelAll: vi.fn()
   }
-  registerIpc(createInstanceStore({ dir }), {
+  ipcDeps = {
     runtime: runtimeFake as unknown as LocalRuntimeManager,
     tunnels: tunnelsFake as unknown as SshTunnelManager,
     http: httpFake as unknown as HttpEndpointManager,
@@ -237,9 +240,9 @@ beforeEach(async () => {
     instanceViewUrl: instanceViewUrlFake as never,
     prompts: promptsFake as never,
     openInstanceView: openInstanceView as never,
-    installer: installerFake as never,
-    onVersionProgress: (event) => versionProgress.push(event)
-  })
+    installer: installerFake as never
+  }
+  registerIpc(createInstanceStore({ dir }), ipcDeps)
 })
 
 afterEach(async () => {
@@ -278,8 +281,9 @@ describe('registerIpc', () => {
       'instances:probeLocalDsh',
       'instances:scanExternal',
       'instances:adoptExternal',
-      'instances:checkDshVersion',
-      'instances:upgradeDshVersion',
+      'dsh-version:check',
+      'dsh-version:upgrade',
+      'dsh-version:list',
       'ssh:keyPreview',
       'ssh:hostKeyReply',
       'ssh:hostKeyForget',
@@ -397,7 +401,7 @@ describe('registerIpc', () => {
     expect(result).toMatchObject({ ok: false, code: 'not-found' })
   })
 
-  it('checkDshVersion:hub 托管 local 实例，current < latest 时报告有更新且可升级', async () => {
+  it('check：hub 托管 local 实例，current < latest 时报告有更新且可升级', async () => {
     const created = (await invoke('instances:create', {
       ...VALID_LOCAL,
       dshVersion: '0.1.4'
@@ -405,14 +409,14 @@ describe('registerIpc', () => {
     if (!created.ok) throw new Error('创建失败')
     currentStatus = { id: created.value.id, status: 'stopped', runtimeSource: 'hub', at: new Date().toISOString() }
 
-    const result = (await invoke('instances:checkDshVersion', created.value.id)) as {
+    const result = (await invoke('dsh-version:check', created.value.id)) as {
       ok: boolean
       value: {
         current: string | null
         latest: string
         hasUpdate: boolean
         canUpgrade: boolean
-        reason: string | null
+        reason?: string
       }
     }
 
@@ -421,12 +425,12 @@ describe('registerIpc', () => {
       current: '0.1.4',
       latest: '0.1.5',
       hasUpdate: true,
-      canUpgrade: true,
-      reason: null
+      canUpgrade: true
     })
+    expect(result.value.reason).toBeUndefined()
   })
 
-  it('checkDshVersion:状态事件版本优先于注册表 dshVersion', async () => {
+  it('check：状态事件版本优先于注册表 dshVersion，已是最新时 hasUpdate=false', async () => {
     const created = (await invoke('instances:create', {
       ...VALID_LOCAL,
       dshVersion: '0.1.4'
@@ -440,7 +444,7 @@ describe('registerIpc', () => {
       at: new Date().toISOString()
     }
 
-    const result = (await invoke('instances:checkDshVersion', created.value.id)) as {
+    const result = (await invoke('dsh-version:check', created.value.id)) as {
       ok: boolean
       value: { current: string | null; hasUpdate: boolean }
     }
@@ -449,28 +453,55 @@ describe('registerIpc', () => {
     expect(result.value.hasUpdate).toBe(false)
   })
 
-  it('checkDshVersion:dush 启动器 / path / external 运行时不可升级并给出原因', async () => {
+  it('check：从未启动过（current=null）的 hub 实例视为有更新', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    currentStatus = null
+
+    const result = (await invoke('dsh-version:check', created.value.id)) as {
+      ok: boolean
+      value: { current: string | null; hasUpdate: boolean; canUpgrade: boolean }
+    }
+
+    expect(result.value).toMatchObject({ current: null, hasUpdate: true, canUpgrade: true })
+  })
+
+  it('check：dush 启动器 / path / external 运行时不可升级并给出原因', async () => {
     const dush = (await invoke('instances:create', {
       ...VALID_LOCAL,
       launcher: 'dush'
     })) as { ok: boolean; value: { id: string } }
     if (!dush.ok) throw new Error('创建失败')
     currentStatus = { id: dush.value.id, status: 'stopped', runtimeSource: 'hub', at: new Date().toISOString() }
-    const dushResult = (await invoke('instances:checkDshVersion', dush.value.id)) as {
-      value: { canUpgrade: boolean; reason: string | null }
+    const dushResult = (await invoke('dsh-version:check', dush.value.id)) as {
+      value: { canUpgrade: boolean; reason?: string }
     }
-    expect(dushResult.value).toMatchObject({ canUpgrade: false, reason: 'dush-launcher' })
+    expect(dushResult.value).toMatchObject({ canUpgrade: false, reason: 'launcher-dush' })
 
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
     currentStatus = { id: local.value.id, status: 'running', runtimeSource: 'path', at: new Date().toISOString() }
-    const pathResult = (await invoke('instances:checkDshVersion', local.value.id)) as {
-      value: { canUpgrade: boolean; reason: string | null }
+    const pathResult = (await invoke('dsh-version:check', local.value.id)) as {
+      value: { canUpgrade: boolean; reason?: string }
     }
-    expect(pathResult.value).toMatchObject({ canUpgrade: false, reason: 'path-external' })
+    expect(pathResult.value).toMatchObject({ canUpgrade: false, reason: 'runtime-external' })
+
+    currentStatus = {
+      id: local.value.id,
+      status: 'running',
+      runtimeSource: 'external',
+      at: new Date().toISOString()
+    }
+    const externalResult = (await invoke('dsh-version:check', local.value.id)) as {
+      value: { canUpgrade: boolean; reason?: string }
+    }
+    expect(externalResult.value).toMatchObject({ canUpgrade: false, reason: 'runtime-external' })
   })
 
-  it('checkDshVersion:非 local 传输报 not-local', async () => {
+  it('check：非 local 传输报 not-local', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',
       name: 'HTTP 实例',
@@ -479,13 +510,69 @@ describe('registerIpc', () => {
     })) as { ok: boolean; value: { id: string } }
     if (!created.ok) throw new Error('创建失败')
 
-    const result = (await invoke('instances:checkDshVersion', created.value.id)) as {
-      value: { canUpgrade: boolean; reason: string | null }
+    const result = (await invoke('dsh-version:check', created.value.id)) as {
+      value: { canUpgrade: boolean; reason?: string }
     }
     expect(result.value).toMatchObject({ canUpgrade: false, reason: 'not-local' })
   })
 
-  it('upgradeDshVersion:立即返回 accepted，后台安装并推进度事件、回写版本', async () => {
+  it('check/list：installer 未装配 → ok:false code=internal', async () => {
+    // 装配层缺 installer 时 check/list 必须回错误信封，不能让渲染层拿到半份结果。
+    registerIpc(createInstanceStore({ dir }), { ...ipcDeps, installer: undefined })
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+
+    const result = (await invoke('dsh-version:check', created.value.id)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(result).toMatchObject({ ok: false, code: 'internal' })
+
+    const listResult = (await invoke('dsh-version:list')) as { ok: boolean; code?: string }
+    expect(listResult).toMatchObject({ ok: false, code: 'internal' })
+  })
+
+  it('dsh-version:list：按版本从新到旧返回可用版本与已装版本', async () => {
+    installerFake.listAvailableVersions.mockResolvedValueOnce(['0.1.5', '0.1.7-alpha.2', '0.1.6-alpha.2'])
+    installerFake.listInstalled.mockResolvedValueOnce([
+      { version: '0.1.5-rc.1', dir: '/tmp/runtimes/dsh-0.1.5-rc.1', entry: '/tmp/e1', installedAt: '' },
+      { version: '0.1.6-alpha.2', dir: '/tmp/runtimes/dsh-0.1.6-alpha.2', entry: '/tmp/e2', installedAt: '' }
+    ])
+
+    const result = (await invoke('dsh-version:list')) as {
+      ok: boolean
+      value?: { versions: string[]; installed: string[] }
+    }
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        versions: ['0.1.7-alpha.2', '0.1.6-alpha.2', '0.1.5'],
+        installed: ['0.1.6-alpha.2', '0.1.5-rc.1']
+      }
+    })
+  })
+
+  it('dsh-version:list：registry 读取失败 → ok:false code=internal（透传原因）', async () => {
+    installerFake.listAvailableVersions.mockRejectedValueOnce(new Error('registry 不可达'))
+
+    const result = (await invoke('dsh-version:list')) as {
+      ok: boolean
+      code?: string
+      message?: string
+    }
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'internal',
+      message: expect.stringContaining('registry 不可达')
+    })
+  })
+
+  it('upgrade：可升级 → 触发 runtime.upgradeInstance 并立即返回 null', async () => {
     const created = (await invoke('instances:create', {
       ...VALID_LOCAL,
       dshVersion: '0.1.4'
@@ -493,70 +580,56 @@ describe('registerIpc', () => {
     if (!created.ok) throw new Error('创建失败')
     currentStatus = { id: created.value.id, status: 'stopped', runtimeSource: 'hub', at: new Date().toISOString() }
 
-    const result = (await invoke('instances:upgradeDshVersion', created.value.id)) as {
+    const result = (await invoke('dsh-version:upgrade', created.value.id)) as {
       ok: boolean
-      value: { accepted: boolean }
+      value: null
     }
-    expect(result).toEqual({ ok: true, value: { accepted: true } })
 
-    // 让后台的 ensureInstalled/回写微任务跑完
-    await vi.waitFor(() => {
-      expect(versionProgress.some((e) => (e as { phase: string }).phase === 'done')).toBe(true)
-    })
-    expect(installerFake.ensureInstalled).toHaveBeenCalled()
-    const done = versionProgress.find((e) => (e as { phase: string }).phase === 'done') as {
-      version: string
-      percent: number
-    }
-    expect(done).toMatchObject({ version: '0.1.5', percent: 100 })
-    // 未运行 → 不重启
-    expect(runtimeFake.stop).not.toHaveBeenCalled()
+    expect(result).toEqual({ ok: true, value: null })
+    expect(runtimeFake.upgradeInstance).toHaveBeenCalledTimes(1)
+    expect(runtimeFake.upgradeInstance).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.value.id, transport: 'local' })
+    )
   })
 
-  it('upgradeDshVersion:升级前在运行的 hub 实例升级完成后重启', async () => {
-    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
-    if (!created.ok) throw new Error('创建失败')
-    currentStatus = { id: created.value.id, status: 'running', runtimeSource: 'hub', at: new Date().toISOString() }
-
-    await invoke('instances:upgradeDshVersion', created.value.id)
-    await vi.waitFor(() => {
-      expect(versionProgress.some((e) => (e as { phase: string }).phase === 'done')).toBe(true)
-    })
-    expect(runtimeFake.stop).toHaveBeenCalledWith(created.value.id)
-    expect(runtimeFake.start).toHaveBeenCalledTimes(1)
-  })
-
-  it('upgradeDshVersion:不可升级场景返回 invalid-state 且不安装', async () => {
-    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
-    if (!created.ok) throw new Error('创建失败')
-    currentStatus = { id: created.value.id, status: 'running', runtimeSource: 'external', at: new Date().toISOString() }
-
-    const result = (await invoke('instances:upgradeDshVersion', created.value.id)) as {
+  it('upgrade：不可升级来源 → ok:false invalid-input，不触发编排', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!local.ok) throw new Error('创建失败')
+    currentStatus = {
+      id: local.value.id,
+      status: 'running',
+      runtimeSource: 'external',
+      at: new Date().toISOString()
+    }
+    const adopted = (await invoke('dsh-version:upgrade', local.value.id)) as {
       ok: boolean
       code?: string
     }
-    expect(result).toMatchObject({ ok: false, code: 'invalid-state' })
-    expect(installerFake.ensureInstalled).not.toHaveBeenCalled()
+    expect(adopted).toMatchObject({ ok: false, code: 'invalid-input' })
+
+    const remote = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程实例',
+      authMode: 'auto',
+      endpointUrl: 'http://127.0.0.1:1/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!remote.ok) throw new Error('创建失败')
+    const notLocal = (await invoke('dsh-version:upgrade', remote.value.id)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(notLocal).toMatchObject({ ok: false, code: 'invalid-input' })
+
+    expect(runtimeFake.upgradeInstance).not.toHaveBeenCalled()
   })
 
-  it('upgradeDshVersion:安装失败经进度事件报 error，不抛出', async () => {
-    installerFake.ensureInstalled.mockRejectedValueOnce(new Error('registry 不可达'))
-    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
-    if (!created.ok) throw new Error('创建失败')
-    currentStatus = { id: created.value.id, status: 'stopped', runtimeSource: 'hub', at: new Date().toISOString() }
-
-    const result = (await invoke('instances:upgradeDshVersion', created.value.id)) as {
+  it('upgrade：实例不存在报 not-found', async () => {
+    const result = (await invoke('dsh-version:upgrade', '00000000-0000-4000-8000-000000000000')) as {
       ok: boolean
-      value: { accepted: boolean }
+      code?: string
     }
-    expect(result).toEqual({ ok: true, value: { accepted: true } })
-    await vi.waitFor(() => {
-      expect(versionProgress.some((e) => (e as { phase: string }).phase === 'error')).toBe(true)
-    })
-    const err = versionProgress.find((e) => (e as { phase: string }).phase === 'error') as {
-      error: string
-    }
-    expect(err.error).toContain('registry 不可达')
+    expect(result).toMatchObject({ ok: false, code: 'not-found' })
+    expect(runtimeFake.upgradeInstance).not.toHaveBeenCalled()
   })
 
   it('ssh:hostKeyForget:入参走 zod 边界,只有 ssh 实例才转交 tunnels.forgetHostKey', async () => {
@@ -705,13 +778,16 @@ describe('registerIpc', () => {
     })
   })
 
-  it('logout 清理失败不影响登出结果(清理是尽力而为)', async () => {
+  it('logout 清理失败：登出动作仍完成，清理链在失败点终止并回错误信封', async () => {
     clearPartitionSession.mockRejectedValueOnce(new Error('partition 不可用'))
     const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
     const result = (await invoke('auth:logout', id)) as { ok: boolean; code?: string }
-    // IPC 层把异常转成错误信封(不崩),但登出动作已完成
+    // 会话吊销发生在清理之前，已完成；清理异常由 wrap 转成错误信封，调用方不面对异常。
     expect(authFake.logout).toHaveBeenCalledWith(id)
-    expect(result.ok === false || result.ok === true).toBe(true)
+    expect(result).toMatchObject({ ok: false, code: 'internal' })
+    // 失败点之后的 best-effort 链不再执行：忘记 vault 会话与两条审计都不会发生。
+    expect(vaultFake.forgetSession).not.toHaveBeenCalled()
+    expect(auditSpy).not.toHaveBeenCalled()
   })
 
   it('auth:loginStored requires an enabled password policy', async () => {
@@ -1736,11 +1812,9 @@ describe('registerIpc', () => {
     })) as { ok: boolean; value: { id: string } }
     if (!created.ok) throw new Error('创建失败')
 
+    // start 路由本身由上一条用例守（http→httpFake、不误触 local/ssh），此处只保留 start 副作用。
     const startResult = (await invoke('instances:start', created.value.id)) as { ok: boolean }
     expect(startResult.ok).toBe(true)
-    expect(httpFake.start).toHaveBeenCalledTimes(1)
-    expect(runtimeFake.start).not.toHaveBeenCalled()
-    expect(tunnelsFake.start).not.toHaveBeenCalled()
 
     httpFake.statusOf.mockReturnValue({
       id: created.value.id,

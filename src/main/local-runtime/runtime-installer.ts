@@ -7,6 +7,7 @@ import { execFile, spawn } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { compareDshVersions } from './version-compare'
 
 /**
  * 一次可执行的 npm 调用方式。
@@ -249,6 +250,8 @@ export interface RuntimeInstallerOptions {
   runNpm?: NpmRunner
   /** 文件存在性检查（注入便于测试）；默认使用 fs.statSync */
   exists?: (path: string) => boolean
+  /** 只读元数据（versions 列表）内存缓存时长；0 = 关闭缓存。默认 60s（注入便于测试）。 */
+  metadataTtlMs?: number
 }
 
 export interface RuntimeInstaller {
@@ -265,7 +268,7 @@ export interface RuntimeInstaller {
   resolveEntry(version: string): string
   /** 安装中断标记（installing.json）是否残留 */
   hasIncompleteInstall(version: string): Promise<boolean>
-  /** npm registry 上的最新稳定版本（listAvailableVersions 取末项）。 */
+  /** npm registry 上的最大版本（dist-tags.latest 可能滞后于新发布，按版本比较取最大）。 */
   resolveLatestVersion(): Promise<string>
 }
 
@@ -299,12 +302,35 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     return r ? ['--registry', r] : []
   }
 
-  // 同名目录的安装/检查必须串行(双实例并发启动会撞同一 runtimes/dsh-<v> 目录)
+  // 同名目录的安装必须串行(双实例并发启动会撞同一 runtimes/dsh-<v> 目录)
   let installChain: Promise<unknown> = Promise.resolve()
   function enqueueSerial<T>(task: () => Promise<T>): Promise<T> {
     const next = installChain.then(task, task)
     installChain = next.catch(() => undefined)
     return next
+  }
+
+  // 只读元数据（versions/dist-tags）走独立串行链：不排在长安装后面 —— 否则安装进行中
+  // 触发的「检查更新 / 版本列表」要等安装结束才返回。cacache 支持并发读写，读不依赖安装完成。
+  let metadataChain: Promise<unknown> = Promise.resolve()
+  function enqueueMetadata<T>(task: () => Promise<T>): Promise<T> {
+    const next = metadataChain.then(task, task)
+    metadataChain = next.catch(() => undefined)
+    return next
+  }
+
+  /** versions 列表内存缓存：同一 registry 在 TTL 内直接复用（切镜像自动失效）。 */
+  const metadataTtlMs = options.metadataTtlMs ?? 60_000
+  let versionsCache: { registry: string; at: number; versions: string[] } | null = null
+  async function cachedVersions(): Promise<string[]> {
+    const registry = currentRegistry() ?? ''
+    const hit = versionsCache
+    if (hit && hit.registry === registry && Date.now() - hit.at < metadataTtlMs) {
+      return [...hit.versions]
+    }
+    const versions = await unsafeListAvailableVersions()
+    versionsCache = { registry, at: Date.now(), versions }
+    return [...versions]
   }
 
   // 缓存 npm 调用方式解析结果(只解析一次,避免重复探测)
@@ -324,7 +350,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
 
   async function npmView(args: string[]): Promise<CommandResult> {
     // 所有 npm 调用统一走应用私有 cache：用户级 ~/.npm 可能有权限问题(如 root 残留)，
-    // 且避免污染用户缓存；调用本身经串行队列(见 enqueueSerial),避免并发 npm 争抢 cacache 锁
+    // 且避免污染用户缓存；view 类只读查询由调用方经元数据链(见 enqueueMetadata)串行执行。
     const npm = await getNpmInvocation()
     return run(
       npm.command,
@@ -352,25 +378,26 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
         tags && typeof tags === 'object' ? (tags as Record<string, unknown>)['latest'] : undefined
       if (typeof latest === 'string' && VERSION_PATTERN.test(latest)) return latest
     }
-    const versions = await unsafeListAvailableVersions()
+    const versions = await cachedVersions()
     if (versions.length === 0) throw new Error('registry 中没有可用的 dsh 版本')
     return versions[versions.length - 1] as string
   }
 
   return {
     listAvailableVersions(): Promise<string[]> {
-      return enqueueSerial(() => unsafeListAvailableVersions())
+      return enqueueMetadata(cachedVersions)
     },
 
     resolveDefaultVersion(): Promise<string> {
-      return enqueueSerial(() => unsafeResolveDefaultVersion())
+      return enqueueMetadata(() => unsafeResolveDefaultVersion())
     },
 
     resolveLatestVersion(): Promise<string> {
-      return enqueueSerial(async () => {
-        const versions = await unsafeListAvailableVersions()
+      return enqueueMetadata(async () => {
+        const versions = await cachedVersions()
         if (versions.length === 0) throw new Error('registry 中没有可用的 dsh 版本')
-        return versions[versions.length - 1] as string
+        // dist-tags.latest 可能滞后于 alpha/next 渠道的新发布，取版本列表最大值。
+        return [...versions].sort(compareDshVersions).at(-1) ?? versions[versions.length - 1]!
       })
     },
 

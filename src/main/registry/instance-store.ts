@@ -43,7 +43,8 @@ const CORRUPT_PREFIX = `${FILE_NAME}.corrupt-`
  */
 const FILE_MODE = 0o600
 
-export type StoreErrorCode = 'invalid-input' | 'not-found' | 'invalid-state' | 'io-error'
+/** IPC 错误码子集：注册表错误与装配缺失统一映射到 IpcResult 信封（含 internal）。 */
+export type StoreErrorCode = 'invalid-input' | 'not-found' | 'invalid-state' | 'io-error' | 'internal'
 
 export class InstanceStoreError extends Error {
   readonly code: StoreErrorCode
