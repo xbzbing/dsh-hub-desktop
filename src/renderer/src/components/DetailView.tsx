@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { tryParseEndpoint } from '@shared/endpoint'
 import { Icon } from '../lib/icons'
-import { STATUS_INFO, TYPE_INFO, addressOf, toDisplayStatus } from '../lib/format'
+import { STATUS_INFO, TYPE_INFO, addressOf, fmtLogTime, toDisplayStatus } from '../lib/format'
 import { useAppStore, type ActivityLine } from '../store'
 import { Modal } from './Modal'
 import EditInstanceDialog from './EditInstanceDialog'
@@ -138,13 +138,13 @@ export default function DetailView(): ReactNode {
     }
   }
 
-  /** 底部信息栏行格式：时间 + 状态原文；升级进度按阶段措辞，失败与完成单独成句。 */
+  /** 底部信息栏行格式：`yyyy-MM-dd HH:mm:ss` + 状态原文；升级进度按阶段措辞，失败与完成单独成句。 */
   const formatActivity = (line: ActivityLine): string => {
     if (line.source === 'runtime') {
-      return `${new Date(line.at).toLocaleTimeString()}  ${line.detail}`
+      return `${fmtLogTime(line.at)}  ${line.detail}`
     }
     const event = line.event
-    const time = new Date(event.at).toLocaleTimeString()
+    const time = fmtLogTime(event.at)
     if (event.phase === 'error') {
       return `${time}  ${t('detail.version.upgradeFailed', {
         msg: event.error ?? t('common.unknown')

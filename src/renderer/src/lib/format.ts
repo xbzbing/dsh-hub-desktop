@@ -121,3 +121,16 @@ export function fmtDuration(ms: number, t: Translator): string {
   if (hours < 24) return t('duration.hours', { h: hours, m: minutes % 60 })
   return t('duration.days', { d: Math.floor(hours / 24), h: hours % 24 })
 }
+
+/**
+ * 日志时间戳 → `yyyy-MM-dd HH:mm:ss`（本地时区，月/日/时分秒补零）。
+ * 固定格式便于日志逐行对齐扫读；不用区域化格式以免随系统语言与 locale 漂移。
+ */
+export function fmtLogTime(iso: string): string {
+  const date = new Date(iso)
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  )
+}

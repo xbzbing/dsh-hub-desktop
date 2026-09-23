@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { STATUS_INFO, compactWorkspaceAddress, toDisplayStatus, toStatusInfo } from './format'
+import { STATUS_INFO, compactWorkspaceAddress, fmtLogTime, toDisplayStatus, toStatusInfo } from './format'
 import type { DisplayStatus } from './format'
 
 /**
@@ -84,6 +84,13 @@ describe('工作区标题地址', () => {
 
   it('本地地址保留端口，不能让长路径撑开标题栏', () => {
     expect(compactWorkspaceAddress('http://127.0.0.1:3080/deep/path')).toBe('127.0.0.1:3080')
+  })
+})
+
+describe('日志时间戳格式', () => {
+  it('固定输出 yyyy-MM-dd HH:mm:ss：本地时区，月/日/时分秒补零', () => {
+    expect(fmtLogTime(new Date(2026, 0, 5, 7, 8, 9).toISOString())).toBe('2026-01-05 07:08:09')
+    expect(fmtLogTime(new Date(2026, 11, 31, 23, 59, 0).toISOString())).toBe('2026-12-31 23:59:00')
   })
 })
 
