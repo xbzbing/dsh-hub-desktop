@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { CreateInstanceInput, DshVersionCatalog } from '@shared/contracts'
 import { tryParseEndpoint } from '@shared/endpoint'
 import { REGISTRY_PRESETS } from '@shared/settings'
+import { LAUNCHERS, type LocalLauncher } from '@shared/local-launch'
 import { Icon } from '../lib/icons'
 import { buildVersionOptions } from '../lib/version-options'
 import KeyPreview from './KeyPreview'
@@ -19,7 +20,7 @@ interface WizardForm {
   version: string
   profile: string
   port: string
-  launcher: 'dsh' | 'dush'
+  launcher: LocalLauncher
   useDefaultSpace: boolean
   registry: string
   host: string
@@ -77,7 +78,7 @@ export default function Wizard(): ReactNode {
   const [transport, setTransport] = useState<'local' | 'ssh' | 'http'>('local')
   const [form, setForm] = useState<WizardForm>(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
-  const [localLaunchers, setLocalLaunchers] = useState<Array<{ launcher: 'dsh' | 'dush'; version: string }>>([])
+  const [localLaunchers, setLocalLaunchers] = useState<Array<{ launcher: LocalLauncher; version: string }>>([])
   const [externalWorkspace, setExternalWorkspace] = useState<{
     pid: number
     port: number
@@ -471,8 +472,23 @@ export default function Wizard(): ReactNode {
                         onChange={set('launcher')}
                         data-testid="wizard-launcher"
                       >
-                        <option value="dsh">dsh{localLaunchers.find((item) => item.launcher === 'dsh') ? ` · ${localLaunchers.find((item) => item.launcher === 'dsh')?.version}` : ` · ${t('wizard.launcherMissing')}`}</option>
-                        <option value="dush" disabled={!localLaunchers.some((item) => item.launcher === 'dush')}>dush{localLaunchers.find((item) => item.launcher === 'dush') ? ` · ${localLaunchers.find((item) => item.launcher === 'dush')?.version}` : ` · ${t('wizard.launcherMissing')}`}</option>
+                        {/* dsh 恒为默认项（缺失时仍可选，启动会提示下载）；dush/duush 未检测到就不出现。 */}
+                        {LAUNCHERS.filter(
+                          (name) =>
+                            name === 'dsh' ||
+                            localLaunchers.some((item) => item.launcher === name)
+                        ).map((name) => {
+                          const detected =
+                            localLaunchers.find((item) => item.launcher === name)?.version ?? null
+                          return (
+                            <option key={name} value={name}>
+                              {name}
+                              {detected !== null
+                                ? ` · ${detected}`
+                                : ` · ${t('wizard.launcherMissing')}`}
+                            </option>
+                          )
+                        })}
                       </select>
                       {localLaunchers.length === 0 && <span className="hint">{t('wizard.launcherMissingHint')}</span>}
                     </div>

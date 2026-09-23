@@ -469,17 +469,24 @@ describe('registerIpc', () => {
     expect(result.value).toMatchObject({ current: null, hasUpdate: true, canUpgrade: true })
   })
 
-  it('check：dush 启动器 / path / external 运行时不可升级并给出原因', async () => {
-    const dush = (await invoke('instances:create', {
-      ...VALID_LOCAL,
-      launcher: 'dush'
-    })) as { ok: boolean; value: { id: string } }
-    if (!dush.ok) throw new Error('创建失败')
-    currentStatus = { id: dush.value.id, status: 'stopped', runtimeSource: 'hub', at: new Date().toISOString() }
-    const dushResult = (await invoke('dsh-version:check', dush.value.id)) as {
-      value: { canUpgrade: boolean; reason?: string }
+  it('check：dush/duush 启动器 / path / external 运行时不可升级并给出原因', async () => {
+    for (const launcher of ['dush', 'duush'] as const) {
+      const custom = (await invoke('instances:create', {
+        ...VALID_LOCAL,
+        launcher
+      })) as { ok: boolean; value: { id: string } }
+      if (!custom.ok) throw new Error('创建失败')
+      currentStatus = {
+        id: custom.value.id,
+        status: 'stopped',
+        runtimeSource: 'hub',
+        at: new Date().toISOString()
+      }
+      const customResult = (await invoke('dsh-version:check', custom.value.id)) as {
+        value: { canUpgrade: boolean; reason?: string }
+      }
+      expect(customResult.value).toMatchObject({ canUpgrade: false, reason: 'launcher-other' })
     }
-    expect(dushResult.value).toMatchObject({ canUpgrade: false, reason: 'launcher-dush' })
 
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
@@ -499,6 +506,27 @@ describe('registerIpc', () => {
       value: { canUpgrade: boolean; reason?: string }
     }
     expect(externalResult.value).toMatchObject({ canUpgrade: false, reason: 'runtime-external' })
+  })
+
+  it('probeLocalDsh：按 LAUNCHERS 逐个探测，命中项含 duush、未命中项不出现', async () => {
+    registerIpc(createInstanceStore({ dir }), {
+      ...ipcDeps,
+      pathProbe: {
+        probe: async () => ({ command: '/Users/x/.local/bin/dsh', version: '0.1.6' }),
+        probeLauncher: async (launcher) =>
+          launcher === 'dush'
+            ? null
+            : { command: `/Users/x/.local/bin/${launcher}`, version: '0.1.6' }
+      }
+    })
+
+    const result = (await invoke('instances:probeLocalDsh')) as {
+      value: Array<{ launcher: string; version: string }>
+    }
+    expect(result.value).toEqual([
+      { launcher: 'dsh', version: '0.1.6' },
+      { launcher: 'duush', version: '0.1.6' }
+    ])
   })
 
   it('check：非 local 传输报 not-local', async () => {

@@ -264,7 +264,7 @@ export const MESSAGES = {
   'wizard.errProfile': { zh: 'Profile 不能包含 ..', en: 'Profile cannot contain ..' },
   'wizard.launcherLabel': { zh: '启动器', en: 'Launcher' },
   'wizard.launcherMissing': { zh: '未检测到，将自动下载 dsh', en: 'Not detected; dsh will be downloaded automatically' },
-  'wizard.launcherMissingHint': { zh: '未检测到 dsh 或 dush；创建后启动时将提示下载 dsh。', en: 'Neither dsh nor dush was detected; starting after creation will prompt to download dsh.' },
+  'wizard.launcherMissingHint': { zh: '未检测到 dsh、dush 或 duush；创建后启动时将提示下载 dsh。', en: 'None of dsh, dush, duush was detected; starting after creation will prompt to download dsh.' },
   'wizard.hostLabel': { zh: '主机（或 ~/.ssh/config 别名）', en: 'Host (or ~/.ssh/config alias)' },
   'wizard.hostPlaceholder': { zh: 'build-01.internal 或 build-01', en: 'build-01.internal or build-01' },
   'wizard.userLabel': { zh: '用户名', en: 'Username' },
@@ -354,9 +354,9 @@ export const MESSAGES = {
     zh: '仅本地实例支持版本管理',
     en: 'Only local instances support version management'
   },
-  'detail.version.reason.launcherDush': {
-    zh: 'dsh 启动器暂不支持代管升级',
-    en: 'Managed upgrade is unavailable for the dush launcher'
+  'detail.version.reason.launcherOther': {
+    zh: 'dush/duush 启动器暂不支持代管升级',
+    en: 'Managed upgrade is unavailable for the dush/duush launchers'
   },
   'detail.version.reason.runtimeExternal': {
     zh: '外部接管的 dsh 由你自行管理',

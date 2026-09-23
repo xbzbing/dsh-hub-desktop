@@ -6,6 +6,7 @@
  */
 import { z } from 'zod'
 import { tryParseEndpoint } from './endpoint'
+import { LAUNCHERS, type LocalLauncher } from './local-launch'
 
 // ===== 枚举 =====
 
@@ -100,8 +101,8 @@ export const LocalInstanceSchema = z.object({
   port: PORT_SCHEMA.nullable().default(null),
   /** 实例配置文件（相对 DSH_HOME） */
   profile: SAFE_PROFILE_SCHEMA.nullable().default(null),
-  /** 可选的 dsh/dush 启动器；null = 默认 dsh。参数由 Hub 固定构造。 */
-  launcher: z.enum(['dsh', 'dush']).nullable().default(null),
+  /** 可选的 dsh/dush/duush 启动器；null = 默认 dsh。参数由 Hub 固定构造。 */
+  launcher: z.enum(LAUNCHERS).nullable().default(null),
   /** true 时复用用户的 ~/.dsh，而非 Hub 的隔离实例目录。 */
   useDefaultSpace: z.boolean().default(false),
   /** 应用启动时自动拉起 */
@@ -160,7 +161,7 @@ export const CreateInstanceInputSchema = z.discriminatedUnion('transport', [
       dshVersion: z.string().trim().max(64).optional(),
       port: PORT_SCHEMA.optional(),
       profile: SAFE_PROFILE_SCHEMA.optional(),
-      launcher: z.enum(['dsh', 'dush']).optional(),
+      launcher: z.enum(LAUNCHERS).optional(),
       useDefaultSpace: z.boolean().optional(),
       /** 创建后接管检测到的外部 dsh web；这些瞬时输入不写入注册表。 */
       useExistingExternal: z.boolean().optional(),
@@ -215,7 +216,7 @@ export const PatchInstanceSchema = z
     dshVersion: z.string().trim().max(64).nullable().optional(),
     port: PORT_SCHEMA.nullable().optional(),
     profile: SAFE_PROFILE_SCHEMA.nullable().optional(),
-    launcher: z.enum(['dsh', 'dush']).nullable().optional(),
+    launcher: z.enum(LAUNCHERS).nullable().optional(),
     useDefaultSpace: z.boolean().optional(),
     autoStart: z.boolean().optional(),
     // —— ssh ——
@@ -526,7 +527,7 @@ export const INSTANCE_RUNTIME_IPC = {
   hideView: 'instances:hideView',
   /** 断开当前实例的内嵌工作区，只销毁 WebContentsView，不停止运行时或清除凭据。 */
   disconnectView: 'instances:disconnectView',
-  /** 只读探测本机 dsh/dush 启动器及版本，用于创建本机实例时的选择器。 */
+  /** 只读探测本机 dsh/dush/duush 启动器及版本，用于创建本机实例时的选择器。 */
   probeLocalDsh: 'instances:probeLocalDsh',
   /** 探测本机已运行的 dsh web 进程；返回 pid、端口和 patch 路径。 */
   scanExternal: 'instances:scanExternal',
@@ -562,8 +563,8 @@ export interface DshVersionCheck {
   hasUpdate: boolean
   /** 是否允许执行升级；false 时 reason 给出原因。 */
   canUpgrade: boolean
-  /** 不可升级的原因代码（transport/launcher/runtimeSource 限制）。 */
-  reason?: 'not-local' | 'launcher-dush' | 'runtime-external'
+  /** 不可升级的原因代码（transport/launcher/runtimeSource 限制）；launcher-other = dsh 之外的启动器。 */
+  reason?: 'not-local' | 'launcher-other' | 'runtime-external'
 }
 
 /** dsh 版本升级进度阶段。 */
@@ -631,7 +632,7 @@ export interface WorkspaceHotkeyEvent {
 export const WORKSPACE_HOTKEY_EVENT = 'dsh:workspace-hotkey'
 
 export interface LocalLauncherSnapshot {
-  launcher: 'dsh' | 'dush'
+  launcher: LocalLauncher
   version: string
 }
 

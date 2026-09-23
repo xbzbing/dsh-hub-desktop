@@ -109,6 +109,9 @@ describe('createInstanceStore / 基础 CRUD', () => {
     const created = asLocal(await store.create(localInput({ launcher: 'dush' })))
     expect(created.launcher).toBe('dush')
 
+    const duush = asLocal(await store.create(localInput({ name: 'duush 实例', launcher: 'duush' })))
+    expect(duush.launcher).toBe('duush')
+
     const updated = asLocal(await store.update(created.id, { launcher: 'dsh' }))
     expect(updated.launcher).toBe('dsh')
 

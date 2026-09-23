@@ -16,6 +16,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, posix } from 'node:path'
+import type { LocalLauncher } from '@shared/local-launch'
 import { VERSION_PATTERN } from './runtime-installer'
 import type { CommandRunner } from './runtime-installer'
 
@@ -98,8 +99,8 @@ export function planRuntimeSource(input: PlanInput): RuntimePlan {
 export interface PathProbe {
   /** 探测 PATH 上的 dsh;失败返回 null(尽力而为) */
   probe(): Promise<PathRuntime | null>
-  /** 探测指定的固定启动器；仅接受 dsh 或 dush。 */
-  probeLauncher?(launcher: 'dsh' | 'dush'): Promise<PathRuntime | null>
+  /** 探测指定的固定启动器；仅接受 dsh、dush 或 duush。 */
+  probeLauncher?(launcher: LocalLauncher): Promise<PathRuntime | null>
 }
 
 export interface PathProbeOptions {
@@ -235,10 +236,10 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
    *
    * `probe()` 与 `probeLauncher()` **必须走同一套**:打包后从 Finder/Dock 启动时
    * 进程只继承 launchd 的最小 PATH(`/usr/bin:/bin:/usr/sbin:/sbin`),装在
-   * `~/.local/bin` 的 dsh/dush 永远 `which` 不到 —— 向导若只做第 ① 层,用户就会
-   * 看到「未检测到 dsh 或 dush」,而运行时获取却能成功。
+   * `~/.local/bin` 的 dsh/dush/duush 永远 `which` 不到 —— 向导若只做第 ① 层,用户就会
+   * 看到「未检测到 dsh、dush 或 duush」,而运行时获取却能成功。
    */
-  async function probeFor(launcher: 'dsh' | 'dush'): Promise<PathRuntime | null> {
+  async function probeFor(launcher: LocalLauncher): Promise<PathRuntime | null> {
     // ① 常规 PATH 探测(终端启动的场景:这里就命中)
     const which = platform === 'win32' ? 'where' : 'which'
     try {
@@ -322,14 +323,14 @@ export function searchNodeDirs(home: string, listDir: (path: string) => string[]
  *
  * 用户实测(macOS,GUI 启动):dsh 装在 `~/.local/bin/dsh`(npm 全局 symlink),
  * 而 Finder 启动的 app PATH 只有系统目录 → `which dsh` 永远失败。除 npm 全局外,
- * 这里覆盖 pnpm / nvm / volta / bun / homebrew 等常见落点;`dsh` 在 win32 下
+ * 这里覆盖 pnpm / nvm / volta / bun / homebrew 等常见落点;启动器名在 win32 下
  * 补 `.cmd`(npm 全局脚本形态)。
  */
 function candidatePaths(
   platform: NodeJS.Platform,
   home: string,
   listDir: (path: string) => string[],
-  launcher: 'dsh' | 'dush'
+  launcher: LocalLauncher
 ): string[] {
   if (platform === 'win32') {
     return [

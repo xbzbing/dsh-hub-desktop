@@ -166,83 +166,96 @@ describe('createLocalRuntime', () => {
     ])
   })
 
-  it('选择 dush 启动器时由 Hub 固定 web、回环端口和 --no-open', async () => {
-    const child = new EventEmitter() as unknown as FakeChild
-    child.stdout = new PassThrough()
-    child.stderr = new PassThrough()
-    child.pid = 999990
-    child.killCall = []
-    child.kill = vi.fn(() => true) as never
-    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
-    const manager = createLocalRuntime({
-      store: storeStub,
-      confirmDownload: async () => true,
-      installer: makeFakeInstaller(),
-      dataRoot: '/tmp/hub-data',
-      spawnImpl: spawnImpl as never,
-      // 固定 node 解析结果,避免测试随开发机是否装有 node 漂移。
-      resolveNode: () => null,
-      readyTimeoutMs: 2_000
-    })
-
-    const instance = localInstance({ launcher: 'dush' })
-    const starting = manager.start(instance)
-    child.stdout.write(readyLine())
-    await starting
-
-    expect(spawnImpl).toHaveBeenCalledWith(
-      expect.objectContaining({
-        command: 'dush',
-        args: [
-          '--profile',
-          'web',
-          '--port',
-          expect.stringMatching(/^\d+$/),
-          '--no-open'
-        ]
-      })
-    )
-  })
-
-  it('dush 启动不会继承父进程的 DUSH_PATCH_FILE，避免 loader 重复加载', async () => {
-    const child = new EventEmitter() as unknown as FakeChild
-    child.stdout = new PassThrough()
-    child.stderr = new PassThrough()
-    child.pid = 999988
-    child.killCall = []
-    child.kill = vi.fn(() => true) as never
-    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
-    const previousPatch = process.env.DUSH_PATCH_FILE
-    process.env.DUSH_PATCH_FILE = '/tmp/global/cordis.dush.patch.yml'
-
-    try {
+  it.each(['dush', 'duush'] as const)(
+    '选择 %s 启动器时由 Hub 固定 web、回环端口和 --no-open',
+    async (launcher) => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999990
+      child.killCall = []
+      child.kill = vi.fn(() => true) as never
+      const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
       const manager = createLocalRuntime({
         store: storeStub,
         confirmDownload: async () => true,
         installer: makeFakeInstaller(),
         dataRoot: '/tmp/hub-data',
         spawnImpl: spawnImpl as never,
-        resolveNode: () => '/tmp/node',
-        pathProbe: {
-          probeLauncher: async () => ({ command: '/tmp/dush', version: '0.1.1-rc.3' }),
-          probe: async () => null
-        },
+        // 固定 node 解析结果,避免测试随开发机是否装有 node 漂移。
+        resolveNode: () => null,
         readyTimeoutMs: 2_000
       })
-      const starting = manager.start(localInstance({ launcher: 'dush' }))
-      await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalled())
+
+      const instance = localInstance({ launcher })
+      const starting = manager.start(instance)
       child.stdout.write(readyLine())
       await starting
 
-      const invocation = (spawnImpl.mock.calls[0] as unknown as [
-        { env: NodeJS.ProcessEnv }
-      ])[0]
-      expect(invocation.env.DUSH_PATCH_FILE).toBeUndefined()
-    } finally {
-      if (previousPatch === undefined) delete process.env.DUSH_PATCH_FILE
-      else process.env.DUSH_PATCH_FILE = previousPatch
+      expect(spawnImpl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          command: launcher,
+          args: [
+            '--profile',
+            'web',
+            '--port',
+            expect.stringMatching(/^\d+$/),
+            '--no-open'
+          ]
+        })
+      )
     }
-  })
+  )
+
+  it.each(['dush', 'duush'] as const)(
+    '%s 启动不会继承父进程的 DUSH_PATCH_FILE，避免 loader 重复加载',
+    async (launcher) => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999988
+      child.killCall = []
+      child.kill = vi.fn(() => true) as never
+      const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+      const previousPatch = process.env.DUSH_PATCH_FILE
+      process.env.DUSH_PATCH_FILE = '/tmp/global/cordis.dush.patch.yml'
+
+      try {
+        const probeLauncher = vi.fn(async () => ({
+          command: `/tmp/${launcher}`,
+          version: '0.1.1-rc.3'
+        }))
+        const manager = createLocalRuntime({
+          store: storeStub,
+          confirmDownload: async () => true,
+          installer: makeFakeInstaller(),
+          dataRoot: '/tmp/hub-data',
+          spawnImpl: spawnImpl as never,
+          resolveNode: () => null,
+          pathProbe: {
+            probeLauncher,
+            probe: async () => null
+          },
+          readyTimeoutMs: 2_000
+        })
+        const starting = manager.start(localInstance({ launcher }))
+        await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalled())
+        child.stdout.write(readyLine())
+        await starting
+
+        // 探测必须按记录的启动器名进行，且优先用探到的绝对路径执行。
+        expect(probeLauncher).toHaveBeenCalledWith(launcher)
+        const invocation = (spawnImpl.mock.calls[0] as unknown as [
+          { env: NodeJS.ProcessEnv; command: string }
+        ])[0]
+        expect(invocation.command).toBe(`/tmp/${launcher}`)
+        expect(invocation.env.DUSH_PATCH_FILE).toBeUndefined()
+      } finally {
+        if (previousPatch === undefined) delete process.env.DUSH_PATCH_FILE
+        else process.env.DUSH_PATCH_FILE = previousPatch
+      }
+    }
+  )
 
   it('公共空间仅使用主进程提供的 ~/.dsh，不接受渲染层路径', async () => {
     const child = new EventEmitter() as unknown as FakeChild

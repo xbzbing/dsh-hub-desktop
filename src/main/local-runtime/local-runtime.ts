@@ -169,7 +169,7 @@ function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS
 }
 
 /**
- * 解析一个真实 node 可执行文件，供 hub 与本机启动器来源执行 dsh/dush。
+ * 解析一个真实 node 可执行文件，供 hub 与本机启动器来源执行 dsh/dush/duush。
  *
  * dsh 的原生插件按运行时指纹校验：不在白名单的 Electron 版本启动即以 code=1 退出，
  * 因此**能用真实 node 时一律用真实 node**。查找顺序：脚本同目录（npm/pnpm 全局常放在一起）
@@ -502,15 +502,16 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       pendingStartCounts.set(id, (pendingStartCounts.get(id) ?? 0) + 1)
       try {
         emit(id, 'starting', { detail: '解析运行时来源' })
-        // dush 由用户已安装的启动器直接执行；默认 dsh 仍沿用原有的来源探测与下载策略。
+        // dush/duush 由用户已安装的启动器直接执行；默认 dsh 仍沿用原有的来源探测与下载策略。
         // 必须拿到**绝对路径**：裸命令名依赖 PATH 解析，而打包后 GUI 启动的 PATH 未必含用户 bin 目录。
-        const dushRuntime =
-          instance.launcher === 'dush'
-            ? ((await options.pathProbe?.probeLauncher?.('dush').catch(() => null)) ?? null)
-            : null
-        const customLauncher =
-          instance.launcher === 'dush' ? (dushRuntime?.command ?? 'dush') : null
-        // dush 由用户已安装的启动器直接执行；默认 dsh 仍沿用原有的来源探测与下载策略。
+        const customLauncherName =
+          instance.launcher !== null && instance.launcher !== 'dsh' ? instance.launcher : null
+        const launcherRuntime = customLauncherName
+          ? ((await options.pathProbe?.probeLauncher?.(customLauncherName).catch(() => null)) ?? null)
+          : null
+        const customLauncher = customLauncherName
+          ? (launcherRuntime?.command ?? customLauncherName)
+          : null
         const [hubInstalled, pathRuntime] = customLauncher
           ? [[], null]
           : await Promise.all([
@@ -639,9 +640,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
               : {}),
             DSH_HOME: home
           }
-          if (instance.launcher === 'dush') {
-            // dush wrapper 会把自己的隔离 patch 追加到 DUSH_PATCH_FILE；继承用户全局
-            // patch 会让同一个 loader entry(id=dush) 加载两次，直接触发 duplicate 报错。
+          if (customLauncherName !== null) {
+            // dush/duush wrapper 会把自己的隔离 patch 追加到 DUSH_PATCH_FILE；继承用户全局
+            // patch 会让同一个 loader entry 加载两次，直接触发 duplicate 报错。
             delete runtimeEnv.DUSH_PATCH_FILE
           }
           const invocation =

@@ -398,7 +398,7 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
   })
 })
 
-describe('probeLauncher(向导检测本机 dsh/dush)', () => {
+describe('probeLauncher(向导检测本机 dsh/dush/duush)', () => {
   /** 纯注入环境:候选探测不看真实文件系统;platform 固定 darwin,win32 分支另有专属用例 */
   const HERMETIC = {
     platform: 'darwin' as const,
@@ -435,6 +435,33 @@ describe('probeLauncher(向导检测本机 dsh/dush)', () => {
       command: '/Users/example/.local/bin/dush',
       version: '0.1.1-rc.3'
     })
+  })
+
+  it('候选表必须覆盖 duush(不能只列 dsh/dush)', async () => {
+    const probe = createPathProbe({
+      ...HERMETIC,
+      exists: (path) => path === '/Users/example/.local/bin/duush',
+      run: scriptedRunner({
+        'which duush': { code: 1, stdout: '' },
+        '/Users/example/.local/bin/duush --version': { code: 0, stdout: '0.1.0-beta.0\n' }
+      })
+    })
+    await expect(probe.probeLauncher?.('duush')).resolves.toEqual({
+      command: '/Users/example/.local/bin/duush',
+      version: '0.1.0-beta.0'
+    })
+  })
+
+  it('探测 duush 时不得把 dsh/dush 当结果(启动器之间不串台)', async () => {
+    const probe = createPathProbe({
+      ...HERMETIC,
+      exists: (path) => path === '/Users/example/.local/bin/dush',
+      run: scriptedRunner({
+        'which duush': { code: 1, stdout: '' },
+        '/Users/example/.local/bin/dush --version': { code: 0, stdout: '0.1.1-rc.3\n' }
+      })
+    })
+    await expect(probe.probeLauncher?.('duush')).resolves.toBeNull()
   })
 
   it('which 与候选都不行 → 登录 shell 兜底(自定义 PATH 只有登录环境知道)', async () => {

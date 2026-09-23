@@ -6,6 +6,7 @@ import { ipcMain } from 'electron'
 import type { LocalSpaceSnapshot } from '@shared/contracts'
 import { z } from 'zod'
 import { EndpointParseError } from '@shared/endpoint'
+import { LAUNCHERS } from '@shared/local-launch'
 import { IPC } from '@shared/bridge'
 import { HomepageOpenError } from '../shell/open-homepage'
 import {
@@ -449,7 +450,10 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
     runtimeSource: InstanceStatusEvent['runtimeSource'] | undefined
   ): { canUpgrade: boolean; reason?: DshVersionCheck['reason'] } {
     if (record.transport !== 'local') return { canUpgrade: false, reason: 'not-local' }
-    if (record.launcher === 'dush') return { canUpgrade: false, reason: 'launcher-dush' }
+    // dsh 之外的启动器（dush/duush）自带 dsh，hub 不代管其运行时版本。
+    if (record.launcher !== null && record.launcher !== 'dsh') {
+      return { canUpgrade: false, reason: 'launcher-other' }
+    }
     if (runtimeSource === 'path' || runtimeSource === 'external') {
       return { canUpgrade: false, reason: 'runtime-external' }
     }
@@ -631,7 +635,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
   ipcMain.handle(INSTANCE_RUNTIME_IPC.probeLocalDsh, (): Promise<IpcResult<LocalLauncherSnapshot[]>> =>
     wrap(async () => {
       const launchers = await Promise.all(
-        (['dsh', 'dush'] as const).map(async (launcher) => {
+        LAUNCHERS.map(async (launcher) => {
           const found = deps.pathProbe?.probeLauncher
             ? await deps.pathProbe.probeLauncher(launcher)
             : launcher === 'dsh'

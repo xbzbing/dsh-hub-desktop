@@ -47,6 +47,15 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await win.getByTestId('wizard-name').fill('E2E 演示实例')
   await win.locator('[data-testid="wizard-step-2"] details.adv > summary').click()
   await expect(win.getByTestId('wizard-launcher')).toHaveValue('dsh')
+  // dsh 恒在且为默认；dush/duush 只在本机探测到时才渲染（未检测到直接隐藏，不是禁用）。
+  // 选项集合随宿主安装状态变化，故只断言集合约束，不断言具体数量。
+  const launcherOptions = await win.getByTestId('wizard-launcher').evaluate((select) =>
+    Array.from((select as HTMLSelectElement).options).map((option) => option.value)
+  )
+  expect(launcherOptions[0]).toBe('dsh')
+  expect(new Set(launcherOptions).size).toBe(launcherOptions.length)
+  expect(launcherOptions.every((value) => ['dsh', 'dush', 'duush'].includes(value))).toBe(true)
+  await expect(win.getByTestId('wizard-launcher').locator('option:disabled')).toHaveCount(0)
   // 版本管理下拉已接线：选项首项恒为「跟随最新稳定版」（空值），与镜像拉取结果无关（离线安全）。
   await expect(win.getByTestId('wizard-version')).toBeVisible()
   await expect(win.getByTestId('wizard-version').locator('option').first()).toHaveAttribute('value', '')
