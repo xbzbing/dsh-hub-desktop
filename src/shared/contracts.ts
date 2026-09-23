@@ -537,37 +537,52 @@ export const INSTANCE_RUNTIME_IPC = {
 /** dsh 版本管理通道：check 立即返回，upgrade 异步执行并经进度事件回推。 */
 export const DSH_VERSION_IPC = {
   /** 检查本实例当前 dsh 版本与最新可用版本。 */
-  check: 'instances:checkDshVersion',
+  check: 'dsh-version:check',
   /** 升级到最新版本；立即返回，进展由 `dsh:version-progress` 事件回推。 */
-  upgrade: 'instances:upgradeDshVersion',
+  upgrade: 'dsh-version:upgrade',
+  /** 拉取版本目录（新建实例的版本下拉数据源）。 */
+  list: 'dsh-version:list'
 } as const
+
+/** dsh 版本目录（新建实例的版本下拉数据源）。 */
+export interface DshVersionCatalog {
+  /** 当前镜像 registry 上的全部可用版本，从新到旧。 */
+  versions: string[]
+  /** hub 已安装的运行时版本，从新到旧。 */
+  installed: string[]
+}
 
 /** dsh 版本检查结果。 */
 export interface DshVersionCheck {
-  /** 当前实例使用的 dsh 版本（状态事件优先，其次注册表）。 */
+  /** 当前实例使用的 dsh 版本（状态事件优先，其次注册表）；来源未知时为 null。 */
   current: string | null
   /** npm registry 上的最新稳定版本。 */
   latest: string
-  /** 是否有可用更新。 */
+  /** 是否有可用更新；当前版本未知时按可升级即视为有更新。 */
   hasUpdate: boolean
   /** 是否允许执行升级；false 时 reason 给出原因。 */
   canUpgrade: boolean
   /** 不可升级的原因代码（transport/launcher/runtimeSource 限制）。 */
-  reason?: 'not-local' | 'dush-launcher' | 'path-external' | null
+  reason?: 'not-local' | 'launcher-dush' | 'runtime-external'
 }
+
+/** dsh 版本升级进度阶段。 */
+export type DshVersionPhase = 'checking' | 'downloading' | 'installing' | 'done' | 'error'
 
 /** dsh 版本升级进度事件载荷。 */
 export interface DshVersionProgressEvent {
   instanceId: string
-  phase: 'checking' | 'downloading' | 'installing' | 'done' | 'error'
-  /** 0-100 百分比；checking/downloading 阶段可为估算值。 */
-  percent: number
+  phase: DshVersionPhase
+  /** 0-100 整数百分比；下载依赖计数为估算值，未知阶段可缺省。 */
+  percent?: number
   /** 当前阶段的补充说明（如 npm 下载的包路径）。 */
   detail?: string
-  /** done 阶段携带的新版本号。 */
+  /** 目标版本；downloading 及之后的阶段携带。 */
   version?: string
   /** error 阶段的失败原因。 */
   error?: string
+  /** 事件产生时间（ISO 8601）。 */
+  at: string
 }
 
 /** 主进程 → 渲染进程的 dsh 版本升级进度事件。 */
