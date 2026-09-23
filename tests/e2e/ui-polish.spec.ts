@@ -267,7 +267,7 @@ test.afterAll(async () => {
   await app.close()
 })
 
-test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏带内', async () => {
+test('顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏带内', async () => {
   // 结构断言:topbar 与 sidebar 是 app-shell 的并列 grid 项,且 topbar 在前
   const layout = await win.evaluate(() => {
     const shell = document.querySelector('[data-testid="app-shell"]')
@@ -339,7 +339,14 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
   const railInstance = win.getByTestId(`inst-${railItemId}`)
   await railInstance.hover()
   await win.keyboard.press('Meta+b')
-  await win.waitForTimeout(300)
+  // 等过渡真正落到 64px 再截图/断言：固定 sleep 在慢机器上会读到中间态。
+  await expect
+    .poll(() =>
+      win.evaluate(
+        () => getComputedStyle(document.querySelector('[data-testid="app-shell"]') as Element).gridTemplateColumns
+      )
+    )
+    .toContain('64px')
   await win.screenshot({ path: join(SHOT_DIR, 'shell-rail.png'), animations: 'disabled' })
   const railCols = await win.evaluate(
     () => getComputedStyle(document.querySelector('[data-testid="app-shell"]') as Element).gridTemplateColumns
@@ -365,7 +372,10 @@ test('#4 顶栏横跨全宽:sidebar 边框不到窗口顶,红绿灯落在顶栏�
     expect(railItem.x + railItem.width).toBeLessThan(64)
   }
   await win.keyboard.press('Meta+b')
-  await win.waitForTimeout(300)
+  // 收尾等展开真正生效：下一用例按 classList 归一化状态，读到中间态会二次按键来回翻转。
+  await expect
+    .poll(() => win.evaluate(() => document.querySelector('[data-testid="app-shell"]')?.classList.contains('rail')))
+    .toBe(false)
 })
 
 test('收起态悬停提示的四边与圆角一致', async () => {
@@ -386,7 +396,6 @@ test('收起态悬停提示的四边与圆角一致', async () => {
     document.querySelector('[data-testid="app-shell"]')?.classList.contains('rail')
   )
   if (!collapsed) await win.keyboard.press('Meta+b')
-  await win.waitForTimeout(300)
   await expect
     .poll(() =>
       win.evaluate(() => getComputedStyle(document.querySelector('[data-testid="app-shell"]') as Element).gridTemplateColumns)
@@ -590,7 +599,7 @@ test('SSH 认证对话框限制在右侧工作区且指纹复制行不溢出', a
   await expect(win.getByTestId('fingerprint-dialog')).toBeHidden()
 })
 
-test('#1 向导三选项卡:间距与边框关系正常(截图目验)', async () => {
+test('向导三选项卡:间距与边框关系正常(截图目验)', async () => {
   await win.getByTestId('new-instance-btn').click()
   await expect(win.getByTestId('wizard')).toBeVisible()
   await expect(win.getByTestId('wizard-step-1')).toBeVisible()
@@ -612,7 +621,7 @@ test('#1 向导三选项卡:间距与边框关系正常(截图目验)', async ()
   await expect(win.getByTestId('wizard')).toBeHidden()
 })
 
-test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + pill hover', async () => {
+test('认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + pill hover', async () => {
   const { server, port } = await startFakeGateway(true)
   test.setTimeout(60_000)
   try {
@@ -633,7 +642,6 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
     // evaluate 直创实例不经过渲染层 store → 重载让列表/详情缓存同步
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
-    await win.waitForTimeout(400)
 
     await win.getByTestId('instances-table').getByText('OTP 网关实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
@@ -641,14 +649,14 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
     await expect(win.getByTestId('vault-remember-password')).toBeChecked()
     await expect(win.getByTestId('vault-remember-session')).toBeChecked()
 
-    // #2:未登录态 —— 按钮是「登录」且没有「登出」
+    // 未登录态 —— 按钮是「登录」且没有「登出」
     await expect(win.getByTestId('login-btn')).toBeVisible()
     await expect(win.getByTestId('login-btn')).toContainText('登录')
     await expect(win.getByTestId('login-btn')).not.toContainText('重新登录')
     expect(await win.getByTestId('logout-btn').count()).toBe(0)
     await win.screenshot({ path: join(SHOT_DIR, 'detail-not-logged-in.png'), animations: 'disabled' })
 
-    // #3:明文胶囊 hover 出现提示气泡
+    // 明文胶囊 hover 出现提示气泡
     const pill = win.getByTestId('cleartext-warning')
     if ((await pill.count()) > 0) {
       await pill.hover()
@@ -705,7 +713,6 @@ test('#2/#3 认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + 
     await win.waitForTimeout(600)
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
-    await win.waitForTimeout(400)
     await win.getByTestId('instances-table').getByText('无 OTP 网关实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
     await win.getByTestId('login-btn').click()
@@ -753,7 +760,6 @@ test('OTP 屏无已存密码时密码输入框持续可见且可提交', async (
     await win.waitForTimeout(600)
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
-    await win.waitForTimeout(400)
 
     await win.getByTestId('instances-table').getByText('OTP 无密码实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
@@ -805,7 +811,6 @@ test('侧边栏拖拽排序 + 首页表格同步', async () => {
   }
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
-  await win.waitForTimeout(400)
 
   // 获取完整列表,确认新实例在末尾
   const listBefore = await win.evaluate(async () => {
@@ -827,7 +832,6 @@ test('侧边栏拖拽排序 + 首页表格同步', async () => {
   // 刷新页面验证持久化顺序
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
-  await win.waitForTimeout(400)
 
   // 侧边栏顺序验证:新实例部分 A → B → C
   const listAfter = await win.evaluate(async () => {
@@ -857,4 +861,120 @@ test('侧边栏拖拽排序 + 首页表格同步', async () => {
   const cRow = rowTexts.findIndex((t) => t.includes('排序实例 C'))
   expect(aRow).toBeLessThan(bRow)
   expect(bRow).toBeLessThan(cRow)
+})
+
+test('收起侧栏时原生工作区跟随扩大（DOM 与原生边界一致）', async () => {
+  test.setTimeout(60_000)
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' })
+    res.end('<!doctype html><title>workspace</title><p>bounds probe</p>')
+  })
+  await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen))
+  const address = server.address()
+  const port = typeof address === 'object' && address ? address.port : 0
+
+  const contentRect = async (): Promise<{ left: number; width: number } | null> =>
+    win.evaluate(() => {
+      const element = document.querySelector('.content')
+      if (!element) return null
+      const rect = element.getBoundingClientRect()
+      return { left: Math.round(rect.left), width: Math.round(rect.width) }
+    })
+
+  // 取面积最大的子视图 = 当前可见的原生工作区（其余子视图是 0×0 或小浮层）。
+  const nativeBounds = async (): Promise<{ x: number; y: number; width: number; height: number } | null> =>
+    app.evaluate(({ BrowserWindow }) => {
+      const host = BrowserWindow.getAllWindows().find(
+        (candidate) => candidate.contentView.children.length > 0
+      )
+      const views = (host?.contentView.children ?? [])
+        .map((child) =>
+          (
+            child as {
+              getBounds?: () => { x: number; y: number; width: number; height: number }
+            }
+          ).getBounds?.()
+        )
+        .filter(
+          (bounds): bounds is { x: number; y: number; width: number; height: number } =>
+            bounds !== undefined
+        )
+      return views.sort((a, b) => b.width * b.height - a.width * a.height)[0] ?? null
+    })
+
+  try {
+    const instanceId = await win.evaluate(async ({ port: endpointPort }) => {
+      const created = await window.dshHub.instances.create({
+        transport: 'http',
+        name: '边界跟随检查',
+        authMode: 'none',
+        endpointUrl: `http://127.0.0.1:${endpointPort}/dsh`
+      })
+      if (!created.ok) throw new Error(created.message)
+      return created.value.id
+    }, { port })
+    await win.reload()
+    await expect(win.getByTestId('app-shell')).toBeVisible()
+    await expect(win.getByTestId(`inst-${instanceId}`)).toBeVisible()
+
+    // 前置：侧栏展开（前序用例可能停在收起态）。
+    if ((await contentRect())?.left !== 262) {
+      await win.getByTestId('sidebar-collapse-btn').click()
+      await win.waitForTimeout(400)
+    }
+    expect((await contentRect())?.left, '前置：内容区应从 262 开始').toBe(262)
+
+    await win.getByTestId(`inst-${instanceId}`).click()
+    await expect(win.getByTestId('workspace-back-btn')).toBeVisible({ timeout: 20_000 })
+    await win.waitForTimeout(600)
+
+    const before = { dom: await contentRect(), native: await nativeBounds() }
+    console.log('[bounds-diag before]', JSON.stringify(before))
+    expect(before.native, '展开态：原生工作区应与内容区左缘对齐').toMatchObject({ x: 262 })
+
+    await win.getByTestId('sidebar-collapse-btn').click()
+    await win.waitForTimeout(700)
+
+    const after = { dom: await contentRect(), native: await nativeBounds() }
+    console.log('[bounds-diag after]', JSON.stringify(after))
+    expect(after.dom?.left, '收起后：DOM 内容区左缘应到 64').toBe(64)
+    expect(after.native, '收起后：原生工作区必须跟随扩大').toMatchObject({ x: 64 })
+    expect(after.native?.width ?? 0).toBeGreaterThan(before.native?.width ?? 0)
+
+    // 展开方向同样必须跟随（内容区收窄，视图左缘回到 262）。
+    await win.getByTestId('sidebar-collapse-btn').click()
+    await win.waitForTimeout(700)
+    const restored = { dom: await contentRect(), native: await nativeBounds() }
+    console.log('[bounds-diag restored]', JSON.stringify(restored))
+    expect(restored.dom?.left).toBe(262)
+    expect(restored.native, '展开后：原生工作区必须跟随收窄').toMatchObject({ x: 262 })
+
+    // 过渡未结束就用快捷键连切两次：最终必须收敛到正确边界（净效果=保持展开）。
+    await win.keyboard.press('Meta+b')
+    await win.waitForTimeout(60)
+    await win.keyboard.press('Meta+b')
+    await win.waitForTimeout(700)
+    const settled = { dom: await contentRect(), native: await nativeBounds() }
+    console.log('[bounds-diag settled]', JSON.stringify(settled))
+    expect(settled.dom?.left).toBe(262)
+    expect(settled.native).toMatchObject({ x: 262, width: settled.dom?.width })
+
+    // 断开工作区 → 收起侧栏 → 重新打开：边界必须按收起后的布局回传（打开时已是收起态）。
+    await win.getByTestId('workspace-back-btn').click()
+    await expect(win.getByTestId('view-detail')).toBeVisible()
+    await win.keyboard.press('Meta+b')
+    await win.waitForTimeout(400)
+    expect((await contentRect())?.left, '断开后收起：内容区左缘应到 64').toBe(64)
+    await win.getByTestId('open-view-btn').click()
+    await expect(win.getByTestId('workspace-back-btn')).toBeVisible({ timeout: 20_000 })
+    await win.waitForTimeout(600)
+    const reopened = { dom: await contentRect(), native: await nativeBounds() }
+    console.log('[bounds-diag reopened]', JSON.stringify(reopened))
+    expect(reopened.native, '收起态下打开的原生工作区应从 64 起步').toMatchObject({
+      x: 64,
+      width: reopened.dom?.width
+    })
+  } finally {
+    server.close()
+  }
 })

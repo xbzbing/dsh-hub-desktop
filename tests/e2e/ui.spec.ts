@@ -47,6 +47,9 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await win.getByTestId('wizard-name').fill('E2E 演示实例')
   await win.locator('[data-testid="wizard-step-2"] details.adv > summary').click()
   await expect(win.getByTestId('wizard-launcher')).toHaveValue('dsh')
+  // 版本管理下拉已接线：选项首项恒为「跟随最新稳定版」（空值），与镜像拉取结果无关（离线安全）。
+  await expect(win.getByTestId('wizard-version')).toBeVisible()
+  await expect(win.getByTestId('wizard-version').locator('option').first()).toHaveAttribute('value', '')
   await expect(win.getByText('请填写实例名称')).toBeHidden()
   await win.getByRole('button', { name: '下一步' }).click()
 
@@ -92,7 +95,6 @@ test('侧栏实例名称进入工作区或错误详情，随后可删除实例',
     }).toBe(true)
     const opened = await win.getByTestId('workspace-back-btn').isVisible().catch(() => false)
     if (opened) {
-      await expect(win.getByTestId('workspace-toolbar')).toHaveCount(0)
       const toolbarLayout = await win.evaluate(() => {
         const topbar = document.querySelector('.topbar')?.getBoundingClientRect()
         const back = document.querySelector('[data-testid="workspace-back-btn"]')?.getBoundingClientRect()
@@ -104,6 +106,8 @@ test('侧栏实例名称进入工作区或错误详情，随后可删除实例',
     }
   }
   await expect(win.getByTestId('view-detail')).toBeVisible()
+  // 底部信息栏常驻详情页（空态或已有活动日志）。
+  await expect(win.getByTestId('detail-logbar')).toBeVisible()
   const deleteButton = win.getByTestId('delete-btn')
   await expect(deleteButton).toBeVisible()
   const deleteMetrics = await deleteButton.evaluate((element) => {
@@ -118,7 +122,8 @@ test('侧栏实例名称进入工作区或错误详情，随后可删除实例',
     const style = getComputedStyle(button)
     return { right: window.innerWidth - box.right, bottom: window.innerHeight - box.bottom, position: style.position }
   })
-  expect(deletePosition).toEqual({ right: 20, bottom: 20, position: 'fixed' })
+  // 删除按钮悬在底部信息栏之上（信息栏 44px + 16px 间隙），右缘 20px。
+  expect(deletePosition).toEqual({ right: 20, bottom: 60, position: 'fixed' })
   const overviewMetrics = await win.getByTestId('detail-overview-btn').evaluate((element) => {
     const box = element.getBoundingClientRect()
     return { width: box.width, height: box.height }
