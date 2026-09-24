@@ -156,14 +156,14 @@ let nativePorts: HubNativePorts<Tray> | null = null
 /**
  * 托盘图标路径。
  *
- * 打包后资源不在 `out/main` 的相对位置,而是由 electron-builder 经
- * 避免「开发能跑、打包后托盘空白」这类只在发行版出现的问题。
+ * macOS 用模板图 `trayTemplate.png`(文件名以 Template 结尾,菜单栏按明暗自动反色),
+ * Windows / Linux 用彩色图 `tray.png`。打包后资源由 electron-builder 放在
+ * `process.resourcesPath`,开发期回落仓库内的 `resources/`;两者都没有时返回
+ * 仓库相对路径,由 `nativeImage.createFromPath` 渲染为空图。
  */
 function trayIconPath(): string {
-  const candidates = [
-    join(process.resourcesPath, 'trayTemplate.png'),
-    join(__dirname, '../../resources/trayTemplate.png')
-  ]
+  const name = process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png'
+  const candidates = [join(process.resourcesPath, name), join(__dirname, '../../resources', name)]
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate
   }

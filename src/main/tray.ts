@@ -32,7 +32,8 @@ export interface CreateHubTrayOptions {
  * 从磁盘路径加载托盘图标。
  *
  * macOS 的模板图语义由**文件名**决定(`trayTemplate.png` / `trayTemplate@2x.png`),
- * 系统据此自动按明暗反色,无需在此处判断平台。加载失败时返回空图,
+ * 系统据此自动按明暗反色,无需在此处判断平台;Windows / Linux 由 `trayIconPath()`
+ * 传入彩色图。加载失败时返回空图,
  * 由 Electron 渲染为占位(调用方不额外兜底,避免掩盖资源缺失)。
  */
 export function trayIconFrom(iconPath: string): NativeImage {

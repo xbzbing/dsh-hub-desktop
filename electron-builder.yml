@@ -15,11 +15,15 @@ files:
   - out/**
   - package.json
 extraResources:
-  # trayIconPath() 优先读 process.resourcesPath/<name>
+  # trayIconPath() 优先读 process.resourcesPath/<name>；macOS 用模板图，Windows/Linux 用彩色图
   - from: resources/trayTemplate.png
     to: trayTemplate.png
   - from: resources/trayTemplate@2x.png
     to: trayTemplate@2x.png
+  - from: resources/tray.png
+    to: tray.png
+  - from: resources/tray@2x.png
+    to: tray@2x.png
 mac:
   icon: build/icon.icns
   # 只保留应用实际支持的 Chromium 语言包，控制包体积。
