@@ -21,6 +21,7 @@ import type { RuntimeInstaller } from './runtime-installer'
 import type { InstanceStore } from '../registry/instance-store'
 import { planRuntimeSource, type PathProbe } from './runtime-source'
 import { searchNodeDirs } from './node-dirs'
+import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
 import { httpHealthProbe, type HealthProbe } from '../transport/probe'
 
 export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
@@ -90,6 +91,11 @@ export interface LocalRuntimeOptions {
    * 注入以便测试固定该解析结果（默认实现要读真实文件系统）。
    */
   resolveNode?: (scriptPath: string) => string | null
+  /**
+   * 登录环境 PATH 解析（登录 shell / Windows 注册表）；null=不可用时回退继承 PATH。
+   * 缺省用进程内缓存的真实解析；注入以便测试。
+   */
+  loginPath?: () => Promise<string | null>
   /**
    * (生产装配必须注入;测试/受限环境注入 stub)。返回 true 才继续下载。
    */
@@ -205,6 +211,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const profile = options.profile ?? 'web'
   const homeDir = options.homeDir ?? homedir
   const resolveNode = options.resolveNode ?? ((scriptPath: string) => resolveNodeFor(scriptPath, homeDir()))
+  const loginPath = options.loginPath ?? resolveLoginPathOnce
   const readyTimeoutMs = options.readyTimeoutMs ?? 60_000
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
@@ -634,11 +641,16 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           // 校验，不在白名单的 Electron 启动即以 code=1 退出；真实 node 不受该限制。
           const runtimeNode = resolveNode(scriptPath)
           const nodeArgs = nodeInvocation.args
+          // 合并登录环境 PATH：GUI 启动只继承最小 PATH，用户 shell 里的工具目录不在其中。
+          // 顺序为「node 目录 → 登录 PATH → 继承 PATH」，与用户终端的解析结果一致。
+          const loginEnvPath = await loginPath().catch(() => null)
+          const mergedPath = mergeLoginPath(process.env.PATH ?? '', loginEnvPath, process.platform)
           const runtimeEnv: NodeJS.ProcessEnv = {
             ...process.env,
-            ...(runtimeNode !== null
-              ? { PATH: `${dirname(runtimeNode)}${delimiter}${process.env.PATH ?? ''}` }
-              : {}),
+            PATH:
+              runtimeNode !== null
+                ? `${dirname(runtimeNode)}${delimiter}${mergedPath}`
+                : mergedPath,
             DSH_HOME: home
           }
           if (customLauncherName !== null) {
@@ -666,7 +678,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
                     // hub 来源也找不到 node：回退内置 Electron（版本命中白名单时可用）。
                     command: nodeInvocation.command,
                     args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
-                    env: { ...process.env, ...nodeInvocation.env, DSH_HOME: home }
+                    env: { ...runtimeEnv, ...nodeInvocation.env, DSH_HOME: home }
                   }
           const child = spawnImpl({
             ...invocation,

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { InstanceStatusEvent, LocalInstance, DshVersionProgressEvent } from '@shared/contracts'
 import type { InstallProgress, InstalledRuntime, RuntimeInstaller } from './runtime-installer'
@@ -1340,6 +1340,77 @@ describe('凭据脱敏', () => {
     expect(invocation.env.ELECTRON_RUN_AS_NODE).toBeUndefined()
     // 让 dsh spawn 的子进程也能找到同一个 node。
     expect(invocation.env.PATH?.startsWith('/Users/example/.local/bin')).toBe(true)
+  })
+
+  it('启动 env 合并登录 PATH:node 目录 → 登录 PATH → 继承 PATH', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999703
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+
+    const manager = createLocalRuntime({
+      store: storeStub,
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      pathProbe: {
+        probe: async () => ({ command: '/Users/example/.local/bin/dsh', version: '0.1.6-alpha.2' })
+      },
+      resolveNode: () => '/Users/example/.local/bin/node',
+      loginPath: async () => '/login/bin',
+      readyTimeoutMs: 2_000
+    })
+
+    const starting = manager.start(localInstance())
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalled())
+    child.stdout.write(readyLine())
+    await starting
+
+    const invocation = (spawnImpl.mock.calls[0] as unknown as [{ env: NodeJS.ProcessEnv }])[0]
+    const segments = (invocation.env.PATH ?? '').split(delimiter)
+    expect(segments[0]).toBe('/Users/example/.local/bin')
+    expect(segments[1]).toBe('/login/bin')
+    for (const dir of (process.env.PATH ?? '').split(delimiter).filter((d) => d !== '')) {
+      expect(segments).toContain(dir)
+    }
+  })
+
+  it('登录 PATH 不可用时回退继承 PATH,node 目录仍前置', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999704
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+
+    const manager = createLocalRuntime({
+      store: storeStub,
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      pathProbe: {
+        probe: async () => ({ command: '/Users/example/.local/bin/dsh', version: '0.1.6-alpha.2' })
+      },
+      resolveNode: () => '/Users/example/.local/bin/node',
+      loginPath: async () => null,
+      readyTimeoutMs: 2_000
+    })
+
+    const starting = manager.start(localInstance())
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalled())
+    child.stdout.write(readyLine())
+    await starting
+
+    const invocation = (spawnImpl.mock.calls[0] as unknown as [{ env: NodeJS.ProcessEnv }])[0]
+    expect(invocation.env.PATH).toBe(
+      `/Users/example/.local/bin${delimiter}${process.env.PATH ?? ''}`
+    )
   })
 
   it('找不到 node 时按脚本 shebang 直接执行,不悄悄回退到 Electron', async () => {

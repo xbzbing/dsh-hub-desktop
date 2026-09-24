@@ -83,6 +83,7 @@
 本地 dsh 与系统 OpenSSH 均以当前用户身份启动，并继承应用进程环境。这是有意的兼容性约束：`PATH` 用于定位用户安装的运行时，`SSH_AUTH_SOCK` 用于 SSH agent，代理与企业证书相关变量用于受管网络环境。
 
 - renderer 不能指定、覆盖或读取子进程环境变量；主进程只补充每个实例所需的 `DSH_HOME`、askpass socket 等受控变量。
+- 启动本机实例前，主进程把登录环境 PATH 合并进子进程 PATH（登录目录前置、去重）：macOS/Linux 取登录 shell（`$SHELL -lc`）导出的 PATH，Windows 取注册表 User 与 Machine 的 `Path` 并展开 `%VAR%`。解析在应用生命周期内只执行一次，失败或超时回退继承 PATH。最终顺序为「运行时 node 目录 → 登录 PATH → 继承 PATH」，保证 GUI 启动（launchd 最小 PATH）下实例内仍能解析到用户 shell 里的工具。
 - 子进程没有高于 Hub 的 OS 权限；继承环境不构成跨用户或跨进程权限提升边界。
 - 如果未来引入环境过滤，必须先定义 allowlist，至少覆盖 `PATH`、`HOME`、`SSH_AUTH_SOCK`、平台代理变量与运行时必需变量，并在代理、SSH agent 和 PATH dsh 场景下运行集成验证。
 
