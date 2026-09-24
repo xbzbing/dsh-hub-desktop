@@ -459,6 +459,8 @@ h3,
 .runtime-card .runtime-actions {
   margin-top: auto;
   padding-top: 12px;
+  /* 操作按钮变多，窄窗口放不下时换行而不是把按钮文字挤成两行。 */
+  flex-wrap: wrap;
 }
 .detail-delete {
   display: contents;

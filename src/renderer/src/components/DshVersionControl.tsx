@@ -1,86 +1,44 @@
-import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { DshVersionCheck, DshVersionProgressEvent } from '@shared/contracts'
 import { Icon } from '../lib/icons'
 import { PHASE_KEYS, REASON_KEYS } from '../lib/version-phases'
 import { useAppStore } from '../store'
-
-const BRIDGE = window.dshHub
+import type { DshVersionControl } from './useDshVersionControl'
 
 /**
- * 实例详情运行环境卡片中的 dsh 版本管理：手动检查更新 → 一键升级 → 进度百分比。
- * 进度经 onVersionProgress 订阅并按实例过滤，切换实例时清空本地状态。
+ * 实例详情运行环境卡片中的 dsh 版本管理界面：
+ * 「检查更新」在下方操作行，检测结果、升级与进度在卡片正文，两处共用 useDshVersionControl 的状态。
  */
-export default function DshVersionControl({ instanceId }: { instanceId: string }): ReactNode {
+export function DshVersionCheckButton({
+  control
+}: {
+  control: DshVersionControl | null
+}): ReactNode {
   const t = useAppStore((state) => state.t)
-  const reloadRecord = useAppStore((state) => state.reloadRecord)
-  /** 最近一次检测结果；null = 尚未检测。 */
-  const [versionCheck, setVersionCheck] = useState<DshVersionCheck | null>(null)
-  const [checking, setChecking] = useState(false)
-  /** 检查失败的信封 message；非 null 时展示「检查失败 + 重试」。 */
-  const [checkError, setCheckError] = useState<string | null>(null)
-  /** 触发升级被拒绝时的信封 message。 */
-  const [upgradeError, setUpgradeError] = useState<string | null>(null)
-  /** 本实例的最新升级进度事件。 */
-  const [progress, setProgress] = useState<DshVersionProgressEvent | null>(null)
+  if (control === null) return null
+  return (
+    <button
+      className="btn btn-secondary btn-sm"
+      onClick={() => void control.runCheck()}
+      disabled={control.checking || control.active}
+      data-testid="check-version-btn"
+    >
+      <Icon name="check" />
+      {control.checking ? t('detail.version.checking') : t('detail.version.check')}
+    </button>
+  )
+}
 
-  const active =
-    progress !== null &&
-    (progress.phase === 'checking' || progress.phase === 'downloading' || progress.phase === 'installing')
-
-  useEffect(() => {
-    // 切换实例时清空检测结果与进度，避免上一个实例的状态串号。
-    setVersionCheck(null)
-    setChecking(false)
-    setCheckError(null)
-    setUpgradeError(null)
-    setProgress(null)
-    if (!BRIDGE) return
-    return BRIDGE.onVersionProgress((event) => {
-      if (event.instanceId !== instanceId) return
-      setProgress(event)
-      // 升级完成已回写注册表：刷新详情记录，版本行立即显示新版号。
-      if (event.phase === 'done') void reloadRecord(instanceId)
-    })
-  }, [instanceId, reloadRecord])
-
-  /** 手动检查最新稳定版；失败保留可重试的错误提示。 */
-  const runCheck = async (): Promise<void> => {
-    if (checking || active) return
-    setChecking(true)
-    setCheckError(null)
-    try {
-      const result = await BRIDGE?.runtime.checkDshVersion(instanceId)
-      if (!result) {
-        setCheckError(t('common.unknown'))
-        return
-      }
-      if (!result.ok) {
-        setCheckError(result.message)
-        return
-      }
-      setVersionCheck(result.value)
-    } finally {
-      setChecking(false)
-    }
+/** 卡片正文里的版本结果区：可升级时先给升级按钮，随后是结果、失败重试与升级进度。 */
+export function DshVersionPanel({ control }: { control: DshVersionControl | null }): ReactNode {
+  const t = useAppStore((state) => state.t)
+  if (control === null) return null
+  const { versionCheck, checkError, upgradeFail, progress, active } = control
+  // 尚无可展示内容时不占位，避免在操作行之上多出一段空隙。
+  if (versionCheck === null && checkError === null && upgradeFail === null && progress === null) {
+    return null
   }
 
-  /** 触发一键升级；进展经进度事件回推，被拒绝时展示错误提示。 */
-  const runUpgrade = async (): Promise<void> => {
-    if (active) return
-    setUpgradeError(null)
-    setProgress(null)
-    const result = await BRIDGE?.runtime.upgradeDshVersion(instanceId)
-    if (result && !result.ok) setUpgradeError(result.message)
-  }
-
-  /** 升级失败原因：优先取进度 error，其次取触发升级的信封 message。 */
-  const upgradeFail =
-    progress !== null && progress.phase === 'error'
-      ? (progress.error ?? t('common.unknown'))
-      : upgradeError
   const percent = Math.max(0, Math.min(100, Math.round(progress?.percent ?? 0)))
-
   const foundText =
     versionCheck !== null
       ? t('detail.version.found', {
@@ -91,29 +49,20 @@ export default function DshVersionControl({ instanceId }: { instanceId: string }
 
   return (
     <div className="dsh-version-control mt12" data-testid="version-manage">
-      <div className="dsh-version-control__row">
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => void runCheck()}
-          disabled={checking || active}
-          data-testid="check-version-btn"
-        >
-          <Icon name="check" />
-          {checking ? t('detail.version.checking') : t('detail.version.check')}
-        </button>
-        {/* 可升级且检测到新版才给出升级主按钮；升级中全部禁用。 */}
-        {versionCheck?.canUpgrade === true && versionCheck.hasUpdate && (
+      {/* 可升级且检测到新版才给出升级主按钮；升级中全部禁用。 */}
+      {versionCheck?.canUpgrade === true && versionCheck.hasUpdate && (
+        <div className="dsh-version-control__row">
           <button
             className="btn btn-primary btn-sm"
-            onClick={() => void runUpgrade()}
+            onClick={() => void control.runUpgrade()}
             disabled={active}
             data-testid="upgrade-btn"
           >
             <Icon name="refresh" />
             {t('detail.version.upgrade')}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* 检测结果：可升级给新版本或已是最新；不可升级给原因，有新版时一并展示。 */}
       {versionCheck !== null && checkError === null && !active && (
@@ -141,7 +90,7 @@ export default function DshVersionControl({ instanceId }: { instanceId: string }
           <p className="meta err-text">{t('detail.version.checkFailed', { msg: checkError })}</p>
           <button
             className="btn btn-secondary btn-sm mt8"
-            onClick={() => void runCheck()}
+            onClick={() => void control.runCheck()}
             data-testid="check-retry-btn"
           >
             {t('detail.version.retry')}
@@ -188,7 +137,7 @@ export default function DshVersionControl({ instanceId }: { instanceId: string }
           </p>
           <button
             className="btn btn-secondary btn-sm mt8"
-            onClick={() => void runUpgrade()}
+            onClick={() => void control.runUpgrade()}
             data-testid="upgrade-retry-btn"
           >
             {t('detail.version.retry')}

@@ -7,7 +7,8 @@ import { useAppStore, type ActivityLine } from '../store'
 import { Modal } from './Modal'
 import EditInstanceDialog from './EditInstanceDialog'
 import VaultCard from './VaultCard'
-import DshVersionControl from './DshVersionControl'
+import { DshVersionCheckButton, DshVersionPanel } from './DshVersionControl'
+import { useDshVersionControl } from './useDshVersionControl'
 import { PHASE_KEYS } from '../lib/version-phases'
 import { showAuthActions } from '../lib/auth-actions'
 
@@ -58,6 +59,10 @@ export default function DetailView(): ReactNode {
   const [externalAccess, setExternalAccess] = useState<Record<number, string>>({})
   const [showExternalTokenEditor, setShowExternalTokenEditor] = useState(false)
   const [externalToken, setExternalToken] = useState('')
+  // dsh 版本管理仅本机实例：检查更新对比的是本机 npm 镜像，远程实例版本 hub 无从得知也不受 hub 管。
+  const versionControl = useDshVersionControl(
+    record && record.transport === 'local' ? record.id : null
+  )
 
   useEffect(() => {
     if (selection) void ensureRecord(selection)
@@ -425,8 +430,8 @@ export default function DetailView(): ReactNode {
               </>
             )}
           </dl>
-          {/* dsh 版本管理仅本机实例：检查更新对比的是本机 npm 镜像，远程实例版本 hub 无从得知也不受 hub 管。 */}
-          {record.transport === 'local' && <DshVersionControl instanceId={record.id} />}
+          {/* dsh 版本管理：检测结果与升级进度留在正文，检查更新按钮在下方操作行。 */}
+          <DshVersionPanel control={versionControl} />
           <div className="row mt12 runtime-actions">
             <button
               className="btn btn-primary btn-sm"
@@ -484,6 +489,8 @@ export default function DetailView(): ReactNode {
             >
               <Icon name="edit" /> {t('edit.openButton')}
             </button>
+            {/* 检查更新与编辑同一行，放在编辑之后。 */}
+            <DshVersionCheckButton control={versionControl} />
           </div>
         </div>
 
