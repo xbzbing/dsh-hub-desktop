@@ -29,6 +29,7 @@ import { registerIpc } from './ipc/register'
 import type { AuthProbeController } from './ipc/register'
 import { createLocalRuntime } from './local-runtime/local-runtime'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
+import { startAutoStartInstances } from './local-runtime/auto-start'
 import { createExternalDshScanner } from './local-runtime/external-dsh'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import { createPathProbe } from './local-runtime/runtime-source'
@@ -838,6 +839,15 @@ void app.whenReady().then(() => {
 
   createWindow()
   installApplicationMenu()
+
+  // 勾选「应用启动时自动拉起」的本机实例:在状态订阅与窗口就位后统一拉起。
+  // 不 await:启动可能耗时数十秒(下载/安装运行时),失败经状态事件回推,不阻塞启动流程。
+  const autoStartRuntime = runtime
+  void startAutoStartInstances({
+    list: () => instanceStore.list(),
+    start: (instance) => autoStartRuntime.start(instance),
+    onError: (error) => console.error('[main] 启动时自动拉起实例失败：', error)
+  })
 
   app.on('activate', () => {
     // macOS 惯例：点击 Dock 图标时把窗口带回前台。窗口可能仍然存在但处于隐藏状态
