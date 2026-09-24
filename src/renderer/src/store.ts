@@ -356,6 +356,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
           ? { ...instance, address: `127.0.0.1:${event.port}` }
           : instance
       )
+      // 启动命令随状态事件落到详情记录：stopped 会清掉 statuses，该行仍能显示最近一次的命令。
+      let records = state.records
+      const commandTarget = event.command !== undefined ? records[event.id] : undefined
+      if (event.command !== undefined && commandTarget?.transport === 'local') {
+        records = { ...records, [event.id]: { ...commandTarget, runCommand: event.command } }
+      }
       // 运行后自动打开工作区；失败或停止时移除待打开记录。
       let pendingOpen = state.pendingOpen
       if (pendingOpen.includes(event.id)) {
@@ -374,6 +380,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           return {
             instances,
             statuses,
+            records,
             pendingOpen,
             workspaceOpening: false,
             workspaceConnected:
@@ -386,6 +393,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return {
         instances,
         statuses,
+        records,
         pendingOpen,
         workspaceConnected:
           event.status === 'stopped' ? { ...state.workspaceConnected, [event.id]: false } : state.workspaceConnected

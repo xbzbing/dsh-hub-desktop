@@ -369,6 +369,7 @@ export const MESSAGES = {
   'detail.log.copied': { zh: '日志已复制', en: 'Log copied' },
   'detail.log.more': { zh: '更多', en: 'More' },
   'detail.port': { zh: '端口', en: 'Port' },
+  'detail.runCommand': { zh: '运行命令', en: 'Run command' },
   'detail.dataDirTitle': { zh: '该实例隔离的 DSH_HOME', en: 'Isolated DSH_HOME for this instance' },
   'detail.stop': { zh: '关闭实例', en: 'Stop instance' },
   'detail.stopping': { zh: '关闭中…', en: 'Stopping…' },

@@ -5,6 +5,7 @@ import type { InstanceStatusEvent, PatchInstanceInput, Transport } from '@shared
 export interface RuntimeWritebackInput {
   port?: number | undefined
   version?: number | string | undefined
+  command?: string | undefined
   runtimeSource?: InstanceStatusEvent['runtimeSource']
 }
 
@@ -33,6 +34,11 @@ export function runtimeWritebackPatch(
     source !== 'external'
   ) {
     patch.dshVersion = event.version
+  }
+
+  // 启动命令:仅本机实例、hub 自己 spawn 的进程才有;外部接管的命令行不归 hub 决定。
+  if (typeof event.command === 'string' && event.command !== '' && transport === 'local' && source !== 'external') {
+    patch.runCommand = event.command
   }
 
   return patch

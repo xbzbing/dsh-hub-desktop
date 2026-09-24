@@ -142,6 +142,8 @@ interface Entry {
   url: string | null
   port: number | null
   version: string
+  /** 本次启动的实际命令行(命令+参数),经状态事件展示;外部接管条目没有 hub 构造的命令行 */
+  command?: string
   /** #2:运行时来源(hub=隔离目录 / path=用户本机 PATH / external=接管外部进程) */
   runtimeSource: 'hub' | 'path' | 'external'
   home: string
@@ -167,6 +169,16 @@ const defaultSpawn: SpawnLike = ({ command, args, env, cwd, detached }) =>
     detached,
     stdio: ['ignore', 'pipe', 'pipe']
   })
+
+/**
+ * 启动命令展示串:命令与参数原样拼接,含空白或引号的片段加双引号,
+ * 供状态事件与详情页展示、复制到终端复现。
+ */
+function formatCommandLine(invocation: Pick<SpawnInvocation, 'command' | 'args'>): string {
+  return [invocation.command, ...invocation.args]
+    .map((part) => (part !== '' && !/[\s"]/.test(part) ? part : `"${part.replace(/"/g, '\\"')}"`))
+    .join(' ')
+}
 
 function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
   // Electron 主进程的 process.execPath 是 Electron 本体：以 ELECTRON_RUN_AS_NODE 退化为纯 Node 执行 dsh。
@@ -402,6 +414,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       version: entry.version,
       runtimeSource: entry.runtimeSource,
       ...(entry.port !== null ? { port: entry.port } : {}),
+      ...(entry.command !== undefined ? { command: entry.command } : {}),
       detail: `已在 ${entry.home} 启动（dsh web）`
     })
       entry.settleSpawn?.() // 排他地放行下一个实例的启动
@@ -499,6 +512,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           version: existing.version,
           runtimeSource: existing.runtimeSource,
           ...(existing.port !== null ? { port: existing.port } : {}),
+          ...(existing.command !== undefined ? { command: existing.command } : {}),
           detail: '实例已在运行，忽略重复启动'
         })
         return
@@ -546,7 +560,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         let runtimeSource: 'hub' | 'path'
         let scriptPath: string
         if (customLauncher) {
-          version = 'custom'
+          // dush/duush 自带 dsh 运行时，hub 不探测其内嵌版本：显示创建时选定的 dsh 版本，
+          // 创建时未固定版本则保留 'custom' 占位。
+          version = instance.dshVersion ?? 'custom'
           runtimeSource = 'path'
           scriptPath = customLauncher
         } else if (plan?.kind === 'path') {
@@ -588,6 +604,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
                 version: already.version,
                 runtimeSource: already.runtimeSource,
                 ...(already.port !== null ? { port: already.port } : {}),
+                ...(already.command !== undefined ? { command: already.command } : {}),
                 detail: '实例已在运行，忽略重复启动'
               })
               return 'duplicate'
@@ -691,6 +708,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             url: null,
             port: null,
             version,
+            command: formatCommandLine(invocation),
             runtimeSource,
             home,
             log: [],

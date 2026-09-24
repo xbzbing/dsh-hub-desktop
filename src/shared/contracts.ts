@@ -105,6 +105,8 @@ export const LocalInstanceSchema = z.object({
   launcher: z.enum(LAUNCHERS).nullable().default(null),
   /** true 时复用用户的 ~/.dsh，而非 Hub 的隔离实例目录。 */
   useDefaultSpace: z.boolean().default(false),
+  /** 最近一次启动的命令行；启动成功后由状态事件回写。null = 尚未由 Hub 启动过。 */
+  runCommand: z.string().trim().max(2048).nullable().default(null),
   /** 应用启动时自动拉起 */
   autoStart: z.boolean().default(false)
 })
@@ -218,6 +220,7 @@ export const PatchInstanceSchema = z
     profile: SAFE_PROFILE_SCHEMA.nullable().optional(),
     launcher: z.enum(LAUNCHERS).nullable().optional(),
     useDefaultSpace: z.boolean().optional(),
+    runCommand: z.string().trim().max(2048).nullable().optional(),
     autoStart: z.boolean().optional(),
     // —— ssh ——
     host: SSH_HOST_SCHEMA.optional(),
@@ -661,6 +664,8 @@ export interface InstanceStatusEvent {
   port?: number
   /** 本次启动使用的 dsh 运行时版本（解析后回填，供 UI 展示与注册表回写） */
   version?: string
+  /** 本次启动的实际命令行（主进程 spawn 的命令与参数，供详情页展示与复制） */
+  command?: string
   /** 运行时来源：hub 为应用隔离目录，path 为用户 PATH，external 为接管的本机进程。 */
   runtimeSource?: 'hub' | 'path' | 'external'
   /** 人读诊断信息（进度 / 失败归因） */

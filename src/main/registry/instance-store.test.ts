@@ -91,6 +91,7 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(record.dshVersion).toBeNull()
     expect(record.launcher).toBeNull()
     expect(record.useDefaultSpace).toBe(false)
+    expect(record.runCommand).toBeNull()
     expect(record.createdAt).toBe(record.updatedAt)
     expect(new Date(record.createdAt).getTime()).not.toBeNaN()
 
@@ -118,6 +119,13 @@ describe('createInstanceStore / 基础 CRUD', () => {
     await expect(store.update(created.id, { launcher: 'node server.js' } as never)).rejects.toMatchObject({
       code: 'invalid-input'
     })
+  })
+
+  it('local 保存最近一次启动命令(展示字段,可清空)', async () => {
+    const record = asLocal(await store.create(localInput()))
+    const command = '/tmp/dsh --profile web --port 3080 --no-open'
+    expect(asLocal(await store.update(record.id, { runCommand: command })).runCommand).toBe(command)
+    expect(asLocal(await store.update(record.id, { runCommand: null })).runCommand).toBeNull()
   })
 
   it('create ssh:默认端口与 host[:port] 拆分', async () => {

@@ -25,6 +25,7 @@ function localInstance(overrides: Partial<LocalInstance> = {}): LocalInstance {
     profile: null,
     launcher: null,
     useDefaultSpace: false,
+    runCommand: null,
     autoStart: false,
     createdAt: ISO,
     updatedAt: ISO,
@@ -204,6 +205,46 @@ describe('createLocalRuntime', () => {
           ]
         })
       )
+    }
+  )
+
+  it.each([
+    { dshVersion: '0.2.0', expected: '0.2.0' },
+    { dshVersion: null, expected: 'custom' }
+  ])(
+    '自定义启动器：dshVersion=$dshVersion 时状态版本显示 $expected，running 事件带实际启动命令',
+    async ({ dshVersion, expected }) => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999986
+      child.killCall = []
+      child.kill = vi.fn(() => true) as never
+      const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+      const manager = createLocalRuntime({
+        store: storeStub,
+        confirmDownload: async () => true,
+        installer: makeFakeInstaller(),
+        dataRoot: '/tmp/hub-data',
+        spawnImpl: spawnImpl as never,
+        probe: async () => true,
+        resolveNode: () => null,
+        pathProbe: {
+          probeLauncher: async () => ({ command: '/tmp/dush', version: '0.1.1-rc.3' }),
+          probe: async () => null
+        },
+        readyTimeoutMs: 2_000
+      })
+
+      const instance = localInstance({ launcher: 'dush', dshVersion, profile: 'dev' })
+      const starting = manager.start(instance)
+      child.stdout.write(readyLine())
+      await starting
+      await waitForStatus(manager, instance.id, 'running')
+
+      // 版本显示创建时选定的 dsh 版本；命令行由 hub 固定的参数拼出，供详情页展示与复制。
+      expect(manager.statusOf(instance.id)?.version).toBe(expected)
+      expect(manager.statusOf(instance.id)?.command).toMatch(/^\/tmp\/dush --profile dev --port \d+ --no-open$/)
     }
   )
 

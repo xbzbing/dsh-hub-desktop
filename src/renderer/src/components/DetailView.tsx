@@ -128,6 +128,11 @@ export default function DetailView(): ReactNode {
   const info = STATUS_INFO[display]
   const version =
     status?.version ?? (record.transport === 'local' ? record.dshVersion : null) ?? '—'
+  /** 最近一次启动命令：运行中以状态事件为准，其后回落到注册表回写的值；外部接管的进程不归 hub 启动。 */
+  const runCommand: string | null =
+    record.transport === 'local' && status?.runtimeSource !== 'external'
+      ? (status?.command ?? record.runCommand ?? null)
+      : null
 
   const copyAddress = async (): Promise<void> => {
     try {
@@ -410,6 +415,13 @@ export default function DetailView(): ReactNode {
                     ? t('detail.externalDataDir')
                     : (localHome ?? `…/homes/${record.id}`)}
                 </dd>
+                {/* 启动命令仅 hub 拉起的本机进程才有；尚未启动过的实例隐藏该行。 */}
+                {runCommand !== null && (
+                  <>
+                    <dt>{t('detail.runCommand')}</dt>
+                    <dd className="num">{runCommand}</dd>
+                  </>
+                )}
               </>
             )}
           </dl>

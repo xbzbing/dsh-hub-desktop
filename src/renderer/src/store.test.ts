@@ -669,6 +669,46 @@ describe('store settings', () => {
     expect(useAppStore.getState().instances[0]?.address).toBe('127.0.0.1:30123')
   })
 
+  it('运行事件的启动命令写入详情记录，stopped 清状态后该行仍能显示', async () => {
+    const useAppStore = await freshStore()
+    useAppStore.setState({
+      records: {
+        'cmd-local': {
+          id: 'cmd-local',
+          name: '命令实例',
+          transport: 'local',
+          authMode: 'auto',
+          dshVersion: null,
+          port: null,
+          profile: null,
+          launcher: null,
+          useDefaultSpace: false,
+          runCommand: null,
+          autoStart: false,
+          createdAt: '2026-09-18T00:00:00.000Z',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      }
+    })
+    const command = '/tmp/dsh --profile web --port 3080 --no-open'
+
+    useAppStore.getState().applyStatus({
+      id: 'cmd-local',
+      status: 'running',
+      command,
+      at: '2026-09-18T00:00:01.000Z'
+    })
+    expect(useAppStore.getState().records['cmd-local']).toMatchObject({ runCommand: command })
+
+    useAppStore.getState().applyStatus({
+      id: 'cmd-local',
+      status: 'stopped',
+      at: '2026-09-18T00:00:02.000Z'
+    })
+    expect(useAppStore.getState().statuses['cmd-local']).toBeUndefined()
+    expect(useAppStore.getState().records['cmd-local']).toMatchObject({ runCommand: command })
+  })
+
   it('applyStatus 每次事件都换 statuses 引用(订阅者才会重渲染),圆点随之实时变化', async () => {
     const useAppStore = await freshStore()
     const before = useAppStore.getState().statuses

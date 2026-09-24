@@ -66,4 +66,23 @@ describe('runtimeWritebackPatch(运行信息回写决策)', () => {
   it('transport 未知(记录已被删除)→ 端口按普通字段回写,不误写 localPort', () => {
     expect(runtimeWritebackPatch({ port: 30002 }, undefined)).toEqual({ port: 30002 })
   })
+
+  it('启动命令:本机且非外部接管时回写 runCommand(PATH 来源同样)', () => {
+    const command = '/Users/me/.local/bin/dsh --profile web --port 3080 --no-open'
+    expect(
+      runtimeWritebackPatch({ port: 3080, version: '0.1.5', command, runtimeSource: 'hub' }, 'local')
+    ).toEqual({ port: 3080, dshVersion: '0.1.5', runCommand: command })
+    expect(runtimeWritebackPatch({ port: 3080, command, runtimeSource: 'path' }, 'local')).toEqual({
+      port: 3080,
+      runCommand: command
+    })
+  })
+
+  it('启动命令:外部接管、非本机实例与空串都不回写', () => {
+    expect(
+      runtimeWritebackPatch({ port: 3080, command: '/tmp/dsh --profile web', runtimeSource: 'external' }, 'local')
+    ).toEqual({})
+    expect(runtimeWritebackPatch({ command: '/tmp/dsh --profile web', runtimeSource: 'hub' }, 'ssh')).toEqual({})
+    expect(runtimeWritebackPatch({ command: '' }, 'local')).toEqual({})
+  })
 })
