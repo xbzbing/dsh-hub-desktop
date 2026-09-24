@@ -78,8 +78,6 @@ export interface DshHubBridge {
   ping: (message?: string) => Promise<IpcResult<PingResult>>
   /** 用系统默认浏览器打开项目主页（无参数，主进程固定 URL） */
   openHomepage: () => Promise<IpcResult<null>>
-  /** 订阅「关于」面板打开事件（应用菜单触发）；返回取消订阅函数 */
-  onAboutOpen: (listener: () => void) => () => void
   /** 已有本机隔离空间；路径只由主进程决定。 */
   spaces: {
     list: () => Promise<IpcResult<LocalSpaceSnapshot[]>>

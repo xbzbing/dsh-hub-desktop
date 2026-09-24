@@ -115,6 +115,16 @@ body {
   overflow: hidden;
   user-select: none;
 }
+/* 「关于」叠加窗口:自身与遮罩背景透明,才能透出下层宿主窗口与内嵌工作区。 */
+html[data-window='about'],
+html[data-window='about'] body,
+html[data-window='about'] #root {
+  background: transparent;
+}
+/* 跨窗口采不到下层内容,backdrop-filter 只会把透明窗口画成黑底;遮罩仅保留纯色压暗。 */
+html[data-window='about'] .overlay {
+  backdrop-filter: none;
+}
 
 img,
 svg {
@@ -1298,6 +1308,16 @@ h3,
 .kv dd.num {
   font-family: var(--font-mono);
 }
+/* 事实信息卡（连接方式/运行环境）：覆盖 body 的 user-select:none 以支持选中复制；
+   按钮仍保持不可选，避免拖选误伤操作区。 */
+.card.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+.card.selectable button {
+  user-select: none;
+  -webkit-user-select: none;
+}
 .tl-item {
   display: grid;
   grid-template-columns: 104px 1fr;
@@ -1395,6 +1415,12 @@ h3,
     opacity: 1;
     transform: none;
   }
+}
+/* 对话框容器仅为收拢 Tab 焦点而聚焦(Escape 由窗口级监听处理),不画蓝色焦点描边;
+   正文控件的焦点态不受影响。 */
+.modal:focus,
+.modal:focus-visible {
+  outline: none;
 }
 .modal {
   width: min(452px, 100%);

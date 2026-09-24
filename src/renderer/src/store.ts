@@ -12,13 +12,15 @@ import { DEFAULT_SETTINGS, resolveLanguage } from '@shared/settings'
 import type { Language, Settings, Theme } from '@shared/settings'
 import { createTranslator } from '@shared/i18n'
 import type { Translator } from '@shared/i18n'
+import { isAboutWindow } from './lib/window-mode'
 
 /**
  * 渲染层出生或热重置时默认没有工作区：主进程的清零钩子只覆盖主框架导航（Cmd+R），
  * HMR 重执行本模块不产生导航 —— 这里无条件撤销一次，避免原生视图以旧几何悬浮。
  * 主进程没有活动工作区时该调用是幂等 no-op。
+ * 「关于」叠加窗口不参与工作区管理：不执行该撤销，否则会隐藏宿主窗口的视图。
  */
-window.dshHub?.runtime?.hideView?.()
+if (!isAboutWindow) window.dshHub?.runtime?.hideView?.()
 
 export interface ToastItem {
   id: number
@@ -51,8 +53,11 @@ interface AppState {
   workspaceOpen: boolean
   /** 正在检测并打开实例工作区；完成前保持加载中间页而不是切换详情。 */
   workspaceOpening: boolean
-  /** 向导暂时遮挡了主进程工作区；关闭向导后恢复已缓存视图。 */
-  workspaceSuspendedForWizard: boolean
+  /**
+   * 向导暂时遮挡了主进程工作区；关闭向导后恢复已缓存视图。
+   * 「关于」由独立叠加窗口承载，不参与遮挡与恢复。
+   */
+  workspaceSuspended: boolean
   /** 断开操作显式标记的工作区；未标记实例沿用运行时状态展示。 */
   workspaceConnected: Record<string, boolean>
   setWorkspaceOpen: (open: boolean) => void
@@ -63,8 +68,6 @@ interface AppState {
   wizardExistingSpaceId: string | null
   /** 设置页是否打开；打开时不显示实例详情。 */
   settingsOpen: boolean
-  /** 「关于」面板是否打开；与设置页互斥。 */
-  aboutOpen: boolean
   /** 向导创建后待自动打开的实例集合(多个实例并发启动时各自独立) */
   pendingOpen: string[]
   /** 主进程 userData 路径(app:info 快照;详情页展示实例数据目录用) */
@@ -124,8 +127,6 @@ interface AppState {
   /** 打开向导并指定一个由主进程验证过的隔离空间。 */
   createWithExistingSpace: (id: string) => void
   setSettingsOpen: (open: boolean) => void
-  /** 「关于」面板是否打开（由应用菜单事件触发）。 */
-  setAboutOpen: (open: boolean) => void
   /** 订阅系统主题变化，仅在 theme='system' 时生效。 */
   subscribeSystemTheme: () => () => void
   setPendingOpen: (id: string) => void
@@ -186,14 +187,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   selection: null,
   workspaceOpen: false,
   workspaceOpening: false,
-  workspaceSuspendedForWizard: false,
+  workspaceSuspended: false,
   workspaceConnected: {},
   rail: initialRail(),
   theme: initialTheme(),
   wizardOpen: false,
   wizardExistingSpaceId: null,
   settingsOpen: false,
-  aboutOpen: false,
   pendingOpen: [],
   userDataPath: null,
   authPhases: {},
@@ -417,7 +417,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   select: (id) => {
     workspaceNavigationGeneration += 1
     void window.dshHub?.runtime?.hideView()
-    set({ selection: id, workspaceOpen: false, workspaceOpening: false, settingsOpen: false })
+    // 挂起标记属于换selection前被遮挡的工作区;切走后不再恢复。
+    set({ selection: id, workspaceOpen: false, workspaceOpening: false, workspaceSuspended: false, settingsOpen: false })
   },
 
   openWorkspace: async (id) => {
@@ -509,21 +510,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
         workspaceNavigationGeneration += 1
         // WebContentsView 是独立于 React DOM 的原生子视图；确认隐藏后才挂载向导，
         // 否则它会覆盖新建实例弹窗。
-        set({ workspaceOpen: false, workspaceOpening: false, workspaceSuspendedForWizard: true })
+        set({ workspaceOpen: false, workspaceOpening: false, workspaceSuspended: true })
         void Promise.resolve(window.dshHub?.runtime?.hideView()).finally(() => {
           if (!get().wizardOpen) set({ wizardOpen: true })
         })
         return
       }
-      set({ wizardOpen: true, workspaceSuspendedForWizard: false })
+      set({ wizardOpen: true })
       return
     }
 
-    const resumeId = state.workspaceSuspendedForWizard ? state.selection : null
-    set({ wizardOpen: false, workspaceSuspendedForWizard: false })
+    const resumeId = state.workspaceSuspended && state.selection !== null ? state.selection : null
+    set({ wizardOpen: false, ...(resumeId !== null ? { workspaceSuspended: false } : {}) })
     if (!resumeId) return
     void window.dshHub?.runtime.openView(resumeId).then((result) => {
-      if (result?.ok && get().selection === resumeId && !get().wizardOpen) set({ workspaceOpen: true })
+      if (result?.ok && get().selection === resumeId && !get().wizardOpen && !get().settingsOpen) {
+        set({ workspaceOpen: true })
+      }
     })
   },
   createWithExistingSpace: (id) => {
@@ -539,20 +542,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       settingsOpen: open,
       workspaceOpen: false,
       workspaceOpening: false,
-      ...(open ? { selection: null, aboutOpen: false } : {})
-    })
-  },
-
-  setAboutOpen: (open) => {
-    if (open) {
-      workspaceNavigationGeneration += 1
-      void window.dshHub?.runtime?.hideView()
-    }
-    set({
-      aboutOpen: open,
-      workspaceOpen: false,
-      workspaceOpening: false,
-      ...(open ? { selection: null, settingsOpen: false } : {})
+      // 打开设置页即放弃当前选中,被遮挡工作区不再有可恢复的目标,挂起标志一并清除。
+      ...(open ? { selection: null, workspaceSuspended: false } : {})
     })
   },
 

@@ -97,13 +97,7 @@ export default function Wizard(): ReactNode {
   /** 自增触发版本目录重取（切换安装镜像后按新源刷新）。 */
   const [catalogEpoch, setCatalogEpoch] = useState(0)
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setWizardOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [setWizardOpen])
+  // Escape 关闭由 Modal 的窗口级关闭栈统一处理（只关最上层），此处不再单独监听。
 
   useEffect(() => {
     if (step !== 2 || transport !== 'local' || localProbeDone) return

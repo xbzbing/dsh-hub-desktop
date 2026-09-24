@@ -69,6 +69,8 @@ function hubWindow() {
     isDestroyed: vi.fn(() => false),
     // 暴露 focus 以便断言工作区路径**从不**抢宿主窗口焦点。
     focus: vi.fn(),
+    // hide() 交还键盘焦点的目标(webContents 级,不激活窗口)。
+    webContents: { focus: vi.fn() },
     getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 1180, height: 780 })),
     contentView: {
       addChildView: vi.fn(),
@@ -288,6 +290,9 @@ describe('createWorkspaceHost', () => {
     host.hide()
     expect(created?.setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 0, height: 0 })
     expect(created?.setVisible).toHaveBeenCalledWith(false)
+    // 隐藏后把键盘焦点交还宿主渲染层;窗口本身不被抢占(makeKey 会打断应用激活)。
+    expect(hub.webContents.focus).toHaveBeenCalledTimes(1)
+    expect(hub.focus).not.toHaveBeenCalled()
     host.close('22222222-2222-4222-8222-222222222222')
     expect(hub.contentView.removeChildView).toHaveBeenCalledWith(created)
     expect(created?.webContents.close).toHaveBeenCalled()

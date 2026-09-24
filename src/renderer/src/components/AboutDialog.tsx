@@ -8,23 +8,17 @@ const BRIDGE = window.dshHub
 /**
  * 「关于」面板：应用版本、项目主页链接与运行组件版本。
  *
- * 打开入口是应用菜单（主进程经 `about:open` 广播），因此面板自身订阅该事件；
+ * 由独立叠加窗口（`?window=about`）承载：与宿主窗口完全重合的透明子窗口，
+ * 浮在宿主窗口（含内嵌工作区）之上，打开与关闭都不改变宿主的页面路由；
+ * 三种关闭途径（右上角、遮罩、Escape）都关闭本窗口。
  * 版本信息取自主进程 `app:info` 快照——渲染层拿不到的东西（Electron/Chromium/Node/V8）
  * 只有主进程能诚实回答。
  */
 export default function AboutDialog() {
-  const aboutOpen = useAppStore((state) => state.aboutOpen)
-  const setAboutOpen = useAppStore((state) => state.setAboutOpen)
   const t = useAppStore((state) => state.t)
   const [info, setInfo] = useState<AppInfo | null>(null)
 
   useEffect(() => {
-    if (!BRIDGE) return
-    return BRIDGE.onAboutOpen(() => setAboutOpen(true))
-  }, [setAboutOpen])
-
-  useEffect(() => {
-    if (!aboutOpen) return
     let cancelled = false
     void BRIDGE?.getInfo().then((result) => {
       if (!cancelled && result.ok) setInfo(result.value)
@@ -32,9 +26,7 @@ export default function AboutDialog() {
     return () => {
       cancelled = true
     }
-  }, [aboutOpen])
-
-  if (!aboutOpen) return null
+  }, [])
 
   const components: Array<[string, string]> = info
     ? [
@@ -48,7 +40,7 @@ export default function AboutDialog() {
   return (
     <Modal
       title={t('about.title')}
-      onClose={() => setAboutOpen(false)}
+      onClose={() => window.close()}
       closeLabel={t('common.close')}
       testId="about-dialog"
     >

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { _electron as electron, expect, test } from '@playwright/test'
 import { buildLaunchArgs } from './launch-args'
+import { closeAboutWithEscape, expectAboutClosed, openAboutViaMenu } from './about-menu'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -264,4 +265,28 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   const log = mainErrors.join('')
   expect(log).not.toContain('回写实例运行信息失败')
   expect(log).not.toContain('补丁不能为空')
+})
+
+test('工作区内打开关于：叠加窗口浮于工作区之上，宿主页面不切换', async () => {
+  test.setTimeout(60_000)
+  // 已接管实例的视图仍在缓存中：重开走同一缓存视图。
+  await expect(win.getByTestId('view-detail')).toBeVisible()
+  const openBtn = win.getByTestId('open-view-btn')
+  await expect(openBtn).toBeEnabled()
+  await openBtn.click()
+  await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+  await expect(win.getByTestId('tb-title')).toHaveText('接管本地实例')
+
+  const about = await openAboutViaMenu(app)
+
+  // 核心断言:宿主全程停留在工作区 —— 不隐藏原生视图、不跳详情、不回列表。
+  // workspace-open 时顶栏标题保持实例名;一旦跳到详情/列表,标题会变成「实例详情/总览」。
+  await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+  await expect(win.getByTestId('tb-title')).toHaveText('接管本地实例')
+
+  await closeAboutWithEscape(about)
+  await expectAboutClosed(app)
+  // 关闭叠加窗口后工作区原样保留。
+  await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
+  await expect(win.getByTestId('tb-title')).toHaveText('接管本地实例')
 })

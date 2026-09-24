@@ -188,6 +188,10 @@ export function createWorkspaceHost(
       entry.visible = false
     }
     activeId = null
+    // 隐藏不会让 macOS 撤下该视图的键盘焦点;不交还的话按键继续落到不可见的
+    // 工作区,宿主渲染层(浮层 Escape、Tab 圈闭)收不到任何输入。
+    const win = getHubWindow()
+    if (win && !win.isDestroyed()) win.webContents.focus()
   }
 
   function disconnect(instanceId: string): void {

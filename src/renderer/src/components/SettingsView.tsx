@@ -300,7 +300,6 @@ export default function SettingsView(): ReactNode {
         <Modal
           title={t('spaces.trashTitle')}
           closeLabel={t('common.close')}
-          initialFocus="dialog"
           closeButtonInTabOrder={false}
           onClose={() => setTrashTarget(null)}
           testId="settings-confirm-trash-space"

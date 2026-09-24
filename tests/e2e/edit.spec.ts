@@ -77,6 +77,17 @@ test('明文警告显示为短标签，完整详情通过 data-tip 提供', asyn
   expect(tip).toContain('http://')
   expect(tip).toContain('SSH')
   expect(await pill.getAttribute('aria-label')).toBe(tip)
+
+  // 「连接方式」「运行环境」两张事实卡放开文本选中（body 默认 user-select:none）。
+  const selectable = await win.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll<HTMLElement>('.detail-page .card.selectable'))
+    return {
+      count: cards.length,
+      selects: cards.map((card) => getComputedStyle(card).userSelect)
+    }
+  })
+  expect(selectable.count).toBe(2)
+  expect(selectable.selects).toEqual(['text', 'text'])
   // 视觉取证:详情页(含胶囊 + 编辑按钮)。
   // animations:'disabled' —— CSS 动画(如 modal fade/rise)快进到终态,避免截到半透明中间帧
   await win.screenshot({ path: join(SHOT_DIR, 'detail-cleartext-pill.png'), animations: 'disabled' })
@@ -98,6 +109,33 @@ test('本地实例可编辑，端口留空时回到自动分配', async () => {
   await expect(win.getByTestId('edit-dialog')).toBeVisible()
   // 截图时禁用动画，避免捕获到半透明的中间帧。
   await win.screenshot({ path: join(SHOT_DIR, 'edit-dialog-open.png'), animations: 'disabled' })
+
+  // Escape 关闭编辑对话框（窗口级关闭栈，焦点无需落在对话框内）。
+  await win.keyboard.press('Escape')
+  await expect(win.getByTestId('edit-dialog')).toBeHidden()
+  // 重新打开继续编辑流程。
+  await win.getByTestId('edit-btn').click()
+  await expect(win.getByTestId('edit-dialog')).toBeVisible()
+
+  // 打开即聚焦对话框本身;Tab / Shift+Tab 只在对话框内圈闭,不落到背后的主窗口。
+  await expect
+    .poll(() =>
+      win.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? '')
+    )
+    .toBe('edit-dialog')
+  const focusInside = (): Promise<boolean> =>
+    win.evaluate(() => {
+      const dialog = document.querySelector('[data-testid="edit-dialog"]')
+      return dialog?.contains(document.activeElement) ?? false
+    })
+  for (let i = 0; i < 12; i += 1) {
+    await win.keyboard.press('Tab')
+    expect(await focusInside()).toBe(true)
+  }
+  for (let i = 0; i < 12; i += 1) {
+    await win.keyboard.press('Shift+Tab')
+    expect(await focusInside()).toBe(true)
+  }
 
   // 端口字段可编辑；名称、启动命令修改，端口设为 30567。
   const portInput = win.getByTestId('edit-port')

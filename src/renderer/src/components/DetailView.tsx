@@ -294,7 +294,8 @@ export default function DetailView(): ReactNode {
       </div>
 
       <div className="grid-2 mt20">
-        <div className="card">
+        {/* 连接方式与运行环境展示地址/端口/版本等事实文本,允许选中复制(body 默认禁选)。 */}
+        <div className="card selectable">
           <div className="card-head">
             <h3>{t('detail.connection')}</h3>
             <span className="meta">{record.transport === 'local'
@@ -390,7 +391,7 @@ export default function DetailView(): ReactNode {
           <VaultCard key={record.id} instanceId={record.id} />
         )}
 
-        <div className="card runtime-card">
+        <div className="card runtime-card selectable">
           <div className="card-head">
             <h3>{t('detail.runtime')}</h3>
             <span className="meta">{record.transport === 'local' ? t('detail.localSide') : t('detail.remoteSide')}</span>
@@ -607,7 +608,6 @@ export default function DetailView(): ReactNode {
           title={t('detail.log.title')}
           onClose={() => setShowLogMore(false)}
           testId="log-more"
-          initialFocus="dialog"
           closeButtonInTabOrder={false}
           footer={
             <div className="right">

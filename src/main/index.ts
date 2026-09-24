@@ -21,7 +21,6 @@ import type {
 } from '@shared/contracts'
 import {
   AUTH_IPC,
-  ABOUT_IPC,
   INSTANCE_STATUS_EVENT,
   DSH_VERSION_PROGRESS_EVENT,
   WORKSPACE_HOTKEY_EVENT
@@ -186,15 +185,61 @@ function quitApp(): void {
   app.quit()
 }
 
+/** 「关于」独立叠加窗口；随宿主窗口的隐藏/关闭一并收起。 */
+let aboutWindow: BrowserWindow | null = null
+
 /**
- * 打开应用内「关于」面板：广播给所有窗口（主窗口收到后渲染对话框）。
+ * 打开应用内「关于」面板：独立的透明无边框子窗口，与宿主窗口完全重合，
+ * 直接浮在内嵌工作区之上 —— 打开与关闭都不改变宿主的页面路由，也不隐藏工作区视图。
  * 不用 `app.showAboutPanel()`：原生面板只显示名称/版本/版权，
  * 放不下项目主页与运行组件版本（`setAboutPanelOptions.website` 仅 Linux 生效）。
  */
 function openAboutPanel(): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(ABOUT_IPC.open)
+  const parent = hubWindow
+  if (!parent || parent.isDestroyed()) return
+  if (aboutWindow && !aboutWindow.isDestroyed()) {
+    if (!e2eHidden) aboutWindow.show()
+    aboutWindow.focus()
+    return
   }
+  const child = new BrowserWindow({
+    parent,
+    ...parent.getBounds(),
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+      spellcheck: false,
+      backgroundThrottling: !e2eHidden
+    }
+  })
+  // 叠加窗口不接受 popup；导航只允许本应用渲染器 origin。
+  child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  child.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedNavigation(url)) event.preventDefault()
+  })
+  child.once('ready-to-show', () => {
+    if (child.isDestroyed()) return
+    if (!e2eHidden) child.show()
+    child.focus()
+  })
+  child.on('closed', () => {
+    if (aboutWindow === child) aboutWindow = null
+  })
+  const base = isDev && rendererDevUrl ? rendererDevUrl : `${RENDERER_ORIGIN}/index.html`
+  void child.loadURL(`${base}?window=about`)
+  aboutWindow = child
 }
 
 /**
@@ -354,6 +399,17 @@ function createWindow(): BrowserWindow {
   win.on('focus', () => {
     workspaceHost.focusActive()
   })
+  // 「关于」叠加窗口跟随宿主：宿主隐藏/关闭即收起，移动/缩放保持完全重合。
+  const collapseAbout = (): void => {
+    if (aboutWindow && !aboutWindow.isDestroyed()) aboutWindow.close()
+  }
+  win.on('hide', collapseAbout)
+  win.on('closed', collapseAbout)
+  const syncAboutBounds = (): void => {
+    if (aboutWindow && !aboutWindow.isDestroyed()) aboutWindow.setBounds(win.getBounds())
+  }
+  win.on('move', syncAboutBounds)
+  win.on('resize', syncAboutBounds)
   hubWindow = win
   return win
 }

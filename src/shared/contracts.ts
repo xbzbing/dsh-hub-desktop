@@ -720,9 +720,3 @@ export function splitSshHostPort(host: string, fallbackPort: number): SshHostPor
 
 /** 「关于」对话框的项目主页（主进程固定，渲染层无从指定其他 URL） */
 export const HOMEPAGE_URL = 'https://github.com/xbzbing/dsh-hub-desktop'
-
-/** 「关于」面板相关通道 */
-export const ABOUT_IPC = {
-  /** 主进程 → 渲染进程：菜单触发打开「关于」对话框 */
-  open: 'about:open'
-} as const

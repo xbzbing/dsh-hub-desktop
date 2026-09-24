@@ -69,6 +69,8 @@ function installGlobals(): void {
   vi.stubGlobal('document', { documentElement: { dataset: {} as Record<string, string> } })
   vi.stubGlobal('navigator', { language: 'zh-CN' })
   vi.stubGlobal('window', {
+    // window-mode 模块顶层读 location.search 判定「关于」窗口,桩必须提供。
+    location: { search: '' },
     matchMedia: () => media,
     dshHub: {
       settings: {
@@ -259,7 +261,7 @@ describe('store settings', () => {
     expect(hideView).toHaveBeenCalledOnce()
     expect(useAppStore.getState().wizardOpen).toBe(false)
     expect(useAppStore.getState().workspaceOpen).toBe(false)
-    expect(useAppStore.getState().workspaceSuspendedForWizard).toBe(true)
+    expect(useAppStore.getState().workspaceSuspended).toBe(true)
 
     resolveHide?.()
     await vi.waitFor(() => expect(useAppStore.getState().wizardOpen).toBe(true))
@@ -268,7 +270,6 @@ describe('store settings', () => {
     await vi.waitFor(() => expect(openView).toHaveBeenCalledWith('instance-1'))
     expect(useAppStore.getState().workspaceOpen).toBe(true)
   })
-
 
   it('选中实例或回到总览都会退出设置页（设置页不能困住导航）', async () => {
     const useAppStore = await freshStore()
