@@ -78,6 +78,7 @@ import type { AuditLog } from './audit/audit-log'
 import { createWorkspaceHost } from './workspace-host'
 import { createWorkspaceTooltipHost } from './workspace-tooltip'
 import { systemLocale } from './system-locale'
+import { pinStartupLanguage } from './startup-language'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'] ?? null
@@ -419,6 +420,10 @@ else {
 if (process.env.DSH_HUB_E2E_PASSWORD_STORE) {
   app.commandLine.appendSwitch('password-store', process.env.DSH_HUB_E2E_PASSWORD_STORE)
 }
+
+// 打包产物缺 app 级 .lproj 时 Chromium 语言回落 en,须在 ready 前钉回系统语言,
+// 否则工作区 dsh web 按 navigator 检测出英文(职责与约束见 startup-language.ts)。
+pinStartupLanguage()
 
 void app.whenReady().then(() => {
   if (!hasSingleInstanceLock) return
