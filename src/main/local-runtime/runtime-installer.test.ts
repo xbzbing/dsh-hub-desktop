@@ -34,6 +34,9 @@ function okRun(stdout: string): CommandResult {
   return { code: 0, stdout, stderr: '' }
 }
 
+/** 路径断言只关心布局：分隔符由宿主的 path.join 决定（Windows 上是反斜杠），比较前统一成正斜杠。 */
+const slashes = (value: string): string => value.replace(/\\/g, '/')
+
 /** 造一个「已安装」的运行时目录,让入口存在性校验通过 */
 async function fakeInstallArtifacts(runtimesDir: string, version: string): Promise<string> {
   const entry = runtimeEntryFor(runtimesDir, version)
@@ -542,7 +545,9 @@ describe('系统 dsh 的 npm 全局升级', () => {
 
   it('globalRuntimeEntry 与 globalPrefixFor 互为逆运算（POSIX 多一层 lib）', () => {
     const prefix = '/Users/x/.local'
-    expect(globalRuntimeEntry(prefix, 'linux')).toBe('/Users/x/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')
+    expect(slashes(globalRuntimeEntry(prefix, 'linux'))).toBe(
+      '/Users/x/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js'
+    )
     expect(globalPrefixFor(globalRuntimeEntry(prefix, 'linux'), 'linux')).toBe(prefix)
     expect(globalRuntimeEntry('C:\\npm', 'win32')).toContain('node_modules')
   })
@@ -563,7 +568,7 @@ describe('系统 dsh 的 npm 全局升级', () => {
       resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
     })
     // globalPrefixFor 一律回正斜杠，与宿主平台的分隔符无关
-    expect(await installer.resolveGlobalPrefix(join(binDir, 'dsh'))).toBe(root.replace(/\\/g, '/'))
+    expect(await installer.resolveGlobalPrefix(join(binDir, 'dsh'))).toBe(slashes(root))
     // 指向不存在的文件 → 解析失败按无法代管处理
     expect(await installer.resolveGlobalPrefix(join(binDir, 'missing'))).toBeNull()
   })
