@@ -51,7 +51,7 @@ let tunnelsFake: {
 }
 let openInstanceView: ReturnType<typeof vi.fn>
 let instanceViewUrlFake: ReturnType<typeof vi.fn>
-let externalDshFake: { scan: ReturnType<typeof vi.fn> }
+let externalDshScannerFake: { scan: ReturnType<typeof vi.fn> }
 let httpFake: {
   onStatus: ReturnType<typeof vi.fn>
   statusOf: ReturnType<typeof vi.fn>
@@ -78,7 +78,7 @@ let vaultFake: Record<string, ReturnType<typeof vi.fn>>
 let auditSpy: (entry: { instanceId?: string | null; event: string; result?: string }) => void
 let settingsFake: Record<string, ReturnType<typeof vi.fn>>
 let onSettingsChanged: ReturnType<typeof vi.fn>
-let promptsFake: {
+let promptBrokerFake: {
   requestHostKey: ReturnType<typeof vi.fn>
   requestAskpass: ReturnType<typeof vi.fn>
   replyHostKey: ReturnType<typeof vi.fn>
@@ -217,8 +217,8 @@ beforeEach(async () => {
   }
   openInstanceView = vi.fn()
   instanceViewUrlFake = vi.fn(() => null)
-  externalDshFake = { scan: vi.fn(async () => []) }
-  promptsFake = {
+  externalDshScannerFake = { scan: vi.fn(async () => []) }
+  promptBrokerFake = {
     requestHostKey: vi.fn(async () => 'trust'),
     requestAskpass: vi.fn(async () => null),
     replyHostKey: vi.fn(() => true),
@@ -232,7 +232,7 @@ beforeEach(async () => {
     tunnels: tunnelsFake as unknown as SshTunnelManager,
     http: httpFake as unknown as HttpEndpointManager,
     auth: authFake as never,
-    externalDsh: externalDshFake as never,
+    externalDshScanner: externalDshScannerFake as never,
     verifyExternalAccess: verifyExternalAccess as (url: string) => Promise<boolean>,
     listLocalSpaces: listLocalSpaces as never,
     trashLocalSpace: trashLocalSpace as never,
@@ -246,7 +246,7 @@ beforeEach(async () => {
     showInstanceTooltip: showInstanceTooltip as never,
     hideInstanceTooltip: hideInstanceTooltip as never,
     instanceViewUrl: instanceViewUrlFake as never,
-    prompts: promptsFake as never,
+    promptBroker: promptBrokerFake as never,
     openInstanceView: openInstanceView as never,
     installer: installerFake as never
   }
@@ -733,7 +733,7 @@ describe('registerIpc', () => {
 
   it('dsh-version:confirmList/confirmReply：待答快照补拉与回答经 broker，入参走 zod 边界', async () => {
     const payload = { requestId: randomUUID(), kind: 'dsh-download' as const, version: '0.1.7-rc.1' }
-    promptsFake.listConfirms.mockReturnValue([payload])
+    promptBrokerFake.listConfirms.mockReturnValue([payload])
 
     const list = (await invoke('dsh-version:confirmList')) as { ok: boolean; value: unknown }
     expect(list).toEqual({ ok: true, value: [payload] })
@@ -743,7 +743,7 @@ describe('registerIpc', () => {
       value: null
     }
     expect(reply).toEqual({ ok: true, value: null })
-    expect(promptsFake.replyConfirm).toHaveBeenCalledWith(payload.requestId, true)
+    expect(promptBrokerFake.replyConfirm).toHaveBeenCalledWith(payload.requestId, true)
 
     // 非法 requestId / 非布尔回答都在 IPC 边界被拒，不触碰 broker。
     const badId = (await invoke('dsh-version:confirmReply', 'not-a-uuid', true)) as {
@@ -756,7 +756,7 @@ describe('registerIpc', () => {
       code?: string
     }
     expect(badAnswer).toMatchObject({ ok: false, code: 'invalid-input' })
-    expect(promptsFake.replyConfirm).toHaveBeenCalledTimes(1)
+    expect(promptBrokerFake.replyConfirm).toHaveBeenCalledTimes(1)
   })
 
   it('upgrade：不可升级来源 → ok:false invalid-input，不触发编排', async () => {
@@ -1224,7 +1224,7 @@ describe('registerIpc', () => {
       value: { id: string }
     }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValueOnce([
+    externalDshScannerFake.scan.mockResolvedValueOnce([
       { pid: 84758, port: 3080, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
     ])
 
@@ -1392,7 +1392,7 @@ describe('registerIpc', () => {
       value: { id: string }
     }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValueOnce([])
+    externalDshScannerFake.scan.mockResolvedValueOnce([])
     runtimeFake.statusOf.mockReturnValue(null)
     const pendingLocal = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
     expect(pendingLocal.ok).toBe(true)
@@ -1405,7 +1405,7 @@ describe('registerIpc', () => {
       value: { id: string }
     }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+    externalDshScannerFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
     vaultFake['getExternalAccessToken']!.mockReturnValue('saved-token')
 
     const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
@@ -1424,7 +1424,7 @@ describe('registerIpc', () => {
       value: { id: string }
     }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+    externalDshScannerFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
     vaultFake['getExternalAccessToken']!.mockReturnValue('expired-token')
     verifyExternalAccess.mockResolvedValueOnce(false)
 
@@ -1443,12 +1443,12 @@ describe('registerIpc', () => {
     }
     if (!local.ok) throw new Error('创建失败')
     vaultFake['getExternalAccessToken']!.mockReturnValue('old-token')
-    externalDshFake.scan.mockResolvedValueOnce([
+    externalDshScannerFake.scan.mockResolvedValueOnce([
       { pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }
     ])
     await expect(invoke('instances:openView', local.value.id)).resolves.toEqual({ ok: true, value: null })
 
-    externalDshFake.scan.mockResolvedValueOnce([
+    externalDshScannerFake.scan.mockResolvedValueOnce([
       { pid: 84759, port: 3080, patch: null, command: 'node /x/dsh web' }
     ])
     const reopened = (await invoke('instances:openView', local.value.id)) as {
@@ -1464,7 +1464,7 @@ describe('registerIpc', () => {
     })
     expect(runtimeFake.stop).toHaveBeenCalledWith(local.value.id)
 
-    externalDshFake.scan.mockResolvedValue([
+    externalDshScannerFake.scan.mockResolvedValue([
       { pid: 84759, port: 3080, patch: null, command: 'node /x/dsh web' }
     ])
     currentStatus = { id: local.value.id, status: 'running', runtimeSource: 'external', at: '2026-09-17T00:00:00.000Z' }
@@ -1476,7 +1476,7 @@ describe('registerIpc', () => {
   })
 
   it('外部接管创建在 token 持久化失败时回滚实例记录', async () => {
-    externalDshFake.scan.mockResolvedValue([
+    externalDshScannerFake.scan.mockResolvedValue([
       { pid: 84758, port: 52300, patch: null, command: 'node /x/dsh web' }
     ])
     vaultFake['rememberExternalAccessToken']!.mockRejectedValueOnce(new Error('keychain unavailable'))
@@ -1495,7 +1495,7 @@ describe('registerIpc', () => {
   })
 
   it('本机已有 dsh web 时创建实例会绑定其端口，而非额外启动新进程', async () => {
-    externalDshFake.scan.mockResolvedValue([
+    externalDshScannerFake.scan.mockResolvedValue([
       { pid: 84758, port: 52300, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
     ])
     const created = (await invoke('instances:create', {
@@ -1521,7 +1521,7 @@ describe('registerIpc', () => {
   })
 
   it('scanExternal:无参数、只读投影、缺省装配返回空列表', async () => {
-    externalDshFake.scan.mockResolvedValueOnce([
+    externalDshScannerFake.scan.mockResolvedValueOnce([
       {
         pid: 84758,
         port: 3080,
@@ -1549,7 +1549,7 @@ describe('registerIpc', () => {
       value: { id: string }
     }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValue([
+    externalDshScannerFake.scan.mockResolvedValue([
       { pid: 84758, port: 3080, patch: '/x.yml', command: 'node /x/dsh web --patch /x.yml' }
     ])
     const adopted = (await invoke(
@@ -1575,7 +1575,7 @@ describe('registerIpc', () => {
   it('接管时可复用已保存的外部 token，渲染层无需再次提交凭据', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+    externalDshScannerFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
     vaultFake['getExternalAccessToken']!.mockReturnValue('saved-token')
 
     const adopted = (await invoke('instances:adoptExternal', local.value.id, 84758, '')) as { ok: boolean }
@@ -1587,7 +1587,7 @@ describe('registerIpc', () => {
   it('外部接管的 token 持久化失败时不改变现有运行时', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+    externalDshScannerFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
     vaultFake['rememberExternalAccessToken']!.mockRejectedValueOnce(new Error('keychain unavailable'))
 
     const adopted = (await invoke('instances:adoptExternal', local.value.id, 84758, 'new-token')) as { ok: boolean }
@@ -1600,7 +1600,7 @@ describe('registerIpc', () => {
   it('外部 dsh 接管验证 token 后保存，失效 token 会被清除并要求重新输入', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
+    externalDshScannerFake.scan.mockResolvedValue([{ pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }])
 
     const saved = (await invoke('instances:adoptExternal', local.value.id, 84758, 'valid-token')) as { ok: boolean }
     expect(saved.ok).toBe(true)
@@ -1622,7 +1622,7 @@ describe('registerIpc', () => {
   it('接管外部 dsh 的 token 只用于匹配 PID 的回环 URL，拒绝远程或错误端口', async () => {
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
-    externalDshFake.scan.mockResolvedValue([
+    externalDshScannerFake.scan.mockResolvedValue([
       { pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }
     ])
 
@@ -1672,7 +1672,7 @@ describe('registerIpc', () => {
     if (!local.ok) throw new Error('创建失败')
     currentStatus = { id: local.value.id, status: 'running', at: '2026-09-17T00:00:00.000Z' }
     runtimeFake.runningIds.mockReturnValue([local.value.id])
-    externalDshFake.scan.mockResolvedValue([
+    externalDshScannerFake.scan.mockResolvedValue([
       { pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }
     ])
     const adopted = (await invoke('instances:adoptExternal', local.value.id, 84758, 'token')) as {
@@ -1693,7 +1693,7 @@ describe('registerIpc', () => {
       runtimeSource: 'external',
       at: '2026-09-17T00:00:00.000Z'
     }
-    externalDshFake.scan.mockResolvedValue([
+    externalDshScannerFake.scan.mockResolvedValue([
       { pid: 84758, port: 3080, patch: null, command: 'node /x/dsh web' }
     ])
     runtimeFake.runningIds.mockReturnValue([local.value.id])
@@ -1715,7 +1715,7 @@ describe('registerIpc', () => {
     if (!local.ok) throw new Error('创建失败')
     currentStatus = { id: local.value.id, status: 'error', at: '2026-09-17T00:00:00.000Z' }
     runtimeFake.runningIds.mockReturnValue([])
-    externalDshFake.scan.mockResolvedValue([
+    externalDshScannerFake.scan.mockResolvedValue([
       { pid: 84759, port: 3080, patch: null, command: 'node /x/dsh web' }
     ])
 
@@ -1739,7 +1739,7 @@ describe('registerIpc', () => {
     if (!local.ok) throw new Error('创建失败')
 
     // pid 不在扫描结果里 → not-found
-    externalDshFake.scan.mockResolvedValue([])
+    externalDshScannerFake.scan.mockResolvedValue([])
     const missing = (await invoke('instances:adoptExternal', local.value.id, 999, 'token')) as {
       ok: boolean
       code?: string
@@ -1748,7 +1748,7 @@ describe('registerIpc', () => {
     if (!missing.ok) expect(missing.code).toBe('not-found')
 
     // 端口未知 → invalid-state(接管也无法开窗)
-    externalDshFake.scan.mockResolvedValue([
+    externalDshScannerFake.scan.mockResolvedValue([
       { pid: 5, port: null, patch: null, command: 'node /x/dsh web' }
     ])
     const noPort = (await invoke('instances:adoptExternal', local.value.id, 5, 'token')) as {
