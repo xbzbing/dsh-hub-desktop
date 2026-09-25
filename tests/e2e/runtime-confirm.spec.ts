@@ -4,11 +4,11 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { accessSync, symlinkSync } from 'node:fs'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 
 /**
  * 运行时二次确认是 hub 风格的渲染层对话框（非系统原生对话框）：
- * 本机探不到任何 dsh（HOME 指向空目录、PATH 只留 npm/node 垫片、登录 shell 不可用）时，
+ * 本机探不到任何 dsh（假 home 让候选安装路径全部落空、PATH 只留 node/npm、登录 shell 不可用）时，
  * 向导创建后的自动启动会走到「需要下载 dsh」确认；断言对话框出现、文案归属、
  * 取消后出列且实例停在停止态（不会真的发起下载）。
  */
@@ -19,7 +19,7 @@ let app: ElectronApplication
 let win: Page
 const cleanupDirs: string[] = []
 
-/** 从 spec 进程的 PATH 里定位可执行文件（shim 目录只保留 npm/node，隐藏 dsh）。 */
+/** POSIX：从 spec 进程的 PATH 里定位可执行文件（shim 目录只保留 npm/node，隐藏 dsh）。 */
 function locateOnPath(binary: string): string {
   for (const dir of (process.env['PATH'] ?? '').split(delimiter)) {
     if (dir === '') continue
@@ -39,13 +39,25 @@ test.beforeAll(async () => {
   await mkdir(DATA_DIR, { recursive: true })
   await mkdir(SHOT_DIR, { recursive: true })
 
-  // 最小环境：假 HOME（候选安装路径全部落空）+ 只含 npm/node 的 PATH（which 找不到 dsh）
-  // + 不可用的登录 shell（登录 shell 兜底探测直接失败）。
+  // 最小环境：假 home（候选安装路径全部落空）+ 只含 node/npm 的 PATH（探测不到 dsh）
+  // + 不可用的登录 shell（登录 shell 兜底探测直接失败；win32 不走该兜底）。
   const fakeHome = await mkdtemp(join(tmpdir(), 'dsh-e2e-home-'))
-  const shimDir = await mkdtemp(join(tmpdir(), 'dsh-e2e-path-'))
-  cleanupDirs.push(fakeHome, shimDir)
-  symlinkSync(locateOnPath('npm'), join(shimDir, 'npm'))
-  symlinkSync(locateOnPath('node'), join(shimDir, 'node'))
+  cleanupDirs.push(fakeHome)
+
+  let pathValue: string
+  if (process.platform === 'win32') {
+    // Windows 没有无扩展名的 node/npm 垫片：直接用 spec 自己的 node 目录
+    // （node.exe 与自带的 node_modules/npm 同目录，正好满足 win32 的 npm 解析），
+    // 再带一个系统目录让 where 可执行；两处都不含 dsh。
+    const system32 = join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32')
+    pathValue = [dirname(process.execPath), system32].join(delimiter)
+  } else {
+    const shimDir = await mkdtemp(join(tmpdir(), 'dsh-e2e-path-'))
+    cleanupDirs.push(shimDir)
+    symlinkSync(locateOnPath('npm'), join(shimDir, 'npm'))
+    symlinkSync(locateOnPath('node'), join(shimDir, 'node'))
+    pathValue = `${shimDir}:/usr/bin:/bin`
+  }
 
   // CI 的 DSH_HUB_E2E_DECLINE_DOWNLOAD=1 会让下载确认在主进程直接按「取消」应答，
   // 本用例要的却是对话框停在页面上等 Playwright 点「取消」，故对该实例移除这个开关。
@@ -58,7 +70,9 @@ test.beforeAll(async () => {
       ...env,
       DSH_HUB_DATA_DIR: DATA_DIR,
       HOME: fakeHome,
-      PATH: `${shimDir}:/usr/bin:/bin`,
+      // win32 的 homedir() 读 USERPROFILE：不同时覆盖它，候选路径不会全部落空
+      USERPROFILE: fakeHome,
+      PATH: pathValue,
       SHELL: join(fakeHome, 'no-such-shell'),
       // 生效镜像必须随确认请求展示：用户要能看到下载的包从哪里来。
       DSH_HUB_NPM_REGISTRY: 'https://registry.npmjs.org'
