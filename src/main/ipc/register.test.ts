@@ -589,6 +589,36 @@ describe('registerIpc', () => {
     })
   })
 
+  it('check：公共空间默认启动器未启动时按启动计划判定，hub 已装固定版本不按 PATH 改写 current', async () => {
+    const probe = vi.fn(async () => ({ command: '/Users/x/.local/bin/dsh', version: '0.1.9' }))
+    const listInstalled = vi.fn(async () => [
+      { version: '0.1.4', dir: '/tmp/dsh-0.1.4', entry: '/tmp/e', installedAt: '2026-09-18T00:00:00.000Z' }
+    ])
+    registerIpc(createInstanceStore({ dir }), {
+      ...ipcDeps,
+      pathProbe: { probe, probeLauncher: async () => null },
+      installer: { ...installerFake, listInstalled } as never
+    })
+    const created = (await invoke('instances:create', {
+      ...VALID_LOCAL,
+      useDefaultSpace: true,
+      dshVersion: '0.1.4'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    currentStatus = null
+
+    const result = (await invoke('dsh-version:check', created.value.id)) as {
+      value: { current: string | null; canUpgrade: boolean; reason?: string }
+    }
+
+    // 计划 = 固定版本已在 hub → 下次启动跑 hub 副本：current 取注册表版本，
+    // 不被 PATH 实测版本改写，也不做系统 dsh 的安装来源检测。
+    expect(result.value).toMatchObject({ current: '0.1.4', canUpgrade: true })
+    expect(result.value.reason).toBeUndefined()
+    expect(listInstalled).toHaveBeenCalled()
+    expect(installerFake.resolveGlobalPrefix).not.toHaveBeenCalled()
+  })
+
   it('probeLocalDsh：按 LAUNCHERS 逐个探测，命中项含 duush、未命中项不出现', async () => {
     registerIpc(createInstanceStore({ dir }), {
       ...ipcDeps,

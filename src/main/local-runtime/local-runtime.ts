@@ -18,7 +18,9 @@ import { redactLine } from '@shared/redact'
 import { DEFAULT_PORT_RANGE_END, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
 import type { RuntimeInstaller } from './runtime-installer'
-import type { InstanceStore } from '../registry/instance-store'
+import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
+import { followsSystemDsh, isExternalRuntime, resolveSystemDshUsage } from './dsh-source-policy'
+import { resolveCmdShim } from './cmd-shim'
 import { planRuntimeSource, type PathProbe } from './runtime-source'
 import { searchNodeDirs } from './node-dirs'
 import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
@@ -78,6 +80,8 @@ export interface LocalRuntimeOptions {
   homeDir?: () => string
   readyTimeoutMs?: number
   stopGraceMs?: number
+  /** stopAll 等待启动队列排空的上限；超时放弃等待，退出不被卡死的安装拖住。 */
+  stopAllDrainMs?: number
   healthTimeoutMs?: number
   healthProbeRetries?: number
   healthProbeRetryMs?: number
@@ -232,6 +236,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const loginPath = options.loginPath ?? resolveLoginPathOnce
   const readyTimeoutMs = options.readyTimeoutMs ?? 60_000
   const stopGraceMs = options.stopGraceMs ?? 3_000
+  const stopAllDrainMs = options.stopAllDrainMs ?? 10_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
   const healthProbeRetries = options.healthProbeRetries ?? 5
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
@@ -466,15 +471,33 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       upgradingIds.add(id)
       const at = (): string => new Date(now()).toISOString()
       try {
-        // 升级对象（与 register 的 usesSystemDsh 同一判定）：公共空间（~/.dsh）且当前（或
-        // 下次启动）使用系统默认 dsh → 升级的就是它，所有共用该 dsh 的实例与终端都会跟随，
-        // 因此必须先二次确认。拒绝时直接返回，不产生任何进度事件、不改任何状态；探测与
-        // 安装布局判定在确认之前完成，注定失败的升级不先打扰用户。
+        // 升级对象经 dsh-source-policy 判定，与版本检查、启动路径共用同一判据：
+        // 结论为「系统默认 dsh」时升级全局 npm 安装，所有共用该 dsh 的实例与终端
+        // 都会跟随，因此必须先二次确认。拒绝时直接返回，不产生任何进度事件、不改任何
+        // 状态；探测与安装布局判定在确认之前完成，注定失败的升级不先打扰用户。
         // 其余情况（隔离空间，或公共空间实际跑 hub 副本）都升级 hub 自己的运行时。
         const runtimeSource = this.statusOf(id)?.runtimeSource
-        if (instance.useDefaultSpace === true && runtimeSource !== 'hub') {
+        if (isExternalRuntime(runtimeSource)) {
+          throw new InstanceStoreError('invalid-state', '外部接管的 dsh 进程归用户所有，hub 不能代管升级')
+        }
+        const decision = await resolveSystemDshUsage({
+          transport: instance.transport,
+          useDefaultSpace: instance.useDefaultSpace,
+          launcher: instance.launcher,
+          runtimeSource,
+          desiredVersion: instance.dshVersion,
+          listInstalledVersions: async () => {
+            try {
+              return (await options.installer.listInstalled()).map((item) => item.version)
+            } catch {
+              return [] as string[]
+            }
+          },
+          probePath: async () => (await options.pathProbe?.probe().catch(() => null)) ?? null
+        })
+        if (decision.usesSystemDsh) {
           const newest = await options.installer.resolveLatestVersion()
-          const system = (await options.pathProbe?.probe().catch(() => null)) ?? null
+          const system = decision.pathRuntime
           if (system === null) {
             throw new Error('未找到系统默认 dsh（PATH 上没有可用的 dsh），无法升级')
           }
@@ -574,14 +597,24 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         const launcherRuntime = customLauncherName
           ? ((await options.pathProbe?.probeLauncher?.(customLauncherName).catch(() => null)) ?? null)
           : null
+        // 探测能力存在却没探到：裸命令名在打包后的 PATH 下注定 ENOENT（或被 node 包成
+        // MODULE_NOT_FOUND），直接给出可行动的失败原因，不再构造注定失败的调用。
+        if (
+          customLauncherName !== null &&
+          options.pathProbe?.probeLauncher !== undefined &&
+          launcherRuntime === null
+        ) {
+          throw new Error(`未找到启动器 ${customLauncherName}（PATH 与常见安装位置均未探到）`)
+        }
         const customLauncher = customLauncherName
           ? (launcherRuntime?.command ?? customLauncherName)
           : null
-        // 公共空间（~/.dsh）与用户自己的终端共用同一份数据：固定跟随系统默认 dsh（PATH 实测），
-        // 不装 hub 副本、不理会实例的固定版本；隔离空间与默认启动器走同一套来源决策。
-        const followsSystemDsh = customLauncher !== null && instance.useDefaultSpace === true
+        // 启动来源判定与升级/版本检查共用 dsh-source-policy：公共空间 + 自定义启动器
+        // 固定跟随系统默认 dsh（PATH 实测），不装 hub 副本、不理会实例的固定版本；
+        // 隔离空间与默认启动器走同一套来源决策。
+        const followSystemDsh = followsSystemDsh(instance.useDefaultSpace, instance.launcher)
         const [hubInstalled, pathRuntime] = await Promise.all([
-          followsSystemDsh
+          followSystemDsh
             ? Promise.resolve([] as string[])
             : options.installer
                 .listInstalled()
@@ -589,7 +622,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
                 .catch(() => [] as string[]),
           options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
         ])
-        const plan = followsSystemDsh
+        const plan = followSystemDsh
           ? pathRuntime === null
             ? null
             : {
@@ -708,6 +741,15 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           // 刻意不传 --host：由 dsh 自己的默认绑定决定（与用户直接运行 `dsh --profile web --port N --no-open` 一致）。
           const profileArgs = ['--profile', instance.profile ?? profile]
           const serverArgs = ['--port', String(preferredPort), '--no-open']
+          // win32 的 .cmd shim 无法被 spawn 直接执行（Node 命令注入防护）：解析出入口脚本
+          // 交给 node 直跑；解析失败立即失败，不构造注定 EINVAL/ENOENT 的调用。
+          if (scriptPath.toLowerCase().endsWith('.cmd')) {
+            const script = resolveCmdShim(scriptPath)
+            if (script === null) {
+              throw new Error(`无法解析启动器脚本（${scriptPath}）`)
+            }
+            scriptPath = script
+          }
           // hub 与 path 来源都优先真实 node：dsh 的原生插件按运行时指纹（Electron 版本白名单）
           // 校验，不在白名单的 Electron 启动即以 code=1 退出；真实 node 不受该限制。
           const runtimeNode = resolveNode(scriptPath)
@@ -952,7 +994,14 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       // entries 以外，安装/端口分配/全局队列中的启动任务也必须作废，防止退出后再 spawn。
       const ids = new Set([...entries.keys(), ...pendingStartCounts.keys()])
       await Promise.all([...ids].map((id) => this.stop(id)))
-      await startChain
+      // 队列可能卡在安装等待上：退出路径有界等待；取消代已保证放弃等待后不会迟到 spawn。
+      await Promise.race([
+        startChain,
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, stopAllDrainMs)
+          timer.unref?.()
+        })
+      ])
     }
   }
 }

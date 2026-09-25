@@ -143,17 +143,6 @@ export function upgradeEligibility(
   return { canUpgrade: true }
 }
 
-/**
- * 升级对象是否为系统默认 dsh：公共空间、且当前（或下次启动）不会跑 hub 副本。
- * 与 runtime 层升级编排的分支条件一致。
- */
-export function usesSystemDsh(
-  record: InstanceRecord,
-  runtimeSource: InstanceStatusEvent['runtimeSource'] | undefined
-): boolean {
-  return record.transport === 'local' && record.useDefaultSpace === true && runtimeSource !== 'hub'
-}
-
 /** 认证探测与静默登录所需的依赖：认证注册表与保险库。 */
 export interface StoredLoginDeps {
   auth: AuthRegistry

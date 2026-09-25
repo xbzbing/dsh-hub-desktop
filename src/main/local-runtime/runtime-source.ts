@@ -17,6 +17,8 @@ import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { posix } from 'node:path'
 import type { LocalLauncher } from '@shared/local-launch'
+import { execFileResult } from './exec-file'
+import { resolveCmdShim } from './cmd-shim'
 import { searchNodeDirs } from './node-dirs'
 import { VERSION_PATTERN } from './runtime-installer'
 import type { CommandRunner } from './runtime-installer'
@@ -116,6 +118,8 @@ export interface PathProbeOptions {
   listDir?: (path: string) => string[]
   /** 是否额外探测登录 shell(默认开;测试可关避免真的起 shell) */
   loginShell?: boolean
+  /** win32 `.cmd` shim 的入口脚本解析(注入便于测试);缺省读磁盘解析 */
+  resolveShim?: (cmdPath: string) => string | null
   /** 登录 shell 可执行文件;默认 process.env.SHELL ?? /bin/zsh */
   shell?: string
 }
@@ -127,30 +131,8 @@ const SHELL_PROBE_TIMEOUT_MS = 8_000
 export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
   const run =
     options.run ??
-    ((command, args) =>
-      new Promise((resolve, reject) => {
-        // 内联最小执行器:探测只关心 stdout/exit code;超时远短于安装器的 15 分钟
-        import('node:child_process').then(({ execFile }) => {
-          execFile(
-            command,
-            args,
-            { timeout: WHICH_TIMEOUT_MS, maxBuffer: 64 * 1024 },
-            (error: Error | null, stdout: string | Buffer, stderr: string | Buffer) => {
-              const code =
-                error && typeof (error as { code?: unknown }).code === 'number'
-                  ? ((error as { code?: number }).code ?? 1)
-                  : error
-                    ? 1
-                    : 0
-              if (error && code === 1 && (error as NodeJS.ErrnoException).code === 'ENOENT') {
-                reject(error)
-                return
-              }
-              resolve({ code, stdout: String(stdout), stderr: String(stderr) })
-            }
-          )
-        }).catch(reject)
-      }))
+    // 探测只关心 stdout/exit code；超时远短于安装器的 15 分钟，超时按失败 reject
+    ((command, args) => execFileResult(command, args, { timeout: WHICH_TIMEOUT_MS, maxBuffer: 64 * 1024 }))
 
   /**
    * 带超时的执行(候选探测/登录 shell 兜底用)。注入的 `run` 自带其超时策略,
@@ -164,31 +146,10 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
     env?: NodeJS.ProcessEnv
   ): Promise<CommandResultLike> => {
     if (injectedRun) return injectedRun(command, args)
-    return new Promise((resolve, reject) => {
-      import('node:child_process').then(({ execFile }) => {
-        execFile(
-          command,
-          args,
-          {
-            timeout: timeoutMs,
-            maxBuffer: 64 * 1024,
-            ...(env === undefined ? {} : { env })
-          },
-          (error: Error | null, stdout: string | Buffer, stderr: string | Buffer) => {
-            const code =
-              error && typeof (error as { code?: unknown }).code === 'number'
-                ? ((error as { code?: number }).code ?? 1)
-                : error
-                  ? 1
-                  : 0
-            if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
-              reject(error)
-              return
-            }
-            resolve({ code, stdout: String(stdout), stderr: String(stderr) })
-          }
-        )
-      }).catch(reject)
+    return execFileResult(command, args, {
+      timeout: timeoutMs,
+      maxBuffer: 64 * 1024,
+      ...(env === undefined ? {} : { env })
     })
   }
   const platform = options.platform ?? process.platform
@@ -205,6 +166,7 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
     })
   const useLoginShell = options.loginShell ?? true
   const shell = options.shell ?? process.env.SHELL ?? '/bin/zsh'
+  const resolveShim = options.resolveShim ?? resolveCmdShim
 
   /** 校验候选:绝对路径 + `--version` 可解析(与 which 分支同一口径) */
   async function validate(
@@ -214,7 +176,17 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
   ): Promise<PathRuntime | null> {
     if (command === '' || !isAbsoluteFor(platform, command)) return null
     try {
-      const versioned = await runWith(command, ['--version'], timeoutMs, env)
+      // win32 的 .cmd 无法被直接执行(Node 命令注入防护):解析 shim 后由 node 跑入口脚本;
+      // 探测结果仍保留 .cmd 路径 —— 展示与 npm 全局前缀推导都以 shim 为准。
+      let probeCommand = command
+      let probeArgs = ['--version']
+      if (platform === 'win32' && command.toLowerCase().endsWith('.cmd')) {
+        const script = resolveShim(command)
+        if (script === null) return null
+        probeCommand = 'node'
+        probeArgs = [script, '--version']
+      }
+      const versioned = await runWith(probeCommand, probeArgs, timeoutMs, env)
       if (versioned.code !== 0) return null
       const version = firstLine(versioned.stdout)
       if (!VERSION_PATTERN.test(version)) return null

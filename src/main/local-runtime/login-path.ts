@@ -11,8 +11,8 @@
  *
  * 解析失败或超时回退继承 PATH；登录 shell / PowerShell 有启动开销，进程内只解析一次。
  */
-import { execFile } from 'node:child_process'
-import type { CommandResult, CommandRunner } from './runtime-installer'
+import { execFileResult } from './exec-file'
+import type { CommandRunner } from './exec-file'
 
 /** 输出标记行：rc 文件可能向 stdout 打印噪声，按标记定位真实结果。 */
 const MARKER = '__DSH_LOGIN_PATH__'
@@ -144,24 +144,5 @@ function lookupEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
 }
 
 const defaultRun: CommandRunner = (command, args) =>
-  new Promise<CommandResult>((resolve, reject) => {
-    execFile(
-      command,
-      args,
-      { timeout: LOGIN_PATH_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
-      (error, stdout, stderr) => {
-        // 启动失败（如 shell 不存在）与执行失败区分：前者 reject，后者由调用方看退出码
-        if (error && typeof (error as NodeJS.ErrnoException).code === 'string') {
-          reject(error)
-          return
-        }
-        const code =
-          error && typeof (error as { code?: unknown }).code === 'number'
-            ? ((error as { code?: number }).code ?? 1)
-            : error
-              ? 1
-              : 0
-        resolve({ code, stdout: String(stdout), stderr: String(stderr) })
-      }
-    )
-  })
+  // 启动失败与超时/信号终止 reject；执行失败（非零退出）由调用方看退出码
+  execFileResult(command, args, { timeout: LOGIN_PATH_TIMEOUT_MS, maxBuffer: 1024 * 1024 })

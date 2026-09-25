@@ -376,25 +376,44 @@ describe('createPathProbe(PATH 探测,尽力而为)', () => {
     })
   })
 
-  it("win32:候选补 .cmd(npm 全局脚本形态)", async () => {
+  it("win32:候选补 .cmd(npm 全局脚本形态),shim 解析成入口脚本由 node 探测", async () => {
+    const cmdPath = 'C:\\Users\\tester\\AppData\\Roaming\\npm\\dsh.cmd'
+    const scriptPath = 'C:\\Users\\tester\\AppData\\Roaming\\npm\\node_modules\\dsh\\bin\\dsh.js'
     const probe = createPathProbe({
       platform: 'win32',
       home: 'C:\\Users\\tester',
-      exists: (path) => path === 'C:\\Users\\tester\\AppData\\Roaming\\npm\\dsh.cmd',
+      exists: (path) => path === cmdPath,
       listDir: () => [],
       loginShell: false,
+      resolveShim: (path) => (path === cmdPath ? scriptPath : null),
       run: scriptedRunner({
         'where dsh': { code: 1, stdout: '', stderr: '' },
-        'C:\\Users\\tester\\AppData\\Roaming\\npm\\dsh.cmd --version': {
+        [`node ${scriptPath} --version`]: {
           code: 0,
           stdout: '0.1.5\r\n'
         }
       })
     })
     await expect(probe.probe()).resolves.toEqual({
-      command: 'C:\\Users\\tester\\AppData\\Roaming\\npm\\dsh.cmd',
+      command: cmdPath,
       version: '0.1.5'
     })
+  })
+
+  it('win32:shim 解析失败的 .cmd 不误判为可用(不发起注定 EINVAL 的执行)', async () => {
+    const probe = createPathProbe({
+      platform: 'win32',
+      home: 'C:\\Users\\tester',
+      exists: (path) => path === 'C:\\Users\\tester\\AppData\\Roaming\\npm\\dsh.cmd',
+      listDir: () => [],
+      loginShell: false,
+      resolveShim: () => null,
+      run: scriptedRunner({
+        'where dsh': { code: 1, stdout: '', stderr: '' }
+        // shim 解析失败 → 不再发起 node 探测,候选判否
+      })
+    })
+    await expect(probe.probe()).resolves.toBeNull()
   })
 })
 

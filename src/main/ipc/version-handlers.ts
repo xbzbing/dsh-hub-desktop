@@ -1,6 +1,6 @@
 /**
  * dsh 版本通道：升级资格与更新检查、可用版本目录、触发升级与运行时确认应答。
- * 升级判定是纯逻辑，装配在 ipc-utils；停/装/重启的编排在 runtime 层。
+ * 运行时来源判定经 dsh-source-policy（与启动/升级编排同一判据）；资格装配在 ipc-utils。
  */
 import { ipcMain } from 'electron'
 import { z } from 'zod'
@@ -13,11 +13,12 @@ import {
 } from '@shared/contracts'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 import { compareDshVersions } from '../local-runtime/runtime-source'
+import { resolveSystemDshUsage } from '../local-runtime/dsh-source-policy'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { PathProbe } from '../local-runtime/runtime-source'
 import type { RuntimeInstaller } from '../local-runtime/runtime-installer'
 import type { PromptBroker } from '../ssh/prompt-broker'
-import { parseId, upgradeEligibility, usesSystemDsh, type IpcWrap } from './ipc-utils'
+import { parseId, upgradeEligibility, type IpcWrap } from './ipc-utils'
 
 export interface VersionHandlerDeps {
   runtime: LocalRuntimeManager
@@ -39,16 +40,36 @@ export function registerVersionHandlers(store: InstanceStore, deps: VersionHandl
       if (current === 'custom') current = null
       const eligibility = upgradeEligibility(record, status?.runtimeSource)
       let reason = eligibility.reason
-      // 公共空间跑系统默认 dsh：current 以 PATH 实测为准（注册表里的值不权威），并检测安装来源——
-      // 缺失或非 npm 全局安装时在「检查更新」就给出不可代管原因，不等用户点了升级才失败。
-      if (eligibility.canUpgrade && deps.pathProbe && usesSystemDsh(record, status?.runtimeSource)) {
-        const probed = (await deps.pathProbe.probe().catch(() => null)) ?? null
-        current = probed?.version ?? null
-        const prefix =
-          probed === null
-            ? null
-            : ((await deps.installer.resolveGlobalPrefix(probed.command).catch(() => null)) ?? null)
-        if (prefix === null) reason = 'global-unmanaged'
+      // 公共空间可能跑系统默认 dsh：current 以 PATH 实测为准（注册表里的值不权威），并检测
+      // 安装来源——缺失或非 npm 全局安装时在「检查更新」就给出不可代管原因，不等点了升级才失败。
+      // 来源未知时经 dsh-source-policy 按启动路径同款计划推导，避免把将要运行的 hub 副本误当系统 dsh。
+      if (eligibility.canUpgrade && deps.pathProbe && record.transport === 'local') {
+        const pathProbe = deps.pathProbe
+        const installer = deps.installer
+        const decision = await resolveSystemDshUsage({
+          transport: record.transport,
+          useDefaultSpace: record.useDefaultSpace,
+          launcher: record.launcher,
+          runtimeSource: status?.runtimeSource,
+          desiredVersion: record.dshVersion,
+          listInstalledVersions: async () => {
+            try {
+              return (await installer.listInstalled()).map((item) => item.version)
+            } catch {
+              return [] as string[]
+            }
+          },
+          probePath: async () => (await pathProbe.probe().catch(() => null)) ?? null
+        })
+        if (decision.usesSystemDsh) {
+          const probed = decision.pathRuntime
+          current = probed?.version ?? null
+          const prefix =
+            probed === null
+              ? null
+              : ((await installer.resolveGlobalPrefix(probed.command).catch(() => null)) ?? null)
+          if (prefix === null) reason = 'global-unmanaged'
+        }
       }
       const canUpgrade = reason === undefined
       const latest = await deps.installer.resolveLatestVersion()

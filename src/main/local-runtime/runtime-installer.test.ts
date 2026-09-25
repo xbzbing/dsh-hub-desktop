@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CommandResult, NpmInvocation } from './runtime-installer'
 import {
+  COMMAND_TIMEOUT_MS,
   createRuntimeInstaller,
   globalPrefixFor,
   globalRuntimeEntry,
@@ -299,6 +300,22 @@ describe('spawnNpm', () => {
     await expect(
       spawnNpm({ command: 'dsh-hub-no-such-binary', prefixArgs: [] }, [], { env: process.env })
     ).rejects.toThrow()
+  })
+
+  it('超过统一 deadline 时 kill 并以超时 reject,不占死安装队列', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const pending = spawnNpm(
+        { command: process.execPath, prefixArgs: ['-e', 'setInterval(() => {}, 1000)'] },
+        [],
+        { env: process.env }
+      )
+      const rejection = expect(pending).rejects.toThrow(/npm 执行超时/)
+      await vi.advanceTimersByTimeAsync(COMMAND_TIMEOUT_MS + 1_000)
+      await rejection
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

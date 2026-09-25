@@ -3,11 +3,13 @@
  * 按版本把 `@deepseek-ai/dsh` 装进隔离目录 `runtimes/dsh-<version>/`，版本间零干扰；
  * 安装中写 `installing.json` 支持断点恢复；列表来自 npm registry。
  */
-import { execFile, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { readdirSync, statSync } from 'node:fs'
 import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
+import { execFileResult } from './exec-file'
+import type { CommandResult, CommandRunner } from './exec-file'
 import { searchNodeDirs } from './node-dirs'
 import { compareDshVersions } from './version-compare'
 
@@ -158,44 +160,19 @@ export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
 /** 版本号只允许这些字符，避免拼接目录名被穿越（runtime-source 的 PATH 探测同样复用） */
 export const VERSION_PATTERN = /^[0-9A-Za-z.+_-]+$/
 
-export interface CommandResult {
-  code: number
-  stdout: string
-  stderr: string
-}
+export type { CommandResult, CommandRunner }
 
-export type CommandRunner = (
-  command: string,
-  args: string[],
-  options?: { env?: NodeJS.ProcessEnv }
-) => Promise<CommandResult>
+/** npm 查询与安装的统一执行超时；超时即 kill 并按失败上报。 */
+export const COMMAND_TIMEOUT_MS = 15 * 60_000
 
 export const runCommand: CommandRunner = (command, args, options = {}) =>
-  new Promise<CommandResult>((resolve, reject) => {
-    execFile(
-      command,
-      args,
-      {
-        env: { ...process.env, ...options.env },
-        maxBuffer: 16 * 1024 * 1024,
-        timeout: 15 * 60_000
-      },
-      (error, stdout, stderr) => {
-        // npm 非零退出也返回结果（由调用方判断），只有启动失败才 reject
-        if (error && typeof (error as NodeJS.ErrnoException).code === 'string') {
-          reject(error)
-          return
-        }
-        const exitCode =
-          error && typeof (error as { code?: unknown }).code === 'number'
-            ? ((error as { code?: number }).code ?? 1)
-            : 0
-        resolve({ code: exitCode, stdout: String(stdout), stderr: String(stderr) })
-      }
-    )
+  execFileResult(command, args, {
+    env: { ...process.env, ...options.env },
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: COMMAND_TIMEOUT_MS
   })
 
-/** 流式运行 npm：stderr 逐行回调供进度解析；与 runCommand 一样只有启动失败才 reject。 */
+/** 流式运行 npm：stderr 逐行回调供进度解析；启动失败、超时或被信号终止都 reject。 */
 export type NpmRunner = (
   npm: NpmInvocation,
   args: string[],
@@ -211,6 +188,21 @@ export const spawnNpm: NpmRunner = (npm, args, options) =>
     let stdout = ''
     let stderr = ''
     let pendingLine = ''
+    let timeoutError: Error | null = null
+    let forceKill: ReturnType<typeof setTimeout> | null = null
+    // 生产安装全部走本函数：卡死的 npm 会占住安装/启动串行队列直至应用无法退出，
+    // 与 runCommand 同一 deadline，到点 kill 并以超时失败上报。
+    const timer = setTimeout(() => {
+      timeoutError = new Error(`npm 执行超时（${COMMAND_TIMEOUT_MS} ms），已终止`)
+      child.kill('SIGTERM')
+      forceKill = setTimeout(() => child.kill('SIGKILL'), 5_000)
+      forceKill.unref?.()
+    }, COMMAND_TIMEOUT_MS)
+    timer.unref?.()
+    const cancelTimers = (): void => {
+      clearTimeout(timer)
+      if (forceKill) clearTimeout(forceKill)
+    }
     child.stdout?.on('data', (chunk: Buffer) => {
       stdout += String(chunk)
     })
@@ -221,9 +213,21 @@ export const spawnNpm: NpmRunner = (npm, args, options) =>
       pendingLine = lines.pop() ?? ''
       for (const line of lines) options.onStderrLine?.(line)
     })
-    child.on('error', reject)
-    child.on('close', (code) => {
+    child.on('error', (error) => {
+      cancelTimers()
+      reject(error)
+    })
+    child.on('close', (code, signal) => {
+      cancelTimers()
       if (pendingLine !== '') options.onStderrLine?.(pendingLine)
+      if (timeoutError) {
+        reject(timeoutError)
+        return
+      }
+      if (signal != null) {
+        reject(new Error(`npm 执行被信号终止（${signal}）`))
+        return
+      }
       resolve({ code: code ?? 1, stdout, stderr })
     })
   })

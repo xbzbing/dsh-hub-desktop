@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { randomUUID } from 'node:crypto'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { InstanceStatusEvent, LocalInstance, DshVersionProgressEvent } from '@shared/contracts'
@@ -192,7 +194,8 @@ describe('createLocalRuntime', () => {
         pathProbe: {
           // 隔离实例优先复用 PATH 上的 dsh(path 来源),此时仍直接执行 wrapper 本体。
           probe: async () => ({ command: '/tmp/system/dsh', version: '0.1.5-rc.1' }),
-          probeLauncher: async () => null
+          // 启动器已探到(绝对路径):探测为 null 会快速失败,不再回退注定 ENOENT 的裸命令名。
+          probeLauncher: async () => ({ command: `/tmp/bin/${launcher}`, version: '0.1.1-rc.3' })
         },
         readyTimeoutMs: 2_000
       })
@@ -204,7 +207,7 @@ describe('createLocalRuntime', () => {
 
       expect(spawnImpl).toHaveBeenCalledWith(
         expect.objectContaining({
-          command: launcher,
+          command: `/tmp/bin/${launcher}`,
           args: [
             '--profile',
             'web',
@@ -418,6 +421,79 @@ describe('createLocalRuntime', () => {
       expect(invocation.env['DSH_BIN']).toBeUndefined()
     }
   )
+
+  it('探测能力存在但未探到自定义启动器 → 直接失败，不再构造注定 ENOENT 的调用', async () => {
+    const spawnImpl = vi.fn(() => {
+      throw new Error('未探到启动器不应走到 spawn')
+    })
+    const manager = createLocalRuntime({
+      store: storeStub,
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      resolveNode: () => null,
+      pathProbe: { probe: async () => null, probeLauncher: async () => null },
+      readyTimeoutMs: 2000
+    })
+    const instance = localInstance({ launcher: 'dush' })
+
+    await manager.start(instance)
+
+    expect(spawnImpl).not.toHaveBeenCalled()
+    expect(manager.statusOf(instance.id)).toMatchObject({
+      status: 'error',
+      detail: expect.stringContaining('未找到启动器 dush')
+    })
+  })
+
+  it('win32 .cmd 启动器：解析出入口脚本交给 node，不再构造注定 EINVAL 的调用', async () => {
+    const tmpRoot = await mkdtemp(join(tmpdir(), 'dsh-hub-cmdshim-'))
+    try {
+      const binDir = join(tmpRoot, 'npm')
+      await mkdir(join(binDir, 'node_modules', 'dush', 'bin'), { recursive: true })
+      const cmdPath = join(binDir, 'dush.cmd')
+      const jsPath = join(binDir, 'node_modules', 'dush', 'bin', 'dush.js')
+      await writeFile(cmdPath, '@ECHO off\r\n"%dp0%\\node_modules\\dush\\bin\\dush.js" %*\r\n')
+      await writeFile(jsPath, '')
+
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999981
+      child.killCall = []
+      child.kill = vi.fn(() => true) as never
+      const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+      const manager = createLocalRuntime({
+        store: storeStub,
+        confirmDownload: async () => true,
+        installer: makeFakeInstaller(),
+        dataRoot: '/tmp/hub-data',
+        spawnImpl: spawnImpl as never,
+        probe: async () => true,
+        resolveNode: () => '/fake/node.exe',
+        pathProbe: {
+          probe: async () => ({ command: '/fake/system/dsh', version: '0.1.9' }),
+          probeLauncher: async (launcher) =>
+            launcher === 'dush' ? { command: cmdPath, version: '0.1.1-rc.3' } : null
+        },
+        readyTimeoutMs: 2000
+      })
+      const instance = localInstance({ launcher: 'dush' })
+      const starting = manager.start(instance)
+      child.stdout.write(readyLine())
+      await starting
+      await waitForStatus(manager, instance.id, 'running')
+
+      const invocation = (spawnImpl.mock.calls[0] as unknown as [SpawnInvocation])[0]
+      expect(invocation.command).toBe('/fake/node.exe')
+      expect(invocation.args).toContain(jsPath)
+      expect(invocation.args).not.toContain(cmdPath)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
 
   it('公共空间仅使用主进程提供的 ~/.dsh，不接受渲染层路径', async () => {
     const child = new EventEmitter() as unknown as FakeChild
@@ -1651,6 +1727,46 @@ describe('stopAll 与排队中启动的取消', () => {
     expect(manager.statusOf(second.id)?.status).toBe('stopped')
   })
 
+  it('stopAll 对卡住的启动队列有界等待，不阻断退出', async () => {
+    let releaseInstall!: () => void
+    const installGate = new Promise<void>((resolve) => {
+      releaseInstall = resolve
+    })
+    const installer = makeFakeInstaller({
+      ensureInstalled: vi.fn(async () => {
+        await installGate
+        return {
+          version: '0.1.5-rc.1',
+          dir: '/tmp/runtimes/dsh-0.1.5-rc.1',
+          entry: '/tmp/runtimes/dsh-0.1.5-rc.1/lib/bin.js',
+          installedAt: ISO
+        }
+      })
+    })
+    const spawnImpl = vi.fn()
+    const manager = createLocalRuntime({
+      store: storeStub,
+      confirmDownload: async () => true,
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      readyTimeoutMs: 2_000,
+      stopGraceMs: 20,
+      stopAllDrainMs: 50
+    })
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    await vi.waitFor(() => expect(installer.ensureInstalled).toHaveBeenCalledTimes(1))
+
+    // 安装卡住时 stopAll 必须在上限内返回，否则应用退出被无限拖住。
+    await manager.stopAll()
+
+    releaseInstall()
+    await starting
+    expect(spawnImpl).not.toHaveBeenCalled()
+    expect(manager.statusOf(instance.id)?.status).toBe('stopped')
+  })
+
   it('实例正在停止时收到新 start → 新启动排队执行（不被忽略）', async () => {
     const children: FakeChild[] = []
     const spawnImpl = vi.fn(() => {
@@ -1829,6 +1945,89 @@ describe('upgradeInstance 升级编排', () => {
     expect(events.at(-1)).toMatchObject({ phase: 'error', error: expect.stringContaining('registry 不可达') })
     expect(store.update).not.toHaveBeenCalled()
     expect(spawnImpl).not.toHaveBeenCalled()
+  })
+
+  it('未启动的公共空间默认启动器实例：按启动计划升级 hub 运行时，不误报系统 dsh 缺失', async () => {
+    const store = { update: vi.fn(async () => localInstance()) }
+    const listInstalled = vi.fn(async () => [])
+    const installer = makeFakeInstaller({
+      listInstalled,
+      resolveLatestVersion: async () => '0.1.6',
+      ensureInstalled: vi.fn(async (version: string, onProgress?: (progress: InstallProgress) => void) => {
+        onProgress?.({ phase: 'installing', version, percent: 42, detail: '下载依赖 (10)：pkg' })
+        return installedRuntime(version)
+      }),
+      installGlobal: vi.fn(async () => {
+        throw new Error('计划为 hub 运行时，不应触发全局升级')
+      })
+    })
+    const confirmSystemUpgrade = vi.fn(async () => true)
+    const manager = createLocalRuntime({
+      store,
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: vi.fn(() => {
+        throw new Error('停止态升级不应拉起进程')
+      }) as never,
+      probe: async () => true,
+      confirmDownload: async () => true,
+      confirmSystemUpgrade,
+      readyTimeoutMs: 2000
+    })
+    const events: DshVersionProgressEvent[] = []
+    manager.onUpgradeProgress((event) => events.push(event))
+    // 默认启动器 + 公共空间 + 未启动：启动计划是 pinned-missing → hub 副本，
+    // 旧判据把「未启动」当系统 dsh，PATH 探不到时会误报「未找到系统默认 dsh」。
+    const instance = localInstance({ useDefaultSpace: true, dshVersion: '0.1.5-rc.1' })
+
+    await manager.upgradeInstance(instance)
+
+    expect(confirmSystemUpgrade).not.toHaveBeenCalled()
+    expect(installer.installGlobal).not.toHaveBeenCalled()
+    expect(listInstalled).toHaveBeenCalled()
+    expect(events.map((event) => event.phase)).toEqual(['checking', 'downloading', 'installing', 'done'])
+    expect(installer.ensureInstalled).toHaveBeenCalledWith('0.1.6', expect.any(Function))
+    expect(store.update).toHaveBeenCalledWith(instance.id, { dshVersion: '0.1.6' })
+  })
+
+  it('外部接管的实例拒绝代管升级：error 相位且不产生任何安装动作', async () => {
+    const store = { update: vi.fn(async () => localInstance()) }
+    const installer = makeFakeInstaller({
+      installGlobal: vi.fn(async () => {
+        throw new Error('外部接管实例不应触发全局升级')
+      }),
+      ensureInstalled: vi.fn(async () => {
+        throw new Error('外部接管实例不应安装 hub 运行时')
+      })
+    })
+    const confirmSystemUpgrade = vi.fn(async () => true)
+    const manager = createLocalRuntime({
+      store,
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: vi.fn(() => {
+        throw new Error('不应拉起进程')
+      }) as never,
+      probe: async () => true,
+      confirmDownload: async () => true,
+      confirmSystemUpgrade,
+      readyTimeoutMs: 2000
+    })
+    const events: DshVersionProgressEvent[] = []
+    manager.onUpgradeProgress((event) => events.push(event))
+    const instance = localInstance({ useDefaultSpace: true })
+    await manager.adopt(instance, { pid: 77, port: 3080, patch: null })
+
+    await manager.upgradeInstance(instance)
+
+    expect(events.at(-1)).toMatchObject({
+      phase: 'error',
+      error: expect.stringContaining('外部接管的 dsh 进程归用户所有')
+    })
+    expect(confirmSystemUpgrade).not.toHaveBeenCalled()
+    expect(installer.installGlobal).not.toHaveBeenCalled()
+    expect(installer.ensureInstalled).not.toHaveBeenCalled()
+    expect(store.update).not.toHaveBeenCalled()
   })
 
   it('公共空间 dsh/duush：二次确认通过后原位升级系统默认 dsh（npm 全局安装 + 回写）', async () => {
