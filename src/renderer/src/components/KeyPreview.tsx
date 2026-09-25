@@ -29,6 +29,7 @@ export default function KeyPreview(props: {
     if (!BRIDGE || host === '' || username === '') {
       setPreview(null)
       setError(null)
+      setErrorKey(null)
       return
     }
     let cancelled = false

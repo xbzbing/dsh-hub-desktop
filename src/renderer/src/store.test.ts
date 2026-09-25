@@ -846,3 +846,125 @@ describe('store 活动日志（详情页底部信息栏）', () => {
     expect(store.getState().activityLog[id]).toBeUndefined()
   })
 })
+
+describe('pendingOpen（启动完成后自动打开工作区）', () => {
+  it('同一实例等待启动时 running 仍自动打开工作区', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({ selection: 'boot-a', pendingOpen: ['boot-a'] })
+
+    useAppStore.getState().applyStatus({
+      id: 'boot-a',
+      status: 'running',
+      at: '2026-09-18T00:00:01.000Z'
+    })
+    await vi.waitFor(() => expect(openView).toHaveBeenCalledWith('boot-a'))
+    expect(useAppStore.getState().pendingOpen).toEqual([])
+  })
+
+  it('切换实例即放弃待打开:该实例 running 不再把界面拽回工作区', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({ selection: 'boot-a', pendingOpen: ['boot-a'] })
+
+    useAppStore.getState().select('boot-b')
+    expect(useAppStore.getState().pendingOpen).toEqual([])
+
+    useAppStore.getState().applyStatus({
+      id: 'boot-a',
+      status: 'running',
+      at: '2026-09-18T00:00:01.000Z'
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(openView).not.toHaveBeenCalled()
+    expect(useAppStore.getState().selection).toBe('boot-b')
+  })
+
+  it('打开设置页即放弃待打开:实例启动完成不会关掉设置页', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({ selection: 'boot-a', pendingOpen: ['boot-a'] })
+
+    useAppStore.getState().setSettingsOpen(true)
+    expect(useAppStore.getState().pendingOpen).toEqual([])
+
+    useAppStore.getState().applyStatus({
+      id: 'boot-a',
+      status: 'running',
+      at: '2026-09-18T00:00:01.000Z'
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(openView).not.toHaveBeenCalled()
+    expect(useAppStore.getState().settingsOpen).toBe(true)
+    expect(useAppStore.getState().selection).toBeNull()
+  })
+})
+
+describe('refreshList 错误态', () => {
+  it('列表加载失败记录 listError,成功后清除', async () => {
+    const useAppStore = await freshStore()
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: {
+        ...window.dshHub,
+        instances: {
+          list: async () => ({ ok: false as const, code: 'io-error', message: '注册表读取失败' })
+        }
+      }
+    })
+
+    await useAppStore.getState().refreshList()
+    expect(useAppStore.getState().listError).toBe('注册表读取失败')
+
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: {
+        ...window.dshHub,
+        instances: { list: async () => ({ ok: true as const, value: [] }) }
+      }
+    })
+    await useAppStore.getState().refreshList()
+    expect(useAppStore.getState().listError).toBeNull()
+  })
+
+  it('加载失败不清空已有列表,已有数据仍可展示', async () => {
+    const useAppStore = await freshStore()
+    useAppStore.setState({
+      instances: [
+        {
+          id: 'kept',
+          name: '保留实例',
+          transport: 'local',
+          authMode: 'auto',
+          address: '127.0.0.1:3080',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      ]
+    })
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: {
+        ...window.dshHub,
+        instances: {
+          list: async () => ({ ok: false as const, code: 'io-error', message: '注册表读取失败' })
+        }
+      }
+    })
+
+    await useAppStore.getState().refreshList()
+    expect(useAppStore.getState().listError).toBe('注册表读取失败')
+    expect(useAppStore.getState().instances).toHaveLength(1)
+  })
+})

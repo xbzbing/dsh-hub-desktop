@@ -42,6 +42,8 @@ export type ActivityLine =
 interface AppState {
   /** 首次列表是否已加载；加载时显示骨架屏。 */
   loaded: boolean
+  /** 最近一次实例列表加载失败的原因；null 表示加载成功 */
+  listError: string | null
   instances: InstanceSummary[]
   /** 详情缓存:进入详情页时按需 get */
   records: Record<string, InstanceRecord>
@@ -181,6 +183,7 @@ function systemLocaleFallback(): string {
 
 export const useAppStore = create<AppState>()((set, get) => ({
   loaded: false,
+  listError: null,
   instances: [],
   records: {},
   statuses: {},
@@ -272,7 +275,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
         return statuses
       }, {})
       // 推送事件优先于列表快照，避免列表读取期间的旧快照覆盖最新状态。
-      set((state) => ({ instances: result.value, statuses: { ...snapshotStatuses, ...state.statuses } }))
+      set((state) => ({
+        instances: result.value,
+        statuses: { ...snapshotStatuses, ...state.statuses },
+        listError: null
+      }))
+    } else {
+      // 加载失败必须可见：静默失败会把错误态渲染成「还没有实例」。
+      set({ listError: result.message })
     }
   },
 
@@ -425,8 +435,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
   select: (id) => {
     workspaceNavigationGeneration += 1
     void window.dshHub?.runtime?.hideView()
-    // 挂起标记属于换selection前被遮挡的工作区;切走后不再恢复。
-    set({ selection: id, workspaceOpen: false, workspaceOpening: false, workspaceSuspended: false, settingsOpen: false })
+    // 挂起标记属于换 selection 前被遮挡的工作区；待打开标记同理——切走后
+    // 不再等该实例启动完成，否则 running 事件会把界面强行拽回工作区。
+    set({
+      selection: id,
+      workspaceOpen: false,
+      workspaceOpening: false,
+      workspaceSuspended: false,
+      settingsOpen: false,
+      pendingOpen: []
+    })
   },
 
   openWorkspace: async (id) => {
@@ -550,8 +568,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       settingsOpen: open,
       workspaceOpen: false,
       workspaceOpening: false,
-      // 打开设置页即放弃当前选中,被遮挡工作区不再有可恢复的目标,挂起标志一并清除。
-      ...(open ? { selection: null, workspaceSuspended: false } : {})
+      // 打开设置页即放弃当前选中,被遮挡工作区不再有可恢复的目标,挂起与待打开
+      // 标记一并清除——否则实例启动完成会强制切回工作区、关掉设置页。
+      ...(open ? { selection: null, workspaceSuspended: false, pendingOpen: [] } : {})
     })
   },
 

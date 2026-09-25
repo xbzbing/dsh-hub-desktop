@@ -21,6 +21,8 @@ const BRIDGE = window.dshHub
  */
 export default function App() {
   const loaded = useAppStore((state) => state.loaded)
+  const listError = useAppStore((state) => state.listError)
+  const refreshList = useAppStore((state) => state.refreshList)
   const instances = useAppStore((state) => state.instances)
   const selection = useAppStore((state) => state.selection)
   const settingsOpen = useAppStore((state) => state.settingsOpen)
@@ -165,9 +167,28 @@ export default function App() {
               <p>{selectedInstance?.name ?? t('common.loading')}</p>
             </section>
           ) : selection !== null && loaded ? (
-            <DetailView />
+            <DetailView key={selection} />
           ) : !loaded ? (
             <HomeView />
+          ) : listError !== null ? (
+            // 布局沿用空态卡片：设计稿没有错误态专页，保持同一视觉语言。
+            <section data-od-id="view-list-error" data-testid="list-error">
+              <div className="empty">
+                <span className="glyph">
+                  <Icon name="alert" size={76} />
+                </span>
+                <h2>{t('home.listErrorTitle')}</h2>
+                <p className="meta">{listError}</p>
+                <button
+                  className="btn btn-primary"
+                  style={{ marginTop: 4 }}
+                  data-testid="list-error-retry"
+                  onClick={() => void refreshList()}
+                >
+                  {t('home.listErrorRetry')}
+                </button>
+              </div>
+            </section>
           ) : instances.length === 0 ? (
             <EmptyView />
           ) : (

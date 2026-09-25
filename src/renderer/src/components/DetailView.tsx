@@ -699,6 +699,7 @@ export default function DetailView(): ReactNode {
 
       {showEdit && (
         <EditInstanceDialog
+          key={record.id}
           record={record}
           running={status?.status === 'running'}
           onClose={() => setShowEdit(false)}
