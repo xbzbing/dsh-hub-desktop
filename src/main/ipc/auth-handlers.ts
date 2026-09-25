@@ -107,23 +107,30 @@ export function registerAuthHandlers(deps: AuthHandlerDeps, wrap: IpcWrap): Auth
   ipcMain.handle(AUTH_IPC.logout, (_event, id: unknown): Promise<IpcResult<AuthStateSnapshot | null>> =>
     wrap(async () => {
       const instanceId = parseId(id)
-      const snapshot = authSnapshot(await deps.auth.logout(instanceId))
-      // 「登出 → 任何探测」会立刻用已存密码复活会话。手动登录成功才解除。
-      memory.logoutSuppressed.add(instanceId)
-      // 清理是尽力而为：单步失败不拖垮后续步骤（否则 vault 遗忘与两条审计都会被跳过），
-      // 但失败必须留痕——console 记原因，审计把 cookie-cleared 如实标 failed。
-      let cookieCleared = true
+      // 登出窗口：期间并发探测不得从 vault 恢复会话、不得静默登录、不回写会话；
+      // 分区 Cookie 与 vault 会话清理完成后窗口才结束。
+      deps.auth.beginLogout(instanceId)
       try {
-        await deps.clearPartitionSession?.(instanceId)
-      } catch (error) {
-        cookieCleared = false
-        console.error('[ipc] 登出时清理分区会话失败：', instanceId, error)
+        const snapshot = authSnapshot(await deps.auth.logout(instanceId))
+        // 「登出 → 任何探测」会立刻用已存密码复活会话。手动登录成功才解除。
+        memory.logoutSuppressed.add(instanceId)
+        // 清理是尽力而为：单步失败不拖垮后续步骤（否则 vault 遗忘与两条审计都会被跳过），
+        // 但失败必须留痕——console 记原因，审计把 cookie-cleared 如实标 failed。
+        let cookieCleared = true
+        try {
+          await deps.clearPartitionSession?.(instanceId)
+        } catch (error) {
+          cookieCleared = false
+          console.error('[ipc] 登出时清理分区会话失败：', instanceId, error)
+        }
+        // 登出时忘掉 vault 中的会话:否则重启后 restoreSessionFromVault 会恢复已失效的登录态
+        await deps.vault.forgetSession(instanceId).catch(() => undefined)
+        deps.audit?.({ instanceId, event: 'session-revoked', result: 'logout' })
+        deps.audit?.({ instanceId, event: 'cookie-cleared', result: cookieCleared ? 'logout' : 'failed' })
+        return snapshot
+      } finally {
+        deps.auth.endLogout(instanceId)
       }
-      // 登出时忘掉 vault 中的会话:否则重启后 restoreSessionFromVault 会恢复已失效的登录态
-      await deps.vault.forgetSession(instanceId).catch(() => undefined)
-      deps.audit?.({ instanceId, event: 'session-revoked', result: 'logout' })
-      deps.audit?.({ instanceId, event: 'cookie-cleared', result: cookieCleared ? 'logout' : 'failed' })
-      return snapshot
     })
   )
 

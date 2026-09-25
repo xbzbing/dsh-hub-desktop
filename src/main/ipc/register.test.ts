@@ -66,6 +66,9 @@ let authFake: {
   logout: ReturnType<typeof vi.fn>
   stateOf: ReturnType<typeof vi.fn>
   forget: ReturnType<typeof vi.fn>
+  beginLogout: ReturnType<typeof vi.fn>
+  endLogout: ReturnType<typeof vi.fn>
+  isLoggingOut: ReturnType<typeof vi.fn>
   client: ReturnType<typeof vi.fn>
   sessionCookie: ReturnType<typeof vi.fn>
   clientIds: ReturnType<typeof vi.fn>
@@ -166,6 +169,9 @@ beforeEach(async () => {
     logout: vi.fn(async () => null),
     stateOf: vi.fn(() => null),
     forget: vi.fn(),
+    beginLogout: vi.fn(),
+    endLogout: vi.fn(),
+    isLoggingOut: vi.fn(() => false),
     client: vi.fn(async () => null),
     sessionCookie: vi.fn(() => null),
     clientIds: vi.fn(() => [])
@@ -973,6 +979,30 @@ describe('registerIpc', () => {
       event: 'cookie-cleared',
       result: 'logout'
     })
+  })
+
+  it('logout 全程覆盖登出窗口:begin 先于登出,end 在 vault 会话清理之后', async () => {
+    const id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    const order: string[] = []
+    authFake.beginLogout.mockImplementation(() => {
+      order.push('begin')
+    })
+    authFake.logout.mockImplementation(async () => {
+      order.push('logout')
+      return null
+    })
+    authFake.endLogout.mockImplementation(() => {
+      order.push('end')
+    })
+    vaultFake.forgetSession = vi.fn(async () => {
+      order.push('forgetSession')
+    })
+
+    const result = (await invoke('auth:logout', id)) as { ok: boolean }
+
+    expect(result.ok).toBe(true)
+    // 并发探测只可能落在 begin → end 之间：恢复/静默登录/回写在整段窗口内被压住。
+    expect(order).toEqual(['begin', 'logout', 'forgetSession', 'end'])
   })
 
   it('logout 清理失败：登出仍回成功信封，清理降级为留痕，后续步骤必达', async () => {

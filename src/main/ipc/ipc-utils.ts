@@ -185,6 +185,8 @@ export async function autoLoginWithStored(
   const needsAuth = state.phase === 'needs-auth' || state.phase === 'await-credentials'
   if (!needsAuth || state.lockedForMs > 0) return state
   if (memory.storedLoginAttempted.has(instanceId) || memory.logoutSuppressed.has(instanceId)) return state
+  // 登出清理窗口内不静默登录：与 logoutSuppressed 同向，只是还没来得及落抑制记忆。
+  if (deps.auth.isLoggingOut(instanceId)) return state
   if (!deps.vault.getPolicy(instanceId).rememberPassword) return state
   const stored = deps.vault.getPassword(instanceId)
   if (stored === null) return state

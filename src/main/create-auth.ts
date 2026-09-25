@@ -47,6 +47,8 @@ export function createAuthController(deps: AuthControllerDeps): AuthController {
     try {
       const vault = deps.getVault()
       if (!vault || !registry) return
+      // 登出清理窗口内不回写：否则并发探测触发的 connected 会把刚清掉的会话写回 vault。
+      if (registry.isLoggingOut(instanceId)) return
       if (!vault.getPolicy(instanceId).rememberSession) return
       const cookie = registry.sessionCookie(instanceId)
       if (!cookie || cookie.value === '') return

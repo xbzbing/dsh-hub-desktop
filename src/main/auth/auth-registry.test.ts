@@ -149,4 +149,48 @@ describe('auth-registry（每实例客户端）', () => {
     await registry.client('i1')
     expect(restore).toHaveBeenCalledTimes(1)
   })
+
+  it('并发创建收敛为 single-flight:两次调用拿到同一客户端,工厂只跑一次', async () => {
+    let releaseEndpoint!: () => void
+    const endpointGate = new Promise<void>((resolve) => {
+      releaseEndpoint = resolve
+    })
+    const factory = vi.fn(() => fakeClient())
+    const registry = createAuthRegistry({
+      resolveEndpoint: async () => {
+        await endpointGate
+        return 'https://gw/dsh'
+      },
+      factory
+    })
+
+    const first = registry.client('i1')
+    const second = registry.client('i1')
+    releaseEndpoint()
+    const [a, b] = await Promise.all([first, second])
+
+    expect(a).not.toBeNull()
+    expect(a).toBe(b)
+    expect(factory).toHaveBeenCalledTimes(1)
+  })
+
+  it('登出窗口内创建客户端不从 vault 恢复会话,窗口结束后恢复', async () => {
+    const restore = vi.fn(async () => undefined)
+    const registry = createAuthRegistry({
+      resolveEndpoint: async () => 'https://gw/dsh',
+      factory: () => fakeClient(),
+      restore
+    })
+
+    registry.beginLogout('i1')
+    expect(registry.isLoggingOut('i1')).toBe(true)
+    expect(await registry.client('i1')).not.toBeNull()
+    expect(restore).not.toHaveBeenCalled()
+
+    registry.endLogout('i1')
+    registry.forget('i1')
+    expect(registry.isLoggingOut('i1')).toBe(false)
+    await registry.client('i1')
+    expect(restore).toHaveBeenCalledTimes(1)
+  })
 })

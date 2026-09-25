@@ -32,6 +32,14 @@ export interface AuthRegistry {
   client(instanceId: string): Promise<AuthClient | null>
   /** 丢弃实例客户端(删除实例/登出清理) */
   forget(instanceId: string): void
+  /**
+   * 登出窗口标记：从登出开始到分区 Cookie、vault 会话清理完成期间，
+   * 禁止会话恢复与会话回写，并压住已存密码静默登录——否则并发探测
+   * 会重建客户端、从 vault 注入旧 Cookie，把登出复活。
+   */
+  beginLogout(instanceId: string): void
+  endLogout(instanceId: string): void
+  isLoggingOut(instanceId: string): boolean
   /** 状态快照(未创建客户端返回 null) */
   stateOf(instanceId: string): AuthState | null
   /** 探测并尝试静默恢复 */
@@ -45,13 +53,15 @@ export interface AuthRegistry {
 
 export function createAuthRegistry(options: AuthRegistryOptions): AuthRegistry {
   const clients = new Map<string, AuthClient>()
+  const loggingOut = new Set<string>()
   const factory = options.factory ?? createAuthClient
   // 所有会打网关的调用统一经过它,避免多实例同时压认证端点
   const gate = createConcurrencyGate(options.maxConcurrentAuth ?? 2)
 
-  async function clientFor(instanceId: string): Promise<AuthClient | null> {
-    const existing = clients.get(instanceId)
-    if (existing) return existing
+  /** 端点解析与客户端构造有 await 间隙，并发调用必须收敛到同一次创建（single-flight）。 */
+  const pendingClients = new Map<string, Promise<AuthClient | null>>()
+
+  async function createClient(instanceId: string): Promise<AuthClient | null> {
     const endpointUrl = await options.resolveEndpoint(instanceId)
     if (!endpointUrl) return null
     const created = factory({
@@ -62,8 +72,9 @@ export function createAuthRegistry(options: AuthRegistryOptions): AuthRegistry {
       onState: (state) => options.onState?.(instanceId, state)
     })
     clients.set(instanceId, created)
-    // 先恢复已记住的登录态,再交给调用方探测(顺序是「重启静默复用」成立的前提)
-    if (options.restore) {
+    // 先恢复已记住的登录态,再交给调用方探测(顺序是「重启静默复用」成立的前提);
+    // 登出窗口内跳过恢复,否则 vault 旧 Cookie 会把登出复活。
+    if (options.restore && !loggingOut.has(instanceId)) {
       try {
         await options.restore(instanceId, created)
       } catch (error) {
@@ -74,10 +85,31 @@ export function createAuthRegistry(options: AuthRegistryOptions): AuthRegistry {
     return created
   }
 
+  function clientFor(instanceId: string): Promise<AuthClient | null> {
+    const existing = clients.get(instanceId)
+    if (existing) return Promise.resolve(existing)
+    const pending = pendingClients.get(instanceId)
+    if (pending) return pending
+    const creation = createClient(instanceId).finally(() => {
+      if (pendingClients.get(instanceId) === creation) pendingClients.delete(instanceId)
+    })
+    pendingClients.set(instanceId, creation)
+    return creation
+  }
+
   return {
     client: clientFor,
     forget(instanceId) {
       clients.delete(instanceId)
+    },
+    beginLogout(instanceId) {
+      loggingOut.add(instanceId)
+    },
+    endLogout(instanceId) {
+      loggingOut.delete(instanceId)
+    },
+    isLoggingOut(instanceId) {
+      return loggingOut.has(instanceId)
     },
     stateOf(instanceId) {
       return clients.get(instanceId)?.state() ?? null
