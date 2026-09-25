@@ -621,7 +621,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         if (entry.stopping || cancelPending) {
           entries.delete(id)
           reservedPorts.delete(entry.localPort)
-          void rm(entry.controlPath, { force: true })
+          void rm(entry.controlPath, { force: true }).catch(() => undefined)
           if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
           entry.askpassServer = null
           emit(id, 'stopped', { detail: '已取消启动' })
@@ -661,7 +661,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       }
       entries.delete(id)
       reservedPorts.delete(entry.localPort)
-      void rm(entry.controlPath, { force: true })
+      void rm(entry.controlPath, { force: true }).catch(() => undefined)
       if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
       entry.askpassServer = null
       emit(id, 'stopped', { detail: '隧道已停止' })

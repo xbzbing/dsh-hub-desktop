@@ -9,6 +9,7 @@
  *
  * 任何一步反序都会让首个 main-frame 请求打一次未带 Cookie 的 302 → /login 抖动。
  */
+import { redactLine, redactUrl } from '@shared/redact'
 import { prepareInstanceView } from './cookie-import'
 import type { CookieSetter } from './cookie-import'
 
@@ -126,7 +127,8 @@ export async function openInstanceView<W extends InstanceViewWindow>(
   })
 
   const onLoadError =
-    deps.onLoadError ?? ((error: unknown) => console.error('[instance-view] 加载失败：', error))
+    deps.onLoadError ??
+    ((error: unknown) => console.error('[instance-view] 加载失败：', redactLine(String(error))))
   const load = async (): Promise<void> => {
     try {
       await win.loadURL(args.url)
@@ -135,7 +137,7 @@ export async function openInstanceView<W extends InstanceViewWindow>(
       // 浏览器的常态而非故障,按 debug 记录即可;其余错误维持 error 级上报。
       const code = (error as { code?: unknown } | null)?.code
       if (code === 'ERR_ABORTED') {
-        console.debug('[instance-view] 导航被更新的导航取代(正常),跳过:', args.url)
+        console.debug('[instance-view] 导航被更新的导航取代(正常),跳过:', redactUrl(args.url))
         return
       }
       // 有些网关会把根路径 302 到 /login 后再做一次自身导航;Electron 此时会把
@@ -143,7 +145,7 @@ export async function openInstanceView<W extends InstanceViewWindow>(
       // 不是连接或证书失败。仅在已实际观测到同源 /login 重定向时降级，避免吞掉
       // DNS、TLS、代理等真正的 ERR_FAILED。
       if (code === 'ERR_FAILED' && isSameOriginLoginRedirect(redirectedTo, args.origin)) {
-        console.debug('[instance-view] 已重定向至同源登录页(正常),跳过:', redirectedTo)
+        console.debug('[instance-view] 已重定向至同源登录页(正常),跳过:', redactUrl(redirectedTo ?? ''))
         return
       }
       onLoadError(error)
