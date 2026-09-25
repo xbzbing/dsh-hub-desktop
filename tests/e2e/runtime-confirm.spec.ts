@@ -54,7 +54,9 @@ test.beforeAll(async () => {
       DSH_HUB_DATA_DIR: DATA_DIR,
       HOME: fakeHome,
       PATH: `${shimDir}:/usr/bin:/bin`,
-      SHELL: join(fakeHome, 'no-such-shell')
+      SHELL: join(fakeHome, 'no-such-shell'),
+      // 生效镜像必须随确认请求展示：用户要能看到下载的包从哪里来。
+      DSH_HUB_NPM_REGISTRY: 'https://registry.npmjs.org'
     }
   })
   win = await app.firstWindow()
@@ -85,6 +87,7 @@ test('创建后启动触发下载确认：hub 风格对话框，取消即收敛�
   await expect(dialog).toBeVisible({ timeout: 45_000 })
   await expect(dialog).toContainText('未找到可复用的 dsh 运行时')
   await expect(win.getByTestId('runtime-confirm-body')).toContainText('@deepseek-ai/dsh@')
+  await expect(win.getByTestId('runtime-confirm-registry')).toContainText('https://registry.npmjs.org')
   await expect(win.getByTestId('runtime-confirm-accept')).toHaveText('下载并启动')
   await win.screenshot({ path: join(SHOT_DIR, 'runtime-confirm.png') })
 

@@ -64,14 +64,12 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
   // npm registry 可经环境变量覆盖：默认跟随系统 npm 配置；
   // 内网/海外网络慢时可指到镜像，如 DSH_HUB_NPM_REGISTRY=https://registry.npmmirror.com
   const envNpmRegistry = process.env['DSH_HUB_NPM_REGISTRY']?.trim() || undefined
+  /** 生效镜像地址：设置优先，其次环境变量；空串 = 跟随系统 npm 配置。 */
+  const effectiveRegistry = (): string => deps.readSettings().npmRegistry || envNpmRegistry || ''
   const installer = createRuntimeInstaller({
     runtimesDir: join(deps.dataRoot, 'runtimes'),
     cacheDir: join(deps.dataRoot, 'npm-cache'),
-    getRegistry: () => {
-      const saved = deps.readSettings().npmRegistry
-      if (saved) return saved
-      return envNpmRegistry
-    }
+    getRegistry: () => effectiveRegistry() || undefined
   })
   // 运行时确认走 hub 风格的渲染层对话框（prompt broker 推送 + 渲染层挂载时快照补拉）。
   // 无窗口可应答、broker 未装配或用户拒绝/超时，一律按「取消」处理——绝不静默下载、
@@ -89,7 +87,8 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
     dataRoot: deps.dataRoot,
     store: deps.store,
     pathProbe,
-    confirmDownload: (version) => confirmViaRenderer({ kind: 'dsh-download', version }),
+    confirmDownload: (version) =>
+      confirmViaRenderer({ kind: 'dsh-download', version, registry: effectiveRegistry() }),
     // 公共空间实例的升级改写的是系统默认 dsh（对所有使用者全局生效），必须二次确认；
     // 拒绝时本次升级不产生任何进度、不改任何状态。
     confirmSystemUpgrade: (latest, current) =>

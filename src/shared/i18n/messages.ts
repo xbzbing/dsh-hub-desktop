@@ -372,6 +372,11 @@ export const MESSAGES = {
   },
   'runtime.confirm.downloadAccept': { zh: '下载并启动', en: 'Download & start' },
   'runtime.confirm.downloadHint': { zh: '取消则跳过下载，本次启动取消。', en: 'Cancelling skips the download and stops this start.' },
+  'runtime.confirm.downloadRegistry': { zh: '下载来源：{registry}', en: 'Download from: {registry}' },
+  'runtime.confirm.downloadRegistryDefault': {
+    zh: '下载来源：系统 npm 默认配置',
+    en: 'Download from: default npm configuration'
+  },
   'runtime.confirm.upgradeTitle': { zh: '升级系统默认 dsh？', en: 'Upgrade the system default dsh?' },
   'runtime.confirm.upgradeBody': {
     zh: '该实例使用公共空间 ~/.dsh，运行的是 PATH 上的系统默认 dsh（当前 {current}）。升级将全局更新为 @deepseek-ai/dsh@{latest}，所有使用系统默认 dsh 的实例与终端都会跟随。是否继续？',
@@ -533,6 +538,8 @@ export const MESSAGES = {
   'home.colVersion': { zh: '版本', en: 'Version' },
   'home.colActions': { zh: '操作', en: 'Actions' },
   'home.loadingList': { zh: '正在加载实例列表', en: 'Loading instance list' },
+  'home.listErrorTitle': { zh: '实例列表加载失败', en: 'Failed to load instance list' },
+  'home.listErrorRetry': { zh: '重试', en: 'Retry' },
   'home.heroTitle': { zh: '{n} 个实例已连接', en: '{n} instances connected' },
   'home.heroBody': {
     zh: '本机、SSH 与远程实例都在这里。连接后工作区会嵌在应用内，断线自动重连，远程实例的登录与动态验证码也不用再切浏览器。',

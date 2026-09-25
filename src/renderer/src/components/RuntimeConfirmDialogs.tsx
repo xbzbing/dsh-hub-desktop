@@ -49,6 +49,11 @@ export default function RuntimeConfirmDialogs(): ReactNode {
       ? {
           title: t('runtime.confirm.downloadTitle'),
           body: t('runtime.confirm.downloadBody', { version: prompt.version }),
+          // 下载来源必须可见：registry 自证完整性，用户要能确认包从哪里来。
+          registry:
+            prompt.registry !== ''
+              ? t('runtime.confirm.downloadRegistry', { registry: prompt.registry })
+              : t('runtime.confirm.downloadRegistryDefault'),
           hint: t('runtime.confirm.downloadHint'),
           accept: t('runtime.confirm.downloadAccept'),
           testId: 'runtime-confirm-download'
@@ -56,6 +61,7 @@ export default function RuntimeConfirmDialogs(): ReactNode {
       : {
           title: t('runtime.confirm.upgradeTitle'),
           body: t('runtime.confirm.upgradeBody', { latest: prompt.latest, current: prompt.current }),
+          registry: null,
           hint: t('runtime.confirm.upgradeHint'),
           accept: t('runtime.confirm.upgradeAccept'),
           testId: 'runtime-confirm-upgrade'
@@ -93,6 +99,11 @@ export default function RuntimeConfirmDialogs(): ReactNode {
       <p data-testid="runtime-confirm-body" style={{ fontSize: '12.5px', color: 'var(--muted)' }}>
         {copy.body}
       </p>
+      {copy.registry !== null && (
+        <p data-testid="runtime-confirm-registry" style={{ fontSize: '12px', color: 'var(--muted)' }}>
+          {copy.registry}
+        </p>
+      )}
     </Modal>
   )
 }

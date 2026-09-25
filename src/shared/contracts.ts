@@ -556,11 +556,12 @@ export const DSH_VERSION_IPC = {
 
 /**
  * 运行时二次确认请求（主→渲染）：需要用户拍板的破坏性/耗流量动作。
- * - `dsh-download`：hub 与 PATH 都没有可用 dsh，需下载后才能启动；
+ * - `dsh-download`：hub 与 PATH 都没有可用 dsh，需下载后才能启动；`registry` 为
+ *   生效镜像地址（空串 = 跟随系统 npm 配置），对话框必须展示下载来源；
  * - `system-dsh-upgrade`：公共空间实例升级系统默认 dsh，全局生效。
  */
 export type RuntimeConfirmPromptPayload =
-  | { requestId: string; kind: 'dsh-download'; version: string }
+  | { requestId: string; kind: 'dsh-download'; version: string; registry: string }
   | { requestId: string; kind: 'system-dsh-upgrade'; latest: string; current: string }
 
 /** 逐分支去掉 requestId（Omit 会把联合压成公共字段，不能直接用在联合上）。 */

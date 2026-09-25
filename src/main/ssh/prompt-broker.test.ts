@@ -87,11 +87,15 @@ describe('prompt-broker（用户提示代理）', () => {
 
   it('运行时确认:投递带 requestId 的事件,回答后 resolve;快照随回答出列', async () => {
     const { broker, sent } = makeBroker()
-    const promise = broker.requestConfirm({ kind: 'dsh-download', version: '0.1.7-rc.1' })
+    const promise = broker.requestConfirm({
+      kind: 'dsh-download',
+      version: '0.1.7-rc.1',
+      registry: 'https://registry.npmmirror.com'
+    })
     expect(sent[0]?.channel).toBe('dsh-version:confirmRequest')
     const requestId = sent[0]?.payload.requestId ?? ''
     expect(broker.listConfirms()).toEqual([
-      { requestId, kind: 'dsh-download', version: '0.1.7-rc.1' }
+      { requestId, kind: 'dsh-download', version: '0.1.7-rc.1', registry: 'https://registry.npmmirror.com' }
     ])
     expect(broker.replyConfirm(requestId, true)).toBe(true)
     await expect(promise).resolves.toBe(true)
@@ -109,7 +113,7 @@ describe('prompt-broker（用户提示代理）', () => {
 
   it('运行时确认:cancelAll 把待答确认一并按拒绝收敛', async () => {
     const { broker } = makeBroker()
-    const confirm = broker.requestConfirm({ kind: 'dsh-download', version: '0.1.7' })
+    const confirm = broker.requestConfirm({ kind: 'dsh-download', version: '0.1.7', registry: '' })
     expect(broker.listConfirms()).toHaveLength(1)
     broker.cancelAll()
     await expect(confirm).resolves.toBe(false)
