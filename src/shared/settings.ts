@@ -19,6 +19,22 @@ export const REGISTRY_PRESETS = [
   { value: 'https://registry.npmjs.org', labelKey: 'wizard.registryNpmjs' }
 ] as const
 
+/**
+ * npm 镜像信任根：registry 自证完整性且执行生命周期脚本，只接受 https；
+ * 本地镜像（回环 http）放行。其余协议（file:/ftp:/javascript: 等）一律拒绝。
+ */
+export function isAllowedNpmRegistry(value: string): boolean {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  if (url.protocol === 'https:') return true
+  if (url.protocol !== 'http:') return false
+  return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname)
+}
+
 export const SettingsSchema = z.object({
   /** 界面语言偏好；system 时解析为 OS locale 对应的 zh|en。 */
   language: z.enum(LANGUAGES).default('system'),
@@ -31,8 +47,12 @@ export const SettingsSchema = z.object({
   notifications: z.boolean().default(true),
   /** 内嵌工作区 WebContentsView 的 LRU 缓存上限(默认 3,防内存膨胀)。 */
   workspaceCacheSize: z.number().int().min(1).max(10).default(3),
-  /** npm 安装镜像地址；留空跟随系统 npm 配置。 */
-  npmRegistry: z.string().trim().url().or(z.literal('')).default('')
+  /** npm 安装镜像地址；留空跟随系统 npm 配置。只接受 https（本地镜像放行回环 http）。 */
+  npmRegistry: z
+    .string()
+    .trim()
+    .refine((value) => value === '' || isAllowedNpmRegistry(value), '镜像地址必须是 https URL')
+    .default('')
 })
 
 export type Settings = z.infer<typeof SettingsSchema>

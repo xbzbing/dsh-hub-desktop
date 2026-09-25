@@ -906,6 +906,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/shared/contracts.ts', ".max(128, '配置档案最长 128 字符')"),
   debt('src/shared/contracts.ts', ".regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, '配置档案只能是相对路径，且不能以 - 开头')"),
   debt('src/shared/contracts.ts', ".refine((value) => !value.split('/').includes('..'), '配置档案不能包含 ..')"),
+  debt('src/shared/settings.ts', ".refine((value) => value === '' || isAllowedNpmRegistry(value), '镜像地址必须是 https URL')"),
 
   debt('src/main/local-runtime/local-runtime.ts', "detail: `已接管本机运行的 dsh web（pid ${external.pid}${external.patch ? `，patch ${external.patch}` : ''}）`"),
   debt('src/main/local-runtime/local-runtime.ts', "detail: `已断开接管（外部 dsh web 进程 pid ${entry.externalPid ?? '?'} 未终止）`"),

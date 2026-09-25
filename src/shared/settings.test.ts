@@ -77,4 +77,28 @@ describe('settings（非敏感偏好）', () => {
     expect(SettingsSchema.safeParse({ language: 'fr' }).success).toBe(false)
     expect(SettingsSchema.safeParse({ theme: 'system' }).success).toBe(true)
   })
+
+  it('npm 镜像信任根:只接受 https,本地镜像放行回环 http', () => {
+    expect(SettingsSchema.safeParse({ npmRegistry: 'https://registry.npmmirror.com' }).success).toBe(true)
+    expect(SettingsSchema.safeParse({ npmRegistry: 'https://[::1]:4873/' }).success).toBe(true)
+    expect(SettingsSchema.safeParse({ npmRegistry: 'http://127.0.0.1:4873' }).success).toBe(true)
+    expect(SettingsSchema.safeParse({ npmRegistry: 'http://localhost:4873' }).success).toBe(true)
+    expect(SettingsSchema.safeParse({ npmRegistry: '' }).success).toBe(true)
+
+    // registry 自证完整性且执行生命周期脚本,是整条下载链的信任根:
+    // 其余协议与明文远程源一律拒绝。
+    expect(SettingsSchema.safeParse({ npmRegistry: 'file:///tmp/evil-registry' }).success).toBe(false)
+    expect(SettingsSchema.safeParse({ npmRegistry: 'ftp://example.com/' }).success).toBe(false)
+    expect(SettingsSchema.safeParse({ npmRegistry: 'javascript:alert(1)' }).success).toBe(false)
+    expect(SettingsSchema.safeParse({ npmRegistry: 'http://evil.example.com/' }).success).toBe(false)
+    expect(SettingsSchema.safeParse({ npmRegistry: 'not a url' }).success).toBe(false)
+  })
+
+  it('非法镜像地址经 normalizeSettings 回落默认,其余字段不受影响', () => {
+    expect(normalizeSettings({ language: 'en', npmRegistry: 'file:///tmp/x' })).toEqual({
+      ...DEFAULT_SETTINGS,
+      language: 'en',
+      npmRegistry: ''
+    })
+  })
 })
