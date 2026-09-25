@@ -83,9 +83,13 @@
 本地 dsh 与系统 OpenSSH 均以当前用户身份启动，并继承应用进程环境。这是有意的兼容性约束：`PATH` 用于定位用户安装的运行时，`SSH_AUTH_SOCK` 用于 SSH agent，代理与企业证书相关变量用于受管网络环境。
 
 - renderer 不能指定、覆盖或读取子进程环境变量；主进程只补充每个实例所需的 `DSH_HOME`、askpass socket 等受控变量。
-- 启动本机实例前，主进程把登录环境 PATH 合并进子进程 PATH（登录目录前置、去重）：macOS/Linux 取登录 shell（`$SHELL -lc`）导出的 PATH，Windows 取注册表 User 与 Machine 的 `Path` 并展开 `%VAR%`。解析在应用生命周期内只执行一次，失败或超时回退继承 PATH。最终顺序为「运行时 node 目录 → 登录 PATH → 继承 PATH」，保证 GUI 启动（launchd 最小 PATH）下实例内仍能解析到用户 shell 里的工具。
-- 子进程没有高于 Hub 的 OS 权限；继承环境不构成跨用户或跨进程权限提升边界。
-- 如果未来引入环境过滤，必须先定义 allowlist，至少覆盖 `PATH`、`HOME`、`SSH_AUTH_SOCK`、平台代理变量与运行时必需变量，并在代理、SSH agent 和 PATH dsh 场景下运行集成验证。
+- 启动本机实例前，主进程默认把当前用户登录 shell 的完整环境合并进子进程环境，使实例内环境与用户终端一致（`inheritShellEnv` 开关控制，默认开，可在设置关闭）：
+  - 登录 shell 取 `os.userInfo().shell`（passwd 权威来源，回退 `$SHELL`），仅支持 zsh 与 bash；以 `<shell> -l -i -c 'env -0'` 导出其解析完全部启动文件（含 `.zshrc`/`.bashrc`，仅交互 shell 加载）后的环境，`\0` 分隔避免值含换行或等号被截断。
+  - 合并采用 denylist：`DSH_HOME`、`DSH_BIN`、`DUSH_PATCH_FILE`、`ELECTRON_RUN_AS_NODE` 等本机实例启动段自行注入或删除的受保护键，shell 环境不得覆盖；其余键以 shell 值为准。`PATH` 走登录目录前置、去重合并而非整体替换。
+  - 关闭开关、非 zsh/bash、或解析失败/超时时，回退到仅合并登录环境 PATH：macOS/Linux 取登录 shell（`$SHELL -lc`）导出的 PATH，Windows 取注册表 User 与 Machine 的 `Path` 并展开 `%VAR%`。
+  - 解析在应用生命周期内只执行一次。最终 PATH 顺序为「运行时 node 目录 → 登录 shell PATH → 继承 PATH」，保证 GUI 启动（launchd 最小 PATH）下实例内仍能解析到用户 shell 里的工具。
+- 子进程没有高于 Hub 的 OS 权限；继承环境不构成跨用户或跨进程权限提升边界。因此对同用户运行的 dsh 而言，注入 shell 环境不构成新的机密性暴露面（dsh 本可自读 rc 文件）；受保护键的 denylist 保证的是启动正确性而非安全隔离。
+- 解析出的 shell 环境仅注入子进程，绝不写入 IPC 状态事件、审计日志或命令展示串。
 
 ### 2.4 自动探测(auth 模式识别)
 

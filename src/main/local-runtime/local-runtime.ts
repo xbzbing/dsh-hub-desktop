@@ -24,6 +24,7 @@ import { resolveCmdShim } from './cmd-shim'
 import { planRuntimeSource, type PathProbe } from './runtime-source'
 import { searchNodeDirs } from './node-dirs'
 import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
+import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
 import { httpHealthProbe, type HealthProbe } from '../transport/probe'
 
 export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
@@ -100,6 +101,16 @@ export interface LocalRuntimeOptions {
    * 缺省用进程内缓存的真实解析；注入以便测试。
    */
   loginPath?: () => Promise<string | null>
+  /**
+   * 当前用户登录 shell 的完整环境解析（含 .zshrc/.bashrc 的 export）；null=不可用。
+   * 缺省用进程内缓存的真实解析；注入以便测试。
+   */
+  shellEnv?: () => Promise<Map<string, string> | null>
+  /**
+   * 是否把登录 shell 完整环境合并进本机实例；false 时仅合并 PATH（回退旧行为）。
+   * 缺省 true；由设置项 inheritShellEnv 决定，读取函数注入以便运行中改设置即时生效。
+   */
+  inheritShellEnv?: () => boolean
   /**
    * (生产装配必须注入;测试/受限环境注入 stub)。返回 true 才继续下载。
    */
@@ -198,6 +209,28 @@ function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS
 }
 
 /**
+ * 解析子进程的基础环境（不含 node 目录前置与 DSH_HOME，那两步由调用方叠加）。
+ *
+ * 默认合并当前用户登录 shell 的完整环境（含 .zshrc/.bashrc 的 export，受保护键除外）；
+ * 关闭开关、非 zsh/bash 或解析失败/超时时，回退到仅合并登录 PATH。与用户终端解析结果一致。
+ */
+async function resolveBaseEnv(deps: {
+  inherit: boolean
+  shellEnv: () => Promise<Map<string, string> | null>
+  loginPath: () => Promise<string | null>
+}): Promise<NodeJS.ProcessEnv> {
+  const shellEnvMap = deps.inherit ? await deps.shellEnv().catch(() => null) : null
+  if (shellEnvMap !== null) {
+    return mergeShellEnv(process.env, shellEnvMap, process.platform)
+  }
+  const loginEnvPath = await deps.loginPath().catch(() => null)
+  return {
+    ...process.env,
+    PATH: mergeLoginPath(process.env.PATH ?? '', loginEnvPath, process.platform)
+  }
+}
+
+/**
  * 解析一个真实 node 可执行文件，供 hub 与本机启动器来源执行 dsh/dush/duush。
  *
  * dsh 的原生插件按运行时指纹校验：不在白名单的 Electron 版本启动即以 code=1 退出，
@@ -234,6 +267,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const homeDir = options.homeDir ?? homedir
   const resolveNode = options.resolveNode ?? ((scriptPath: string) => resolveNodeFor(scriptPath, homeDir()))
   const loginPath = options.loginPath ?? resolveLoginPathOnce
+  const shellEnv = options.shellEnv ?? resolveShellEnvOnce
+  const inheritShellEnv = options.inheritShellEnv ?? ((): boolean => true)
   const readyTimeoutMs = options.readyTimeoutMs ?? 60_000
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const stopAllDrainMs = options.stopAllDrainMs ?? 10_000
@@ -754,16 +789,14 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           // 校验，不在白名单的 Electron 启动即以 code=1 退出；真实 node 不受该限制。
           const runtimeNode = resolveNode(scriptPath)
           const nodeArgs = nodeInvocation.args
-          // 合并登录环境 PATH：GUI 启动只继承最小 PATH，用户 shell 里的工具目录不在其中。
-          // 顺序为「node 目录 → 登录 PATH → 继承 PATH」，与用户终端的解析结果一致。
-          const loginEnvPath = await loginPath().catch(() => null)
-          const mergedPath = mergeLoginPath(process.env.PATH ?? '', loginEnvPath, process.platform)
+          // 环境构造：登录 shell 完整环境 / 仅 PATH（见 resolveBaseEnv）；node 目录始终前置，
+          // 保证 dsh 自己 spawn 的子进程解析到同一个 node。
+          const baseEnv = await resolveBaseEnv({ inherit: inheritShellEnv(), shellEnv, loginPath })
+          const basePath = baseEnv.PATH ?? ''
           const runtimeEnv: NodeJS.ProcessEnv = {
-            ...process.env,
+            ...baseEnv,
             PATH:
-              runtimeNode !== null
-                ? `${dirname(runtimeNode)}${delimiter}${mergedPath}`
-                : mergedPath,
+              runtimeNode !== null ? `${dirname(runtimeNode)}${delimiter}${basePath}` : basePath,
             DSH_HOME: home
           }
           if (customLauncherName !== null) {

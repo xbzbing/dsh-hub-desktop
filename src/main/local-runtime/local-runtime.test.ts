@@ -14,6 +14,14 @@ import {
   type SpawnedProcess
 } from './local-runtime'
 
+// 默认让登录 shell 环境解析返回 null：单测不真的起 `zsh -l -i -c 'env -0'`，
+// 保持 hermetic（不读跑测机器的 .zshrc、无交互 shell 卡死风险）。验证该特性的用例
+// 通过 shellEnv 选项注入固定 Map。mergeShellEnv 保留真实实现。
+vi.mock('./shell-env', async (importActual) => ({
+  ...(await importActual<typeof import('./shell-env')>()),
+  resolveShellEnvOnce: async () => null
+}))
+
 const ISO = '2026-09-15T00:00:00.000Z'
 
 function localInstance(overrides: Partial<LocalInstance> = {}): LocalInstance {
@@ -1600,6 +1608,7 @@ describe('凭据脱敏', () => {
       },
       resolveNode: () => '/Users/example/.local/bin/node',
       loginPath: async () => '/login/bin',
+      inheritShellEnv: () => false,
       readyTimeoutMs: 2_000
     })
 
@@ -1637,6 +1646,7 @@ describe('凭据脱敏', () => {
       },
       resolveNode: () => '/Users/example/.local/bin/node',
       loginPath: async () => null,
+      inheritShellEnv: () => false,
       readyTimeoutMs: 2_000
     })
 
@@ -1649,6 +1659,53 @@ describe('凭据脱敏', () => {
     expect(invocation.env.PATH).toBe(
       `/Users/example/.local/bin${delimiter}${process.env.PATH ?? ''}`
     )
+  })
+
+  it('开启 inheritShellEnv:合并登录 shell 环境变量,node 目录前置、受保护键不被覆盖', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999705
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+
+    const manager = createLocalRuntime({
+      store: storeStub,
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      pathProbe: {
+        probe: async () => ({ command: '/Users/example/.local/bin/dsh', version: '0.1.6-alpha.2' })
+      },
+      resolveNode: () => '/Users/example/.local/bin/node',
+      inheritShellEnv: () => true,
+      shellEnv: async () =>
+        new Map<string, string>([
+          ['PATH', '/shell/bin'],
+          ['HTTP_PROXY', 'http://127.0.0.1:7890'],
+          // 受保护键：即便 shell 里有，也不得覆盖 hub 注入的 DSH_HOME
+          ['DSH_HOME', '/evil/home']
+        ]),
+      readyTimeoutMs: 2_000
+    })
+
+    const starting = manager.start(localInstance())
+    await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalled())
+    child.stdout.write(readyLine())
+    await starting
+
+    const invocation = (spawnImpl.mock.calls[0] as unknown as [{ env: NodeJS.ProcessEnv }])[0]
+    // shell 环境变量被注入
+    expect(invocation.env.HTTP_PROXY).toBe('http://127.0.0.1:7890')
+    // node 目录前置、shell PATH 随后
+    const segments = (invocation.env.PATH ?? '').split(delimiter)
+    expect(segments[0]).toBe('/Users/example/.local/bin')
+    expect(segments[1]).toBe('/shell/bin')
+    // 受保护键：DSH_HOME 仍是 hub 决定的隔离目录，不是 shell 里的伪造值
+    expect(invocation.env.DSH_HOME).not.toBe('/evil/home')
+    expect(invocation.env.DSH_HOME).toContain('homes')
   })
 
   it('找不到 node 时按脚本 shebang 直接执行,不悄悄回退到 Electron', async () => {

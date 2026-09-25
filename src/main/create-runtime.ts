@@ -87,6 +87,8 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
     dataRoot: deps.dataRoot,
     store: deps.store,
     pathProbe,
+    // 登录 shell 完整环境继承开关：运行中改设置即时生效（下次启动实例时读取）。
+    inheritShellEnv: () => deps.readSettings().inheritShellEnv,
     confirmDownload: (version) =>
       confirmViaRenderer({ kind: 'dsh-download', version, registry: effectiveRegistry() }),
     // 公共空间实例的升级改写的是系统默认 dsh（对所有使用者全局生效），必须二次确认；

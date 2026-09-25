@@ -204,10 +204,11 @@ describe('设置跨版本升级路径', () => {
       autoStart: true,
       notifications: false,
       workspaceCacheSize: 3, // 夹具无此字段,回落默认
+      inheritShellEnv: true, // 夹具无此字段,回落默认
       npmRegistry: '' // 夹具无此字段,回落默认
     })
     for (const [key, value] of Object.entries(settings).filter(
-      ([key]) => key !== 'workspaceCacheSize' && key !== 'npmRegistry'
+      ([key]) => key !== 'workspaceCacheSize' && key !== 'inheritShellEnv' && key !== 'npmRegistry'
     )) {
       expect(value, `字段 ${key} 恰好等于默认值,夹具失去检出能力`).not.toEqual(
         DEFAULT_SETTINGS[key as keyof typeof DEFAULT_SETTINGS]
@@ -259,6 +260,7 @@ describe('设置跨版本升级路径', () => {
       theme: 'system',
       autoStart: false,
       workspaceCacheSize: 3, // 未来文件无此字段,回落默认
+      inheritShellEnv: true, // 未来文件无此字段,回落默认
       npmRegistry: '' // 未来文件无此字段,回落默认
     })
     // 逐字段收敛是**静默**的(设置坏了不该拦住启动),不产出噪音错误

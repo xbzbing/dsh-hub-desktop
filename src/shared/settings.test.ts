@@ -10,6 +10,7 @@ describe('settings（非敏感偏好）', () => {
       autoStart: false,
       notifications: true,
       workspaceCacheSize: 3,
+      inheritShellEnv: true,
       npmRegistry: ''
     })
   })
@@ -35,6 +36,7 @@ describe('settings（非敏感偏好）', () => {
       autoStart: true,
       notifications: false,
       workspaceCacheSize: 7,
+      inheritShellEnv: false,
       npmRegistry: 'https://registry.npmmirror.com'
     }
     expect(normalizeSettings(input)).toEqual(input)
@@ -56,6 +58,7 @@ describe('settings（非敏感偏好）', () => {
       autoStart: true, // 保留
       notifications: false, // 保留
       workspaceCacheSize: 3, // 缺失回落默认
+      inheritShellEnv: true, // 缺失回落默认
       npmRegistry: '' // 缺失回落默认
     })
   })

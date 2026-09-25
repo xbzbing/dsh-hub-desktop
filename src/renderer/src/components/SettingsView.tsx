@@ -162,6 +162,20 @@ export default function SettingsView(): ReactNode {
           />
           <span>{t('settings.autoStart')}</span>
         </label>
+        <label className="row mt12" style={{ gap: 8, alignItems: 'flex-start' }}>
+          <input
+            type="checkbox"
+            data-testid="settings-inherit-shell-env"
+            checked={settings.inheritShellEnv}
+            onChange={(event) => apply({ inheritShellEnv: event.target.checked })}
+          />
+          <span style={{ flex: 1 }}>
+            <span>{t('settings.inheritShellEnv')}</span>
+            <span className="meta" style={{ display: 'block', marginTop: 2 }}>
+              {t('settings.inheritShellEnvHint')}
+            </span>
+          </span>
+        </label>
         <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
           <span style={{ flex: 1 }}>
             <span>{t('settings.workspaceCache')}</span>

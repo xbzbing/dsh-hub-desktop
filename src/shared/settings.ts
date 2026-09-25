@@ -47,6 +47,8 @@ export const SettingsSchema = z.object({
   notifications: z.boolean().default(true),
   /** 内嵌工作区 WebContentsView 的 LRU 缓存上限(默认 3,防内存膨胀)。 */
   workspaceCacheSize: z.number().int().min(1).max(10).default(3),
+  /** 本机实例继承用户登录 shell 的完整环境（含 .zshrc/.bashrc）；关闭时仅继承 PATH。 */
+  inheritShellEnv: z.boolean().default(true),
   /** npm 安装镜像地址；留空跟随系统 npm 配置。只接受 https（本地镜像放行回环 http）。 */
   npmRegistry: z
     .string()
@@ -94,6 +96,7 @@ export function normalizeSettings(value: unknown): Settings {
     autoStart: pick('autoStart'),
     notifications: pick('notifications'),
     workspaceCacheSize: pick('workspaceCacheSize'),
+    inheritShellEnv: pick('inheritShellEnv'),
     npmRegistry: pick('npmRegistry')
   }
 }

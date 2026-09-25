@@ -178,6 +178,11 @@ export const MESSAGES = {
     zh: '保留最近使用的工作区；切换时可减少重新加载',
     en: 'Keeps recently used workspaces ready for faster switching'
   },
+  'settings.inheritShellEnv': { zh: '继承登录 shell 环境', en: 'Inherit login shell environment' },
+  'settings.inheritShellEnvHint': {
+    zh: '本机实例继承登录 shell（含 .zshrc/.bashrc）的环境变量，与终端一致；关闭时仅继承 PATH',
+    en: 'Local instances inherit environment variables from your login shell (including .zshrc/.bashrc), matching your terminal; when off, only PATH is inherited'
+  },
   'settings.dataDir': { zh: '数据目录', en: 'Data directory' },
   // 数据目录提供「打开」控件。
   'settings.openDataDir': { zh: '打开', en: 'Open' },

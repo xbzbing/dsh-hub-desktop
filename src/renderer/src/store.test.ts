@@ -14,6 +14,7 @@ const DEFAULTS: Settings = {
   autoStart: false,
   notifications: true,
   workspaceCacheSize: 3,
+  inheritShellEnv: true,
   npmRegistry: ''
 }
 
