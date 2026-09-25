@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CommandResult, NpmInvocation } from './runtime-installer'
 import {
   createRuntimeInstaller,
+  globalPrefixFor,
+  globalRuntimeEntry,
   npmFetchPath,
   readInstallingMarker,
   resolveNpmInvocation,
@@ -495,5 +497,113 @@ describe('元数据读取提速（分队列 + TTL 缓存）', () => {
     expect(run.mock.calls.at(-1)?.[1]).toEqual(
       expect.arrayContaining(['--registry', 'https://mirror-b.example'])
     )
+  })
+})
+
+describe('系统 dsh 的 npm 全局升级', () => {
+  it('globalPrefixFor 只认 npm 全局布局，pnpm 虚拟存储与本地依赖不猜', () => {
+    expect(globalPrefixFor('/Users/x/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')).toBe(
+      '/Users/x/.local'
+    )
+    expect(globalPrefixFor('/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')).toBe('/usr/local')
+    expect(
+      globalPrefixFor('C:\\Users\\x\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js', 'win32')
+    ).toBe('C:/Users/x/AppData/Roaming/npm')
+    // pnpm 全局:真实路径落在 .pnpm 虚拟存储,node_modules 不在 lib 下
+    expect(
+      globalPrefixFor(
+        '/Users/x/Library/pnpm/global/5/node_modules/.pnpm/@deepseek-ai+dsh@0.1.6/node_modules/@deepseek-ai/dsh/lib/bin.js'
+      )
+    ).toBeNull()
+    // 本地依赖与裸脚本路径
+    expect(globalPrefixFor('/Users/x/proj/node_modules/@deepseek-ai/dsh/lib/bin.js')).toBeNull()
+    expect(globalPrefixFor('/opt/homebrew/bin/dsh')).toBeNull()
+    expect(globalPrefixFor('/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')).toBeNull()
+  })
+
+  it('globalRuntimeEntry 与 globalPrefixFor 互为逆运算（POSIX 多一层 lib）', () => {
+    const prefix = '/Users/x/.local'
+    expect(globalRuntimeEntry(prefix)).toBe('/Users/x/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')
+    expect(globalPrefixFor(globalRuntimeEntry(prefix))).toBe(prefix)
+    expect(globalRuntimeEntry('C:\\npm', 'win32')).toContain('node_modules')
+  })
+
+  it('resolveGlobalPrefix：先解析符号链接再判定布局', async () => {
+    const root = tmpDir()
+    const pkgLib = join(root, 'lib', 'node_modules', '@deepseek-ai', 'dsh', 'lib')
+    await mkdir(pkgLib, { recursive: true })
+    await writeFile(join(pkgLib, 'bin.js'), '#!/usr/bin/env node\n', 'utf8')
+    const binDir = join(root, 'bin')
+    await mkdir(binDir, { recursive: true })
+    await symlink(join(pkgLib, 'bin.js'), join(binDir, 'dsh'))
+
+    const installer = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
+    })
+    expect(await installer.resolveGlobalPrefix(join(binDir, 'dsh'))).toBe(root)
+    // 指向不存在的文件 → 解析失败按无法代管处理
+    expect(await installer.resolveGlobalPrefix(join(binDir, 'missing'))).toBeNull()
+  })
+
+  it('installGlobal 走 npm install -g --prefix 安装到系统 prefix 并校验入口', async () => {
+    const prefix = tmpDir()
+    const pkgLib = join(prefix, 'lib', 'node_modules', '@deepseek-ai', 'dsh', 'lib')
+    await mkdir(pkgLib, { recursive: true })
+    await writeFile(join(pkgLib, 'bin.js'), '#!/usr/bin/env node\n', 'utf8')
+    const run = vi.fn(async () => okRun(''))
+    const installer = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: '/tmp/fake-cache',
+      run,
+      resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
+    })
+
+    await installer.installGlobal(prefix, '0.1.6')
+
+    expect(run).toHaveBeenCalledWith(
+      '/fake/npm',
+      expect.arrayContaining(['install', '-g', '--prefix', prefix, '@deepseek-ai/dsh@0.1.6']),
+      expect.anything()
+    )
+  })
+
+  it('installGlobal：升级完成后入口缺失 → 报错（不静默假成功）', async () => {
+    const prefix = tmpDir() // 不造入口文件
+    const run = vi.fn(async () => okRun(''))
+    const installer = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      run,
+      resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
+    })
+
+    await expect(installer.installGlobal(prefix, '0.1.6')).rejects.toThrow('未找到 dsh 入口')
+  })
+
+  it('installGlobal：带进度回调时透传 npm fetch 进度（spawnNpm 分支）', async () => {
+    const prefix = tmpDir()
+    const pkgLib = join(prefix, 'lib', 'node_modules', '@deepseek-ai', 'dsh', 'lib')
+    await mkdir(pkgLib, { recursive: true })
+    await writeFile(join(pkgLib, 'bin.js'), '#!/usr/bin/env node\n', 'utf8')
+    const installer = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] }),
+      runNpm: vi.fn(async (_npm, _args, options) => {
+        options.onStderrLine?.('npm http fetch GET 200 https://registry.npmjs.org/@deepseek-ai%2fdsh 12ms')
+        return { code: 0, stdout: '', stderr: '' }
+      })
+    })
+
+    const progress: Array<{ percent?: number; detail?: string }> = []
+    await installer.installGlobal(prefix, '0.1.6', (item) =>
+      progress.push({ ...(item.percent === undefined ? {} : { percent: item.percent }), ...(item.detail === undefined ? {} : { detail: item.detail }) })
+    )
+
+    expect(progress.some((item) => item.detail?.startsWith('全局安装'))).toBe(true)
+    expect(progress.some((item) => item.detail?.startsWith('下载依赖'))).toBe(true)
+    expect(progress.at(-1)?.percent).toBe(100)
   })
 })

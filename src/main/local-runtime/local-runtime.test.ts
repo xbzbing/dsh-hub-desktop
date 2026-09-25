@@ -47,6 +47,7 @@ interface FakeChild extends SpawnedProcess {
 function makeFakeInstaller(overrides: Partial<RuntimeInstaller> = {}): RuntimeInstaller & {
   install: ReturnType<typeof vi.fn>
   ensureInstalled: ReturnType<typeof vi.fn>
+  installGlobal: ReturnType<typeof vi.fn>
 } {
   const installed = (): {
     version: string
@@ -69,11 +70,14 @@ function makeFakeInstaller(overrides: Partial<RuntimeInstaller> = {}): RuntimeIn
     ensureInstalled: vi.fn(async () => installed()),
     resolveEntry: (version) => `/tmp/runtimes/dsh-${version}/lib/bin.js`,
     hasIncompleteInstall: async () => false,
+    resolveGlobalPrefix: async () => null,
+    installGlobal: vi.fn(async () => undefined),
     ...overrides
   }
   return base as RuntimeInstaller & {
     install: ReturnType<typeof vi.fn>
     ensureInstalled: ReturnType<typeof vi.fn>
+    installGlobal: ReturnType<typeof vi.fn>
   }
 }
 
@@ -185,6 +189,11 @@ describe('createLocalRuntime', () => {
         spawnImpl: spawnImpl as never,
         // 固定 node 解析结果,避免测试随开发机是否装有 node 漂移。
         resolveNode: () => null,
+        pathProbe: {
+          // 隔离实例优先复用 PATH 上的 dsh(path 来源),此时仍直接执行 wrapper 本体。
+          probe: async () => ({ command: '/tmp/system/dsh', version: '0.1.5-rc.1' }),
+          probeLauncher: async () => null
+        },
         readyTimeoutMs: 2_000
       })
 
@@ -202,18 +211,39 @@ describe('createLocalRuntime', () => {
             '--port',
             expect.stringMatching(/^\d+$/),
             '--no-open'
-          ]
+          ],
+          // wrapper 实际加载哪份 dsh 由 hub 指定:注入 DSH_BIN,而不是放任它回退 PATH。
+          env: expect.objectContaining({ DSH_BIN: '/tmp/system/dsh' })
         })
       )
     }
   )
 
   it.each([
-    { dshVersion: '0.2.0', expected: '0.2.0' },
-    { dshVersion: null, expected: 'custom' }
+    {
+      dshVersion: '0.2.0',
+      pathDsh: null,
+      expected: '0.2.0',
+      source: 'hub',
+      dshBin: '/tmp/runtimes/dsh-0.2.0/lib/bin.js'
+    },
+    {
+      dshVersion: null,
+      pathDsh: { command: '/tmp/system/dsh', version: '0.1.1-rc.3' },
+      expected: '0.1.1-rc.3',
+      source: 'path',
+      dshBin: '/tmp/system/dsh'
+    },
+    {
+      dshVersion: null,
+      pathDsh: null,
+      expected: '0.1.5-rc.1',
+      source: 'hub',
+      dshBin: '/tmp/runtimes/dsh-0.1.5-rc.1/lib/bin.js'
+    }
   ])(
-    '自定义启动器：dshVersion=$dshVersion 时状态版本显示 $expected，running 事件带实际启动命令',
-    async ({ dshVersion, expected }) => {
+    '自定义启动器：dshVersion=$dshVersion 来源=$source 时状态版本显示 $expected，DSH_BIN 指向该来源',
+    async ({ dshVersion, pathDsh, expected, source, dshBin }) => {
       const child = new EventEmitter() as unknown as FakeChild
       child.stdout = new PassThrough()
       child.stderr = new PassThrough()
@@ -231,7 +261,7 @@ describe('createLocalRuntime', () => {
         resolveNode: () => null,
         pathProbe: {
           probeLauncher: async () => ({ command: '/tmp/dush', version: '0.1.1-rc.3' }),
-          probe: async () => null
+          probe: async () => pathDsh
         },
         readyTimeoutMs: 2_000
       })
@@ -242,9 +272,13 @@ describe('createLocalRuntime', () => {
       await starting
       await waitForStatus(manager, instance.id, 'running')
 
-      // 版本显示创建时选定的 dsh 版本；命令行由 hub 固定的参数拼出，供详情页展示与复制。
-      expect(manager.statusOf(instance.id)?.version).toBe(expected)
-      expect(manager.statusOf(instance.id)?.command).toMatch(/^\/tmp\/dush --profile dev --port \d+ --no-open$/)
+      const status = manager.statusOf(instance.id)
+      expect(status?.version).toBe(expected)
+      expect(status?.runtimeSource).toBe(source)
+      // 命令行由 hub 固定的参数拼出,供详情页展示与复制;wrapper 路径始终出现在命令里。
+      expect(status?.command).toMatch(/\/tmp\/dush --profile dev --port \d+ --no-open$/)
+      const invocation = (spawnImpl.mock.calls[0] as unknown as [SpawnInvocation])[0]
+      expect(invocation.env['DSH_BIN']).toBe(dshBin)
     }
   )
 
@@ -275,7 +309,7 @@ describe('createLocalRuntime', () => {
           resolveNode: () => null,
           pathProbe: {
             probeLauncher,
-            probe: async () => null
+            probe: async () => ({ command: '/tmp/system/dsh', version: '0.1.5-rc.1' })
           },
           readyTimeoutMs: 2_000
         })
@@ -291,10 +325,97 @@ describe('createLocalRuntime', () => {
         ])[0]
         expect(invocation.command).toBe(`/tmp/${launcher}`)
         expect(invocation.env.DUSH_PATCH_FILE).toBeUndefined()
+        expect(invocation.env.DSH_BIN).toBe('/tmp/system/dsh')
       } finally {
         if (previousPatch === undefined) delete process.env.DUSH_PATCH_FILE
         else process.env.DUSH_PATCH_FILE = previousPatch
       }
+    }
+  )
+
+  it.each(['dush', 'duush'] as const)(
+    '公共空间的 %s 实例固定跟随系统默认 dsh：探测结果注入 DSH_BIN，实例固定版本不生效',
+    async (launcher) => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999985
+      child.killCall = []
+      child.kill = vi.fn(() => true) as never
+      const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+      const listInstalled = vi.fn(async () => [])
+      const ensureInstalled = vi.fn(async () => {
+        throw new Error('公共空间实例不应安装 hub 副本')
+      })
+      const manager = createLocalRuntime({
+        store: storeStub,
+        confirmDownload: async () => true,
+        installer: makeFakeInstaller({ listInstalled, ensureInstalled }),
+        dataRoot: '/tmp/hub-data',
+        spawnImpl: spawnImpl as never,
+        probe: async () => true,
+        resolveNode: () => null,
+        pathProbe: {
+          probeLauncher: async () => ({ command: `/tmp/${launcher}`, version: '0.1.1-rc.3' }),
+          probe: async () => ({ command: '/tmp/system/dsh', version: '0.1.9' })
+        },
+        readyTimeoutMs: 2_000
+      })
+
+      const instance = localInstance({ launcher, useDefaultSpace: true, dshVersion: '0.2.0' })
+      const starting = manager.start(instance)
+      child.stdout.write(readyLine())
+      await starting
+      await waitForStatus(manager, instance.id, 'running')
+
+      // 公共空间不装 hub 副本：既不列已装版本，也不做安装准备。
+      expect(listInstalled).not.toHaveBeenCalled()
+      expect(ensureInstalled).not.toHaveBeenCalled()
+      const status = manager.statusOf(instance.id)
+      expect(status?.version).toBe('0.1.9')
+      expect(status?.runtimeSource).toBe('path')
+      const invocation = (spawnImpl.mock.calls[0] as unknown as [SpawnInvocation])[0]
+      expect(invocation.env['DSH_BIN']).toBe('/tmp/system/dsh')
+    }
+  )
+
+  it.each([
+    { dshVersion: null, expected: 'custom' },
+    { dshVersion: '0.2.0', expected: '0.2.0' }
+  ])(
+    '公共空间实例未探到系统默认 dsh 时退回占位显示（dshVersion=$dshVersion → $expected）且不注入 DSH_BIN',
+    async ({ dshVersion, expected }) => {
+      const child = new EventEmitter() as unknown as FakeChild
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.pid = 999984
+      child.killCall = []
+      child.kill = vi.fn(() => true) as never
+      const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+      const manager = createLocalRuntime({
+        store: storeStub,
+        confirmDownload: async () => true,
+        installer: makeFakeInstaller(),
+        dataRoot: '/tmp/hub-data',
+        spawnImpl: spawnImpl as never,
+        probe: async () => true,
+        resolveNode: () => null,
+        pathProbe: {
+          probeLauncher: async () => ({ command: '/tmp/dush', version: '0.1.1-rc.3' }),
+          probe: async () => null
+        },
+        readyTimeoutMs: 2_000
+      })
+
+      const instance = localInstance({ launcher: 'dush', useDefaultSpace: true, dshVersion })
+      const starting = manager.start(instance)
+      child.stdout.write(readyLine())
+      await starting
+      await waitForStatus(manager, instance.id, 'running')
+
+      expect(manager.statusOf(instance.id)?.version).toBe(expected)
+      const invocation = (spawnImpl.mock.calls[0] as unknown as [SpawnInvocation])[0]
+      expect(invocation.env['DSH_BIN']).toBeUndefined()
     }
   )
 
@@ -1708,6 +1829,262 @@ describe('upgradeInstance 升级编排', () => {
     expect(events.at(-1)).toMatchObject({ phase: 'error', error: expect.stringContaining('registry 不可达') })
     expect(store.update).not.toHaveBeenCalled()
     expect(spawnImpl).not.toHaveBeenCalled()
+  })
+
+  it('公共空间 dsh/duush：二次确认通过后原位升级系统默认 dsh（npm 全局安装 + 回写）', async () => {
+    const store = { update: vi.fn(async () => localInstance()) }
+    const installer = makeFakeInstaller({
+      resolveLatestVersion: async () => '0.1.6',
+      resolveGlobalPrefix: async (command) => (command === '/tmp/system/dsh' ? '/usr/local' : null),
+      installGlobal: vi.fn(
+        async (_prefix: string, version: string, onProgress?: (progress: InstallProgress) => void) => {
+          onProgress?.({ phase: 'installing', version, percent: 42, detail: '下载依赖 (10)：pkg' })
+        }
+      )
+    })
+    const confirmSystemUpgrade = vi.fn(async () => true)
+    const manager = createLocalRuntime({
+      store,
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: vi.fn(() => {
+        throw new Error('停止态升级不应拉起进程')
+      }) as never,
+      confirmDownload: async () => true,
+      confirmSystemUpgrade,
+      pathProbe: {
+        probe: async () => ({ command: '/tmp/system/dsh', version: '0.1.5' }),
+        probeLauncher: async () => null
+      },
+      readyTimeoutMs: 2000
+    })
+    const events: DshVersionProgressEvent[] = []
+    manager.onUpgradeProgress((event) => events.push(event))
+
+    const instance = localInstance({ launcher: 'dush', useDefaultSpace: true, dshVersion: '0.1.4' })
+    await manager.upgradeInstance(instance)
+
+    // 二次确认带上目标版本与当前系统版本；确认后才出现进度事件。
+    expect(confirmSystemUpgrade).toHaveBeenCalledWith('0.1.6', '0.1.5')
+    expect(installer.installGlobal).toHaveBeenCalledWith('/usr/local', '0.1.6', expect.any(Function))
+    expect(installer.ensureInstalled).not.toHaveBeenCalled()
+    expect(store.update).toHaveBeenCalledWith(instance.id, { dshVersion: '0.1.6' })
+    expect(events.map((event) => event.phase)).toEqual(['checking', 'downloading', 'installing', 'done'])
+    expect(events.at(-1)).toMatchObject({ percent: 100, version: '0.1.6' })
+  })
+
+  it('公共空间 dsh/duush：升级前在运行则停 → 全局升级 → 重启', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999987
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+    const store = { update: vi.fn(async () => localInstance()) }
+    const installer = makeFakeInstaller({
+      resolveLatestVersion: async () => '0.1.6',
+      resolveGlobalPrefix: async () => '/usr/local',
+      installGlobal: vi.fn(async () => undefined)
+    })
+    const manager = createLocalRuntime({
+      store,
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      confirmDownload: async () => true,
+      confirmSystemUpgrade: async () => true,
+      pathProbe: {
+        probe: async () => ({ command: '/tmp/system/dsh', version: '0.1.5' }),
+        probeLauncher: async () => ({ command: '/tmp/dush', version: '0.1.1-rc.3' })
+      },
+      resolveNode: () => null,
+      readyTimeoutMs: 2000
+    })
+
+    const instance = localInstance({ launcher: 'dush', useDefaultSpace: true })
+    const starting = manager.start(instance)
+    child.stdout.write(readyLine())
+    await starting
+    await waitForStatus(manager, instance.id, 'running')
+
+    const stopSpy = vi.spyOn(manager, 'stop').mockResolvedValue(undefined)
+    const startSpy = vi.spyOn(manager, 'start').mockResolvedValue(undefined)
+    installer.installGlobal.mockClear()
+
+    await manager.upgradeInstance(instance)
+
+    expect(stopSpy).toHaveBeenCalledWith(instance.id)
+    expect(startSpy).toHaveBeenCalledWith(expect.objectContaining({ id: instance.id, dshVersion: '0.1.6' }))
+    const stopOrder = stopSpy.mock.invocationCallOrder[0] as number
+    const installOrder = installer.installGlobal.mock.invocationCallOrder[0] as number
+    const startOrder = startSpy.mock.invocationCallOrder[0] as number
+    expect(stopOrder).toBeLessThan(installOrder)
+    expect(installOrder).toBeLessThan(startOrder)
+  })
+
+  it('公共空间 dsh/duush：拒绝二次确认 → 不产生进度、不安装、不回写', async () => {
+    const store = { update: vi.fn(async () => localInstance()) }
+    const installer = makeFakeInstaller({
+      resolveLatestVersion: async () => '0.1.6',
+      resolveGlobalPrefix: async () => '/usr/local',
+      installGlobal: vi.fn(async () => undefined)
+    })
+    const confirmSystemUpgrade = vi.fn(async () => false)
+    const manager = createLocalRuntime({
+      store,
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: vi.fn(() => {
+        throw new Error('拒绝确认后不应拉起进程')
+      }) as never,
+      confirmDownload: async () => true,
+      confirmSystemUpgrade,
+      pathProbe: {
+        probe: async () => ({ command: '/tmp/system/dsh', version: '0.1.5' }),
+        probeLauncher: async () => null
+      },
+      readyTimeoutMs: 2000
+    })
+    const events: DshVersionProgressEvent[] = []
+    manager.onUpgradeProgress((event) => events.push(event))
+
+    await manager.upgradeInstance(localInstance({ launcher: 'duush', useDefaultSpace: true }))
+
+    expect(confirmSystemUpgrade).toHaveBeenCalledWith('0.1.6', '0.1.5')
+    expect(events).toEqual([])
+    expect(installer.installGlobal).not.toHaveBeenCalled()
+    expect(store.update).not.toHaveBeenCalled()
+  })
+
+  it('公共空间 dsh/duush：探不到系统默认 dsh → error 相位且不弹二次确认', async () => {
+    const store = { update: vi.fn(async () => localInstance()) }
+    const installer = makeFakeInstaller({ resolveLatestVersion: async () => '0.1.6' })
+    const confirmSystemUpgrade = vi.fn(async () => true)
+    const manager = createLocalRuntime({
+      store,
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: vi.fn(() => {
+        throw new Error('不应拉起进程')
+      }) as never,
+      confirmDownload: async () => true,
+      confirmSystemUpgrade,
+      pathProbe: {
+        probe: async () => null,
+        probeLauncher: async () => null
+      },
+      readyTimeoutMs: 2000
+    })
+    const events: DshVersionProgressEvent[] = []
+    manager.onUpgradeProgress((event) => events.push(event))
+
+    await manager.upgradeInstance(localInstance({ launcher: 'dush', useDefaultSpace: true }))
+
+    expect(events.at(-1)).toMatchObject({
+      phase: 'error',
+      error: expect.stringContaining('未找到系统默认 dsh')
+    })
+    expect(confirmSystemUpgrade).not.toHaveBeenCalled()
+    expect(installer.installGlobal).not.toHaveBeenCalled()
+  })
+
+  it('公共空间 dsh/duush：系统 dsh 非 npm 全局安装 → error 相位说明无法代管升级', async () => {
+    const store = { update: vi.fn(async () => localInstance()) }
+    const installer = makeFakeInstaller({
+      resolveLatestVersion: async () => '0.1.6',
+      resolveGlobalPrefix: async () => null
+    })
+    const confirmSystemUpgrade = vi.fn(async () => true)
+    const manager = createLocalRuntime({
+      store,
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: vi.fn(() => {
+        throw new Error('不应拉起进程')
+      }) as never,
+      confirmDownload: async () => true,
+      confirmSystemUpgrade,
+      pathProbe: {
+        probe: async () => ({ command: '/opt/homebrew/bin/dsh', version: '0.1.5' }),
+        probeLauncher: async () => null
+      },
+      readyTimeoutMs: 2000
+    })
+    const events: DshVersionProgressEvent[] = []
+    manager.onUpgradeProgress((event) => events.push(event))
+
+    await manager.upgradeInstance(localInstance({ launcher: 'dush', useDefaultSpace: true }))
+
+    expect(events.at(-1)).toMatchObject({
+      phase: 'error',
+      error: expect.stringContaining('不是 npm 全局安装')
+    })
+    expect(confirmSystemUpgrade).not.toHaveBeenCalled()
+    expect(installer.installGlobal).not.toHaveBeenCalled()
+  })
+
+  it('公共空间实例当前跑 hub 副本时，升级的是 hub 运行时而非系统默认 dsh', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999983
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+    const store = { update: vi.fn(async () => localInstance()) }
+    const installer = makeFakeInstaller({
+      resolveLatestVersion: async () => '0.1.6',
+      ensureInstalled: vi.fn(
+        async (version: string, onProgress?: (progress: InstallProgress) => void): Promise<InstalledRuntime> => {
+          onProgress?.({ phase: 'installing', version, percent: 42, detail: '下载依赖 (10)：pkg' })
+          return {
+            version,
+            dir: `/tmp/runtimes/dsh-${version}`,
+            entry: `/tmp/runtimes/dsh-${version}/node_modules/@deepseek-ai/dsh/lib/bin.js`,
+            installedAt: ISO
+          }
+        }
+      ),
+      installGlobal: vi.fn(async () => {
+        throw new Error('公共空间跑 hub 副本时不应触发全局升级')
+      })
+    })
+    const confirmSystemUpgrade = vi.fn(async () => true)
+    const manager = createLocalRuntime({
+      store,
+      installer,
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: async () => true,
+      confirmDownload: async () => true,
+      confirmSystemUpgrade,
+      resolveNode: () => null,
+      readyTimeoutMs: 2000
+    })
+    // 未装配 pathProbe → 计划落到「需下载」，确认后实例在公共空间里跑的是 hub 副本。
+    const instance = localInstance({ useDefaultSpace: true, dshVersion: '0.1.5-rc.1' })
+    const starting = manager.start(instance)
+    child.stdout.write(readyLine())
+    await starting
+    await waitForStatus(manager, instance.id, 'running')
+    expect(manager.statusOf(instance.id)?.runtimeSource).toBe('hub')
+
+    const stopSpy = vi.spyOn(manager, 'stop').mockResolvedValue(undefined)
+    const startSpy = vi.spyOn(manager, 'start').mockResolvedValue(undefined)
+    const events: DshVersionProgressEvent[] = []
+    manager.onUpgradeProgress((event) => events.push(event))
+    await manager.upgradeInstance(instance)
+
+    // 升级对象是实例实际在用的 hub 副本：不弹全局升级确认，也不碰系统 dsh。
+    expect(confirmSystemUpgrade).not.toHaveBeenCalled()
+    expect(installer.installGlobal).not.toHaveBeenCalled()
+    expect(installer.ensureInstalled).toHaveBeenCalledWith('0.1.6', expect.any(Function))
+    expect(store.update).toHaveBeenCalledWith(instance.id, { dshVersion: '0.1.6' })
+    expect(stopSpy).toHaveBeenCalledWith(instance.id)
+    expect(startSpy).toHaveBeenCalledWith(expect.objectContaining({ id: instance.id, dshVersion: '0.1.6' }))
+    expect(events.map((event) => event.phase)).toEqual(['checking', 'downloading', 'installing', 'done'])
   })
 })
 

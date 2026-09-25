@@ -7,6 +7,7 @@ import DetailView from './components/DetailView'
 import Wizard from './components/Wizard'
 import Toasts from './components/Toasts'
 import SshDialogs from './components/SshDialogs'
+import RuntimeConfirmDialogs from './components/RuntimeConfirmDialogs'
 import AuthPanel from './components/AuthPanel'
 import SettingsView from './components/SettingsView'
 import { compactWorkspaceAddress, STATUS_INFO, toDisplayStatus } from './lib/format'
@@ -176,6 +177,7 @@ export default function App() {
       </main>
       {wizardOpen && <Wizard />}
       <SshDialogs />
+      <RuntimeConfirmDialogs />
       <AuthPanel />
       <Toasts />
     </div>

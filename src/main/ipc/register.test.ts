@@ -83,6 +83,8 @@ let promptsFake: {
   requestAskpass: ReturnType<typeof vi.fn>
   replyHostKey: ReturnType<typeof vi.fn>
   replyAskpass: ReturnType<typeof vi.fn>
+  replyConfirm: ReturnType<typeof vi.fn>
+  listConfirms: ReturnType<typeof vi.fn>
   cancelAll: ReturnType<typeof vi.fn>
 }
 let currentStatus: InstanceStatusEvent | null
@@ -99,6 +101,8 @@ let installerFake: {
   ensureInstalled: ReturnType<typeof vi.fn>
   resolveEntry: ReturnType<typeof vi.fn>
   hasIncompleteInstall: ReturnType<typeof vi.fn>
+  resolveGlobalPrefix: ReturnType<typeof vi.fn>
+  installGlobal: ReturnType<typeof vi.fn>
 }
 let ipcDeps: Parameters<typeof registerIpc>[1]
 
@@ -123,7 +127,9 @@ beforeEach(async () => {
     install: vi.fn(async () => ({ version: '0.1.5', dir: '/tmp/d', entry: '/tmp/e', installedAt: '' })),
     ensureInstalled: vi.fn(async () => ({ version: '0.1.5', dir: '/tmp/d', entry: '/tmp/e', installedAt: '' })),
     resolveEntry: vi.fn((v: string) => `/tmp/${v}`),
-    hasIncompleteInstall: vi.fn(async () => false)
+    hasIncompleteInstall: vi.fn(async () => false),
+    resolveGlobalPrefix: vi.fn(async () => '/usr/local'),
+    installGlobal: vi.fn(async () => undefined)
   }
   runtimeFake = {
     onStatus: vi.fn(() => () => undefined),
@@ -217,6 +223,8 @@ beforeEach(async () => {
     requestAskpass: vi.fn(async () => null),
     replyHostKey: vi.fn(() => true),
     replyAskpass: vi.fn(() => true),
+    replyConfirm: vi.fn(() => true),
+    listConfirms: vi.fn(() => []),
     cancelAll: vi.fn()
   }
   ipcDeps = {
@@ -284,6 +292,8 @@ describe('registerIpc', () => {
       'dsh-version:check',
       'dsh-version:upgrade',
       'dsh-version:list',
+      'dsh-version:confirmList',
+      'dsh-version:confirmReply',
       'ssh:keyPreview',
       'ssh:hostKeyReply',
       'ssh:hostKeyForget',
@@ -469,32 +479,55 @@ describe('registerIpc', () => {
     expect(result.value).toMatchObject({ current: null, hasUpdate: true, canUpgrade: true })
   })
 
-  it('check：dush/duush 启动器 / path / external 运行时不可升级并给出原因', async () => {
+  it('check：本地实例（含 dush/duush、path 来源）可升级；仅外部接管与非本地不可升级并给出原因', async () => {
     for (const launcher of ['dush', 'duush'] as const) {
-      const custom = (await invoke('instances:create', {
+      // 隔离空间：hub 代管自己的运行时（含 path 来源在升级时接管）
+      const isolated = (await invoke('instances:create', {
         ...VALID_LOCAL,
         launcher
       })) as { ok: boolean; value: { id: string } }
-      if (!custom.ok) throw new Error('创建失败')
+      if (!isolated.ok) throw new Error('创建失败')
       currentStatus = {
-        id: custom.value.id,
-        status: 'stopped',
-        runtimeSource: 'hub',
+        id: isolated.value.id,
+        status: 'running',
+        runtimeSource: 'path',
         at: new Date().toISOString()
       }
-      const customResult = (await invoke('dsh-version:check', custom.value.id)) as {
+      const isolatedResult = (await invoke('dsh-version:check', isolated.value.id)) as {
         value: { canUpgrade: boolean; reason?: string }
       }
-      expect(customResult.value).toMatchObject({ canUpgrade: false, reason: 'launcher-other' })
+      expect(isolatedResult.value).toMatchObject({ canUpgrade: true })
+      expect(isolatedResult.value.reason).toBeUndefined()
+
+      // 公共空间：升级对象是系统默认 dsh（默认装配不带 pathProbe 时跳过来源检测）
+      const shared = (await invoke('instances:create', {
+        ...VALID_LOCAL,
+        launcher,
+        useDefaultSpace: true
+      })) as { ok: boolean; value: { id: string } }
+      if (!shared.ok) throw new Error('创建失败')
+      currentStatus = {
+        id: shared.value.id,
+        status: 'running',
+        runtimeSource: 'path',
+        at: new Date().toISOString()
+      }
+      const sharedResult = (await invoke('dsh-version:check', shared.value.id)) as {
+        value: { canUpgrade: boolean; reason?: string }
+      }
+      expect(sharedResult.value).toMatchObject({ canUpgrade: true })
+      expect(sharedResult.value.reason).toBeUndefined()
     }
 
+    // 推广：默认 dsh 启动器的 path 来源同样可升级（升级时接管进 hub 隔离目录）
     const local = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
     if (!local.ok) throw new Error('创建失败')
     currentStatus = { id: local.value.id, status: 'running', runtimeSource: 'path', at: new Date().toISOString() }
     const pathResult = (await invoke('dsh-version:check', local.value.id)) as {
       value: { canUpgrade: boolean; reason?: string }
     }
-    expect(pathResult.value).toMatchObject({ canUpgrade: false, reason: 'runtime-external' })
+    expect(pathResult.value).toMatchObject({ canUpgrade: true })
+    expect(pathResult.value.reason).toBeUndefined()
 
     currentStatus = {
       id: local.value.id,
@@ -506,6 +539,54 @@ describe('registerIpc', () => {
       value: { canUpgrade: boolean; reason?: string }
     }
     expect(externalResult.value).toMatchObject({ canUpgrade: false, reason: 'runtime-external' })
+  })
+
+  it('check：公共空间实例的 current 取 PATH 实测版本；来源无法代管时主动给出原因', async () => {
+    const probe = vi.fn(
+      async (): Promise<{ command: string; version: string } | null> => ({
+        command: '/Users/x/.local/bin/dsh',
+        version: '0.1.6'
+      })
+    )
+    registerIpc(createInstanceStore({ dir }), {
+      ...ipcDeps,
+      pathProbe: { probe, probeLauncher: async () => null }
+    })
+    const created = (await invoke('instances:create', {
+      ...VALID_LOCAL,
+      launcher: 'dush',
+      useDefaultSpace: true,
+      dshVersion: '0.1.4'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    // 注册表里的 0.1.4 已过期：公共空间以系统 dsh 实测版本为准
+    currentStatus = null
+
+    const result = (await invoke('dsh-version:check', created.value.id)) as {
+      value: { current: string | null; latest: string; hasUpdate: boolean; canUpgrade: boolean; reason?: string }
+    }
+    expect(probe).toHaveBeenCalled()
+    expect(result.value).toMatchObject({ current: '0.1.6', latest: '0.1.5', hasUpdate: false, canUpgrade: true })
+    expect(installerFake.resolveGlobalPrefix).toHaveBeenCalledWith('/Users/x/.local/bin/dsh')
+
+    // 来源检测：系统 dsh 非 npm 全局安装 → 检查时就给出不可代管原因，不等用户点升级才失败
+    installerFake.resolveGlobalPrefix.mockResolvedValueOnce(null)
+    const unmanaged = (await invoke('dsh-version:check', created.value.id)) as {
+      value: { canUpgrade: boolean; reason?: string }
+    }
+    expect(unmanaged.value).toMatchObject({ canUpgrade: false, reason: 'global-unmanaged' })
+
+    // 探不到系统 dsh：current 按未知，同样主动提示不可代管
+    probe.mockResolvedValueOnce(null)
+    const missing = (await invoke('dsh-version:check', created.value.id)) as {
+      value: { current: string | null; hasUpdate: boolean; canUpgrade: boolean; reason?: string }
+    }
+    expect(missing.value).toMatchObject({
+      current: null,
+      hasUpdate: false,
+      canUpgrade: false,
+      reason: 'global-unmanaged'
+    })
   })
 
   it('probeLocalDsh：按 LAUNCHERS 逐个探测，命中项含 duush、未命中项不出现', async () => {
@@ -618,6 +699,64 @@ describe('registerIpc', () => {
     expect(runtimeFake.upgradeInstance).toHaveBeenCalledWith(
       expect.objectContaining({ id: created.value.id, transport: 'local' })
     )
+  })
+
+  it('upgrade：本地实例（默认/dush/duush 启动器 × 公共/隔离空间、path 来源）都转交升级编排', async () => {
+    for (const launcher of [null, 'dush', 'duush'] as const) {
+      for (const useDefaultSpace of [false, true]) {
+        const created = (await invoke('instances:create', {
+          ...VALID_LOCAL,
+          ...(launcher === null ? {} : { launcher }),
+          useDefaultSpace
+        })) as { ok: boolean; value: { id: string } }
+        if (!created.ok) throw new Error('创建失败')
+        currentStatus = {
+          id: created.value.id,
+          status: 'running',
+          runtimeSource: 'path',
+          at: new Date().toISOString()
+        }
+
+        const result = (await invoke('dsh-version:upgrade', created.value.id)) as {
+          ok: boolean
+          value: null
+        }
+
+        expect(result).toEqual({ ok: true, value: null })
+        expect(runtimeFake.upgradeInstance).toHaveBeenCalledWith(
+          expect.objectContaining({ id: created.value.id, launcher, useDefaultSpace })
+        )
+      }
+    }
+    expect(runtimeFake.upgradeInstance).toHaveBeenCalledTimes(6)
+  })
+
+  it('dsh-version:confirmList/confirmReply：待答快照补拉与回答经 broker，入参走 zod 边界', async () => {
+    const payload = { requestId: randomUUID(), kind: 'dsh-download' as const, version: '0.1.7-rc.1' }
+    promptsFake.listConfirms.mockReturnValue([payload])
+
+    const list = (await invoke('dsh-version:confirmList')) as { ok: boolean; value: unknown }
+    expect(list).toEqual({ ok: true, value: [payload] })
+
+    const reply = (await invoke('dsh-version:confirmReply', payload.requestId, true)) as {
+      ok: boolean
+      value: null
+    }
+    expect(reply).toEqual({ ok: true, value: null })
+    expect(promptsFake.replyConfirm).toHaveBeenCalledWith(payload.requestId, true)
+
+    // 非法 requestId / 非布尔回答都在 IPC 边界被拒，不触碰 broker。
+    const badId = (await invoke('dsh-version:confirmReply', 'not-a-uuid', true)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(badId).toMatchObject({ ok: false, code: 'invalid-input' })
+    const badAnswer = (await invoke('dsh-version:confirmReply', randomUUID(), 'yes')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(badAnswer).toMatchObject({ ok: false, code: 'invalid-input' })
+    expect(promptsFake.replyConfirm).toHaveBeenCalledTimes(1)
   })
 
   it('upgrade：不可升级来源 → ok:false invalid-input，不触发编排', async () => {

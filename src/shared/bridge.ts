@@ -30,6 +30,7 @@ import type {
   VaultStatusSnapshot,
   IpcResult,
   PatchInstanceInput,
+  RuntimeConfirmPromptPayload,
   SshHostKeyForgetInput,
   SshKeyPreviewInput,
   SshKeyPreviewResult,
@@ -122,6 +123,12 @@ export interface DshHubBridge {
     upgradeDshVersion: (id: string) => Promise<IpcResult<null>>
     /** 拉取版本目录（当前镜像的全部版本 + hub 已装版本，均从新到旧）。 */
     listDshVersions: () => Promise<IpcResult<DshVersionCatalog>>
+    /** 订阅运行时二次确认请求（dsh 下载 / 系统默认 dsh 全局升级）；返回取消订阅函数。 */
+    onRuntimeConfirm: (listener: (payload: RuntimeConfirmPromptPayload) => void) => () => void
+    /** 拉取待答确认快照；挂载时补拉，覆盖「事件早于订阅」的时序。 */
+    listRuntimeConfirms: () => Promise<IpcResult<RuntimeConfirmPromptPayload[]>>
+    /** 回复运行时确认；accepted=false 即取消本次动作（启动取消 / 升级不处理）。 */
+    replyRuntimeConfirm: (requestId: string, accepted: boolean) => Promise<IpcResult<null>>
   }
   /** 订阅实例状态事件；返回取消订阅函数（渲染层不接触原始 IPC 事件对象） */
   onInstanceStatus: (listener: (event: InstanceStatusEvent) => void) => () => void

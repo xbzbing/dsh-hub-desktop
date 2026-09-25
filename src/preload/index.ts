@@ -23,6 +23,7 @@ import {
   type HttpAuthDetection,
   type InstanceStatusEvent,
   type DshVersionProgressEvent,
+  type RuntimeConfirmPromptPayload,
   type WorkspaceHotkeyEvent,
   type IpcResult,
   type SshHostKeyForgetInput,
@@ -72,7 +73,18 @@ const bridge: DshHubBridge = {
       ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.adoptExternal, id, pid, access),
     checkDshVersion: (id: string) => ipcRenderer.invoke(DSH_VERSION_IPC.check, id),
     upgradeDshVersion: (id: string) => ipcRenderer.invoke(DSH_VERSION_IPC.upgrade, id),
-    listDshVersions: () => ipcRenderer.invoke(DSH_VERSION_IPC.list)
+    listDshVersions: () => ipcRenderer.invoke(DSH_VERSION_IPC.list),
+    onRuntimeConfirm: (listener) => {
+      const handler = (_event: unknown, payload: RuntimeConfirmPromptPayload): void => listener(payload)
+      ipcRenderer.on(DSH_VERSION_IPC.confirmRequest, handler)
+      return () => {
+        ipcRenderer.removeListener(DSH_VERSION_IPC.confirmRequest, handler)
+      }
+    },
+    listRuntimeConfirms: () =>
+      ipcRenderer.invoke(DSH_VERSION_IPC.confirmList) as Promise<IpcResult<RuntimeConfirmPromptPayload[]>>,
+    replyRuntimeConfirm: (requestId: string, accepted: boolean) =>
+      ipcRenderer.invoke(DSH_VERSION_IPC.confirmReply, requestId, accepted)
   },
   onInstanceStatus: (listener) => {
     // 只把载荷转给渲染层，不透传 IpcRendererEvent（其中含 sender 等能力对象）

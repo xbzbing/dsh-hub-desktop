@@ -545,8 +545,28 @@ export const DSH_VERSION_IPC = {
   /** 升级到最新版本；立即返回，进展由 `dsh:version-progress` 事件回推。 */
   upgrade: 'dsh-version:upgrade',
   /** 拉取版本目录（新建实例的版本下拉数据源）。 */
-  list: 'dsh-version:list'
+  list: 'dsh-version:list',
+  /** 运行时二次确认请求（主→渲染）：dsh 下载、系统默认 dsh 全局升级。 */
+  confirmRequest: 'dsh-version:confirmRequest',
+  /** 回复运行时确认（渲染→主）；accepted=false 即取消本次动作。 */
+  confirmReply: 'dsh-version:confirmReply',
+  /** 拉取待答确认快照：渲染层挂载时补拉，覆盖「事件早于订阅」的时序。 */
+  confirmList: 'dsh-version:confirmList'
 } as const
+
+/**
+ * 运行时二次确认请求（主→渲染）：需要用户拍板的破坏性/耗流量动作。
+ * - `dsh-download`：hub 与 PATH 都没有可用 dsh，需下载后才能启动；
+ * - `system-dsh-upgrade`：公共空间实例升级系统默认 dsh，全局生效。
+ */
+export type RuntimeConfirmPromptPayload =
+  | { requestId: string; kind: 'dsh-download'; version: string }
+  | { requestId: string; kind: 'system-dsh-upgrade'; latest: string; current: string }
+
+/** 逐分支去掉 requestId（Omit 会把联合压成公共字段，不能直接用在联合上）。 */
+type StripRequestId<T> = T extends { requestId: string } ? Omit<T, 'requestId'> : never
+/** 待发送的确认请求：requestId 由 prompt broker 补发。 */
+export type RuntimeConfirmRequest = StripRequestId<RuntimeConfirmPromptPayload>
 
 /** dsh 版本目录（新建实例的版本下拉数据源）。 */
 export interface DshVersionCatalog {
@@ -566,8 +586,11 @@ export interface DshVersionCheck {
   hasUpdate: boolean
   /** 是否允许执行升级；false 时 reason 给出原因。 */
   canUpgrade: boolean
-  /** 不可升级的原因代码（transport/launcher/runtimeSource 限制）；launcher-other = dsh 之外的启动器。 */
-  reason?: 'not-local' | 'launcher-other' | 'runtime-external'
+  /**
+   * 不可升级的原因代码：`runtime-external` = 外部接管的进程归用户所有；
+   * `global-unmanaged` = 公共空间实例的系统默认 dsh 缺失或非 npm 全局安装，hub 无法代管。
+   */
+  reason?: 'not-local' | 'runtime-external' | 'global-unmanaged'
 }
 
 /** dsh 版本升级进度阶段。 */

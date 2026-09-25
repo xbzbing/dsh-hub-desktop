@@ -59,8 +59,13 @@ export function useDshVersionControl(instanceId: string | null): DshVersionContr
     return BRIDGE.onVersionProgress((event) => {
       if (event.instanceId !== instanceId) return
       setProgress(event)
-      // 升级完成已回写注册表：刷新详情记录，版本行立即显示新版号。
-      if (event.phase === 'done') void reloadRecord(instanceId)
+      // 升级完成已回写注册表：刷新详情记录，版本行立即显示新版号；
+      // 同时清掉检测结果——升级按钮与「发现新版本」提示在成功后不再展示，
+      // 正文只留「已完成 vX.Y.Z」，要看新状态就再点一次检查更新。
+      if (event.phase === 'done') {
+        setVersionCheck(null)
+        void reloadRecord(instanceId)
+      }
     })
   }, [instanceId, reloadRecord])
 

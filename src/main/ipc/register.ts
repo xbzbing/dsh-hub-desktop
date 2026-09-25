@@ -26,6 +26,7 @@ import {
   WorkspaceViewBoundsSchema,
   type DshVersionCheck,
   type DshVersionCatalog,
+  type RuntimeConfirmPromptPayload,
   type HostKeyDecision,
   type AuthStateSnapshot,
   type ExternalDshWebSnapshot,
@@ -442,22 +443,30 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
   )
 
   /**
-   * 升级资格判定（纯逻辑）：仅 hub 托管的 local 实例可由本应用升级。
-   * 依据记录 transport/launcher 与当前运行时来源（状态事件优先）逐项否决。
+   * 升级资格判定（纯逻辑）：本地且非外部接管的实例都可由本应用升级。
+   * - 外部接管的进程归用户所有，一律不代管；
+   * - 其余本地实例（默认/dush/duush 启动器、公共/隔离空间、hub/path 来源）都允许升级，
+   *   升级对象由 runtime 层按空间与当前来源决定；公共空间还要看系统 dsh 的安装来源，
+   *   由 check 检测后用 `global-unmanaged` 提前告知。
    */
   function upgradeEligibility(
     record: InstanceRecord,
     runtimeSource: InstanceStatusEvent['runtimeSource'] | undefined
   ): { canUpgrade: boolean; reason?: DshVersionCheck['reason'] } {
     if (record.transport !== 'local') return { canUpgrade: false, reason: 'not-local' }
-    // dsh 之外的启动器（dush/duush）自带 dsh，hub 不代管其运行时版本。
-    if (record.launcher !== null && record.launcher !== 'dsh') {
-      return { canUpgrade: false, reason: 'launcher-other' }
-    }
-    if (runtimeSource === 'path' || runtimeSource === 'external') {
-      return { canUpgrade: false, reason: 'runtime-external' }
-    }
+    if (runtimeSource === 'external') return { canUpgrade: false, reason: 'runtime-external' }
     return { canUpgrade: true }
+  }
+
+  /**
+   * 升级对象是否为系统默认 dsh：公共空间、且当前（或下次启动）不会跑 hub 副本。
+   * 与 runtime 层升级编排的分支条件一致。
+   */
+  function usesSystemDsh(
+    record: InstanceRecord,
+    runtimeSource: InstanceStatusEvent['runtimeSource'] | undefined
+  ): boolean {
+    return record.transport === 'local' && record.useDefaultSpace === true && runtimeSource !== 'hub'
   }
 
   ipcMain.handle(DSH_VERSION_IPC.check, (_event, id: unknown): Promise<IpcResult<DshVersionCheck>> =>
@@ -467,14 +476,27 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
       if (!record) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)
       if (!deps.installer) throw new InstanceStoreError('internal', 'dsh 版本管理能力不可用')
       const status = deps.runtime.statusOf(instanceId)
-      const current =
-        status?.version ?? (record.transport === 'local' ? record.dshVersion : null)
+      let current = status?.version ?? (record.transport === 'local' ? record.dshVersion : null)
+      // 'custom' 是未固定版本的占位符，不是版本号。
+      if (current === 'custom') current = null
       const eligibility = upgradeEligibility(record, status?.runtimeSource)
+      let reason = eligibility.reason
+      // 公共空间跑系统默认 dsh：current 以 PATH 实测为准（注册表里的值不权威），并检测安装来源——
+      // 缺失或非 npm 全局安装时在「检查更新」就给出不可代管原因，不等用户点了升级才失败。
+      if (eligibility.canUpgrade && deps.pathProbe && usesSystemDsh(record, status?.runtimeSource)) {
+        const probed = (await deps.pathProbe.probe().catch(() => null)) ?? null
+        current = probed?.version ?? null
+        const prefix =
+          probed === null
+            ? null
+            : ((await deps.installer.resolveGlobalPrefix(probed.command).catch(() => null)) ?? null)
+        if (prefix === null) reason = 'global-unmanaged'
+      }
+      const canUpgrade = reason === undefined
       const latest = await deps.installer.resolveLatestVersion()
-      // 当前版本未知时：hub 托管的本地实例按「装上即最新」算有更新；来源不可知的实例不妄报。
-      const hasUpdate =
-        current !== null ? compareDshVersions(current, latest) < 0 : eligibility.canUpgrade
-      return { current, latest, hasUpdate, ...eligibility }
+      // 当前版本未知时：可升级的实例按「装上即最新」算有更新；来源不可知的实例不妄报。
+      const hasUpdate = current !== null ? compareDshVersions(current, latest) < 0 : canUpgrade
+      return { current, latest, hasUpdate, canUpgrade, ...(reason === undefined ? {} : { reason }) }
     })
   )
 
@@ -514,6 +536,22 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
       void deps.runtime.upgradeInstance(record)
       return null
     })
+  )
+
+  ipcMain.handle(
+    DSH_VERSION_IPC.confirmReply,
+    (_event, requestId: unknown, accepted: unknown): Promise<IpcResult<null>> =>
+      wrap(() => {
+        const id = z.uuid().parse(requestId)
+        const value = z.boolean().parse(accepted)
+        deps.prompts.replyConfirm(id, value)
+        return null
+      })
+  )
+
+  ipcMain.handle(DSH_VERSION_IPC.confirmList, (): Promise<IpcResult<RuntimeConfirmPromptPayload[]>> =>
+    // 快照只含 requestId/kind/版本号等非敏感字段；渲染层挂载时补拉，防止错过推送事件。
+    wrap(() => deps.prompts.listConfirms())
   )
 
   const openViewTasks = new Map<string, Promise<void>>()

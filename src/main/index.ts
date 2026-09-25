@@ -1,7 +1,6 @@
 import {
   app,
   BrowserWindow,
-  dialog,
   Menu,
   protocol,
   safeStorage,
@@ -17,7 +16,8 @@ import { registerRendererAssets } from './renderer-assets'
 import type {
   AuthPhase,
   InstanceRuntimeStatus,
-  InstanceStatusEvent
+  InstanceStatusEvent,
+  RuntimeConfirmRequest
 } from '@shared/contracts'
 import {
   AUTH_IPC,
@@ -621,30 +621,26 @@ void app.whenReady().then(() => {
       return envNpmRegistry
     }
   })
-  // 确认用原生对话框(始终可用,含托盘启动场景;文案无凭据);拒绝则该次启动取消。
-  // 无头 E2E 无法点击原生对话框,设 DSH_HUB_E2E_DECLINE_DOWNLOAD=1 时按「取消」
-  // 处理,让本地实例启动快速到达确定的 stopped 终态而非无限等待。
+  // 运行时确认走 hub 风格的渲染层对话框（prompt broker 推送 + 渲染层挂载时快照补拉）。
+  // 无窗口可应答、broker 未装配或用户拒绝/超时，一律按「取消」处理——绝不静默下载、
+  // 也不静默改写全局安装；无头 E2E 设 DSH_HUB_E2E_DECLINE_DOWNLOAD=1 同样直接取消，
+  // 让本地实例启动快速到达确定的 stopped 终态。
+  const confirmViaRenderer = (payload: RuntimeConfirmRequest): Promise<boolean> => {
+    if (process.env['DSH_HUB_E2E_DECLINE_DOWNLOAD'] === '1') return Promise.resolve(false)
+    if (prompts === null || BrowserWindow.getAllWindows().length === 0) return Promise.resolve(false)
+    return prompts.requestConfirm(payload)
+  }
   const pathProbe = createPathProbe()
   runtime = createLocalRuntime({
     installer,
     dataRoot,
     store: instanceStore,
     pathProbe,
-    confirmDownload: (version) => {
-      if (process.env['DSH_HUB_E2E_DECLINE_DOWNLOAD'] === '1') return Promise.resolve(false)
-      return dialog
-        .showMessageBox({
-          type: 'question',
-          title: 'DSH Hub',
-          message: '未找到可复用的 dsh 运行时',
-          detail: `hub 隔离目录与本机 PATH 上都没有可用的 dsh，需要下载 @deepseek-ai/dsh@${version}（首次下载可能较慢）。是否继续？`,
-          buttons: ['下载并启动', '取消'],
-          defaultId: 0,
-          cancelId: 1,
-          noLink: true
-        })
-        .then((result) => result.response === 0)
-    }
+    confirmDownload: (version) => confirmViaRenderer({ kind: 'dsh-download', version }),
+    // 公共空间实例的升级改写的是系统默认 dsh（对所有使用者全局生效），必须二次确认；
+    // 拒绝时本次升级不产生任何进度、不改任何状态。
+    confirmSystemUpgrade: (latest, current) =>
+      confirmViaRenderer({ kind: 'system-dsh-upgrade', latest, current })
   })
 
   prompts = createPromptBroker({

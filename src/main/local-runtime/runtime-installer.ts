@@ -5,7 +5,7 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import { readdirSync, statSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { searchNodeDirs } from './node-dirs'
@@ -298,6 +298,16 @@ export interface RuntimeInstaller {
   hasIncompleteInstall(version: string): Promise<boolean>
   /** npm registry 上的最大版本（dist-tags.latest 可能滞后于新发布，按版本比较取最大）。 */
   resolveLatestVersion(): Promise<string>
+  /**
+   * 解析系统 dsh 可执行文件所属的 npm 全局 prefix（解析符号链接后再判定布局）；
+   * 非 npm 全局安装（pnpm/brew 脚本/本地依赖）返回 null。
+   */
+  resolveGlobalPrefix(command: string): Promise<string | null>
+  /**
+   * 把 npm 全局安装的系统 dsh 原位升级到指定版本（`npm install -g --prefix <prefix>`）。
+   * 只写入 prefix 自身的 lib/node_modules，不动 hub 隔离目录与其它安装。
+   */
+  installGlobal(prefix: string, version: string, onProgress?: (progress: InstallProgress) => void): Promise<void>
 }
 
 const INSTALLING_MARKER = 'installing.json'
@@ -315,6 +325,32 @@ function assertVersion(version: string): void {
   if (!VERSION_PATTERN.test(version)) {
     throw new Error(`非法版本号：${version}`)
   }
+}
+
+/**
+ * 从 dsh 入口的**真实路径**推导它所属的 npm 全局 prefix；非 npm 全局安装返回 null。
+ *
+ * 只认 npm 全局布局：POSIX 为 `<prefix>/lib/node_modules/@deepseek-ai/dsh/...`，
+ * Windows 为 `<prefix>/node_modules/@deepseek-ai/dsh/...`。pnpm 虚拟存储
+ * （`.pnpm/.../node_modules/@deepseek-ai/dsh`）、本地 node_modules、shim 脚本
+ * 都不落在该布局下 → 返回 null，交由调用方给出「无法代管升级」的失败原因。
+ */
+export function globalPrefixFor(realPath: string, platform: NodeJS.Platform = process.platform): string | null {
+  const normalized = realPath.replace(/\\/g, '/')
+  const index = normalized.indexOf(`/node_modules/${DSH_PACKAGE_NAME}/`)
+  if (index <= 0) return null
+  const root = normalized.slice(0, index)
+  if (platform === 'win32') return root
+  // POSIX 下必须正好是 <prefix>/lib：多一段或少一段都说明不是 npm 全局安装，不做猜测。
+  if (!root.endsWith('/lib') || root.length === '/lib'.length) return null
+  return root.slice(0, -'/lib'.length)
+}
+
+/** npm 全局安装里 dsh 入口的绝对路径（POSIX 多一层 lib），与 `globalPrefixFor` 互为逆运算。 */
+export function globalRuntimeEntry(prefix: string, platform: NodeJS.Platform = process.platform): string {
+  const nodeModules =
+    platform === 'win32' ? join(prefix, 'node_modules') : join(prefix, 'lib', 'node_modules')
+  return join(nodeModules, ...DSH_PACKAGE_NAME.split('/'), 'lib', 'bin.js')
 }
 
 export function createRuntimeInstaller(options: RuntimeInstallerOptions): RuntimeInstaller {
@@ -412,6 +448,49 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     return versions[versions.length - 1] as string
   }
 
+  /**
+   * 执行一次 `npm install`：带进度回调时逐行解析 fetch 日志驱动百分比，否则走 execFile 汇总
+   * （便于测试 mock）。非零退出抛错，只保留 stderr 尾部的结论性输出。
+   */
+  async function runNpmInstall(
+    npm: NpmInvocation,
+    installArgs: string[],
+    version: string,
+    onProgress?: (progress: InstallProgress) => void
+  ): Promise<void> {
+    const env = npmChildEnv(npm, { npm_config_cache: options.cacheDir })
+    let result: CommandResult
+    if (onProgress) {
+      // 进度分支：stderr 逐行解析 npm 的 fetch 完成日志驱动进度回调
+      let fetchCount = 0
+      let lastDetail = ''
+      result = await runNpm(npm, installArgs, {
+        env,
+        onStderrLine: (line) => {
+          const path = npmFetchPath(line)
+          if (!path) return
+          fetchCount += 1
+          const detail = `下载依赖 (${fetchCount})：${path}`
+          if (detail !== lastDetail) {
+            lastDetail = detail
+            // 百分比上限 90%，校验与收尾留给 95/100
+            onProgress({ phase: 'installing', version, detail, percent: Math.min(90, 10 + fetchCount * 3) })
+          }
+        }
+      })
+    } else {
+      // 无进度回调走 execFile 汇总（便于测试 mock）
+      result = await run(npm.command, [...npm.prefixArgs, ...installArgs], { env })
+    }
+    if (result.code !== 0) {
+      // http 级日志的 stderr 含全部 fetch 行，只保留尾部的结论性输出
+      throw new Error(
+        `安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${tailLines(result.stderr, 20) || '无 stderr'}`
+      )
+    }
+    onProgress?.({ phase: 'installing', version, detail: '校验安装结果', percent: 95 })
+  }
+
   return {
     listAvailableVersions(): Promise<string[]> {
       return enqueueMetadata(cachedVersions)
@@ -485,6 +564,45 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
           installedAt: stats.mtime.toISOString()
         }
       })
+    },
+
+    async resolveGlobalPrefix(command: string): Promise<string | null> {
+      try {
+        // 先解析符号链接：npm/pnpm 全局 bin 都是 symlink，真实路径才暴露安装布局。
+        return globalPrefixFor(await realpath(command))
+      } catch {
+        return null
+      }
+    },
+
+    installGlobal(prefix: string, version: string, onProgress?: (progress: InstallProgress) => void): Promise<void> {
+      return enqueueSerial(async () => {
+        assertVersion(version)
+        const npm = await getNpmInvocation()
+        onProgress?.({ phase: 'installing', version, detail: `全局安装 ${DSH_PACKAGE_NAME}@${version}（${prefix}）` })
+        const installArgs = [
+          'install',
+          '-g',
+          '--prefix',
+          prefix,
+          '--no-audit',
+          '--no-fund',
+          '--loglevel',
+          'http',
+          '--cache',
+          options.cacheDir,
+          `${DSH_PACKAGE_NAME}@${version}`,
+          ...registryArgs()
+        ]
+        await runNpmInstall(npm, installArgs, version, onProgress)
+        const entry = globalRuntimeEntry(prefix)
+        try {
+          await stat(entry)
+        } catch {
+          throw new Error(`全局升级完成但未找到 dsh 入口：${entry}`)
+        }
+        onProgress?.({ phase: 'installing', version, percent: 100 })
+      })
     }
   }
 
@@ -540,40 +658,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       `${DSH_PACKAGE_NAME}@${version}`,
       ...registryArgs()
     ]
-
-    let result: CommandResult
-    if (onProgress) {
-      // 进度分支：stderr 逐行解析 npm 的 fetch 完成日志驱动进度回调
-      let fetchCount = 0
-      let lastDetail = ''
-      result = await runNpm(npm, installArgs, {
-        env: npmChildEnv(npm, { npm_config_cache: options.cacheDir }),
-        onStderrLine: (line) => {
-          const path = npmFetchPath(line)
-          if (!path) return
-          fetchCount += 1
-          const detail = `下载依赖 (${fetchCount})：${path}`
-          if (detail !== lastDetail) {
-            lastDetail = detail
-            // 百分比上限 90%，校验与收尾留给 95/100
-            onProgress({ phase: 'installing', version, detail, percent: Math.min(90, 10 + fetchCount * 3) })
-          }
-        }
-      })
-    } else {
-      // 无进度回调走 execFile 汇总（便于测试 mock）
-      result = await run(npm.command, [...npm.prefixArgs, ...installArgs], {
-        env: npmChildEnv(npm, { npm_config_cache: options.cacheDir })
-      })
-    }
-
-    if (result.code !== 0) {
-      // http 级日志的 stderr 含全部 fetch 行，只保留尾部的结论性输出
-      throw new Error(
-        `安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${tailLines(result.stderr, 20) || '无 stderr'}`
-      )
-    }
-    onProgress?.({ phase: 'installing', version, detail: '校验安装结果', percent: 95 })
+    await runNpmInstall(npm, installArgs, version, onProgress)
     const entry = runtimeEntryFor(options.runtimesDir, version)
     await stat(entry)
     await rm(markerPath, { force: true })

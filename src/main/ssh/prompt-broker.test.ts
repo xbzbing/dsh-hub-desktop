@@ -6,7 +6,8 @@ function makeBroker() {
   const broker = createPromptBroker({
     send: (channel, payload) => sent.push({ channel, payload: payload as { requestId: string } }),
     hostKeyTimeoutMs: 50,
-    askpassTimeoutMs: 50
+    askpassTimeoutMs: 50,
+    confirmTimeoutMs: 50
   })
   return { broker, sent }
 }
@@ -82,5 +83,36 @@ describe('prompt-broker（用户提示代理）', () => {
     void broker.requestAskpass({ instanceId: 'i1', prompt: 'p' })
     expect(spy).not.toHaveBeenCalled()
     spy.mockRestore()
+  })
+
+  it('运行时确认:投递带 requestId 的事件,回答后 resolve;快照随回答出列', async () => {
+    const { broker, sent } = makeBroker()
+    const promise = broker.requestConfirm({ kind: 'dsh-download', version: '0.1.7-rc.1' })
+    expect(sent[0]?.channel).toBe('dsh-version:confirmRequest')
+    const requestId = sent[0]?.payload.requestId ?? ''
+    expect(broker.listConfirms()).toEqual([
+      { requestId, kind: 'dsh-download', version: '0.1.7-rc.1' }
+    ])
+    expect(broker.replyConfirm(requestId, true)).toBe(true)
+    await expect(promise).resolves.toBe(true)
+    expect(broker.listConfirms()).toEqual([])
+    // 重复回答无效（已答过/已超时的 requestId）
+    expect(broker.replyConfirm(requestId, false)).toBe(false)
+  })
+
+  it('运行时确认:超时/无应答 → 拒绝（绝不静默下载或改写全局安装）', async () => {
+    const { broker } = makeBroker()
+    await expect(
+      broker.requestConfirm({ kind: 'system-dsh-upgrade', latest: '0.1.7', current: '0.1.6' })
+    ).resolves.toBe(false)
+  })
+
+  it('运行时确认:cancelAll 把待答确认一并按拒绝收敛', async () => {
+    const { broker } = makeBroker()
+    const confirm = broker.requestConfirm({ kind: 'dsh-download', version: '0.1.7' })
+    expect(broker.listConfirms()).toHaveLength(1)
+    broker.cancelAll()
+    await expect(confirm).resolves.toBe(false)
+    expect(broker.listConfirms()).toEqual([])
   })
 })

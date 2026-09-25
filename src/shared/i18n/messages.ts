@@ -354,14 +354,31 @@ export const MESSAGES = {
     zh: '仅本地实例支持版本管理',
     en: 'Only local instances support version management'
   },
-  'detail.version.reason.launcherOther': {
-    zh: 'dush/duush 启动器暂不支持代管升级',
-    en: 'Managed upgrade is unavailable for the dush/duush launchers'
-  },
   'detail.version.reason.runtimeExternal': {
     zh: '外部接管的 dsh 由你自行管理',
     en: 'Externally managed dsh is maintained by you'
   },
+  'detail.version.reason.globalUnmanaged': {
+    zh: '系统默认 dsh 缺失或非 npm 全局安装，hub 无法代管升级',
+    en: 'The system default dsh is missing or not npm-managed; hub cannot upgrade it'
+  },
+  'runtime.confirm.downloadTitle': {
+    zh: '未找到可复用的 dsh 运行时',
+    en: 'No reusable dsh runtime found'
+  },
+  'runtime.confirm.downloadBody': {
+    zh: 'hub 隔离目录与本机 PATH 上都没有可用的 dsh，需要下载 @deepseek-ai/dsh@{version}（首次下载可能较慢）。是否继续？',
+    en: 'No usable dsh was found in the hub store or on PATH. @deepseek-ai/dsh@{version} must be downloaded (the first download can be slow). Continue?'
+  },
+  'runtime.confirm.downloadAccept': { zh: '下载并启动', en: 'Download & start' },
+  'runtime.confirm.downloadHint': { zh: '取消则跳过下载，本次启动取消。', en: 'Cancelling skips the download and stops this start.' },
+  'runtime.confirm.upgradeTitle': { zh: '升级系统默认 dsh？', en: 'Upgrade the system default dsh?' },
+  'runtime.confirm.upgradeBody': {
+    zh: '该实例使用公共空间 ~/.dsh，运行的是 PATH 上的系统默认 dsh（当前 {current}）。升级将全局更新为 @deepseek-ai/dsh@{latest}，所有使用系统默认 dsh 的实例与终端都会跟随。是否继续？',
+    en: 'This instance uses the shared ~/.dsh space and runs the system default dsh from PATH (currently {current}). The upgrade updates it globally to @deepseek-ai/dsh@{latest}; every instance and terminal using the system default dsh will follow. Continue?'
+  },
+  'runtime.confirm.upgradeAccept': { zh: '升级', en: 'Upgrade' },
+  'runtime.confirm.upgradeHint': { zh: '拒绝则不执行任何升级。', en: 'Declining performs no upgrade.' },
   'detail.log.title': { zh: '安装与运行日志', en: 'Install & runtime log' },
   'detail.log.empty': { zh: '暂无日志', en: 'No log yet' },
   'detail.log.clear': { zh: '清空', en: 'Clear' },

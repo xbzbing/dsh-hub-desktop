@@ -10,7 +10,7 @@ import { PHASE_KEYS, REASON_KEYS } from './version-phases'
  */
 describe('版本文案映射闭合', () => {
   it('REASON_KEYS 键集 = 契约 reason 全集，且每个值都有文案', () => {
-    expect(Object.keys(REASON_KEYS).sort()).toEqual(['launcher-other', 'not-local', 'runtime-external'])
+    expect(Object.keys(REASON_KEYS).sort()).toEqual(['global-unmanaged', 'not-local', 'runtime-external'])
     for (const key of Object.values(REASON_KEYS)) {
       expect(MESSAGES[key], `缺少文案键 ${key}`).toBeDefined()
     }

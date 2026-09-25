@@ -17,6 +17,14 @@ describe('dsh 版本管理契约', () => {
     expect(DSH_VERSION_IPC.list).toBe('dsh-version:list')
     expect(DSH_VERSION_PROGRESS_EVENT).toBe('dsh:version-progress')
   })
+
+  it('运行时确认的推送/回复/快照通道名是唯一的既定值', () => {
+    expect(DSH_VERSION_IPC.confirmRequest).toBe('dsh-version:confirmRequest')
+    expect(DSH_VERSION_IPC.confirmReply).toBe('dsh-version:confirmReply')
+    expect(DSH_VERSION_IPC.confirmList).toBe('dsh-version:confirmList')
+    const names = Object.values(DSH_VERSION_IPC)
+    expect(new Set(names).size).toBe(names.length)
+  })
 })
 
 describe('工作区快捷键契约', () => {

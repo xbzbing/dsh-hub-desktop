@@ -100,6 +100,11 @@ export interface LocalRuntimeOptions {
    * (生产装配必须注入;测试/受限环境注入 stub)。返回 true 才继续下载。
    */
   confirmDownload?: (version: string) => Promise<boolean>
+  /**
+   * 公共空间实例升级系统默认 dsh 前的二次确认：该升级全局生效。
+   * 返回 false = 用户拒绝，本次升级不产生任何进度、不改任何状态。缺省视为拒绝。
+   */
+  confirmSystemUpgrade?: (latest: string, current: string) => Promise<boolean>
 }
 
 export interface LocalRuntimeManager {
@@ -108,6 +113,7 @@ export interface LocalRuntimeManager {
   onUpgradeProgress(listener: (event: DshVersionProgressEvent) => void): () => void
   /**
    * 升级到 registry 最新稳定版：解析版本 →（运行中先停）→ 安装 → 回写注册表 →（升级前在运行则重启）。
+   * 公共空间且运行系统默认 dsh 的实例例外：先二次确认，确认后原位升级系统默认 dsh。
    * 调用立即返回并后台执行，进展经 onUpgradeProgress 回推；
    * 失败以 phase='error' 结束：隔离目录保留旧版，升级前在运行的实例停在停止态。
    */
@@ -460,6 +466,43 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       upgradingIds.add(id)
       const at = (): string => new Date(now()).toISOString()
       try {
+        // 升级对象（与 register 的 usesSystemDsh 同一判定）：公共空间（~/.dsh）且当前（或
+        // 下次启动）使用系统默认 dsh → 升级的就是它，所有共用该 dsh 的实例与终端都会跟随，
+        // 因此必须先二次确认。拒绝时直接返回，不产生任何进度事件、不改任何状态；探测与
+        // 安装布局判定在确认之前完成，注定失败的升级不先打扰用户。
+        // 其余情况（隔离空间，或公共空间实际跑 hub 副本）都升级 hub 自己的运行时。
+        const runtimeSource = this.statusOf(id)?.runtimeSource
+        if (instance.useDefaultSpace === true && runtimeSource !== 'hub') {
+          const newest = await options.installer.resolveLatestVersion()
+          const system = (await options.pathProbe?.probe().catch(() => null)) ?? null
+          if (system === null) {
+            throw new Error('未找到系统默认 dsh（PATH 上没有可用的 dsh），无法升级')
+          }
+          const prefix = await options.installer.resolveGlobalPrefix(system.command)
+          if (prefix === null) {
+            throw new Error(`系统 dsh 不是 npm 全局安装（${system.command}），hub 无法代管升级`)
+          }
+          const confirmed = await options.confirmSystemUpgrade?.(newest, system.version)
+          if (confirmed !== true) return
+          emitUpgrade({ instanceId: id, phase: 'checking', at: at() })
+          const wasRunning = this.statusOf(id)?.status === 'running'
+          if (wasRunning) await this.stop(id)
+          emitUpgrade({ instanceId: id, phase: 'downloading', version: newest, percent: 0, at: at() })
+          await options.installer.installGlobal(prefix, newest, (progress) => {
+            emitUpgrade({
+              instanceId: id,
+              phase: 'installing',
+              version: newest,
+              percent: progress.percent ?? 0,
+              detail: progress.detail,
+              at: at()
+            })
+          })
+          await options.store.update(id, { dshVersion: newest })
+          if (wasRunning) await this.start({ ...instance, dshVersion: newest })
+          emitUpgrade({ instanceId: id, phase: 'done', version: newest, percent: 100, at: at() })
+          return
+        }
         emitUpgrade({ instanceId: id, phase: 'checking', at: at() })
         const latest = await options.installer.resolveLatestVersion()
         // 运行中升级 = 停 → 装 → 自动重启；停止态只安装并回写。
@@ -524,7 +567,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       pendingStartCounts.set(id, (pendingStartCounts.get(id) ?? 0) + 1)
       try {
         emit(id, 'starting', { detail: '解析运行时来源' })
-        // dush/duush 由用户已安装的启动器直接执行；默认 dsh 仍沿用原有的来源探测与下载策略。
+        // dush/duush 由用户已安装的启动器直接执行；它实际加载的 dsh 由 hub 经 DSH_BIN 决定。
         // 必须拿到**绝对路径**：裸命令名依赖 PATH 解析，而打包后 GUI 启动的 PATH 未必含用户 bin 目录。
         const customLauncherName =
           instance.launcher !== null && instance.launcher !== 'dsh' ? instance.launcher : null
@@ -534,17 +577,27 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         const customLauncher = customLauncherName
           ? (launcherRuntime?.command ?? customLauncherName)
           : null
-        const [hubInstalled, pathRuntime] = customLauncher
-          ? [[], null]
-          : await Promise.all([
-              options.installer
+        // 公共空间（~/.dsh）与用户自己的终端共用同一份数据：固定跟随系统默认 dsh（PATH 实测），
+        // 不装 hub 副本、不理会实例的固定版本；隔离空间与默认启动器走同一套来源决策。
+        const followsSystemDsh = customLauncher !== null && instance.useDefaultSpace === true
+        const [hubInstalled, pathRuntime] = await Promise.all([
+          followsSystemDsh
+            ? Promise.resolve([] as string[])
+            : options.installer
                 .listInstalled()
                 .then((items) => items.map((item) => item.version))
                 .catch(() => [] as string[]),
-              options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
-            ])
-        const plan = customLauncher
-          ? null
+          options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
+        ])
+        const plan = followsSystemDsh
+          ? pathRuntime === null
+            ? null
+            : {
+                kind: 'path' as const,
+                command: pathRuntime.command,
+                version: pathRuntime.version,
+                reason: 'unpinned-path-any' as const
+              }
           : planRuntimeSource({
               desiredVersion: instance.dshVersion,
               hubInstalled,
@@ -555,24 +608,17 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           return
         }
 
-        // 统一收敛为:显示用 version + 来源标记 + 「实际要跑的脚本路径」(path 来源 = 用户 bin;hub 来源 = 隔离目录入口)
+        // 统一收敛为:执行入口(wrapper 或 dsh) + 显示用 version + 来源标记 + 注入给 wrapper 的 DSH_BIN
         let version: string
         let runtimeSource: 'hub' | 'path'
         let scriptPath: string
-        if (customLauncher) {
-          // dush/duush 自带 dsh 运行时，hub 不探测其内嵌版本：显示创建时选定的 dsh 版本，
-          // 创建时未固定版本则保留 'custom' 占位。
-          version = instance.dshVersion ?? 'custom'
-          runtimeSource = 'path'
-          scriptPath = customLauncher
-        } else if (plan?.kind === 'path') {
-          version = plan.version
-          runtimeSource = 'path'
-          scriptPath = plan.command
+        /** 注入给 dush/duush 的 dsh 可执行文件;null = 不注入,由 wrapper 自行按 PATH 解析。 */
+        let dshBin: string | null = null
+        let resolved: { version: string; source: 'hub' | 'path'; command: string } | null = null
+        if (plan?.kind === 'path') {
+          resolved = { version: plan.version, source: 'path', command: plan.command }
         } else if (plan?.kind === 'hub') {
-          version = plan.version
-          runtimeSource = 'hub'
-          scriptPath = options.installer.resolveEntry(plan.version)
+          resolved = { version: plan.version, source: 'hub', command: options.installer.resolveEntry(plan.version) }
         } else if (plan?.kind === 'download') {
           // download:目标版本(未固定时解析 registry latest),**必须经用户确认**
           const target = plan.version ?? (await options.installer.resolveDefaultVersion())
@@ -586,11 +632,19 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             return
           }
           if ((cancelGeneration.get(id) ?? -1) >= gen) return
-          version = target
-          runtimeSource = 'hub'
-          scriptPath = options.installer.resolveEntry(target)
+          resolved = { version: target, source: 'hub', command: options.installer.resolveEntry(target) }
+        }
+        if (customLauncher !== null) {
+          scriptPath = customLauncher
+          // 系统默认 dsh 未探到的公共实例退回旧显示:创建时选定的版本,未固定则保留 'custom' 占位。
+          version = resolved?.version ?? instance.dshVersion ?? 'custom'
+          runtimeSource = resolved?.source ?? 'path'
+          dshBin = resolved?.command ?? null
         } else {
-          throw new Error('invalid-launcher')
+          if (resolved === null) throw new Error('invalid-launcher')
+          scriptPath = resolved.command
+          version = resolved.version
+          runtimeSource = resolved.source
         }
 
         // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
@@ -674,6 +728,11 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
             // dush/duush wrapper 会把自己的隔离 patch 追加到 DUSH_PATCH_FILE；继承用户全局
             // patch 会让同一个 loader entry 加载两次，直接触发 duplicate 报错。
             delete runtimeEnv.DUSH_PATCH_FILE
+          }
+          if (dshBin !== null) {
+            // wrapper 缺省回退 PATH 上的 dsh；注入 DSH_BIN 让它跑 hub 决定的那一份，
+            // 状态里显示的版本、升级的目标与实际运行的 dsh 才始终一致。
+            runtimeEnv.DSH_BIN = dshBin
           }
           const invocation =
             runtimeNode !== null
