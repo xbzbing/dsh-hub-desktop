@@ -15,6 +15,35 @@ function effectivePort(url: URL): number {
   return url.protocol === 'https:' ? 443 : 80
 }
 
+/**
+ * 可交给系统默认程序打开的外跳协议白名单。
+ * 其余协议（`file:`、`search-ms:`、`ms-settings:` 等）能在宿主上拉起本地程序或文件，
+ * 远程工作区内容不可信，一律拒绝。
+ */
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+
+export function isAllowedExternalOpen(targetUrl: string): boolean {
+  try {
+    return ALLOWED_EXTERNAL_PROTOCOLS.has(new URL(targetUrl).protocol)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 白名单内的 URL 交给系统打开；拒绝的协议直接丢弃，打开失败按关闭处理
+ * （`shell.openExternal` 拒绝的 Promise 必须消费，否则成为未处理拒绝）。
+ * @returns 是否已发起打开
+ */
+export function openExternalSafely(
+  targetUrl: string,
+  openExternal: (url: string) => Promise<void>
+): boolean {
+  if (!isAllowedExternalOpen(targetUrl)) return false
+  void openExternal(targetUrl).catch(() => undefined)
+  return true
+}
+
 export function isAllowedInstanceNavigation(targetUrl: string, originUrl: string): boolean {
   let target: URL
   let origin: URL

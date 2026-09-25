@@ -31,10 +31,13 @@ vi.mock('electron', () => {
       FakeWebContentsView.instances.push(this)
     }
   }
-  return { WebContentsView: FakeWebContentsView }
+  return {
+    WebContentsView: FakeWebContentsView,
+    shell: { openExternal: vi.fn(async () => undefined) }
+  }
 })
 
-import { WebContentsView } from 'electron'
+import { WebContentsView, shell } from 'electron'
 import { createWorkspaceHost } from './workspace-host'
 
 interface TestView {
@@ -128,6 +131,30 @@ describe('createWorkspaceHost', () => {
 
     void view.loadURL('http://127.0.0.1:3080/?token=abc')
     expect(created?.webContents.loadURL).toHaveBeenCalledWith('http://127.0.0.1:3080/?token=abc')
+  })
+
+  it('弹窗 URL 走外跳白名单:危险协议不触达系统,外部 http(s) 才交给系统浏览器', () => {
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never, () => 'en-US')
+    host.prepare('22222222-2222-4222-8222-222222222222', 'http://127.0.0.1:3080/?token=abc')
+    const created = fakeViews()[0]
+    const handler = created?.webContents.setWindowOpenHandler.mock.calls[0]?.[0] as (args: {
+      url: string
+    }) => { action: string }
+    const openExternal = shell.openExternal as ReturnType<typeof vi.fn>
+
+    // 沙箱内远程内容用任意协议拉起本地程序的入口:一律 deny 且不调 shell。
+    expect(handler({ url: 'file:///Applications/Calculator.app' })).toEqual({ action: 'deny' })
+    expect(handler({ url: 'ms-settings:privacy' })).toEqual({ action: 'deny' })
+    expect(handler({ url: 'search-ms:query=secret' })).toEqual({ action: 'deny' })
+    // 同 origin 是顶层导航场景,不开外部浏览器。
+    expect(handler({ url: 'http://127.0.0.1:3080/jobs' })).toEqual({ action: 'deny' })
+    expect(openExternal).not.toHaveBeenCalled()
+
+    // 真正的外部链接交给系统浏览器。
+    expect(handler({ url: 'https://example.com/docs' })).toEqual({ action: 'deny' })
+    expect(openExternal).toHaveBeenCalledTimes(1)
+    expect(openExternal).toHaveBeenCalledWith('https://example.com/docs')
   })
 
   it('updates locale for cached workspace views when the Hub language changes', () => {

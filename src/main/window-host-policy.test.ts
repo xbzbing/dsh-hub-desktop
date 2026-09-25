@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { isAllowedInstanceNavigation } from './window-host-policy'
+import { describe, expect, it, vi } from 'vitest'
+import { isAllowedExternalOpen, isAllowedInstanceNavigation, openExternalSafely } from './window-host-policy'
 
 describe('isAllowedInstanceNavigation（实例窗口外跳拦截 ）', () => {
   const origin = 'http://127.0.0.1:30000/?token=abc'
@@ -79,5 +79,43 @@ describe('isAllowedInstanceNavigation（用户#4:远程 http 实例的登录页�
     const loopback = 'http://127.0.0.1:30000/?token=abc'
     expect(isAllowedInstanceNavigation('https://gw.example.com/login', loopback)).toBe(false)
     expect(isAllowedInstanceNavigation('http://127.0.0.1:30001/', loopback)).toBe(false)
+  })
+})
+
+describe('openExternalSafely（外跳协议白名单）', () => {
+  it('http / https / mailto 交给系统打开', () => {
+    const openExternal = vi.fn(async () => undefined)
+    expect(openExternalSafely('https://example.com/docs', openExternal)).toBe(true)
+    expect(openExternalSafely('http://example.com/', openExternal)).toBe(true)
+    expect(openExternalSafely('mailto:dev@example.com', openExternal)).toBe(true)
+    expect(openExternal).toHaveBeenCalledTimes(3)
+  })
+
+  it('能在宿主拉起本地程序的协议一律不打开', () => {
+    const openExternal = vi.fn(async () => undefined)
+    const denied = [
+      'file:///etc/passwd',
+      'search-ms:query=secret&crumb=..',
+      'ms-settings:privacy',
+      'javascript:alert(1)',
+      'ftp://example.com/',
+      'smb://host/share',
+      'not a url',
+      ''
+    ]
+    for (const url of denied) {
+      expect(isAllowedExternalOpen(url)).toBe(false)
+      expect(openExternalSafely(url, openExternal)).toBe(false)
+    }
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
+  it('打开失败被消费,不成为未处理拒绝', async () => {
+    const openExternal = vi.fn(async () => {
+      throw new Error('no handler for https')
+    })
+    expect(openExternalSafely('https://example.com', openExternal)).toBe(true)
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(openExternal).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,6 +1,6 @@
 import { shell, WebContentsView, type BrowserWindow } from 'electron'
 import type { WorkspaceHotkeyEvent, WorkspaceViewBounds } from '@shared/contracts'
-import { isAllowedInstanceNavigation } from './window-host-policy'
+import { isAllowedInstanceNavigation, openExternalSafely } from './window-host-policy'
 import { toWorkspaceHotkey } from './workspace-hotkey'
 
 export interface WorkspaceView {
@@ -89,7 +89,7 @@ export function createWorkspaceHost(
       if (isAllowedInstanceNavigation(url, entry.originUrl)) {
         return { action: 'deny' }
       }
-      void shell.openExternal(url)
+      openExternalSafely(url, shell.openExternal.bind(shell))
       return { action: 'deny' }
     })
     webContents.on('will-navigate', (event, url) => {
