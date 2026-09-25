@@ -9,8 +9,13 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    // 验收脚本(Node + Playwright 驱动,CommonJS):显式声明 node 全局,允许 require
-    files: ['scripts/**/*.cjs', 'scripts/**/*.mjs', 'hub-data/**/*.cjs'],
+    // Node 脚本(验收/渲染,CommonJS 或 ESM):显式声明 node 全局,允许 require
+    files: [
+      'scripts/**/*.cjs',
+      'scripts/**/*.mjs',
+      'design/banner/**/*.mjs',
+      'hub-data/**/*.cjs'
+    ],
     languageOptions: {
       globals: {
         require: 'readonly',

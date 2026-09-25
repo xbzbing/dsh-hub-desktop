@@ -2,6 +2,8 @@
 
 [English](README.en.md)
 
+![dsh-hub-desktop](design/banner/dsh-hub-desktop-banner-zh.png)
+
 > 个人小玩具，主要解决在使用远程开发机的场景下，文档页面和 `dsh` 页面来回切换有点乱的问题。
 > 刚好我的`OpenCode-go`和`mimo-code-plan`都要到期了，于是使用 OpenDesign 设计原型，用 `dsh` 实现出来，然后就有了 `DSH Hub`。
 > 累计消耗`dsh`有 395 轮，7784 步，1528M token。

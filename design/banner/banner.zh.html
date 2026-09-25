@@ -1,0 +1,138 @@
+<!doctype html>
+<!-- Banner source: 1280x640, rendered by render.mjs (Playwright chromium, deviceScaleFactor 2). -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    position: relative;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    background:
+      radial-gradient(1100px 700px at 8% -10%, rgba(30, 74, 138, 0.55), rgba(30, 74, 138, 0) 60%),
+      linear-gradient(135deg, #0b2138 0%, #0a1a30 38%, #061224 100%);
+    color: #fff;
+  }
+
+  .col { position: absolute; left: 56px; top: 0; width: 540px; height: 100%; }
+
+  .eyebrow {
+    position: absolute; top: 120px;
+    font-size: 15px; font-weight: 700; letter-spacing: 2.8px;
+    color: #58a4ff; text-transform: uppercase;
+  }
+
+  .title {
+    position: absolute; top: 152px;
+    font-size: 66px; font-weight: 800; letter-spacing: -1.6px; line-height: 1;
+    color: #fff;
+  }
+
+  .desc { position: absolute; top: 256px; width: 512px; font-size: 25px; line-height: 1.38; }
+  .desc .lead { color: #f2f6fb; font-weight: 700; }
+  .desc .sub { color: #a9bad2; }
+
+  .bar {
+    position: absolute; top: 391px; width: 520px; height: 9px;
+    border-radius: 5px; overflow: hidden; display: flex; gap: 2px;
+  }
+  .bar i { display: block; height: 100%; }
+
+  .legend {
+    position: absolute; top: 414px; width: 540px;
+    display: flex; flex-wrap: wrap; gap: 6px 22px;
+    font-size: 15.5px; color: #cfdbeb; font-weight: 600;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend b { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+
+  .actions { position: absolute; top: 459px; display: flex; gap: 14px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    height: 47px; padding: 0 22px; border-radius: 10px;
+    background: #2d6be5; color: #fff; font-size: 17.5px; font-weight: 700;
+    box-shadow: 0 6px 18px rgba(21, 74, 178, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  .btn svg { width: 17px; height: 17px; }
+
+  .pills { position: absolute; top: 519px; display: flex; flex-direction: column; gap: 14px; width: 540px; }
+  .pill-row { display: flex; gap: 14px; }
+  .pill {
+    height: 45px; padding: 0 23px; border-radius: 23px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.045);
+    color: #e4ebf5; font-size: 17.5px; font-weight: 600;
+    display: inline-flex; align-items: center;
+  }
+
+  .shot {
+    position: absolute; left: 630px; top: 125px; width: 610px;
+    padding: 8px; background: #fff; border-radius: 16px;
+    box-shadow: 0 34px 70px rgba(2, 8, 20, 0.55), 0 4px 14px rgba(2, 8, 20, 0.4);
+  }
+  .shot img { display: block; width: 594px; height: auto; border-radius: 9px; }
+</style>
+</head>
+<body>
+  <div class="col">
+    <div class="eyebrow">DeepSeek Harness · 桌面客户端</div>
+    <div class="title">dsh-hub-desktop</div>
+
+    <div class="desc">
+      <div class="lead">本机、SSH 与远程 dsh，一个窗口搞定。</div>
+      <div class="sub">注册实例、拉起 SSH 隧道，</div>
+      <div class="sub">认证网关一键登录，凭据只进钥匙串。</div>
+    </div>
+
+    <div class="bar">
+      <i style="width:11%;background:#6d5dfb"></i>
+      <i style="width:6%;background:#f5a623"></i>
+      <i style="width:7%;background:#2ecc71"></i>
+      <i style="width:8%;background:#c05ce8"></i>
+      <i style="width:32%;background:#4a90e2"></i>
+      <i style="width:36%;background:#2ec4b8"></i>
+    </div>
+
+    <div class="legend">
+      <span><b style="background:#6d5dfb"></b>注册表</span>
+      <span><b style="background:#f5a623"></b>本机</span>
+      <span><b style="background:#2ecc71"></b>SSH</span>
+      <span><b style="background:#c05ce8"></b>远程</span>
+      <span><b style="background:#4a90e2"></b>认证</span>
+      <span><b style="background:#2ec4b8"></b>保险库</span>
+    </div>
+
+    <div class="actions">
+      <div class="btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>
+        </svg>
+        实例注册表
+      </div>
+      <div class="btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/>
+          <path d="M9.5 12.2l1.8 1.8 3.4-3.6"/>
+        </svg>
+        认证网关
+      </div>
+    </div>
+
+    <div class="pills">
+      <div class="pill-row">
+        <div class="pill">实例向导</div>
+        <div class="pill">隧道自动重连</div>
+      </div>
+      <div class="pill-row">
+        <div class="pill">凭据保险库</div>
+        <div class="pill">审计日志</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="shot">
+    <img src="../../docs/images/show-case.png" alt="DSH Hub 实例总览" />
+  </div>
+</body>
+</html>

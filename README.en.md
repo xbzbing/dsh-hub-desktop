@@ -2,6 +2,8 @@
 
 [中文](README.md)
 
+![dsh-hub-desktop](design/banner/dsh-hub-desktop-banner-en.png)
+
 > A personal side project. Mainly solves the problem of constantly switching between documentation pages and `dsh` pages when working on remote development machines.
 > My `OpenCode-go` and `mimo-code-plan` were both about to expire, so I designed a prototype with OpenDesign and implemented it using `dsh` — and `DSH Hub` was born.
 > Total `dsh` usage: 395 rounds, 7,784 steps, 1,528M tokens.
