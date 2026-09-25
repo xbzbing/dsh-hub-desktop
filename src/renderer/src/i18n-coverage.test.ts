@@ -1131,7 +1131,11 @@ const NON_RENDERER_COPY_DEBT_INTERNAL: readonly DebtEntry[] = [
   debt(
     'src/main/registry/instance-store.ts',
     "throw new InstanceStoreError('invalid-input', `排序列表包含未知实例 ID：${id}`)"
-  )
+  ),
+
+  // —— 顶层失败记录器:deps.log 由 index.ts 接到 console.error,只进主进程日志,不经任何 IPC/状态字段 ——
+  debt('src/main/shell/top-level-failure.ts', "deps.log(`[main] 未处理的 Promise 拒绝：${describeReason(reason)}`)"),
+  debt('src/main/shell/top-level-failure.ts', "deps.log(`[main] 未捕获的异常：${describeReason(error)}`)")
 ]
 
 /**

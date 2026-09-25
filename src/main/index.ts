@@ -44,6 +44,12 @@ import { createAuthController } from './create-auth'
 import { createRuntimeController } from './create-runtime'
 import { createVaultControl } from './create-vault'
 import { auditWrite, createAudit } from './create-audit'
+import { installTopLevelFailureLoggers } from './shell/top-level-failure'
+
+installTopLevelFailureLoggers({
+  log: (line) => console.error(line),
+  exit: (code) => app.exit(code)
+})
 
 const isDev = !app.isPackaged
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'] ?? null
