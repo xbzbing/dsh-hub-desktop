@@ -47,10 +47,15 @@ test.beforeAll(async () => {
   symlinkSync(locateOnPath('npm'), join(shimDir, 'npm'))
   symlinkSync(locateOnPath('node'), join(shimDir, 'node'))
 
+  // CI 的 DSH_HUB_E2E_DECLINE_DOWNLOAD=1 会让下载确认在主进程直接按「取消」应答，
+  // 本用例要的却是对话框停在页面上等 Playwright 点「取消」，故对该实例移除这个开关。
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  delete env['DSH_HUB_E2E_DECLINE_DOWNLOAD']
+
   app = await electron.launch({
     args: buildLaunchArgs(),
     env: {
-      ...process.env,
+      ...env,
       DSH_HUB_DATA_DIR: DATA_DIR,
       HOME: fakeHome,
       PATH: `${shimDir}:/usr/bin:/bin`,

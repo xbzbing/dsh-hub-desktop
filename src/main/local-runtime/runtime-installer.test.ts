@@ -519,56 +519,60 @@ describe('元数据读取提速（分队列 + TTL 缓存）', () => {
 
 describe('系统 dsh 的 npm 全局升级', () => {
   it('globalPrefixFor 只认 npm 全局布局，pnpm 虚拟存储与本地依赖不猜', () => {
-    expect(globalPrefixFor('/Users/x/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')).toBe(
+    // 布局判定跟平台走：断言一律显式传平台，宿主平台（如 Windows CI）不改变预期
+    expect(globalPrefixFor('/Users/x/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js', 'linux')).toBe(
       '/Users/x/.local'
     )
-    expect(globalPrefixFor('/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')).toBe('/usr/local')
+    expect(globalPrefixFor('/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js', 'linux')).toBe('/usr/local')
     expect(
       globalPrefixFor('C:\\Users\\x\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js', 'win32')
     ).toBe('C:/Users/x/AppData/Roaming/npm')
     // pnpm 全局:真实路径落在 .pnpm 虚拟存储,node_modules 不在 lib 下
     expect(
       globalPrefixFor(
-        '/Users/x/Library/pnpm/global/5/node_modules/.pnpm/@deepseek-ai+dsh@0.1.6/node_modules/@deepseek-ai/dsh/lib/bin.js'
+        '/Users/x/Library/pnpm/global/5/node_modules/.pnpm/@deepseek-ai+dsh@0.1.6/node_modules/@deepseek-ai/dsh/lib/bin.js',
+        'linux'
       )
     ).toBeNull()
     // 本地依赖与裸脚本路径
-    expect(globalPrefixFor('/Users/x/proj/node_modules/@deepseek-ai/dsh/lib/bin.js')).toBeNull()
-    expect(globalPrefixFor('/opt/homebrew/bin/dsh')).toBeNull()
-    expect(globalPrefixFor('/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')).toBeNull()
+    expect(globalPrefixFor('/Users/x/proj/node_modules/@deepseek-ai/dsh/lib/bin.js', 'linux')).toBeNull()
+    expect(globalPrefixFor('/opt/homebrew/bin/dsh', 'linux')).toBeNull()
+    expect(globalPrefixFor('/lib/node_modules/@deepseek-ai/dsh/lib/bin.js', 'linux')).toBeNull()
   })
 
   it('globalRuntimeEntry 与 globalPrefixFor 互为逆运算（POSIX 多一层 lib）', () => {
     const prefix = '/Users/x/.local'
-    expect(globalRuntimeEntry(prefix)).toBe('/Users/x/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')
-    expect(globalPrefixFor(globalRuntimeEntry(prefix))).toBe(prefix)
+    expect(globalRuntimeEntry(prefix, 'linux')).toBe('/Users/x/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js')
+    expect(globalPrefixFor(globalRuntimeEntry(prefix, 'linux'), 'linux')).toBe(prefix)
     expect(globalRuntimeEntry('C:\\npm', 'win32')).toContain('node_modules')
   })
 
   it('resolveGlobalPrefix：先解析符号链接再判定布局', async () => {
     const root = tmpDir()
-    const pkgLib = join(root, 'lib', 'node_modules', '@deepseek-ai', 'dsh', 'lib')
-    await mkdir(pkgLib, { recursive: true })
-    await writeFile(join(pkgLib, 'bin.js'), '#!/usr/bin/env node\n', 'utf8')
+    // 目录按当前平台的 npm 全局布局构造（POSIX 多一层 lib，Windows 在根下）
+    const entry = globalRuntimeEntry(root)
+    await mkdir(dirname(entry), { recursive: true })
+    await writeFile(entry, '#!/usr/bin/env node\n', 'utf8')
     const binDir = join(root, 'bin')
     await mkdir(binDir, { recursive: true })
-    await symlink(join(pkgLib, 'bin.js'), join(binDir, 'dsh'))
+    await symlink(entry, join(binDir, 'dsh'))
 
     const installer = createRuntimeInstaller({
       runtimesDir: tmpDir(),
       cacheDir: tmpDir(),
       resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
     })
-    expect(await installer.resolveGlobalPrefix(join(binDir, 'dsh'))).toBe(root)
+    // globalPrefixFor 一律回正斜杠，与宿主平台的分隔符无关
+    expect(await installer.resolveGlobalPrefix(join(binDir, 'dsh'))).toBe(root.replace(/\\/g, '/'))
     // 指向不存在的文件 → 解析失败按无法代管处理
     expect(await installer.resolveGlobalPrefix(join(binDir, 'missing'))).toBeNull()
   })
 
   it('installGlobal 走 npm install -g --prefix 安装到系统 prefix 并校验入口', async () => {
     const prefix = tmpDir()
-    const pkgLib = join(prefix, 'lib', 'node_modules', '@deepseek-ai', 'dsh', 'lib')
-    await mkdir(pkgLib, { recursive: true })
-    await writeFile(join(pkgLib, 'bin.js'), '#!/usr/bin/env node\n', 'utf8')
+    const entry = globalRuntimeEntry(prefix)
+    await mkdir(dirname(entry), { recursive: true })
+    await writeFile(entry, '#!/usr/bin/env node\n', 'utf8')
     const run = vi.fn(async () => okRun(''))
     const installer = createRuntimeInstaller({
       runtimesDir: tmpDir(),
@@ -601,9 +605,9 @@ describe('系统 dsh 的 npm 全局升级', () => {
 
   it('installGlobal：带进度回调时透传 npm fetch 进度（spawnNpm 分支）', async () => {
     const prefix = tmpDir()
-    const pkgLib = join(prefix, 'lib', 'node_modules', '@deepseek-ai', 'dsh', 'lib')
-    await mkdir(pkgLib, { recursive: true })
-    await writeFile(join(pkgLib, 'bin.js'), '#!/usr/bin/env node\n', 'utf8')
+    const entry = globalRuntimeEntry(prefix)
+    await mkdir(dirname(entry), { recursive: true })
+    await writeFile(entry, '#!/usr/bin/env node\n', 'utf8')
     const installer = createRuntimeInstaller({
       runtimesDir: tmpDir(),
       cacheDir: tmpDir(),
