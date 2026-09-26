@@ -9,7 +9,6 @@ import { delimiter, dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import type {
   DshVersionProgressEvent,
-  InstanceRuntimeStatus,
   InstanceStatusEvent,
   LocalInstance
 } from '@shared/contracts'
@@ -24,7 +23,8 @@ import { planRuntimeSource, type PathProbe } from './runtime-source'
 import { searchNodeDirs } from './node-dirs'
 import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
 import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
-import { httpHealthProbe, type HealthProbe } from '../transport/probe'
+import { httpHealthProbe, retryProbe, type HealthProbe } from '../transport/probe'
+import { createStatusBus } from '../transport/status-bus'
 
 export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
 
@@ -284,15 +284,13 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const stopAllDrainMs = options.stopAllDrainMs ?? 10_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
-  // 重试次数默认值与 HTTP 端点（3 次，见 transport/http-endpoint.ts）不同，调整前先确认两侧差异是否有意。
+  // 重试次数默认 5 次；HTTP 端点为 3 次，差异说明见 probe.ts 的 retryProbe。
   const healthProbeRetries = options.healthProbeRetries ?? 5
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
   const portProbe = options.portProbe
   const now = options.now ?? (() => Date.now())
 
   const entries = new Map<string, Entry>()
-  const statuses = new Map<string, InstanceStatusEvent>()
-  const listeners = new Set<(event: InstanceStatusEvent) => void>()
   const upgradeListeners = new Set<(event: DshVersionProgressEvent) => void>()
   /** 正在升级的实例；升级结束（含失败）即释放。 */
   const upgradingIds = new Set<string>()
@@ -321,22 +319,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     return next
   }
 
-  function emit(id: string, status: InstanceRuntimeStatus, extra: Partial<InstanceStatusEvent> = {}): void {
-    const event: InstanceStatusEvent = {
-      id,
-      status,
-      at: new Date(now()).toISOString(),
-      ...extra
-    }
-    statuses.set(id, event)
-    for (const listener of listeners) {
-      try {
-        listener(event)
-      } catch (error) {
-        console.error('[local-runtime] 状态监听器抛错：', error)
-      }
-    }
-  }
+  const bus = createStatusBus(now, 'local-runtime')
+  const { emit, onStatus, statusOf } = bus
 
   function emitUpgrade(event: DshVersionProgressEvent): void {
     for (const listener of upgradeListeners) {
@@ -429,19 +413,15 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
     // 下次 start 又 spawn 一个,两个 dsh 共享同一 DSH_HOME。
     const stale = (): boolean => entry.stopping || entries.get(id) !== entry
-    let healthy = false
-    for (let attempt = 1; attempt <= healthProbeRetries; attempt++) {
-      if (stale()) return
-      healthy = await probe(url, healthTimeoutMs)
-      if (healthy) break
-      if (attempt < healthProbeRetries) {
-        await new Promise<void>((resolve) => {
-          const delay = setTimeout(resolve, healthProbeRetryMs)
-          delay.unref?.()
-        })
-      }
-    }
-    if (stale()) return
+    const healthy = await retryProbe({
+      url,
+      probe,
+      retries: healthProbeRetries,
+      retryMs: healthProbeRetryMs,
+      timeoutMs: healthTimeoutMs,
+      shouldAbort: stale
+    })
+    if (healthy === null) return
     if (!healthy) {
       // 终局路径必须与超时路径对齐:杀进程、清条目、放行队列。
       // 缺失任一项都会造成 head-of-line 阻塞(下一个实例等到 readyTimer 触发)
@@ -832,11 +812,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   }
 
   return {
-    onStatus(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-
+    onStatus,
     onUpgradeProgress(listener) {
       upgradeListeners.add(listener)
       return () => upgradeListeners.delete(listener)
@@ -930,9 +906,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       }
     },
 
-    statusOf(id) {
-      return statuses.get(id) ?? null
-    },
+    statusOf,
 
     urlOf(id) {
       return entries.get(id)?.url ?? null

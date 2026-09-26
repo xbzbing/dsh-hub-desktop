@@ -9,7 +9,7 @@ import { mkdir, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { InstanceRuntimeStatus, InstanceStatusEvent, SshInstance } from '@shared/contracts'
+import type { InstanceStatusEvent, SshInstance } from '@shared/contracts'
 import {
   DEFAULT_PORT_RANGE_END,
   DEFAULT_PORT_RANGE_START,
@@ -40,6 +40,7 @@ import { classifySshExit, type SshExitAttribution } from './attribution'
 import { sshTunnelEndpoint } from './endpoint-resolver'
 import { httpHealthProbe, sleep, type HealthProbe } from './probe'
 import { buildSshArgs } from './ssh-args'
+import { createStatusBus } from './status-bus'
 import {
   detachedSpawn,
   killProcessGroup,
@@ -161,8 +162,6 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       createHostTrustProbe(host, port, { knownHostsPath }))
 
   const entries = new Map<string, TunnelEntry>()
-  const statuses = new Map<string, InstanceStatusEvent>()
-  const listeners = new Set<(event: InstanceStatusEvent) => void>()
   /** 同 id 并发 start 的同步闸（start 入口即占用，finally 释放） */
   const startingIds = new Set<string>()
   /** 排队期间被 stop 的实例：轮到它 spawn 前直接放弃 */
@@ -172,17 +171,8 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
   /** 重连时需要的实例最新配置；start 登记、stop/删除清理 */
   const latestInstances = new Map<string, SshInstance>()
 
-  function emit(id: string, status: InstanceRuntimeStatus, extra: Partial<InstanceStatusEvent> = {}): void {
-    const event: InstanceStatusEvent = { id, status, at: new Date(now()).toISOString(), ...extra }
-    statuses.set(id, event)
-    for (const listener of listeners) {
-      try {
-        listener(event)
-      } catch (error) {
-        console.error('[ssh-tunnel] 状态监听器抛错：', error)
-      }
-    }
-  }
+  const bus = createStatusBus(now, 'ssh-tunnel')
+  const { emit, onStatus, statusOf } = bus
 
   function pushLog(entry: TunnelEntry, chunk: unknown): void {
     entry.buffer += String(chunk)
@@ -600,14 +590,8 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
   }
 
   return {
-    onStatus(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-
-    statusOf(id) {
-      return statuses.get(id) ?? null
-    },
+    onStatus,
+    statusOf,
 
     runningIds() {
       return [...entries.keys()]
