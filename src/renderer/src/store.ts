@@ -117,6 +117,10 @@ interface AppState {
       `ensureRecord` 只在缓存缺失时拉取,会把陈旧记录留在 store 里 */
   reloadRecord: (id: string) => Promise<void>
   select: (id: string | null) => void
+  /** 取回记录并选中；列表页与设置页跳转详情共用。 */
+  openDetail: (id: string) => void
+  /** 删除实例并提示成败；返回是否成功，由调用方清理自身状态并刷新列表。 */
+  removeInstance: (input: { id: string; name: string; trashSpace: boolean }) => Promise<boolean>
   /** 选择实例后打开其工作区；失败时保留详情，提示用户原因。 */
   openWorkspace: (id: string) => Promise<void>
   /** 断开指定实例的内嵌工作区，不停止其运行时。 */
@@ -447,6 +451,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
       settingsOpen: false,
       pendingOpen: []
     })
+  },
+
+  openDetail: (id) => {
+    void get().ensureRecord(id)
+    get().select(id)
+  },
+
+  removeInstance: async (input) => {
+    const t = get().t
+    const result = await window.dshHub?.instances.remove(input.id, { trashSpace: input.trashSpace })
+    if (!result?.ok) {
+      if (result) get().toast('err', t('detail.deleteFailed'), result.message)
+      return false
+    }
+    get().toast('ok', t('detail.deleted', { name: input.name }))
+    return true
   },
 
   openWorkspace: async (id) => {

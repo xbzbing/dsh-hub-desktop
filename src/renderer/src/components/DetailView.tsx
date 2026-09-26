@@ -5,6 +5,7 @@ import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, addressOf, fmtLogTime, toDisplayStatus } from '../lib/format'
 import { useAppStore, type ActivityLine } from '../store'
 import { Modal } from './Modal'
+import { DeleteConfirmModal } from './DeleteConfirmModal'
 import EditInstanceDialog from './EditInstanceDialog'
 import VaultCard from './VaultCard'
 import { DshVersionCheckButton, DshVersionPanel } from './DshVersionControl'
@@ -25,6 +26,7 @@ export default function DetailView(): ReactNode {
   const ensureRecord = useAppStore((state) => state.ensureRecord)
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
+  const removeInstance = useAppStore((state) => state.removeInstance)
   const disconnectWorkspace = useAppStore((state) => state.disconnectWorkspace)
   const toast = useAppStore((state) => state.toast)
   const openWorkspace = useAppStore((state) => state.openWorkspace)
@@ -216,14 +218,8 @@ export default function DetailView(): ReactNode {
   }
 
   const deleteInstance = async (): Promise<void> => {
-    const bridge = window.dshHub
-    if (!bridge) return
-    const result = await bridge.instances.remove(record.id, { trashSpace })
-    if (!result.ok) {
-      toast('err', t('detail.deleteFailed'), result.message)
-      return
-    }
-    toast('ok', t('detail.deleted', { name: record.name }))
+    const removed = await removeInstance({ id: record.id, name: record.name, trashSpace })
+    if (!removed) return
     setTrashSpace(false)
     select(null)
     void refreshList()
@@ -657,35 +653,15 @@ export default function DetailView(): ReactNode {
       )}
 
       {confirmDelete && (
-        <Modal
-      closeLabel={t('common.close')}
-          title={t('detail.deleteTitle')}
-          onClose={() => { setConfirmDelete(false); setTrashSpace(false) }}
+        <DeleteConfirmModal
           testId="confirm-delete"
-          footer={
-            <>
-              <span className="meta">{t('detail.deleteCannotUndo')}</span>
-              <div className="right">
-                <button className="btn btn-secondary btn-sm" onClick={() => { setConfirmDelete(false); setTrashSpace(false) }}>
-                 {t('common.cancel')}
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => void deleteInstance()}>
-                 {t('detail.delete')}
-                </button>
-              </div>
-            </>
-          }
-        >
-          <p className="meta">
-            {t('detail.deleteConfirm', { name: record.name })}
-          </p>
-          {record.transport === 'local' && !record.useDefaultSpace && (
-            <label className="check mt12">
-              <input type="checkbox" checked={trashSpace} onChange={(event) => setTrashSpace(event.target.checked)} />
-              {t('detail.deleteSpace')}
-            </label>
-          )}
-        </Modal>
+          name={record.name}
+          showTrashSpace={record.transport === 'local' && !record.useDefaultSpace}
+          trashSpace={trashSpace}
+          onTrashSpaceChange={setTrashSpace}
+          onClose={() => { setConfirmDelete(false); setTrashSpace(false) }}
+          onConfirm={() => void deleteInstance()}
+        />
       )}
 
       {showEdit && (
