@@ -217,8 +217,3 @@ export function canSubmit(state: AuthState): boolean {
     state.phase === 'await-otp'
   )
 }
-
-/** 是否允许在「验证码阶段」提交(密码已有、只差码) */
-export function canSubmitOtp(state: AuthState): boolean {
-  return state.lockedForMs <= 0 && (state.phase === 'needs-auth' || state.phase === 'await-otp')
-}

@@ -18,8 +18,9 @@ export interface AuthRegistryOptions {
   maxConcurrentAuth?: number
   onState?: (instanceId: string, state: AuthState) => void
   /**
+   * 客户端创建后的恢复钩子：把 vault 里已记住的登录态灌进 Cookie 罐，
    * 使随后的 `probeAndRestore` 走静默恢复分支。**在返回客户端之前 await** ——
-   * 否则首次探测可能先于恢复执行,重启复用就失效了。
+   * 否则首次探测可能先于恢复执行，重启复用就失效了。
    */
   restore?: (instanceId: string, client: AuthClient) => Promise<void> | void
   /** 注入 fetch(测试) */

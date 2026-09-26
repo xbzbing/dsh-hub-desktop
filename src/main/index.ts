@@ -124,12 +124,11 @@ const workspaceTooltipHost = createWorkspaceTooltipHost(() => windowController.g
 let vault: Vault | null = null
 
 /**
- * (「关闭时最小化到托盘」),而窗口创建早于/独立于装配顺序。
+ * 装配前创建的消费者（窗口控制器、工作区语言）只能经此延迟读取设置；
+ * 窗口关闭（「关闭时最小化到托盘」）可能早于或独立于设置仓装配发生。
  */
 let settingsRef: SettingsStore | null = null
 
-/**
- */
 let nativePorts: HubNativePorts<Tray> | null = null
 
 /** 从托盘退出：`before-quit` 先标记退出，再放行窗口关闭。 */
@@ -231,12 +230,7 @@ void app.whenReady().then(() => {
   const nativeApplier = createNativeSettingsApplier(nativePorts)
 
   /**
-   * 把偏好施加到原生层(开机自启)。失败只记日志:
-   * 偏好已落盘,系统层面设置失败不该让设置页报错。
-   */
-  /**
-   * 施加原生设置。
-   *
+   * 施加原生设置。单个动作失败只记日志（偏好已落盘，系统层失败不该让设置页报错）。
    * 「该做哪些动作」由纯函数 `planNativeSettings` 决定,「动作有没有真的落到
    * electron」由注入端口的 `createNativeSettingsApplier` 保证 —— 两者都有单测
    */

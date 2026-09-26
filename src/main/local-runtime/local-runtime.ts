@@ -1,7 +1,6 @@
 /**
- *
- *
- * 因此本模块可脱离 Electron 单独测试。
+ * 本机实例运行时：启动、接管与停止本地 dsh 进程，健康探测就绪，以及 dsh 版本升级。
+ * 不 import Electron，状态只经 `onStatus` 向外发布，因此可脱离 Electron 单独测试。
  */
 import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
@@ -88,7 +87,7 @@ export interface LocalRuntimeOptions {
   healthProbeRetryMs?: number
   now?: () => number
   /**
-   * (决策退化为「hub → 下载」两级,与旧行为兼容)。
+   * 探测用户本机 PATH 上的 dsh；缺省不探测，来源决策退化为「hub → 下载」两级。
    */
   pathProbe?: PathProbe
   /**
@@ -112,7 +111,8 @@ export interface LocalRuntimeOptions {
    */
   inheritShellEnv?: () => boolean
   /**
-   * (生产装配必须注入;测试/受限环境注入 stub)。返回 true 才继续下载。
+   * 下载 dsh 前的用户确认口，返回 true 才继续下载；缺省视为拒绝。
+   * 生产装配必须注入，测试/受限环境注入 stub。
    */
   confirmDownload?: (version: string) => Promise<boolean>
   /**
@@ -413,7 +413,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     }
     try {
     // 在途续体身份守卫:探测/重试期间本条目的进程可能已退出(退出处理器会删条目并立即
-
+    // 放行队列,同 id 的第二次 start 随即拉起新进程)。陈旧续体不得再发布 running、
     // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
     // 下次 start 又 spawn 一个,两个 dsh 共享同一 DSH_HOME。
     const stale = (): boolean => entry.stopping || entries.get(id) !== entry

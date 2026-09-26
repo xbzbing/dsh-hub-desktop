@@ -1,5 +1,7 @@
 /**
+ * HTTP 直连传输 —— 不 import Electron。
  *
+ * 远程实例没有本地进程可管：`start` = 校验端点 → 健康探测 → 认证模式探测
  * → 发布 running（携带探测结论）；`stop` = 发布 stopped（无进程回收）。
  */
 import type { HttpInstance, InstanceRuntimeStatus, InstanceStatusEvent } from '@shared/contracts'

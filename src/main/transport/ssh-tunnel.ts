@@ -89,8 +89,9 @@ export interface SshTunnelManager {
   stop(id: string): Promise<void>
   stopAll(): Promise<void>
   /**
-   * 该目标的全部条目。这是**显式、独立、破坏性**的操作,不属于连接确认流程:连接时指纹
-   * 变化一律拒绝且不自动清理;只有用户主动调用本方法后,下一次连接才会重新走首次 TOFU。
+   * 忘记某实例主机的已信任公钥 —— 删除 hub 私有 known_hosts 中该目标的全部条目。
+   * 这是**显式、独立、破坏性**的操作,不属于连接确认流程:连接时指纹变化一律拒绝
+   * 且不自动清理;只有用户主动调用本方法后,下一次连接才会重新走首次 TOFU。
    */
   forgetHostKey(instance: SshInstance): Promise<void>
 }

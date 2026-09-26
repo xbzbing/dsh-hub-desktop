@@ -38,7 +38,7 @@ export async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>>
     if (error instanceof EndpointParseError) {
       return { ok: false, code: 'invalid-input', message: error.message }
     }
-    // 打开数据目录失败:带稳定错误码(io-error/internal)显式回报,
+    // 打开数据目录失败:带稳定错误码(io-error/internal)显式回报。
     if (error instanceof DataDirOpenError) {
       return { ok: false, code: error.code, message: error.message }
     }
@@ -155,15 +155,14 @@ export interface StoredLoginMemory {
   logoutSuppressed: Set<string>
 }
 
-export const authSnapshot = (state: Awaited<ReturnType<AuthRegistry['login']>>): AuthStateSnapshot | null => state
-
 /**
- * 且 vault 已存密码 → 自动用已存密码登录一次。
+ * 探测后处于可提交认证的阶段且 vault 已存密码时，自动用已存密码登录一次，
+ * 返回登录后的状态；条件不满足或登录抛错时原样返回入参状态。
  *
  * 触发集合 = needs-auth ‖ await-credentials 且未锁定(lockedForMs===0)。
  * **为什么是这两相**:真实状态机下 probe 的终态是 await-credentials,不是
  * needs-auth —— probeAndRestore 识别网关后固定走 probe-gateway → session-absent
- * 仅首探瞬间经过 needs-auth。原实现只认 needs-auth,静默登录在生产不可达。
+ * 仅首探瞬间经过 needs-auth,只认 needs-auth 则静默登录在生产不可达。
  * await-otp 不触发:已到验证码阶段,密码复用走 AuthPanel 的 loginStored(otp)。
  *
  * 两条会话内记忆(进程生命周期,不落盘):
@@ -214,5 +213,5 @@ export async function probeWithStoredPassword(
     memory.storedLoginAttempted.delete(instanceId)
   }
   const state = await autoLoginWithStored(deps, memory, instanceId, probedState)
-  return authSnapshot(state)
+  return state
 }
