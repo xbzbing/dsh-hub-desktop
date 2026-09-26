@@ -11,9 +11,12 @@ import {
   WorkspaceViewBoundsSchema,
   type AuthStateSnapshot,
   type ExternalDshWebSnapshot,
+  type HttpInstance,
   type IpcResult,
   type InstanceRecord,
+  type LocalInstance,
   type LocalLauncherSnapshot,
+  type SshInstance,
   type WorkspaceViewBounds
 } from '@shared/contracts'
 import { httpDirectEndpoint } from '../transport/endpoint-resolver'
@@ -148,6 +151,59 @@ export function registerRuntimeHandlers(
       }
       if (isCurrent()) await deps.openInstanceView(instance, url)
     }
+
+    /** 未在运行的远程端点：确保探测已启动，返回直连地址。 */
+    const openHttp = async (instance: HttpInstance, starting: boolean): Promise<string> => {
+      if (!starting) {
+        void deps.http.start(instance).catch((error: unknown) => {
+          console.error('[register] HTTP 实例状态探测失败：', error)
+        })
+      }
+      return httpDirectEndpoint(instance)
+    }
+
+    /** 未在运行的 SSH 实例：建立隧道后取就绪地址，未就绪返回 null。 */
+    const openSsh = async (instance: SshInstance): Promise<string | null> => {
+      await deps.tunnels.start(instance)
+      const ready = deps.tunnels.statusOf(instanceId)
+      return ready?.status === 'running' && ready.url ? ready.url : null
+    }
+
+    /** 未在运行的本机实例：已记住的外部访问 → 扫描接管 → 托管启动；本分支只扫描一次。 */
+    const openLocal = async (instance: LocalInstance): Promise<string | null> => {
+      const external = deps.externalDshScanner ? await deps.externalDshScanner.scan() : []
+      const savedAccess = externalAccessUrls.get(instanceId)
+      if (savedAccess) {
+        const match = external.find((item) => item.pid === savedAccess.pid && item.port === savedAccess.port)
+        if (!match) {
+          externalAccessUrls.delete(instanceId)
+          await deps.runtime.stop(instanceId)
+          await deps.vault.forgetExternalAccessToken(instanceId)
+          throw new InstanceStoreError('invalid-state', '本机 dsh 已重启，请在实例详情中更新访问 token')
+        }
+        return savedAccess.url
+      }
+      const match = external.find((item) => item.port === instance.port)
+      if (match && match.port !== null) {
+        const token = deps.vault.getExternalAccessToken(instanceId)
+        if (!token) {
+          throw new InstanceStoreError('invalid-state', '本机 dsh 需要访问 token，请在实例详情中更新')
+        }
+        const accessUrl = externalAccessUrl(token, match.port)
+        if (!(await (deps.verifyExternalAccess ?? defaultVerifyExternalAccess)(accessUrl))) {
+          await deps.vault.forgetExternalAccessToken(instanceId)
+          throw new InstanceStoreError('invalid-state', '本机 dsh 的访问 token 已失效，请在实例详情中更新')
+        }
+        await deps.runtime.adopt(instance, { pid: match.pid, port: match.port, patch: match.patch })
+        externalAccessUrls.set(instanceId, { pid: match.pid, port: match.port, url: accessUrl })
+        return accessUrl
+      }
+      await deps.runtime.start(instance)
+      const ready = deps.runtime.statusOf(instanceId)
+      const url = deps.runtime.urlOf(instanceId)
+      return ready?.status === 'running' && url ? url : null
+    }
+
     const instance = await store.get(instanceId)
     if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${instanceId}`)
     const status =
@@ -162,63 +218,13 @@ export function registerRuntimeHandlers(
       await openIfCurrent(instance, url)
       return
     }
-    if (instance.transport === 'http') {
-      if (status?.status !== 'starting') {
-        void deps.http.start(instance).catch((error: unknown) => {
-          console.error('[register] HTTP 实例状态探测失败：', error)
-        })
-      }
-      await openIfCurrent(instance, httpDirectEndpoint(instance))
-      return
-    }
-    if (instance.transport === 'ssh') {
-      await deps.tunnels.start(instance)
-      const ready = deps.tunnels.statusOf(instanceId)
-      if (ready?.status === 'running' && ready.url) {
-        await openIfCurrent(instance, ready.url)
-      }
-      return
-    }
-    if (instance.transport === 'local') {
-      const savedAccess = externalAccessUrls.get(instanceId)
-      if (savedAccess) {
-        const external = deps.externalDshScanner ? await deps.externalDshScanner.scan() : []
-        const match = external.find((item) => item.pid === savedAccess.pid && item.port === savedAccess.port)
-        if (!match) {
-          externalAccessUrls.delete(instanceId)
-          await deps.runtime.stop(instanceId)
-          await deps.vault.forgetExternalAccessToken(instanceId)
-          throw new InstanceStoreError('invalid-state', '本机 dsh 已重启，请在实例详情中更新访问 token')
-        }
-        await openIfCurrent(instance, savedAccess.url)
-        return
-      }
-      const external = deps.externalDshScanner ? await deps.externalDshScanner.scan() : []
-      const match = external.find((item) => item.port === instance.port)
-      if (match && match.port !== null) {
-        const token = deps.vault.getExternalAccessToken(instanceId)
-        if (!token) {
-          throw new InstanceStoreError('invalid-state', '本机 dsh 需要访问 token，请在实例详情中更新')
-        }
-        const accessUrl = externalAccessUrl(token, match.port)
-        if (!(await (deps.verifyExternalAccess ?? defaultVerifyExternalAccess)(accessUrl))) {
-          await deps.vault.forgetExternalAccessToken(instanceId)
-          throw new InstanceStoreError('invalid-state', '本机 dsh 的访问 token 已失效，请在实例详情中更新')
-        }
-        await deps.runtime.adopt(instance, { pid: match.pid, port: match.port, patch: match.patch })
-        externalAccessUrls.set(instanceId, { pid: match.pid, port: match.port, url: accessUrl })
-        await openIfCurrent(instance, accessUrl)
-        return
-      }
-      await deps.runtime.start(instance)
-      const ready = deps.runtime.statusOf(instanceId)
-      const url = deps.runtime.urlOf(instanceId)
-      if (ready?.status === 'running' && url) {
-        await openIfCurrent(instance, url)
-      }
-      return
-    }
-    throw new InstanceStoreError('invalid-input', '未知的传输类型')
+    const url =
+      instance.transport === 'http'
+        ? await openHttp(instance, status?.status === 'starting')
+        : instance.transport === 'ssh'
+          ? await openSsh(instance)
+          : await openLocal(instance)
+    if (url !== null) await openIfCurrent(instance, url)
   }
 
   ipcMain.handle(INSTANCE_RUNTIME_IPC.openView, (_event, id: unknown): Promise<IpcResult<null>> =>

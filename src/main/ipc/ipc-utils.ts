@@ -13,6 +13,7 @@ import {
   type InstanceRuntimeStatus,
   type InstanceStatusEvent,
   type InstanceSummary,
+  type IpcErrorCode,
   type IpcResult
 } from '@shared/contracts'
 import { HomepageOpenError } from '../shell/open-homepage'
@@ -24,31 +25,28 @@ import type { Vault } from '../vault/vault'
 /** 通道处理函数的统一包装：把同步/异步任务收敛为 `IpcResult` 信封。 */
 export type IpcWrap = <T>(task: () => Promise<T> | T) => Promise<IpcResult<T>>
 
+/** 构造失败信封；`code` 必须是 IPC 白名单内的稳定错误码。 */
+const fail = (code: IpcErrorCode, message: string): { ok: false; code: IpcErrorCode; message: string } => ({
+  ok: false,
+  code,
+  message
+})
+
 export async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
   try {
     return { ok: true, value: await task() }
   } catch (error) {
-    if (error instanceof InstanceStoreError) {
-      return { ok: false, code: error.code, message: error.message }
-    }
-    if (error instanceof z.ZodError) {
-      return { ok: false, code: 'invalid-input', message: formatZodIssues(error) }
-    }
+    if (error instanceof InstanceStoreError) return fail(error.code, error.message)
+    if (error instanceof z.ZodError) return fail('invalid-input', formatZodIssues(error))
     // 端点解析失败属输入问题(不是内部错误):与 instances:create 的 tryParseEndpoint 口径一致
-    if (error instanceof EndpointParseError) {
-      return { ok: false, code: 'invalid-input', message: error.message }
-    }
+    if (error instanceof EndpointParseError) return fail('invalid-input', error.message)
     // 打开数据目录失败:带稳定错误码(io-error/internal)显式回报。
-    if (error instanceof DataDirOpenError) {
-      return { ok: false, code: error.code, message: error.message }
-    }
+    if (error instanceof DataDirOpenError) return fail(error.code, error.message)
     // 打开项目主页失败:同口径,不静默成功
-    if (error instanceof HomepageOpenError) {
-      return { ok: false, code: error.code, message: error.message }
-    }
+    if (error instanceof HomepageOpenError) return fail(error.code, error.message)
     // 内部错误不透传细节(可能含 fs 路径),只记主进程日志;只记错误类型与消息,不序列化整个错误对象
     console.error('[ipc] 未预期错误：', error instanceof Error ? `${error.name}: ${error.message}` : String(error))
-    return { ok: false, code: 'internal', message: '内部错误，请查看主进程日志' }
+    return fail('internal', '内部错误，请查看主进程日志')
   }
 }
 

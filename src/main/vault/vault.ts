@@ -312,6 +312,25 @@ export function createVault(options: VaultOptions): Vault {
     return available ? crypto.encrypt(value) : value
   }
 
+  /** 条目中可单独读写或遗忘的字段名。 */
+  type VaultField = keyof VaultItem
+
+  /** 字段是否已存;与 get* 同口径,读前先 load。 */
+  function hasField(instanceId: string, field: VaultField): boolean {
+    load()
+    return items.get(instanceId)?.[field] !== undefined
+  }
+
+  /** 遗忘单个字段并回写;条目因此变空时一并从内存移除。 */
+  async function forgetField(instanceId: string, field: VaultField): Promise<void> {
+    load()
+    const entry = items.get(instanceId)
+    if (!entry) return
+    delete entry[field]
+    dropIfEmpty(instanceId)
+    await persist()
+  }
+
   return {
     status() {
       load()
@@ -319,8 +338,7 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     hasPassword(instanceId) {
-      load()
-      return items.get(instanceId)?.password !== undefined
+      return hasField(instanceId, 'password')
     },
 
     async rememberPassword(instanceId, password) {
@@ -338,17 +356,11 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async forgetPassword(instanceId) {
-      load()
-      const entry = items.get(instanceId)
-      if (!entry) return
-      delete entry.password
-      dropIfEmpty(instanceId)
-      await persist()
+      await forgetField(instanceId, 'password')
     },
 
     hasExternalAccessToken(instanceId) {
-      load()
-      return items.get(instanceId)?.externalAccessToken !== undefined
+      return hasField(instanceId, 'externalAccessToken')
     },
 
     async rememberExternalAccessToken(instanceId, token) {
@@ -365,17 +377,11 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async forgetExternalAccessToken(instanceId) {
-      load()
-      const entry = items.get(instanceId)
-      if (!entry) return
-      delete entry.externalAccessToken
-      dropIfEmpty(instanceId)
-      await persist()
+      await forgetField(instanceId, 'externalAccessToken')
     },
 
     hasSession(instanceId) {
-      load()
-      return items.get(instanceId)?.session !== undefined
+      return hasField(instanceId, 'session')
     },
 
     async rememberSession(instanceId, session) {
@@ -411,12 +417,7 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async forgetSession(instanceId) {
-      load()
-      const entry = items.get(instanceId)
-      if (!entry) return
-      delete entry.session
-      dropIfEmpty(instanceId)
-      await persist()
+      await forgetField(instanceId, 'session')
     },
 
     async forgetInstance(instanceId) {

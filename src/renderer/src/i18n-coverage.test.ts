@@ -875,7 +875,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/runtime-handlers.ts', "if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${instanceId}`)"),
   debt('src/main/shell/open-data-dir.ts', "if (dir === '') throw new DataDirOpenError('internal', '数据目录不可用')"),
   debt('src/main/registry/instance-store.ts', "return new InstanceStoreError('io-error', `注册表 IO 失败：${message}`)"),
-  debt('src/main/ipc/ipc-utils.ts', "return { ok: false, code: 'internal', message: '内部错误，请查看主进程日志' }"),
+  debt('src/main/ipc/ipc-utils.ts', "return fail('internal', '内部错误，请查看主进程日志')"),
   debt('src/main/ipc/instance-handlers.ts', "throw new InstanceStoreError('invalid-input', '只有 SSH 隧道实例才有主机指纹')"),
   debt('src/main/ipc/runtime-handlers.ts', "throw new InstanceStoreError('invalid-input', '未知的传输类型')"),
   debt('src/main/registry/instance-store.ts', "throw new InstanceStoreError('invalid-input', `字段 ${key} 不适用于 ${current.transport} 实例`)"),

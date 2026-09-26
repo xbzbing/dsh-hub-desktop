@@ -14,17 +14,10 @@ import {
   SETTINGS_IPC,
   SSH_IPC,
   VAULT_IPC,
-  type AskpassPromptPayload,
-  type AuthSignalEvent,
-  type AuthStateEvent,
   type AuthStateSnapshot,
   type HostKeyDecision,
-  type HostKeyPromptPayload,
   type HttpAuthDetection,
-  type InstanceStatusEvent,
-  type DshVersionProgressEvent,
   type RuntimeConfirmPromptPayload,
-  type WorkspaceHotkeyEvent,
   type IpcResult,
   type SshHostKeyForgetInput,
   type SshKeyPreviewInput,
@@ -33,6 +26,16 @@ import {
   type VaultStatusSnapshot,
   type WorkspaceTooltip
 } from '@shared/contracts'
+
+/**
+ * 订阅主进程事件，返回取消订阅函数。
+ * 只把载荷转给渲染层，不透传 IpcRendererEvent（其中含 sender 等能力对象）。
+ */
+const subscribe = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
+  const handler = (_event: unknown, payload: T): void => listener(payload)
+  ipcRenderer.on(channel, handler)
+  return () => ipcRenderer.removeListener(channel, handler)
+}
 
 /**
  * 白名单桥接：只暴露本文件内显式列出的方法，通道名一律走共享常量，
@@ -74,62 +77,25 @@ const bridge: DshHubBridge = {
     checkDshVersion: (id: string) => ipcRenderer.invoke(DSH_VERSION_IPC.check, id),
     upgradeDshVersion: (id: string) => ipcRenderer.invoke(DSH_VERSION_IPC.upgrade, id),
     listDshVersions: () => ipcRenderer.invoke(DSH_VERSION_IPC.list),
-    onRuntimeConfirm: (listener) => {
-      const handler = (_event: unknown, payload: RuntimeConfirmPromptPayload): void => listener(payload)
-      ipcRenderer.on(DSH_VERSION_IPC.confirmRequest, handler)
-      return () => {
-        ipcRenderer.removeListener(DSH_VERSION_IPC.confirmRequest, handler)
-      }
-    },
+    onRuntimeConfirm: (listener) => subscribe(DSH_VERSION_IPC.confirmRequest, listener),
     listRuntimeConfirms: () =>
       ipcRenderer.invoke(DSH_VERSION_IPC.confirmList) as Promise<IpcResult<RuntimeConfirmPromptPayload[]>>,
     replyRuntimeConfirm: (requestId: string, accepted: boolean) =>
       ipcRenderer.invoke(DSH_VERSION_IPC.confirmReply, requestId, accepted)
   },
-  onInstanceStatus: (listener) => {
-    // 只把载荷转给渲染层，不透传 IpcRendererEvent（其中含 sender 等能力对象）
-    const handler = (_event: unknown, payload: InstanceStatusEvent): void => listener(payload)
-    ipcRenderer.on(INSTANCE_STATUS_EVENT, handler)
-    return () => {
-      ipcRenderer.removeListener(INSTANCE_STATUS_EVENT, handler)
-    }
-  },
-  onVersionProgress: (listener) => {
-    const handler = (_event: unknown, payload: DshVersionProgressEvent): void => listener(payload)
-    ipcRenderer.on(DSH_VERSION_PROGRESS_EVENT, handler)
-    return () => {
-      ipcRenderer.removeListener(DSH_VERSION_PROGRESS_EVENT, handler)
-    }
-  },
-  onWorkspaceHotkey: (listener) => {
-    const handler = (_event: unknown, payload: WorkspaceHotkeyEvent): void => listener(payload)
-    ipcRenderer.on(WORKSPACE_HOTKEY_EVENT, handler)
-    return () => {
-      ipcRenderer.removeListener(WORKSPACE_HOTKEY_EVENT, handler)
-    }
-  },
+  onInstanceStatus: (listener) => subscribe(INSTANCE_STATUS_EVENT, listener),
+  onVersionProgress: (listener) => subscribe(DSH_VERSION_PROGRESS_EVENT, listener),
+  onWorkspaceHotkey: (listener) => subscribe(WORKSPACE_HOTKEY_EVENT, listener),
   ssh: {
     keyPreview: (input: SshKeyPreviewInput) =>
       ipcRenderer.invoke(SSH_IPC.keyPreview, input) as Promise<IpcResult<SshKeyPreviewResult>>,
-    onHostKeyDecision: (listener) => {
-      const handler = (_event: unknown, payload: HostKeyPromptPayload): void => listener(payload)
-      ipcRenderer.on(SSH_IPC.hostKeyDecision, handler)
-      return () => {
-        ipcRenderer.removeListener(SSH_IPC.hostKeyDecision, handler)
-      }
-    },
+    onHostKeyDecision: (listener) => subscribe(SSH_IPC.hostKeyDecision, listener),
     replyHostKey: (requestId: string, decision: HostKeyDecision) =>
       ipcRenderer.invoke(SSH_IPC.hostKeyReply, requestId, decision),
     // 显式恢复动作：删除本机保存的主机指纹，下次连接重新执行 TOFU。
     forgetHostKey: (input: SshHostKeyForgetInput) =>
       ipcRenderer.invoke(SSH_IPC.hostKeyForget, input) as Promise<IpcResult<null>>,
-    onAskpassRequest: (listener) => {
-      const handler = (_event: unknown, payload: AskpassPromptPayload): void => listener(payload)
-      ipcRenderer.on(SSH_IPC.askpassRequest, handler)
-      return () => {
-        ipcRenderer.removeListener(SSH_IPC.askpassRequest, handler)
-      }
-    },
+    onAskpassRequest: (listener) => subscribe(SSH_IPC.askpassRequest, listener),
     replyAskpass: (requestId: string, secret: string | null) =>
       ipcRenderer.invoke(SSH_IPC.askpassReply, requestId, secret)
   },
@@ -151,20 +117,8 @@ const bridge: DshHubBridge = {
       >,
     logout: (instanceId: string) =>
       ipcRenderer.invoke(AUTH_IPC.logout, instanceId) as Promise<IpcResult<AuthStateSnapshot | null>>,
-    onState: (listener) => {
-      const handler = (_event: unknown, payload: AuthStateEvent): void => listener(payload)
-      ipcRenderer.on(AUTH_IPC.state, handler)
-      return () => {
-        ipcRenderer.removeListener(AUTH_IPC.state, handler)
-      }
-    },
-    onSignal: (listener) => {
-      const handler = (_event: unknown, payload: AuthSignalEvent): void => listener(payload)
-      ipcRenderer.on(AUTH_IPC.signal, handler)
-      return () => {
-        ipcRenderer.removeListener(AUTH_IPC.signal, handler)
-      }
-    }
+    onState: (listener) => subscribe(AUTH_IPC.state, listener),
+    onSignal: (listener) => subscribe(AUTH_IPC.signal, listener)
   },
   // 非敏感应用偏好：语言、主题、托盘、自启和通知。
   settings: {
