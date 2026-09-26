@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
-import { httpHealthProbe } from './probe'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { httpHealthProbe, retryProbe } from './probe'
 
 const servers: Array<ReturnType<typeof createServer>> = []
 
@@ -58,5 +58,62 @@ describe('httpHealthProbe（）', () => {
 
   it('连接被拒 = 未就绪', async () => {
     expect(await httpHealthProbe('http://127.0.0.1:1/', 500)).toBe(false)
+  })
+})
+
+describe('retryProbe', () => {
+  const base = { url: 'http://127.0.0.1:1/', timeoutMs: 10, retryMs: 1 }
+
+  it('首次即就绪：只探测一次', async () => {
+    const probe = vi.fn(async () => true)
+    await expect(retryProbe({ ...base, probe, retries: 5, shouldAbort: () => false })).resolves.toBe(true)
+    expect(probe).toHaveBeenCalledTimes(1)
+  })
+
+  it('前几次失败后就绪：按次数重试，成功即停', async () => {
+    let calls = 0
+    const probe = async (): Promise<boolean> => {
+      calls += 1
+      return calls >= 3
+    }
+    await expect(retryProbe({ ...base, probe, retries: 5, shouldAbort: () => false })).resolves.toBe(true)
+    expect(calls).toBe(3)
+  })
+
+  it('次数用尽：返回 false 且不多探测', async () => {
+    let calls = 0
+    const probe = async (): Promise<boolean> => {
+      calls += 1
+      return false
+    }
+    await expect(retryProbe({ ...base, probe, retries: 3, shouldAbort: () => false })).resolves.toBe(false)
+    expect(calls).toBe(3)
+  })
+
+  it('循环前已中止：返回 null 且不探测', async () => {
+    const probe = vi.fn(async () => true)
+    await expect(retryProbe({ ...base, probe, retries: 3, shouldAbort: () => true })).resolves.toBeNull()
+    expect(probe).not.toHaveBeenCalled()
+  })
+
+  it('循环结束后才中止：即便已就绪也返回 null', async () => {
+    let aborted = false
+    const probe = async (): Promise<boolean> => {
+      aborted = true
+      return true
+    }
+    await expect(retryProbe({ ...base, probe, retries: 3, shouldAbort: () => aborted })).resolves.toBeNull()
+  })
+
+  it('末次探测后不再等待（retries=1 不触发重试间隔）', async () => {
+    const started = Date.now()
+    await retryProbe({
+      ...base,
+      probe: async () => false,
+      retries: 1,
+      retryMs: 60_000,
+      shouldAbort: () => false
+    })
+    expect(Date.now() - started).toBeLessThan(1_000)
   })
 })
