@@ -505,82 +505,82 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
   ): Promise<void> {
     let allocatedPort: number | null = null
     try {
-  emit(id, 'starting', { detail: '分配本地端口' })
-  const localPort = await allocLocalPort(instance)
-  allocatedPort = localPort
-  if (cancelIfRequested()) {
-    reservedPorts.delete(localPort)
-    emit(id, 'stopped', { detail: '已取消启动' })
-    return
-  }
-  // known_hosts 落在 dataRoot/ssh（文件,无长度问题）;control socket 目录可能退化到 tmpdir
-  await mkdir(join(dataRoot, 'ssh'), { recursive: true })
-  await mkdir(socketsDirFor(dataRoot), { recursive: true })
-  if (cancelIfRequested()) {
-    reservedPorts.delete(localPort)
-    emit(id, 'stopped', { detail: '已取消启动' })
-    return
-  }
-  const entry: TunnelEntry = {
-    id,
-    child: null,
-    localPort,
-    remoteLabel: `${instance.host}:${instance.remotePort}`,
-    url: sshTunnelEndpoint(localPort),
-    log: [],
-    buffer: '',
-    ready: false,
-    stopping: false,
-    reconnectScheduled: false,
-    reconnectTimer: null,
-    backoffMs: backoffBaseMs,
-    stableSince: null,
-    pendingReason: null,
-    forwardFailed: false,
-    reconnectCount: 0,
-    reconnecting: false,
-    askpassServer: null,
-    askpassWrapperPath: null,
-    // 短名 + 目标哈希:同一目标的多实例/多连接天然复用同一条主连接(ControlMaster=auto)
-    controlPath: join(socketsDirFor(dataRoot), `ctl-${controlSlug(instance)}`)
-  }
-  emit(id, 'starting', { detail: '校验服务器指纹' })
-  const trusted = await ensureTrust(instance, (detail) => emit(id, 'starting', { detail }))
-  if (!trusted) {
-    reservedPorts.delete(localPort)
-    emit(id, 'error', { detail: '服务器指纹未确认（或已变化），已拒绝连接' })
-    return
-  }
-  if (cancelIfRequested()) {
-    reservedPorts.delete(localPort)
-    emit(id, 'stopped', { detail: '已取消启动' })
-    return
-  }
-  entry.askpassServer = await startAskpassFor(entry).catch((error: unknown) => {
-    // 口令通道不可用时必须让用户看见:否则需要口令的主机会以「鉴权失败」静默失败
-    console.error('[ssh-tunnel] askpass 通道启动失败：', error)
-    emit(id, 'starting', { detail: '口令输入通道不可用，将尝试非交互认证（agent / 免密密钥）' })
-    return null
-  })
-  entries.set(id, entry)
-  emit(id, 'starting', {
-    detail: `建立 SSH 隧道（${localPort} → ${entry.remoteLabel}）`
-  })
-  // spawn 前清除可能残留的 ControlPath（重启场景）
-  await rm(entry.controlPath, { force: true }).catch(() => undefined)
-  // stop()/stopAll()/实例删除可能正好落在上面这个 await 窗口内:条目已被 stop 从
-  // entries 摘除并标记 stopping,spawn 却还没发生。此时若照常 spawn,这个 ssh 子进程
-  // 就成了 stop() 再也找不到的孤儿（一直占着转发端口），而 UI 早已显示「隧道已停止」。
-  // 与 reconnectInner 同款守卫；放弃时必须把本次已获取的资源按 stop() 的做法全部回滚。
-  const cancelPending = cancelIfRequested()
-  if (entry.stopping || cancelPending) {
-    disposeEntry(entry, { dropControlPath: true })
-    emit(id, 'stopped', { detail: '已取消启动' })
-    return
-  }
-  const child = spawnSsh(entry, instance)
-  entry.child = child
-  await waitForReady(entry, child)
+      emit(id, 'starting', { detail: '分配本地端口' })
+      const localPort = await allocLocalPort(instance)
+      allocatedPort = localPort
+      if (cancelIfRequested()) {
+        reservedPorts.delete(localPort)
+        emit(id, 'stopped', { detail: '已取消启动' })
+        return
+      }
+      // known_hosts 落在 dataRoot/ssh（文件,无长度问题）;control socket 目录可能退化到 tmpdir
+      await mkdir(join(dataRoot, 'ssh'), { recursive: true })
+      await mkdir(socketsDirFor(dataRoot), { recursive: true })
+      if (cancelIfRequested()) {
+        reservedPorts.delete(localPort)
+        emit(id, 'stopped', { detail: '已取消启动' })
+        return
+      }
+      const entry: TunnelEntry = {
+        id,
+        child: null,
+        localPort,
+        remoteLabel: `${instance.host}:${instance.remotePort}`,
+        url: sshTunnelEndpoint(localPort),
+        log: [],
+        buffer: '',
+        ready: false,
+        stopping: false,
+        reconnectScheduled: false,
+        reconnectTimer: null,
+        backoffMs: backoffBaseMs,
+        stableSince: null,
+        pendingReason: null,
+        forwardFailed: false,
+        reconnectCount: 0,
+        reconnecting: false,
+        askpassServer: null,
+        askpassWrapperPath: null,
+        // 短名 + 目标哈希:同一目标的多实例/多连接天然复用同一条主连接(ControlMaster=auto)
+        controlPath: join(socketsDirFor(dataRoot), `ctl-${controlSlug(instance)}`)
+      }
+      emit(id, 'starting', { detail: '校验服务器指纹' })
+      const trusted = await ensureTrust(instance, (detail) => emit(id, 'starting', { detail }))
+      if (!trusted) {
+        reservedPorts.delete(localPort)
+        emit(id, 'error', { detail: '服务器指纹未确认（或已变化），已拒绝连接' })
+        return
+      }
+      if (cancelIfRequested()) {
+        reservedPorts.delete(localPort)
+        emit(id, 'stopped', { detail: '已取消启动' })
+        return
+      }
+      entry.askpassServer = await startAskpassFor(entry).catch((error: unknown) => {
+        // 口令通道不可用时必须让用户看见:否则需要口令的主机会以「鉴权失败」静默失败
+        console.error('[ssh-tunnel] askpass 通道启动失败：', error)
+        emit(id, 'starting', { detail: '口令输入通道不可用，将尝试非交互认证（agent / 免密密钥）' })
+        return null
+      })
+      entries.set(id, entry)
+      emit(id, 'starting', {
+        detail: `建立 SSH 隧道（${localPort} → ${entry.remoteLabel}）`
+      })
+      // spawn 前清除可能残留的 ControlPath（重启场景）
+      await rm(entry.controlPath, { force: true }).catch(() => undefined)
+      // stop()/stopAll()/实例删除可能正好落在上面这个 await 窗口内:条目已被 stop 从
+      // entries 摘除并标记 stopping,spawn 却还没发生。此时若照常 spawn,这个 ssh 子进程
+      // 就成了 stop() 再也找不到的孤儿（一直占着转发端口），而 UI 早已显示「隧道已停止」。
+      // 与 reconnectInner 同款守卫；放弃时必须把本次已获取的资源按 stop() 的做法全部回滚。
+      const cancelPending = cancelIfRequested()
+      if (entry.stopping || cancelPending) {
+        disposeEntry(entry, { dropControlPath: true })
+        emit(id, 'stopped', { detail: '已取消启动' })
+        return
+      }
+      const child = spawnSsh(entry, instance)
+      entry.child = child
+      await waitForReady(entry, child)
     } catch (error) {
       if (allocatedPort !== null) reservedPorts.delete(allocatedPort)
       emit(id, 'error', {
