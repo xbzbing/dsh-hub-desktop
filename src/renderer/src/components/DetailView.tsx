@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { tryParseEndpoint } from '@shared/endpoint'
+import { isCleartextEndpoint } from '@shared/endpoint'
 import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, addressOf, fmtLogTime, toDisplayStatus } from '../lib/format'
 import { useAppStore, type ActivityLine } from '../store'
@@ -11,15 +11,6 @@ import { DshVersionCheckButton, DshVersionPanel } from './DshVersionControl'
 import { useDshVersionControl } from './useDshVersionControl'
 import { PHASE_KEYS } from '../lib/version-phases'
 import { showAuthActions } from '../lib/auth-actions'
-
-/**
- * 直连 HTTP 远程实例使用明文数据连接，需要显示警告。
- * 协议判定复用共享端点解析；解析失败时不显示警告以避免误报。
- */
-function isCleartextEndpoint(endpointUrl: string): boolean {
-  const parsed = tryParseEndpoint(endpointUrl)
-  return parsed.ok && parsed.endpoint.scheme === 'http'
-}
 
 /** 实例详情。 */
 export default function DetailView(): ReactNode {
@@ -139,6 +130,10 @@ export default function DetailView(): ReactNode {
       ? (status?.command ?? record.runCommand ?? null)
       : null
 
+  /** 重启与关闭只针对 hub 拉起的运行中本地进程；外部接管的进程归用户所有。 */
+  const canControlRuntime =
+    record.transport === 'local' && status?.status === 'running' && status.runtimeSource !== 'external'
+
   const copyAddress = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(addressOf(record))
@@ -181,10 +176,6 @@ export default function DetailView(): ReactNode {
     } catch {
       toast('err', t('detail.copyFailed'))
     }
-  }
-
-  const disconnectView = async (): Promise<void> => {
-    await disconnectWorkspace(record.id)
   }
 
   /** 重启 hub 托管的本地 dsh 进程；进程归用户所有的外部接管实例不提供该操作。 */
@@ -379,7 +370,7 @@ export default function DetailView(): ReactNode {
             <button
               className="btn btn-secondary btn-sm"
               data-testid="disconnect-view-btn"
-              onClick={() => void disconnectView()}
+              onClick={() => void disconnectWorkspace(record.id)}
             >
               <Icon name="close" /> {t('detail.disconnect')}
             </button>
@@ -460,7 +451,7 @@ export default function DetailView(): ReactNode {
                   : t('detail.startWorkspace')}
             </button>
             {/* 重启只针对 hub 拉起的运行中进程；外部接管的进程归用户所有。 */}
-            {record.transport === 'local' && status?.status === 'running' && status.runtimeSource !== 'external' && (
+            {canControlRuntime && (
               <button
                 className="btn btn-danger btn-sm"
                 onClick={() => void restartRuntime()}
@@ -471,7 +462,7 @@ export default function DetailView(): ReactNode {
               </button>
             )}
             {/* 关闭实例：断开工作区并停止 hub 托管的运行中进程；外部接管进程归用户所有，不提供。 */}
-            {record.transport === 'local' && status?.status === 'running' && status.runtimeSource !== 'external' && (
+            {canControlRuntime && (
               <button
                 className="btn btn-danger btn-sm"
                 onClick={() => void stopRuntime()}

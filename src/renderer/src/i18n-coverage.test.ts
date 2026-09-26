@@ -904,7 +904,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/local-runtime/local-runtime.ts', "detail: '实例已在运行，忽略重复接管'"),
   debt('src/shared/contracts.ts', ".min(1, '配置档案不能为空')"),
   debt('src/shared/contracts.ts', ".max(128, '配置档案最长 128 字符')"),
-  debt('src/shared/contracts.ts', ".regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, '配置档案只能是相对路径，且不能以 - 开头')"),
+  debt('src/shared/contracts.ts', ".regex(PROFILE_PATTERN, '配置档案只能是相对路径，且不能以 - 开头')"),
   debt('src/shared/contracts.ts', ".refine((value) => !value.split('/').includes('..'), '配置档案不能包含 ..')"),
   debt('src/shared/settings.ts', ".refine((value) => value === '' || isAllowedNpmRegistry(value), '镜像地址必须是 https URL')"),
 

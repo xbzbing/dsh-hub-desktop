@@ -72,12 +72,24 @@ const SSH_HOST_SCHEMA = z
   .refine((value) => !value.startsWith('-'), 'SSH 主机不能以 - 开头')
   .refine(isValidSshHost, 'host[:port] 形态的端口必须在 1–65535，或主机名不含冒号')
 
+/** 配置档案：首字符必须是字母数字，其余允许字母数字与 `.` `_` `/` `-`。 */
+export const PROFILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+
+/**
+ * 配置档案的形态校验（内部 trim）：匹配 `PROFILE_PATTERN` 且不含 `..` 段。
+ * 创建向导与编辑对话框在提交前自查，`SAFE_PROFILE_SCHEMA` 在 IPC 边界再校一次。
+ */
+export function isValidProfile(value: string): boolean {
+  const profile = value.trim()
+  return PROFILE_PATTERN.test(profile) && !profile.split('/').includes('..')
+}
+
 const SAFE_PROFILE_SCHEMA = z
   .string()
   .trim()
   .min(1, '配置档案不能为空')
   .max(128, '配置档案最长 128 字符')
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, '配置档案只能是相对路径，且不能以 - 开头')
+  .regex(PROFILE_PATTERN, '配置档案只能是相对路径，且不能以 - 开头')
   .refine((value) => !value.split('/').includes('..'), '配置档案不能包含 ..')
 
 const instanceBaseFields = {

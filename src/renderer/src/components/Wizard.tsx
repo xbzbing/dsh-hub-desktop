@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { CreateInstanceInput, DshVersionCatalog } from '@shared/contracts'
-import { tryParseEndpoint } from '@shared/endpoint'
+import { isValidProfile, type CreateInstanceInput, type DshVersionCatalog } from '@shared/contracts'
+import { isCleartextEndpoint, tryParseEndpoint } from '@shared/endpoint'
 import { REGISTRY_PRESETS } from '@shared/settings'
 import { LAUNCHERS, type LocalLauncher } from '@shared/local-launch'
 import { Icon } from '../lib/icons'
@@ -51,15 +51,6 @@ const EMPTY_FORM: WizardForm = {
 function registryOptionKey(url: string): string {
   if (url === '') return 'system'
   return REGISTRY_PRESETS.some((preset) => preset.value === url) ? url : 'custom'
-}
-
-/**
- * 直连 HTTP 使用明文数据连接，需要在保存前显示警告。
- * 共享端点解析会将省略协议的地址视为 HTTP；HTTPS 和解析失败时不显示警告。
- */
-function isCleartextEndpoint(endpointUrl: string): boolean {
-  const parsed = tryParseEndpoint(endpointUrl)
-  return parsed.ok && parsed.endpoint.scheme === 'http'
 }
 
 /** 创建向导：选择类型、填写表单并确认创建；本地实例创建后自动启动并打开窗口。 */
@@ -153,7 +144,7 @@ export default function Wizard(): ReactNode {
   useEffect(() => {
     if (settingsLoaded) return
     void window.dshHub?.settings.get().then((result) => {
-      if (result.ok && !settingsLoaded) {
+      if (result.ok) {
         setForm((current) => ({
           ...current,
           registry: current.registry === '' ? (result.value.npmRegistry ?? '') : current.registry
@@ -208,7 +199,7 @@ export default function Wizard(): ReactNode {
       transport === 'local' &&
       !useExistingExternal &&
       form.profile.trim() !== '' &&
-      (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(form.profile.trim()) || form.profile.trim().split('/').includes('..'))
+      !isValidProfile(form.profile)
     ) {
       return t('wizard.errProfile')
     }
