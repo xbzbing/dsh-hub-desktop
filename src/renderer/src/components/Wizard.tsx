@@ -231,23 +231,26 @@ export default function Wizard(): ReactNode {
     if (existingExternalInstance) {
       setBusy(true)
       setError(null)
-      if (!externalWorkspace) {
-        setError(t('wizard.errExternalAccess'))
+      try {
+        if (!externalWorkspace) {
+          setError(t('wizard.errExternalAccess'))
+          return
+        }
+        const adopted = await bridge.runtime.adoptExternal(
+          existingExternalInstance.id,
+          externalWorkspace.pid,
+          form.externalAccess.trim()
+        )
+        if (!adopted.ok) {
+          setError(adopted.message)
+          return
+        }
+        setWizardOpen(false)
+        void openWorkspace(existingExternalInstance.id)
         return
+      } finally {
+        setBusy(false)
       }
-      const adopted = await bridge.runtime.adoptExternal(
-        existingExternalInstance.id,
-        externalWorkspace.pid,
-        form.externalAccess.trim()
-      )
-      setBusy(false)
-      if (!adopted.ok) {
-        setError(adopted.message)
-        return
-      }
-      setWizardOpen(false)
-      void openWorkspace(existingExternalInstance.id)
-      return
     }
     const problem = formError()
     if (problem) {
@@ -291,8 +294,7 @@ export default function Wizard(): ReactNode {
 
     setBusy(true)
     setError(null)
-    const result = await bridge.instances.create(input)
-    setBusy(false)
+    const result = await bridge.instances.create(input).finally(() => setBusy(false))
     if (!result.ok) {
       setError(result.message)
       setStep(2)
