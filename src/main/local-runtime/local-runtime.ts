@@ -16,7 +16,7 @@ import type {
 import { redactLine } from '@shared/redact'
 import { DEFAULT_PORT_RANGE_END, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
-import type { RuntimeInstaller } from './runtime-installer'
+import type { InstallProgress, RuntimeInstaller } from './runtime-installer'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 import { followsSystemDsh, isExternalRuntime, resolveSystemDshUsage } from './dsh-source-policy'
 import { resolveCmdShim } from './cmd-shim'
@@ -273,6 +273,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const stopAllDrainMs = options.stopAllDrainMs ?? 10_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
+  // 重试次数默认值与 HTTP 端点（3 次，见 transport/http-endpoint.ts）不同，调整前先确认两侧差异是否有意。
   const healthProbeRetries = options.healthProbeRetries ?? 5
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
   const portProbe = options.portProbe
@@ -505,6 +506,32 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       if (upgradingIds.has(id)) return
       upgradingIds.add(id)
       const at = (): string => new Date(now()).toISOString()
+      /**
+       * 升级主序列：运行中先停 → 下载安装 → 回写版本 → 原样重启，末尾 done=100。
+       * 两条升级路径共用；`checking` 由各分支自行发出 —— 系统升级要等二次确认之后
+       * 才有进度，隔离升级则要在解析版本之前就给出反馈。
+       */
+      const runUpgrade = async (
+        version: string,
+        install: (onProgress: (progress: InstallProgress) => void) => Promise<unknown>
+      ): Promise<void> => {
+        const wasRunning = this.statusOf(id)?.status === 'running'
+        if (wasRunning) await this.stop(id)
+        emitUpgrade({ instanceId: id, phase: 'downloading', version, percent: 0, at: at() })
+        await install((progress) => {
+          emitUpgrade({
+            instanceId: id,
+            phase: 'installing',
+            version,
+            percent: progress.percent ?? 0,
+            detail: progress.detail,
+            at: at()
+          })
+        })
+        await options.store.update(id, { dshVersion: version })
+        if (wasRunning) await this.start({ ...instance, dshVersion: version })
+        emitUpgrade({ instanceId: id, phase: 'done', version, percent: 100, at: at() })
+      }
       try {
         // 升级对象经 dsh-source-policy 判定，与版本检查、启动路径共用同一判据：
         // 结论为「系统默认 dsh」时升级全局 npm 安装，所有共用该 dsh 的实例与终端
@@ -543,43 +570,12 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           const confirmed = await options.confirmSystemUpgrade?.(newest, system.version)
           if (confirmed !== true) return
           emitUpgrade({ instanceId: id, phase: 'checking', at: at() })
-          const wasRunning = this.statusOf(id)?.status === 'running'
-          if (wasRunning) await this.stop(id)
-          emitUpgrade({ instanceId: id, phase: 'downloading', version: newest, percent: 0, at: at() })
-          await options.installer.installGlobal(prefix, newest, (progress) => {
-            emitUpgrade({
-              instanceId: id,
-              phase: 'installing',
-              version: newest,
-              percent: progress.percent ?? 0,
-              detail: progress.detail,
-              at: at()
-            })
-          })
-          await options.store.update(id, { dshVersion: newest })
-          if (wasRunning) await this.start({ ...instance, dshVersion: newest })
-          emitUpgrade({ instanceId: id, phase: 'done', version: newest, percent: 100, at: at() })
+          await runUpgrade(newest, (onProgress) => options.installer.installGlobal(prefix, newest, onProgress))
           return
         }
         emitUpgrade({ instanceId: id, phase: 'checking', at: at() })
         const latest = await options.installer.resolveLatestVersion()
-        // 运行中升级 = 停 → 装 → 自动重启；停止态只安装并回写。
-        const wasRunning = this.statusOf(id)?.status === 'running'
-        if (wasRunning) await this.stop(id)
-        emitUpgrade({ instanceId: id, phase: 'downloading', version: latest, percent: 0, at: at() })
-        await options.installer.ensureInstalled(latest, (progress) => {
-          emitUpgrade({
-            instanceId: id,
-            phase: 'installing',
-            version: latest,
-            percent: progress.percent ?? 0,
-            detail: progress.detail,
-            at: at()
-          })
-        })
-        await options.store.update(id, { dshVersion: latest })
-        if (wasRunning) await this.start({ ...instance, dshVersion: latest })
-        emitUpgrade({ instanceId: id, phase: 'done', version: latest, percent: 100, at: at() })
+        await runUpgrade(latest, (onProgress) => options.installer.ensureInstalled(latest, onProgress))
       } catch (error) {
         emitUpgrade({
           instanceId: id,

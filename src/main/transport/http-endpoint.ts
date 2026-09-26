@@ -40,6 +40,7 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
   const probe = options.probe ?? httpHealthProbe
   const detect = options.detect ?? ((url: string) => detectAuthMode(url))
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
+  // 重试次数默认值与本机实例（5 次，见 local-runtime/local-runtime.ts）不同，调整前先确认两侧差异是否有意。
   const healthProbeRetries = options.healthProbeRetries ?? 3
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
   const now = options.now ?? (() => Date.now())
