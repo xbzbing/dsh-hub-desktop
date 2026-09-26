@@ -30,6 +30,12 @@ import type { HttpEndpointManager } from '../transport/http-endpoint'
 import type { Vault } from '../vault/vault'
 import type { AuditEntry } from '../audit/audit-log'
 import {
+  EXTERNAL_ACCESS_TOKEN_INVALID,
+  LISTEN_PORT_UNDETERMINED,
+  SCANNER_UNAVAILABLE,
+  notFoundDshPid
+} from './errors'
+import {
   defaultVerifyExternalAccess,
   externalAccessToken,
   externalAccessUrl,
@@ -292,17 +298,17 @@ export function registerRuntimeHandlers(
           throw new InstanceStoreError('invalid-input', '只有本地实例才能接管本机 dsh web')
         }
         if (!deps.externalDshScanner) {
-          throw new InstanceStoreError('invalid-state', '本机进程探测能力不可用')
+          throw new InstanceStoreError('invalid-state', SCANNER_UNAVAILABLE)
         }
         // 关键:端口/patch **不采信渲染层** —— 重新扫描并按 pid 认定,
         // 渲染层无法借这个通道让 hub 去连任意地址
         const found = await deps.externalDshScanner.scan()
         const match = found.find((item) => item.pid === targetPid)
         if (!match) {
-          throw new InstanceStoreError('not-found', `未找到 pid ${targetPid} 的 dsh web 进程`)
+          throw new InstanceStoreError('not-found', notFoundDshPid(targetPid))
         }
         if (match.port === null) {
-          throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')
+          throw new InstanceStoreError('invalid-state', LISTEN_PORT_UNDETERMINED)
         }
         const previousAccess = externalAccessUrls.get(instanceId)
         const previousToken = deps.vault.getExternalAccessToken(instanceId)
@@ -320,7 +326,7 @@ export function registerRuntimeHandlers(
         const accessUrl = externalAccessUrl(token, match.port)
         if (!(await (deps.verifyExternalAccess ?? defaultVerifyExternalAccess)(accessUrl))) {
           if (usingStoredToken) await deps.vault.forgetExternalAccessToken(instanceId)
-          throw new InstanceStoreError('invalid-state', '访问 token 无效，请重新输入')
+          throw new InstanceStoreError('invalid-state', EXTERNAL_ACCESS_TOKEN_INVALID)
         }
         // 先持久化新 token，再拆除旧接管；持久化失败时当前可用会话完全不受影响。
         if (!usingStoredToken) await deps.vault.rememberExternalAccessToken(instanceId, token)

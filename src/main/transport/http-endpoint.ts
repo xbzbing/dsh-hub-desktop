@@ -4,11 +4,12 @@
  * 远程实例没有本地进程可管：`start` = 校验端点 → 健康探测 → 认证模式探测
  * → 发布 running（携带探测结论）；`stop` = 发布 stopped（无进程回收）。
  */
-import type { HttpInstance, InstanceRuntimeStatus, InstanceStatusEvent } from '@shared/contracts'
+import type { HttpInstance, InstanceStatusEvent } from '@shared/contracts'
 import { parseEndpointUrl } from '@shared/endpoint'
 import { detectAuthMode, type AuthDetection } from '../auth/detect'
 import { httpDirectEndpoint } from './endpoint-resolver'
-import { httpHealthProbe, sleep, type HealthProbe } from './probe'
+import { httpHealthProbe, retryProbe, type HealthProbe } from './probe'
+import { createStatusBus } from './status-bus'
 
 export interface HttpEndpointOptions {
   probe?: HealthProbe
@@ -40,30 +41,19 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
   const probe = options.probe ?? httpHealthProbe
   const detect = options.detect ?? ((url: string) => detectAuthMode(url))
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
-  // 重试次数默认值与本机实例（5 次，见 local-runtime/local-runtime.ts）不同，调整前先确认两侧差异是否有意。
+  // 重试次数默认 3 次；本机实例为 5 次，差异说明见 probe.ts 的 retryProbe。
   const healthProbeRetries = options.healthProbeRetries ?? 3
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
   const now = options.now ?? (() => Date.now())
 
   const entries = new Map<string, Entry>()
-  const statuses = new Map<string, InstanceStatusEvent>()
-  const listeners = new Set<(event: InstanceStatusEvent) => void>()
   /** 同 id 启动串行链:并发 start 依次执行,保证 stop→start 的「重启」语义生效 */
   const startChains = new Map<string, Promise<void>>()
   /** 取消代号:stop() 递增;启动任务记录自己发起时的代号,若期间被 stop 则作废 */
   const cancelGen = new Map<string, number>()
 
-  function emit(id: string, status: InstanceRuntimeStatus, extra: Partial<InstanceStatusEvent> = {}): void {
-    const event: InstanceStatusEvent = { id, status, at: new Date(now()).toISOString(), ...extra }
-    statuses.set(id, event)
-    for (const listener of listeners) {
-      try {
-        listener(event)
-      } catch (error) {
-        console.error('[http-endpoint] 状态监听器抛错：', error)
-      }
-    }
-  }
+  const bus = createStatusBus(now, 'http-endpoint')
+  const { emit, onStatus, statusOf } = bus
 
   /** 探测结论 → 面向用户的一句话（不含凭据） */
   function detectionDetail(detection: AuthDetection): string {
@@ -96,14 +86,15 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
       entries.set(id, created)
       emit(id, 'starting', { detail: `校验端点 ${url}` })
 
-      let healthy = false
-      for (let attempt = 1; attempt <= healthProbeRetries; attempt++) {
-        if (cancelled() || created.stopping || !created.current()) return
-        healthy = await probe(url, healthTimeoutMs)
-        if (healthy) break
-        if (attempt < healthProbeRetries) await sleep(healthProbeRetryMs)
-      }
-      if (cancelled() || created.stopping || !created.current()) return
+      const healthy = await retryProbe({
+        url,
+        probe,
+        retries: healthProbeRetries,
+        retryMs: healthProbeRetryMs,
+        timeoutMs: healthTimeoutMs,
+        shouldAbort: () => cancelled() || created.stopping || !created.current()
+      })
+      if (healthy === null) return
       if (!healthy) {
         entries.delete(id)
         emit(id, 'error', { detail: `端点不可达：${url}（连接被拒或超时）`, url })
@@ -160,14 +151,8 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
   }
 
   return {
-    onStatus(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-
-    statusOf(id) {
-      return statuses.get(id) ?? null
-    },
+    onStatus,
+    statusOf,
 
     runningIds() {
       return [...entries.keys()]
@@ -177,7 +162,7 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
       const id = instance.id
       const existing = entries.get(id)
       if (existing) {
-        const current = statuses.get(id)
+        const current = statusOf(id)
         const running = current?.status === 'running'
         emit(id, running ? 'running' : 'starting', {
           url: existing.url,
@@ -193,7 +178,7 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
         if ((cancelGen.get(id) ?? 0) !== myGen || entries.get(id)?.stopping === true) return
         if (entries.has(id)) {
           const current = entries.get(id)
-          const status = statuses.get(id)
+          const status = statusOf(id)
           const running = status?.status === 'running'
           emit(id, running ? 'running' : 'starting', {
             ...(current ? { url: current.url } : {}),

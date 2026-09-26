@@ -331,6 +331,13 @@ export function createVault(options: VaultOptions): Vault {
     await persist()
   }
 
+  /** 读取并解密单个字段;字段未存或解密失败都返回 null。 */
+  function readStored(instanceId: string, field: VaultField): string | null {
+    load()
+    const payload = items.get(instanceId)?.[field]
+    return payload === undefined ? null : readField(instanceId, payload)
+  }
+
   return {
     status() {
       load()
@@ -350,9 +357,7 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     getPassword(instanceId) {
-      load()
-      const payload = items.get(instanceId)?.password
-      return payload === undefined ? null : readField(instanceId, payload)
+      return readStored(instanceId, 'password')
     },
 
     async forgetPassword(instanceId) {
@@ -371,9 +376,7 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     getExternalAccessToken(instanceId) {
-      load()
-      const payload = items.get(instanceId)?.externalAccessToken
-      return payload === undefined ? null : readField(instanceId, payload)
+      return readStored(instanceId, 'externalAccessToken')
     },
 
     async forgetExternalAccessToken(instanceId) {
@@ -393,10 +396,7 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     getSession(instanceId) {
-      load()
-      const payload = items.get(instanceId)?.session
-      if (payload === undefined) return null
-      const plain = readField(instanceId, payload)
+      const plain = readStored(instanceId, 'session')
       if (plain === null) return null
       try {
         const parsed: unknown = JSON.parse(plain)

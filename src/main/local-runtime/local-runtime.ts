@@ -9,7 +9,6 @@ import { delimiter, dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import type {
   DshVersionProgressEvent,
-  InstanceRuntimeStatus,
   InstanceStatusEvent,
   LocalInstance
 } from '@shared/contracts'
@@ -24,7 +23,8 @@ import { planRuntimeSource, type PathProbe } from './runtime-source'
 import { searchNodeDirs } from './node-dirs'
 import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
 import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
-import { httpHealthProbe, type HealthProbe } from '../transport/probe'
+import { httpHealthProbe, retryProbe, type HealthProbe } from '../transport/probe'
+import { createStatusBus } from '../transport/status-bus'
 
 export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
 
@@ -183,6 +183,17 @@ interface Entry {
 /** 串行启动任务的结果：spawned=正常拉起；cancelled=排队期间被取消；duplicate=已被前一个任务拉起 */
 type StartOutcome = 'spawned' | 'cancelled' | 'duplicate'
 
+/** 启动来源解析结果：执行入口、显示用版本、来源标记与注入 wrapper 的 dsh。 */
+interface LaunchPlan {
+  version: string
+  runtimeSource: 'hub' | 'path'
+  scriptPath: string
+  /** 注入给 dush/duush 的 dsh 可执行文件；null = 不注入，由 wrapper 按 PATH 解析。 */
+  dshBin: string | null
+  /** 非默认启动器名（dush/duush 等）；null = 默认 dsh 启动器。 */
+  customLauncherName: string | null
+}
+
 const defaultSpawn: SpawnLike = ({ command, args, env, cwd, detached }) =>
   spawn(command, args, {
     env,
@@ -273,15 +284,13 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const stopAllDrainMs = options.stopAllDrainMs ?? 10_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
-  // 重试次数默认值与 HTTP 端点（3 次，见 transport/http-endpoint.ts）不同，调整前先确认两侧差异是否有意。
+  // 重试次数默认 5 次；HTTP 端点为 3 次，差异说明见 probe.ts 的 retryProbe。
   const healthProbeRetries = options.healthProbeRetries ?? 5
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
   const portProbe = options.portProbe
   const now = options.now ?? (() => Date.now())
 
   const entries = new Map<string, Entry>()
-  const statuses = new Map<string, InstanceStatusEvent>()
-  const listeners = new Set<(event: InstanceStatusEvent) => void>()
   const upgradeListeners = new Set<(event: DshVersionProgressEvent) => void>()
   /** 正在升级的实例；升级结束（含失败）即释放。 */
   const upgradingIds = new Set<string>()
@@ -310,22 +319,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     return next
   }
 
-  function emit(id: string, status: InstanceRuntimeStatus, extra: Partial<InstanceStatusEvent> = {}): void {
-    const event: InstanceStatusEvent = {
-      id,
-      status,
-      at: new Date(now()).toISOString(),
-      ...extra
-    }
-    statuses.set(id, event)
-    for (const listener of listeners) {
-      try {
-        listener(event)
-      } catch (error) {
-        console.error('[local-runtime] 状态监听器抛错：', error)
-      }
-    }
-  }
+  const bus = createStatusBus(now, 'local-runtime')
+  const { emit, onStatus, statusOf } = bus
 
   function emitUpgrade(event: DshVersionProgressEvent): void {
     for (const listener of upgradeListeners) {
@@ -418,19 +413,15 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
     // 下次 start 又 spawn 一个,两个 dsh 共享同一 DSH_HOME。
     const stale = (): boolean => entry.stopping || entries.get(id) !== entry
-    let healthy = false
-    for (let attempt = 1; attempt <= healthProbeRetries; attempt++) {
-      if (stale()) return
-      healthy = await probe(url, healthTimeoutMs)
-      if (healthy) break
-      if (attempt < healthProbeRetries) {
-        await new Promise<void>((resolve) => {
-          const delay = setTimeout(resolve, healthProbeRetryMs)
-          delay.unref?.()
-        })
-      }
-    }
-    if (stale()) return
+    const healthy = await retryProbe({
+      url,
+      probe,
+      retries: healthProbeRetries,
+      retryMs: healthProbeRetryMs,
+      timeoutMs: healthTimeoutMs,
+      shouldAbort: stale
+    })
+    if (healthy === null) return
     if (!healthy) {
       // 终局路径必须与超时路径对齐:杀进程、清条目、放行队列。
       // 缺失任一项都会造成 head-of-line 阻塞(下一个实例等到 readyTimer 触发)
@@ -489,12 +480,338 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     child.stderr?.on('data', onChunk('stderr'))
   }
 
-  return {
-    onStatus(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
+  /**
+   * 解析本次启动的运行时来源（dsh-source-policy）与执行入口。
+   * 返回 null 表示终态已由本函数发布（取消或下载未获确认），调用方直接结束本次启动。
+   */
+  async function resolveLaunch(
+    id: string,
+    gen: number,
+    instance: LocalInstance
+  ): Promise<LaunchPlan | null> {
+    emit(id, 'starting', { detail: '解析运行时来源' })
+    // dush/duush 由用户已安装的启动器直接执行；它实际加载的 dsh 由 hub 经 DSH_BIN 决定。
+    // 必须拿到**绝对路径**：裸命令名依赖 PATH 解析，而打包后 GUI 启动的 PATH 未必含用户 bin 目录。
+    const customLauncherName =
+      instance.launcher !== null && instance.launcher !== 'dsh' ? instance.launcher : null
+    const launcherRuntime = customLauncherName
+      ? ((await options.pathProbe?.probeLauncher?.(customLauncherName).catch(() => null)) ?? null)
+      : null
+    // 探测能力存在却没探到：裸命令名在打包后的 PATH 下注定 ENOENT（或被 node 包成
+    // MODULE_NOT_FOUND），直接给出可行动的失败原因，不再构造注定失败的调用。
+    if (
+      customLauncherName !== null &&
+      options.pathProbe?.probeLauncher !== undefined &&
+      launcherRuntime === null
+    ) {
+      throw new Error(`未找到启动器 ${customLauncherName}（PATH 与常见安装位置均未探到）`)
+    }
+    const customLauncher = customLauncherName
+      ? (launcherRuntime?.command ?? customLauncherName)
+      : null
+    // 启动来源判定与升级/版本检查共用 dsh-source-policy：公共空间 + 自定义启动器
+    // 固定跟随系统默认 dsh（PATH 实测），不装 hub 副本、不理会实例的固定版本；
+    // 隔离空间与默认启动器走同一套来源决策。
+    const followSystemDsh = followsSystemDsh(instance.useDefaultSpace, instance.launcher)
+    const [hubInstalled, pathRuntime] = await Promise.all([
+      followSystemDsh
+        ? Promise.resolve([] as string[])
+        : options.installer
+            .listInstalled()
+            .then((items) => items.map((item) => item.version))
+            .catch(() => [] as string[]),
+      options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
+    ])
+    const plan = followSystemDsh
+      ? pathRuntime === null
+        ? null
+        : {
+            kind: 'path' as const,
+            command: pathRuntime.command,
+            version: pathRuntime.version,
+            reason: 'unpinned-path-any' as const
+          }
+      : planRuntimeSource({
+          desiredVersion: instance.dshVersion,
+          hubInstalled,
+          pathRuntime
+        })
+    if ((cancelGeneration.get(id) ?? -1) >= gen) {
+      emit(id, 'stopped', { detail: '已取消启动' })
+      return null
+    }
 
+    // 统一收敛为:执行入口(wrapper 或 dsh) + 显示用 version + 来源标记 + 注入给 wrapper 的 DSH_BIN
+    let version: string
+    let runtimeSource: 'hub' | 'path'
+    let scriptPath: string
+    let dshBin: string | null = null
+    let resolved: { version: string; source: 'hub' | 'path'; command: string } | null = null
+    if (plan?.kind === 'path') {
+      resolved = { version: plan.version, source: 'path', command: plan.command }
+    } else if (plan?.kind === 'hub') {
+      resolved = { version: plan.version, source: 'hub', command: options.installer.resolveEntry(plan.version) }
+    } else if (plan?.kind === 'download') {
+      // download:目标版本(未固定时解析 registry latest),**必须经用户确认**
+      const target = plan.version ?? (await options.installer.resolveDefaultVersion())
+      emit(id, 'starting', { version: target, detail: `需要下载 dsh ${target}，等待确认` })
+      const confirmed = await options.confirmDownload?.(target)
+      if (confirmed !== true) {
+        emit(id, 'stopped', {
+          version: target,
+          detail: `需要下载 dsh ${target}，未获确认，已取消启动（hub 与 PATH 上均无可用运行时）`
+        })
+        return null
+      }
+      if ((cancelGeneration.get(id) ?? -1) >= gen) return null
+      resolved = { version: target, source: 'hub', command: options.installer.resolveEntry(target) }
+    }
+    if (customLauncher !== null) {
+      scriptPath = customLauncher
+      // 系统默认 dsh 未探到的公共实例退回旧显示:创建时选定的版本,未固定则保留 'custom' 占位。
+      version = resolved?.version ?? instance.dshVersion ?? 'custom'
+      runtimeSource = resolved?.source ?? 'path'
+      dshBin = resolved?.command ?? null
+    } else {
+      if (resolved === null) throw new Error('invalid-launcher')
+      scriptPath = resolved.command
+      version = resolved.version
+      runtimeSource = resolved.source
+    }
+    return { version, runtimeSource, scriptPath, dshBin, customLauncherName }
+  }
+
+  /**
+   * 队列内执行一次启动：查重 → 安装 → 分配端口 → spawn → 接管子进程事件 → 等到就绪/退出/超时。
+   * 段结束即放行队列里的下一个实例，此时端口与 DSH_HOME 已稳定。
+   */
+  async function spawnAndWatch(
+    id: string,
+    gen: number,
+    instance: LocalInstance,
+    launch: LaunchPlan
+  ): Promise<StartOutcome> {
+    const { version, runtimeSource, dshBin, customLauncherName } = launch
+    // .cmd shim 解析后要回写，故保持可变
+    let scriptPath = launch.scriptPath
+    // 队列内二次查重:同一 tick 并发 start(双击启动 / 向导自动启动与手动启动竞速)
+    // 时,第一次查重发生在首个 await 之前会双双通过,前一个任务可能已把该实例拉起
+    const already = entries.get(id)
+    if (already && !already.stopping) {
+      emit(id, already.ready ? 'running' : 'starting', {
+        version: already.version,
+        runtimeSource: already.runtimeSource,
+        ...(already.port !== null ? { port: already.port } : {}),
+        ...(already.command !== undefined ? { command: already.command } : {}),
+        detail: '实例已在运行，忽略重复启动'
+      })
+      return 'duplicate'
+    }
+    // Generation-based cancel: 取消点 >= 本任务的 generation 时取消
+    if ((cancelGeneration.get(id) ?? -1) >= gen) return 'cancelled'
+    emit(id, 'starting', {
+      version,
+      runtimeSource,
+      detail:
+        runtimeSource === 'path'
+          ? `使用本机 dsh ${version} 启动`
+          : `准备 dsh ${version} 运行时（首次需要安装，可能较慢）`
+    })
+    // path 来源运行的是用户本机安装,不需要(也不许)往应用隔离目录安装
+    if (runtimeSource === 'hub')
+      await options.installer.ensureInstalled(version, (progress) => {
+        emit(id, 'installing', { version: progress.version, detail: progress.detail })
+      })
+    if ((cancelGeneration.get(id) ?? -1) >= gen) return 'cancelled'
+
+    // 优先实例记录里用户选定的端口(向导高级设置);被占则向上递增,启动后仍回写实际端口。
+    // 用户端口可能落在默认区间(3080-30999)之外(如 dsh 自身默认 52300):
+    // 区间内被占递增到 30999;区间外则向 65535 递进,保证用户端口本身先被尝试,
+    // 否则该端口会被静默丢弃且每次启动都漂移新端口
+    const portStart = instance.port ?? DEFAULT_LOCAL_PORT
+    const portEnd = portStart > DEFAULT_PORT_RANGE_END ? 65_535 : DEFAULT_PORT_RANGE_END
+    const preferredPort = await findFreePort({
+      start: portStart,
+      end: portEnd,
+      probe: portProbe
+    }).catch(() => 0)
+    emit(id, 'starting', {
+      version,
+      runtimeSource,
+      detail:
+        preferredPort > 0
+          ? `分配端口并启动进程（端口 ${preferredPort}）`
+          : '分配端口并启动进程（端口区间不可用，改由 dsh 自动选择）'
+    })
+    const home = instance.useDefaultSpace
+      ? join(homeDir(), '.dsh')
+      : join(options.dataRoot, 'homes', id)
+    await mkdir(home, { recursive: true })
+
+    // --profile 会直接选择 web profile，不能再附加 web 子命令；所有参数由 Hub 构造，不经 shell 解释。
+    // 刻意不传 --host：由 dsh 自己的默认绑定决定（与用户直接运行 `dsh --profile web --port N --no-open` 一致）。
+    const profileArgs = ['--profile', instance.profile ?? profile]
+    const serverArgs = ['--port', String(preferredPort), '--no-open']
+    // win32 的 .cmd shim 无法被 spawn 直接执行（Node 命令注入防护）：解析出入口脚本
+    // 交给 node 直跑；解析失败立即失败，不构造注定 EINVAL/ENOENT 的调用。
+    if (scriptPath.toLowerCase().endsWith('.cmd')) {
+      const script = resolveCmdShim(scriptPath)
+      if (script === null) {
+        throw new Error(`无法解析启动器脚本（${scriptPath}）`)
+      }
+      scriptPath = script
+    }
+    // hub 与 path 来源都优先真实 node：dsh 的原生插件按运行时指纹（Electron 版本白名单）
+    // 校验，不在白名单的 Electron 启动即以 code=1 退出；真实 node 不受该限制。
+    const runtimeNode = resolveNode(scriptPath)
+    const nodeArgs = nodeInvocation.args
+    // 环境构造：登录 shell 完整环境 / 仅 PATH（见 resolveBaseEnv）；node 目录始终前置，
+    // 保证 dsh 自己 spawn 的子进程解析到同一个 node。
+    const baseEnv = await resolveBaseEnv({ inherit: inheritShellEnv(), shellEnv, loginPath })
+    const basePath = baseEnv.PATH ?? ''
+    const runtimeEnv: NodeJS.ProcessEnv = {
+      ...baseEnv,
+      PATH:
+        runtimeNode !== null ? `${dirname(runtimeNode)}${delimiter}${basePath}` : basePath,
+      DSH_HOME: home
+    }
+    if (customLauncherName !== null) {
+      // dush/duush wrapper 会把自己的隔离 patch 追加到 DUSH_PATCH_FILE；继承用户全局
+      // patch 会让同一个 loader entry 加载两次，直接触发 duplicate 报错。
+      delete runtimeEnv.DUSH_PATCH_FILE
+    }
+    if (dshBin !== null) {
+      // wrapper 缺省回退 PATH 上的 dsh；注入 DSH_BIN 让它跑 hub 决定的那一份，
+      // 状态里显示的版本、升级的目标与实际运行的 dsh 才始终一致。
+      runtimeEnv.DSH_BIN = dshBin
+    }
+    const invocation =
+      runtimeNode !== null
+        ? {
+            command: runtimeNode,
+            args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
+            // 让 dsh 自己 spawn 的子进程也能解析到同一个 node。
+            env: runtimeEnv
+          }
+        : runtimeSource === 'path'
+          ? {
+              // 找不到 node：仍按脚本 shebang 直接执行（用户 PATH 里可能有）。
+              // 失败时退出详情会带上脱敏后的子进程日志，能看到 `env: node: ...` 这类原因。
+              command: scriptPath,
+              args: [...profileArgs, ...serverArgs],
+              env: runtimeEnv
+            }
+          : {
+              // hub 来源也找不到 node：回退内置 Electron（版本命中白名单时可用）。
+              command: nodeInvocation.command,
+              args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
+              env: { ...runtimeEnv, ...nodeInvocation.env, DSH_HOME: home }
+            }
+    const child = spawnImpl({
+      ...invocation,
+      cwd: home,
+      detached: true
+    })
+
+    const entry: Entry = {
+      child,
+      url: null,
+      port: null,
+      version,
+      command: formatCommandLine(invocation),
+      runtimeSource,
+      home,
+      log: [],
+      buffer: '',
+      ready: false,
+      stopping: false,
+      timer: null
+    }
+    entries.set(id, entry)
+    watchStdout(id, entry)
+
+    // 队列放行信号:就绪 / 退出 / 出错 / 超时 任一发生即 settle
+    let settleSpawned: (() => void) | null = null
+    const spawnSettledPromise = new Promise<void>((resolve) => {
+      settleSpawned = resolve
+    })
+    let settled = false
+    entry.settleSpawn = () => {
+      if (settled) return
+      settled = true
+      settleSpawned?.()
+    }
+
+    entry.timer = setTimeout(() => {
+      // 身份守卫:本 timer 只属于本次尝试,不得误伤替换后的新条目
+      if (entries.get(id) !== entry) return
+      if (entry.ready || entry.stopping) return
+      emit(id, 'error', {
+        detail: `启动超时（${Math.round(readyTimeoutMs / 1000)}s）：未解析到就绪 URL${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`
+      })
+      entry.stopping = true
+      killTree(entry, 'SIGKILL')
+      entries.delete(id)
+      entry.settleSpawn?.()
+    }, readyTimeoutMs)
+    entry.timer.unref?.()
+
+    child.on('error', (error: Error) => {
+      // 身份守卫:陈旧条目的迟到事件不得删除更晚的同 id 条目
+      if (entries.get(id) !== entry) return
+      if (entry.stopping) return
+      entry.stopping = true
+      emit(id, 'error', { detail: `进程启动失败：${error.message}` })
+      entries.delete(id)
+      entry.settleSpawn?.()
+    })
+
+    child.on('exit', (code, signal) => {
+      // 身份守卫:旧子进程的迟到 exit(SIGKILL 无效的僵尸/D 态)会误删新条目,
+      // 让新进程沦为无主、状态错误翻转为 stopped
+      if (entries.get(id) !== entry) return
+      if (entry.timer) {
+        clearTimeout(entry.timer)
+        entry.timer = null
+      }
+      entries.delete(id)
+      if (entry.stopping) {
+        // 停止语义由 stop() 独占发布,这里不再重复 emit(每次正常停止只一条 stopped)
+      } else {
+        entry.stopping = true // 兜底:防止在途 handleReady 续体继续以「运行中」发布
+        emit(id, 'error', {
+          // 附上子进程最后几行输出:启动失败时它是唯一的失败原因来源。
+          // `logTail` 经 `redactLine` 脱敏(剥掉 URL 查询串),就绪 URL 的 ?token= 不会进入详情。
+          detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）${
+            entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''
+          }`
+        })
+      }
+      entry.settleSpawn?.()
+    })
+
+    // 兜底:stop() 若落在「最后一次取消检查 → entries.set」之间(findFreePort/mkdir
+    // 都是 await),它只登记了取消意图而看不到条目;这里必须补杀,否则子进程成为
+    // 无主孤儿(before-quit 的 stopAll 也扫不到),继续占用端口与 DSH_HOME
+    if ((cancelGeneration.get(id) ?? -1) >= gen) {
+      entry.stopping = true
+      if (entry.timer) {
+        clearTimeout(entry.timer)
+        entry.timer = null
+      }
+      killTree(entry, 'SIGKILL')
+      entries.delete(id)
+      entry.settleSpawn?.()
+      return 'cancelled'
+    }
+
+    // 等到就绪/退出/超时,再放行下一个实例(端口已稳定分配的保证)
+    await spawnSettledPromise
+    return 'spawned'
+  }
+
+  return {
+    onStatus,
     onUpgradeProgress(listener) {
       upgradeListeners.add(listener)
       return () => upgradeListeners.delete(listener)
@@ -588,9 +905,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       }
     },
 
-    statusOf(id) {
-      return statuses.get(id) ?? null
-    },
+    statusOf,
 
     urlOf(id) {
       return entries.get(id)?.url ?? null
@@ -620,316 +935,12 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       instanceGeneration.set(id, gen)
       pendingStartCounts.set(id, (pendingStartCounts.get(id) ?? 0) + 1)
       try {
-        emit(id, 'starting', { detail: '解析运行时来源' })
-        // dush/duush 由用户已安装的启动器直接执行；它实际加载的 dsh 由 hub 经 DSH_BIN 决定。
-        // 必须拿到**绝对路径**：裸命令名依赖 PATH 解析，而打包后 GUI 启动的 PATH 未必含用户 bin 目录。
-        const customLauncherName =
-          instance.launcher !== null && instance.launcher !== 'dsh' ? instance.launcher : null
-        const launcherRuntime = customLauncherName
-          ? ((await options.pathProbe?.probeLauncher?.(customLauncherName).catch(() => null)) ?? null)
-          : null
-        // 探测能力存在却没探到：裸命令名在打包后的 PATH 下注定 ENOENT（或被 node 包成
-        // MODULE_NOT_FOUND），直接给出可行动的失败原因，不再构造注定失败的调用。
-        if (
-          customLauncherName !== null &&
-          options.pathProbe?.probeLauncher !== undefined &&
-          launcherRuntime === null
-        ) {
-          throw new Error(`未找到启动器 ${customLauncherName}（PATH 与常见安装位置均未探到）`)
-        }
-        const customLauncher = customLauncherName
-          ? (launcherRuntime?.command ?? customLauncherName)
-          : null
-        // 启动来源判定与升级/版本检查共用 dsh-source-policy：公共空间 + 自定义启动器
-        // 固定跟随系统默认 dsh（PATH 实测），不装 hub 副本、不理会实例的固定版本；
-        // 隔离空间与默认启动器走同一套来源决策。
-        const followSystemDsh = followsSystemDsh(instance.useDefaultSpace, instance.launcher)
-        const [hubInstalled, pathRuntime] = await Promise.all([
-          followSystemDsh
-            ? Promise.resolve([] as string[])
-            : options.installer
-                .listInstalled()
-                .then((items) => items.map((item) => item.version))
-                .catch(() => [] as string[]),
-          options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
-        ])
-        const plan = followSystemDsh
-          ? pathRuntime === null
-            ? null
-            : {
-                kind: 'path' as const,
-                command: pathRuntime.command,
-                version: pathRuntime.version,
-                reason: 'unpinned-path-any' as const
-              }
-          : planRuntimeSource({
-              desiredVersion: instance.dshVersion,
-              hubInstalled,
-              pathRuntime
-            })
-        if ((cancelGeneration.get(id) ?? -1) >= gen) {
-          emit(id, 'stopped', { detail: '已取消启动' })
-          return
-        }
-
-        // 统一收敛为:执行入口(wrapper 或 dsh) + 显示用 version + 来源标记 + 注入给 wrapper 的 DSH_BIN
-        let version: string
-        let runtimeSource: 'hub' | 'path'
-        let scriptPath: string
-        /** 注入给 dush/duush 的 dsh 可执行文件;null = 不注入,由 wrapper 自行按 PATH 解析。 */
-        let dshBin: string | null = null
-        let resolved: { version: string; source: 'hub' | 'path'; command: string } | null = null
-        if (plan?.kind === 'path') {
-          resolved = { version: plan.version, source: 'path', command: plan.command }
-        } else if (plan?.kind === 'hub') {
-          resolved = { version: plan.version, source: 'hub', command: options.installer.resolveEntry(plan.version) }
-        } else if (plan?.kind === 'download') {
-          // download:目标版本(未固定时解析 registry latest),**必须经用户确认**
-          const target = plan.version ?? (await options.installer.resolveDefaultVersion())
-          emit(id, 'starting', { version: target, detail: `需要下载 dsh ${target}，等待确认` })
-          const confirmed = await options.confirmDownload?.(target)
-          if (confirmed !== true) {
-            emit(id, 'stopped', {
-              version: target,
-              detail: `需要下载 dsh ${target}，未获确认，已取消启动（hub 与 PATH 上均无可用运行时）`
-            })
-            return
-          }
-          if ((cancelGeneration.get(id) ?? -1) >= gen) return
-          resolved = { version: target, source: 'hub', command: options.installer.resolveEntry(target) }
-        }
-        if (customLauncher !== null) {
-          scriptPath = customLauncher
-          // 系统默认 dsh 未探到的公共实例退回旧显示:创建时选定的版本,未固定则保留 'custom' 占位。
-          version = resolved?.version ?? instance.dshVersion ?? 'custom'
-          runtimeSource = resolved?.source ?? 'path'
-          dshBin = resolved?.command ?? null
-        } else {
-          if (resolved === null) throw new Error('invalid-launcher')
-          scriptPath = resolved.command
-          version = resolved.version
-          runtimeSource = resolved.source
-        }
-
+        const launch = await resolveLaunch(id, gen, instance)
+        if (launch === null) return
         // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
-        // 关键:串行段要等到「就绪或退出」才结束 —— 端口探测与 dsh 实际绑定之间存在
-        const outcome = await enqueueStart(async (): Promise<StartOutcome> => {
-            // 队列内二次查重:同一 tick 并发 start(双击启动 / 向导自动启动与手动启动竞速)
-            // 时,第一次查重发生在首个 await 之前会双双通过,前一个任务可能已把该实例拉起
-            const already = entries.get(id)
-            if (already && !already.stopping) {
-              emit(id, already.ready ? 'running' : 'starting', {
-                version: already.version,
-                runtimeSource: already.runtimeSource,
-                ...(already.port !== null ? { port: already.port } : {}),
-                ...(already.command !== undefined ? { command: already.command } : {}),
-                detail: '实例已在运行，忽略重复启动'
-              })
-              return 'duplicate'
-            }
-            // Generation-based cancel: 取消点 >= 本任务的 generation 时取消
-            if ((cancelGeneration.get(id) ?? -1) >= gen) return 'cancelled'
-            emit(id, 'starting', {
-              version,
-              runtimeSource,
-              detail:
-                runtimeSource === 'path'
-                  ? `使用本机 dsh ${version} 启动`
-                  : `准备 dsh ${version} 运行时（首次需要安装，可能较慢）`
-            })
-            // path 来源运行的是用户本机安装,不需要(也不许)往应用隔离目录安装
-            if (runtimeSource === 'hub')
-              await options.installer.ensureInstalled(version, (progress) => {
-                emit(id, 'installing', { version: progress.version, detail: progress.detail })
-              })
-            if ((cancelGeneration.get(id) ?? -1) >= gen) return 'cancelled'
-
-            // 优先实例记录里用户选定的端口(向导高级设置);被占则向上递增,启动后仍回写实际端口。
-            // 用户端口可能落在默认区间(3080-30999)之外(如 dsh 自身默认 52300):
-            // 区间内被占递增到 30999;区间外则向 65535 递进,保证用户端口本身先被尝试,
-            // 否则该端口会被静默丢弃且每次启动都漂移新端口
-            const portStart = instance.port ?? DEFAULT_LOCAL_PORT
-            const portEnd = portStart > DEFAULT_PORT_RANGE_END ? 65_535 : DEFAULT_PORT_RANGE_END
-            const preferredPort = await findFreePort({
-              start: portStart,
-              end: portEnd,
-              probe: portProbe
-            }).catch(() => 0)
-            emit(id, 'starting', {
-              version,
-              runtimeSource,
-              detail:
-                preferredPort > 0
-                  ? `分配端口并启动进程（端口 ${preferredPort}）`
-                  : '分配端口并启动进程（端口区间不可用，改由 dsh 自动选择）'
-            })
-            const home = instance.useDefaultSpace
-              ? join(homeDir(), '.dsh')
-              : join(options.dataRoot, 'homes', id)
-            await mkdir(home, { recursive: true })
-
-          // --profile 会直接选择 web profile，不能再附加 web 子命令；所有参数由 Hub 构造，不经 shell 解释。
-          // 刻意不传 --host：由 dsh 自己的默认绑定决定（与用户直接运行 `dsh --profile web --port N --no-open` 一致）。
-          const profileArgs = ['--profile', instance.profile ?? profile]
-          const serverArgs = ['--port', String(preferredPort), '--no-open']
-          // win32 的 .cmd shim 无法被 spawn 直接执行（Node 命令注入防护）：解析出入口脚本
-          // 交给 node 直跑；解析失败立即失败，不构造注定 EINVAL/ENOENT 的调用。
-          if (scriptPath.toLowerCase().endsWith('.cmd')) {
-            const script = resolveCmdShim(scriptPath)
-            if (script === null) {
-              throw new Error(`无法解析启动器脚本（${scriptPath}）`)
-            }
-            scriptPath = script
-          }
-          // hub 与 path 来源都优先真实 node：dsh 的原生插件按运行时指纹（Electron 版本白名单）
-          // 校验，不在白名单的 Electron 启动即以 code=1 退出；真实 node 不受该限制。
-          const runtimeNode = resolveNode(scriptPath)
-          const nodeArgs = nodeInvocation.args
-          // 环境构造：登录 shell 完整环境 / 仅 PATH（见 resolveBaseEnv）；node 目录始终前置，
-          // 保证 dsh 自己 spawn 的子进程解析到同一个 node。
-          const baseEnv = await resolveBaseEnv({ inherit: inheritShellEnv(), shellEnv, loginPath })
-          const basePath = baseEnv.PATH ?? ''
-          const runtimeEnv: NodeJS.ProcessEnv = {
-            ...baseEnv,
-            PATH:
-              runtimeNode !== null ? `${dirname(runtimeNode)}${delimiter}${basePath}` : basePath,
-            DSH_HOME: home
-          }
-          if (customLauncherName !== null) {
-            // dush/duush wrapper 会把自己的隔离 patch 追加到 DUSH_PATCH_FILE；继承用户全局
-            // patch 会让同一个 loader entry 加载两次，直接触发 duplicate 报错。
-            delete runtimeEnv.DUSH_PATCH_FILE
-          }
-          if (dshBin !== null) {
-            // wrapper 缺省回退 PATH 上的 dsh；注入 DSH_BIN 让它跑 hub 决定的那一份，
-            // 状态里显示的版本、升级的目标与实际运行的 dsh 才始终一致。
-            runtimeEnv.DSH_BIN = dshBin
-          }
-          const invocation =
-            runtimeNode !== null
-              ? {
-                  command: runtimeNode,
-                  args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
-                  // 让 dsh 自己 spawn 的子进程也能解析到同一个 node。
-                  env: runtimeEnv
-                }
-              : runtimeSource === 'path'
-                ? {
-                    // 找不到 node：仍按脚本 shebang 直接执行（用户 PATH 里可能有）。
-                    // 失败时退出详情会带上脱敏后的子进程日志，能看到 `env: node: ...` 这类原因。
-                    command: scriptPath,
-                    args: [...profileArgs, ...serverArgs],
-                    env: runtimeEnv
-                  }
-                : {
-                    // hub 来源也找不到 node：回退内置 Electron（版本命中白名单时可用）。
-                    command: nodeInvocation.command,
-                    args: [...nodeArgs, scriptPath, ...profileArgs, ...serverArgs],
-                    env: { ...runtimeEnv, ...nodeInvocation.env, DSH_HOME: home }
-                  }
-          const child = spawnImpl({
-            ...invocation,
-            cwd: home,
-            detached: true
-          })
-
-          const entry: Entry = {
-            child,
-            url: null,
-            port: null,
-            version,
-            command: formatCommandLine(invocation),
-            runtimeSource,
-            home,
-            log: [],
-            buffer: '',
-            ready: false,
-            stopping: false,
-            timer: null
-          }
-          entries.set(id, entry)
-          watchStdout(id, entry)
-
-          // 队列放行信号:就绪 / 退出 / 出错 / 超时 任一发生即 settle
-          let settleSpawned: (() => void) | null = null
-          const spawnSettledPromise = new Promise<void>((resolve) => {
-            settleSpawned = resolve
-          })
-          let settled = false
-          entry.settleSpawn = () => {
-            if (settled) return
-            settled = true
-            settleSpawned?.()
-          }
-
-          entry.timer = setTimeout(() => {
-            // 身份守卫:本 timer 只属于本次尝试,不得误伤替换后的新条目
-            if (entries.get(id) !== entry) return
-            if (entry.ready || entry.stopping) return
-            emit(id, 'error', {
-              detail: `启动超时（${Math.round(readyTimeoutMs / 1000)}s）：未解析到就绪 URL${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`
-            })
-            entry.stopping = true
-            killTree(entry, 'SIGKILL')
-            entries.delete(id)
-            entry.settleSpawn?.()
-          }, readyTimeoutMs)
-          entry.timer.unref?.()
-
-          child.on('error', (error: Error) => {
-            // 身份守卫:陈旧条目的迟到事件不得删除更晚的同 id 条目
-            if (entries.get(id) !== entry) return
-            if (entry.stopping) return
-            entry.stopping = true
-            emit(id, 'error', { detail: `进程启动失败：${error.message}` })
-            entries.delete(id)
-            entry.settleSpawn?.()
-          })
-
-          child.on('exit', (code, signal) => {
-            // 身份守卫:旧子进程的迟到 exit(SIGKILL 无效的僵尸/D 态)会误删新条目,
-            // 让新进程沦为无主、状态错误翻转为 stopped
-            if (entries.get(id) !== entry) return
-            if (entry.timer) {
-              clearTimeout(entry.timer)
-              entry.timer = null
-            }
-            entries.delete(id)
-            if (entry.stopping) {
-              // 停止语义由 stop() 独占发布,这里不再重复 emit(每次正常停止只一条 stopped)
-            } else {
-              entry.stopping = true // 兜底:防止在途 handleReady 续体继续以「运行中」发布
-              emit(id, 'error', {
-                // 附上子进程最后几行输出:启动失败时它是唯一的失败原因来源。
-                // `logTail` 经 `redactLine` 脱敏(剥掉 URL 查询串),就绪 URL 的 ?token= 不会进入详情。
-                detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）${
-                  entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''
-                }`
-              })
-            }
-            entry.settleSpawn?.()
-          })
-
-          // 兜底:stop() 若落在「最后一次取消检查 → entries.set」之间(findFreePort/mkdir
-          // 都是 await),它只登记了取消意图而看不到条目;这里必须补杀,否则子进程成为
-          // 无主孤儿(before-quit 的 stopAll 也扫不到),继续占用端口与 DSH_HOME
-          if ((cancelGeneration.get(id) ?? -1) >= gen) {
-            entry.stopping = true
-            if (entry.timer) {
-              clearTimeout(entry.timer)
-              entry.timer = null
-            }
-            killTree(entry, 'SIGKILL')
-            entries.delete(id)
-            entry.settleSpawn?.()
-            return 'cancelled'
-          }
-
-          // 等到就绪/退出/超时,再放行下一个实例(端口已稳定分配的保证)
-          await spawnSettledPromise
-          return 'spawned'
-        })
-
+        // 关键:串行段要等到「就绪或退出」才结束 —— 端口探测与 dsh 实际绑定之间存在竞态窗口,
+        // 若只等 spawn 就放行,两个实例会抢同一端口,后启动的那个会崩溃。
+        const outcome = await enqueueStart(() => spawnAndWatch(id, gen, instance, launch))
         if (outcome === 'cancelled') {
           emit(id, 'stopped', { detail: '已取消启动' })
           return

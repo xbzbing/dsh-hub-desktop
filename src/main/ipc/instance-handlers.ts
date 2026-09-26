@@ -28,6 +28,12 @@ import type { AuthRegistry } from '../auth/auth-registry'
 import type { PromptBroker } from '../ssh/prompt-broker'
 import type { Vault } from '../vault/vault'
 import {
+  EXTERNAL_ACCESS_TOKEN_INVALID,
+  LISTEN_PORT_UNDETERMINED,
+  SCANNER_UNAVAILABLE,
+  notFoundDshPid
+} from './errors'
+import {
   defaultVerifyExternalAccess,
   externalAccessToken,
   externalAccessUrl,
@@ -113,16 +119,16 @@ export function registerInstanceHandlers(
       }
       const { useExistingExternal, externalPid, externalAccess, ...recordInput } = parsed
       if (useExistingExternal !== true) return store.create(recordInput)
-      if (!deps.externalDshScanner) throw new InstanceStoreError('invalid-state', '本机进程探测能力不可用')
+      if (!deps.externalDshScanner) throw new InstanceStoreError('invalid-state', SCANNER_UNAVAILABLE)
       const pid = z.number().int().positive().parse(externalPid)
       const found = await deps.externalDshScanner.scan()
       const match = found.find((item) => item.pid === pid)
-      if (!match) throw new InstanceStoreError('not-found', `未找到 pid ${pid} 的 dsh web 进程`)
-      if (match.port === null) throw new InstanceStoreError('invalid-state', '该进程的监听端口未能确定，无法接管')
+      if (!match) throw new InstanceStoreError('not-found', notFoundDshPid(pid))
+      if (match.port === null) throw new InstanceStoreError('invalid-state', LISTEN_PORT_UNDETERMINED)
       const token = externalAccessToken(externalAccess, match.port)
       const accessUrl = externalAccessUrl(token, match.port)
       if (!(await (deps.verifyExternalAccess ?? defaultVerifyExternalAccess)(accessUrl))) {
-        throw new InstanceStoreError('invalid-state', '访问 token 无效，请重新输入')
+        throw new InstanceStoreError('invalid-state', EXTERNAL_ACCESS_TOKEN_INVALID)
       }
       const record = await store.create({ ...recordInput, port: match.port })
       if (record.transport !== 'local') throw new Error('本机实例创建结果无效')
