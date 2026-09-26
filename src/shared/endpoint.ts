@@ -183,6 +183,16 @@ export function isSameEndpoint(a: Endpoint, b: Endpoint): boolean {
 }
 
 /**
+ * 直连 HTTP 端点使用明文数据连接，调用方据此显示警告。
+ * 省略协议的地址按 http 补全，同样视为明文；
+ * HTTPS 与解析失败一律返回 false（失败不告警，避免误报）。
+ */
+export function isCleartextEndpoint(endpointUrl: string): boolean {
+  const parsed = tryParseEndpoint(endpointUrl)
+  return parsed.ok && parsed.endpoint.scheme === 'http'
+}
+
+/**
  * 是否为回环地址（即「就在本机」）。
  * 用于判断 http 传输是否指向本地、以及是否该提示「本机实例更适合用 local 传输」。
  */

@@ -270,6 +270,28 @@ export default function Sidebar(): ReactNode {
     dragStartOrderRef.current = []
   }, [])
 
+  /** 分组视图不可拖拽；混排视图整表可拖拽排序。两处渲染共用同一份拖拽接线。 */
+  const renderItem = (item: InstanceSummary, draggable: boolean): ReactNode => (
+    <InstanceItem
+      key={item.id}
+      item={item}
+      onClick={openFromSidebar}
+      selected={selection === item.id}
+      rail={rail}
+      hotkey={hotkeyNumbers.get(item.id)}
+      onRailTooltip={showRailTooltip}
+      onRailTooltipHide={hideRailTooltip}
+      draggable={draggable}
+      isDragging={draggable && draggedId === item.id}
+      onDragStart={draggable ? (event) => handleDragStart(item.id, event) : undefined}
+      onDragOver={draggable ? (event) => handleDragOver(item.id, event) : undefined}
+      onDrop={draggable ? () => handleDrop(item.id) : undefined}
+      onDragEnd={draggable ? handleDragEnd : undefined}
+      dragOver={draggable && dragOverId === item.id && draggedId !== item.id}
+      dragPosition={draggable && dragOverId === item.id ? dragPosition : undefined}
+    />
+  )
+
   return (
     <aside className={`sidebar${hotkeyHeld ? ' hotkey-mode' : ''}`} data-testid="sidebar">
       <div className="side-head">
@@ -318,56 +340,11 @@ export default function Sidebar(): ReactNode {
                   {t(TYPE_INFO[group.transport].labelKey)} · {group.items.length}
                 </span>
               </div>
-              {group.items.map((item) => (
-                <InstanceItem
-                  key={item.id}
-                  item={item}
-                  onClick={openFromSidebar}
-                  selected={selection === item.id}
-                  rail={rail}
-                  hotkey={hotkeyNumbers.get(item.id)}
-                  onRailTooltip={showRailTooltip}
-                  onRailTooltipHide={hideRailTooltip}
-                  draggable={false}
-                  onDragStart={undefined}
-                  onDragOver={undefined}
-                  onDrop={undefined}
-                  onDragEnd={undefined}
-                  dragOver={false}
-                  dragPosition={undefined}
-                />
-              ))}
+              {group.items.map((item) => renderItem(item, false))}
             </div>
           ))
         ) : (
-          filtered.map((item) => (
-            <InstanceItem
-              key={item.id}
-              item={item}
-              onClick={openFromSidebar}
-              selected={selection === item.id}
-              rail={rail}
-              hotkey={hotkeyNumbers.get(item.id)}
-              onRailTooltip={showRailTooltip}
-              onRailTooltipHide={hideRailTooltip}
-              draggable={!grouped}
-              isDragging={draggedId === item.id}
-              onDragStart={
-                grouped
-                  ? undefined
-                  : (event) => handleDragStart(item.id, event)
-              }
-              onDragOver={
-                grouped
-                  ? undefined
-                  : (event) => handleDragOver(item.id, event)
-              }
-              onDrop={grouped ? undefined : () => handleDrop(item.id)}
-              onDragEnd={handleDragEnd}
-              dragOver={dragOverId === item.id && draggedId !== item.id}
-              dragPosition={dragOverId === item.id ? dragPosition : undefined}
-            />
-          ))
+          filtered.map((item) => renderItem(item, true))
         )}
       </nav>
       <div className="side-foot">

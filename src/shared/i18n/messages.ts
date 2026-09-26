@@ -215,11 +215,6 @@ export const MESSAGES = {
   'spaces.columnSize': { zh: '占用', en: 'Size' },
   'spaces.columnModified': { zh: '最后修改', en: 'Last modified' },
 
-  // —— 运行时长 ——
-  'duration.seconds': { zh: '{n} 秒', en: '{n}s' },
-  'duration.minutes': { zh: '{n} 分钟', en: '{n}m' },
-  'duration.hours': { zh: '{h} 小时 {m} 分', en: '{h}h {m}m' },
-  'duration.days': { zh: '{d} 天 {h} 小时', en: '{d}d {h}h' },
   'detail.instanceDetail': { zh: '实例详情', en: 'Instance details' },
 
   // —— 新建向导 ——

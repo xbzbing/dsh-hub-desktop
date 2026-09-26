@@ -1,25 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { tryParseEndpoint } from '@shared/endpoint'
+import { isCleartextEndpoint } from '@shared/endpoint'
 import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, addressOf, fmtLogTime, toDisplayStatus } from '../lib/format'
 import { useAppStore, type ActivityLine } from '../store'
 import { Modal } from './Modal'
+import { DeleteConfirmModal } from './DeleteConfirmModal'
 import EditInstanceDialog from './EditInstanceDialog'
 import VaultCard from './VaultCard'
 import { DshVersionCheckButton, DshVersionPanel } from './DshVersionControl'
 import { useDshVersionControl } from './useDshVersionControl'
 import { PHASE_KEYS } from '../lib/version-phases'
 import { showAuthActions } from '../lib/auth-actions'
-
-/**
- * 直连 HTTP 远程实例使用明文数据连接，需要显示警告。
- * 协议判定复用共享端点解析；解析失败时不显示警告以避免误报。
- */
-function isCleartextEndpoint(endpointUrl: string): boolean {
-  const parsed = tryParseEndpoint(endpointUrl)
-  return parsed.ok && parsed.endpoint.scheme === 'http'
-}
 
 /** 实例详情。 */
 export default function DetailView(): ReactNode {
@@ -34,6 +26,7 @@ export default function DetailView(): ReactNode {
   const ensureRecord = useAppStore((state) => state.ensureRecord)
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
+  const removeInstance = useAppStore((state) => state.removeInstance)
   const disconnectWorkspace = useAppStore((state) => state.disconnectWorkspace)
   const toast = useAppStore((state) => state.toast)
   const openWorkspace = useAppStore((state) => state.openWorkspace)
@@ -139,6 +132,10 @@ export default function DetailView(): ReactNode {
       ? (status?.command ?? record.runCommand ?? null)
       : null
 
+  /** 重启与关闭只针对 hub 拉起的运行中本地进程；外部接管的进程归用户所有。 */
+  const canControlRuntime =
+    record.transport === 'local' && status?.status === 'running' && status.runtimeSource !== 'external'
+
   const copyAddress = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(addressOf(record))
@@ -183,10 +180,6 @@ export default function DetailView(): ReactNode {
     }
   }
 
-  const disconnectView = async (): Promise<void> => {
-    await disconnectWorkspace(record.id)
-  }
-
   /** 重启 hub 托管的本地 dsh 进程；进程归用户所有的外部接管实例不提供该操作。 */
   const restartRuntime = async (): Promise<void> => {
     if (!record || restarting) return
@@ -225,14 +218,8 @@ export default function DetailView(): ReactNode {
   }
 
   const deleteInstance = async (): Promise<void> => {
-    const bridge = window.dshHub
-    if (!bridge) return
-    const result = await bridge.instances.remove(record.id, { trashSpace })
-    if (!result.ok) {
-      toast('err', t('detail.deleteFailed'), result.message)
-      return
-    }
-    toast('ok', t('detail.deleted', { name: record.name }))
+    const removed = await removeInstance({ id: record.id, name: record.name, trashSpace })
+    if (!removed) return
     setTrashSpace(false)
     select(null)
     void refreshList()
@@ -379,7 +366,7 @@ export default function DetailView(): ReactNode {
             <button
               className="btn btn-secondary btn-sm"
               data-testid="disconnect-view-btn"
-              onClick={() => void disconnectView()}
+              onClick={() => void disconnectWorkspace(record.id)}
             >
               <Icon name="close" /> {t('detail.disconnect')}
             </button>
@@ -460,7 +447,7 @@ export default function DetailView(): ReactNode {
                   : t('detail.startWorkspace')}
             </button>
             {/* 重启只针对 hub 拉起的运行中进程；外部接管的进程归用户所有。 */}
-            {record.transport === 'local' && status?.status === 'running' && status.runtimeSource !== 'external' && (
+            {canControlRuntime && (
               <button
                 className="btn btn-danger btn-sm"
                 onClick={() => void restartRuntime()}
@@ -471,7 +458,7 @@ export default function DetailView(): ReactNode {
               </button>
             )}
             {/* 关闭实例：断开工作区并停止 hub 托管的运行中进程；外部接管进程归用户所有，不提供。 */}
-            {record.transport === 'local' && status?.status === 'running' && status.runtimeSource !== 'external' && (
+            {canControlRuntime && (
               <button
                 className="btn btn-danger btn-sm"
                 onClick={() => void stopRuntime()}
@@ -666,35 +653,15 @@ export default function DetailView(): ReactNode {
       )}
 
       {confirmDelete && (
-        <Modal
-      closeLabel={t('common.close')}
-          title={t('detail.deleteTitle')}
-          onClose={() => { setConfirmDelete(false); setTrashSpace(false) }}
+        <DeleteConfirmModal
           testId="confirm-delete"
-          footer={
-            <>
-              <span className="meta">{t('detail.deleteCannotUndo')}</span>
-              <div className="right">
-                <button className="btn btn-secondary btn-sm" onClick={() => { setConfirmDelete(false); setTrashSpace(false) }}>
-                 {t('common.cancel')}
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => void deleteInstance()}>
-                 {t('detail.delete')}
-                </button>
-              </div>
-            </>
-          }
-        >
-          <p className="meta">
-            {t('detail.deleteConfirm', { name: record.name })}
-          </p>
-          {record.transport === 'local' && !record.useDefaultSpace && (
-            <label className="check mt12">
-              <input type="checkbox" checked={trashSpace} onChange={(event) => setTrashSpace(event.target.checked)} />
-              {t('detail.deleteSpace')}
-            </label>
-          )}
-        </Modal>
+          name={record.name}
+          showTrashSpace={record.transport === 'local' && !record.useDefaultSpace}
+          trashSpace={trashSpace}
+          onTrashSpaceChange={setTrashSpace}
+          onClose={() => { setConfirmDelete(false); setTrashSpace(false) }}
+          onConfirm={() => void deleteInstance()}
+        />
       )}
 
       {showEdit && (

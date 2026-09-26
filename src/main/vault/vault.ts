@@ -1,6 +1,6 @@
 /**
- * (生产为 electron `safeStorage`,测试为可控假实现)。
- *
+ * 凭据保险库 —— 不 import Electron：加密后端由调用方注入
+ * （生产为 electron `safeStorage`,测试为可控假实现）。
  *
  *  | 存储项 | 默认 | 可选 |
  *  |---|---|---|
@@ -190,10 +190,10 @@ export function createVault(options: VaultOptions): Vault {
   }
 
   /**
-   * (`status`/`getPolicy` 都会触发 load)都重复 JSON.parse 报错,且 vault 永远起不来。
-   * 现在解析失败 → 把坏文件**隔离改名**(corrupt-<时间戳>),内存从空开始,
-   * 下一次显式写入(persist)会写出干净文件 —— 与 registry 的「损坏自愈」同一口径。
-   * 隔离是纯文件级操作,不读写内容,凭据纪律无涉。
+   * 凭据文件被截断或拼接损坏时,每次读(`status`/`getPolicy` 都会触发 load)都会重复
+   * JSON.parse 报错,且 vault 永远起不来。解析失败 → 把坏文件**隔离改名**
+   * (corrupt-<时间戳>),内存从空开始,下一次显式写入(persist)会写出干净文件 ——
+   * 与 registry 的「损坏自愈」同一口径。隔离是纯文件级操作,不读写内容,凭据纪律无涉。
    */
   function quarantineCorruptFile(error: unknown): void {
     onError(error)
@@ -263,6 +263,7 @@ export function createVault(options: VaultOptions): Vault {
   }
 
   /**
+   * 显式勾选才允许落盘（默认不存、显式勾选）。
    * 在模块内强制而非依赖调用方约定 —— 少一处调用方疏漏就少一条凭据落盘路径。
    */
   function requireOptIn(instanceId: string, field: keyof VaultPolicy): void {
@@ -311,6 +312,25 @@ export function createVault(options: VaultOptions): Vault {
     return available ? crypto.encrypt(value) : value
   }
 
+  /** 条目中可单独读写或遗忘的字段名。 */
+  type VaultField = keyof VaultItem
+
+  /** 字段是否已存;与 get* 同口径,读前先 load。 */
+  function hasField(instanceId: string, field: VaultField): boolean {
+    load()
+    return items.get(instanceId)?.[field] !== undefined
+  }
+
+  /** 遗忘单个字段并回写;条目因此变空时一并从内存移除。 */
+  async function forgetField(instanceId: string, field: VaultField): Promise<void> {
+    load()
+    const entry = items.get(instanceId)
+    if (!entry) return
+    delete entry[field]
+    dropIfEmpty(instanceId)
+    await persist()
+  }
+
   return {
     status() {
       load()
@@ -318,8 +338,7 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     hasPassword(instanceId) {
-      load()
-      return items.get(instanceId)?.password !== undefined
+      return hasField(instanceId, 'password')
     },
 
     async rememberPassword(instanceId, password) {
@@ -337,17 +356,11 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async forgetPassword(instanceId) {
-      load()
-      const entry = items.get(instanceId)
-      if (!entry) return
-      delete entry.password
-      dropIfEmpty(instanceId)
-      await persist()
+      await forgetField(instanceId, 'password')
     },
 
     hasExternalAccessToken(instanceId) {
-      load()
-      return items.get(instanceId)?.externalAccessToken !== undefined
+      return hasField(instanceId, 'externalAccessToken')
     },
 
     async rememberExternalAccessToken(instanceId, token) {
@@ -364,17 +377,11 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async forgetExternalAccessToken(instanceId) {
-      load()
-      const entry = items.get(instanceId)
-      if (!entry) return
-      delete entry.externalAccessToken
-      dropIfEmpty(instanceId)
-      await persist()
+      await forgetField(instanceId, 'externalAccessToken')
     },
 
     hasSession(instanceId) {
-      load()
-      return items.get(instanceId)?.session !== undefined
+      return hasField(instanceId, 'session')
     },
 
     async rememberSession(instanceId, session) {
@@ -410,12 +417,7 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async forgetSession(instanceId) {
-      load()
-      const entry = items.get(instanceId)
-      if (!entry) return
-      delete entry.session
-      dropIfEmpty(instanceId)
-      await persist()
+      await forgetField(instanceId, 'session')
     },
 
     async forgetInstance(instanceId) {

@@ -1,7 +1,6 @@
 /**
- *
- *
- * 因此本模块可脱离 Electron 单独测试。
+ * 本机实例运行时：启动、接管与停止本地 dsh 进程，健康探测就绪，以及 dsh 版本升级。
+ * 不 import Electron，状态只经 `onStatus` 向外发布，因此可脱离 Electron 单独测试。
  */
 import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
@@ -17,7 +16,7 @@ import type {
 import { redactLine } from '@shared/redact'
 import { DEFAULT_PORT_RANGE_END, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
-import type { RuntimeInstaller } from './runtime-installer'
+import type { InstallProgress, RuntimeInstaller } from './runtime-installer'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 import { followsSystemDsh, isExternalRuntime, resolveSystemDshUsage } from './dsh-source-policy'
 import { resolveCmdShim } from './cmd-shim'
@@ -88,7 +87,7 @@ export interface LocalRuntimeOptions {
   healthProbeRetryMs?: number
   now?: () => number
   /**
-   * (决策退化为「hub → 下载」两级,与旧行为兼容)。
+   * 探测用户本机 PATH 上的 dsh；缺省不探测，来源决策退化为「hub → 下载」两级。
    */
   pathProbe?: PathProbe
   /**
@@ -112,7 +111,8 @@ export interface LocalRuntimeOptions {
    */
   inheritShellEnv?: () => boolean
   /**
-   * (生产装配必须注入;测试/受限环境注入 stub)。返回 true 才继续下载。
+   * 下载 dsh 前的用户确认口，返回 true 才继续下载；缺省视为拒绝。
+   * 生产装配必须注入，测试/受限环境注入 stub。
    */
   confirmDownload?: (version: string) => Promise<boolean>
   /**
@@ -273,6 +273,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const stopAllDrainMs = options.stopAllDrainMs ?? 10_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
+  // 重试次数默认值与 HTTP 端点（3 次，见 transport/http-endpoint.ts）不同，调整前先确认两侧差异是否有意。
   const healthProbeRetries = options.healthProbeRetries ?? 5
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
   const portProbe = options.portProbe
@@ -413,7 +414,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     }
     try {
     // 在途续体身份守卫:探测/重试期间本条目的进程可能已退出(退出处理器会删条目并立即
-
+    // 放行队列,同 id 的第二次 start 随即拉起新进程)。陈旧续体不得再发布 running、
     // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
     // 下次 start 又 spawn 一个,两个 dsh 共享同一 DSH_HOME。
     const stale = (): boolean => entry.stopping || entries.get(id) !== entry
@@ -505,6 +506,32 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       if (upgradingIds.has(id)) return
       upgradingIds.add(id)
       const at = (): string => new Date(now()).toISOString()
+      /**
+       * 升级主序列：运行中先停 → 下载安装 → 回写版本 → 原样重启，末尾 done=100。
+       * 两条升级路径共用；`checking` 由各分支自行发出 —— 系统升级要等二次确认之后
+       * 才有进度，隔离升级则要在解析版本之前就给出反馈。
+       */
+      const runUpgrade = async (
+        version: string,
+        install: (onProgress: (progress: InstallProgress) => void) => Promise<unknown>
+      ): Promise<void> => {
+        const wasRunning = this.statusOf(id)?.status === 'running'
+        if (wasRunning) await this.stop(id)
+        emitUpgrade({ instanceId: id, phase: 'downloading', version, percent: 0, at: at() })
+        await install((progress) => {
+          emitUpgrade({
+            instanceId: id,
+            phase: 'installing',
+            version,
+            percent: progress.percent ?? 0,
+            detail: progress.detail,
+            at: at()
+          })
+        })
+        await options.store.update(id, { dshVersion: version })
+        if (wasRunning) await this.start({ ...instance, dshVersion: version })
+        emitUpgrade({ instanceId: id, phase: 'done', version, percent: 100, at: at() })
+      }
       try {
         // 升级对象经 dsh-source-policy 判定，与版本检查、启动路径共用同一判据：
         // 结论为「系统默认 dsh」时升级全局 npm 安装，所有共用该 dsh 的实例与终端
@@ -543,43 +570,12 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
           const confirmed = await options.confirmSystemUpgrade?.(newest, system.version)
           if (confirmed !== true) return
           emitUpgrade({ instanceId: id, phase: 'checking', at: at() })
-          const wasRunning = this.statusOf(id)?.status === 'running'
-          if (wasRunning) await this.stop(id)
-          emitUpgrade({ instanceId: id, phase: 'downloading', version: newest, percent: 0, at: at() })
-          await options.installer.installGlobal(prefix, newest, (progress) => {
-            emitUpgrade({
-              instanceId: id,
-              phase: 'installing',
-              version: newest,
-              percent: progress.percent ?? 0,
-              detail: progress.detail,
-              at: at()
-            })
-          })
-          await options.store.update(id, { dshVersion: newest })
-          if (wasRunning) await this.start({ ...instance, dshVersion: newest })
-          emitUpgrade({ instanceId: id, phase: 'done', version: newest, percent: 100, at: at() })
+          await runUpgrade(newest, (onProgress) => options.installer.installGlobal(prefix, newest, onProgress))
           return
         }
         emitUpgrade({ instanceId: id, phase: 'checking', at: at() })
         const latest = await options.installer.resolveLatestVersion()
-        // 运行中升级 = 停 → 装 → 自动重启；停止态只安装并回写。
-        const wasRunning = this.statusOf(id)?.status === 'running'
-        if (wasRunning) await this.stop(id)
-        emitUpgrade({ instanceId: id, phase: 'downloading', version: latest, percent: 0, at: at() })
-        await options.installer.ensureInstalled(latest, (progress) => {
-          emitUpgrade({
-            instanceId: id,
-            phase: 'installing',
-            version: latest,
-            percent: progress.percent ?? 0,
-            detail: progress.detail,
-            at: at()
-          })
-        })
-        await options.store.update(id, { dshVersion: latest })
-        if (wasRunning) await this.start({ ...instance, dshVersion: latest })
-        emitUpgrade({ instanceId: id, phase: 'done', version: latest, percent: 100, at: at() })
+        await runUpgrade(latest, (onProgress) => options.installer.ensureInstalled(latest, onProgress))
       } catch (error) {
         emitUpgrade({
           instanceId: id,

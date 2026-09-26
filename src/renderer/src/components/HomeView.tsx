@@ -5,7 +5,7 @@ import { Icon } from '../lib/icons'
 import { TYPE_INFO, toDisplayStatus, toStatusInfo } from '../lib/format'
 import type { DisplayStatusInfo } from '../lib/format'
 import { useAppStore } from '../store'
-import { Modal } from './Modal'
+import { DeleteConfirmModal } from './DeleteConfirmModal'
 import type { MessageKey } from '@shared/i18n/messages'
 
 /** 总览页：统计卡和全部实例表格。 */
@@ -20,10 +20,9 @@ function HomeContent(): ReactNode {
   const instances = useAppStore((state) => state.instances)
   const statuses = useAppStore((state) => state.statuses)
   const workspaceConnected = useAppStore((state) => state.workspaceConnected)
-  const select = useAppStore((state) => state.select)
+  const openDetail = useAppStore((state) => state.openDetail)
+  const removeInstance = useAppStore((state) => state.removeInstance)
   const refreshList = useAppStore((state) => state.refreshList)
-  const toast = useAppStore((state) => state.toast)
-  const ensureRecord = useAppStore((state) => state.ensureRecord)
   const [deleteTarget, setDeleteTarget] = useState<InstanceSummary | null>(null)
   const [trashSpace, setTrashSpace] = useState(false)
 
@@ -34,19 +33,10 @@ function HomeContent(): ReactNode {
     (item) => toDisplayStatus(statuses[item.id]?.status) === 'error'
   ).length
 
-  const openDetail = (id: string): void => {
-    void ensureRecord(id)
-    select(id)
-  }
-
   const deleteInstance = async (): Promise<void> => {
     if (!deleteTarget) return
-    const result = await window.dshHub?.instances.remove(deleteTarget.id, { trashSpace })
-    if (!result?.ok) {
-      if (result) toast('err', t('detail.deleteFailed'), result.message)
-      return
-    }
-    toast('ok', t('detail.deleted', { name: deleteTarget.name }))
+    const removed = await removeInstance({ id: deleteTarget.id, name: deleteTarget.name, trashSpace })
+    if (!removed) return
     setDeleteTarget(null)
     setTrashSpace(false)
     await refreshList()
@@ -98,33 +88,15 @@ function HomeContent(): ReactNode {
         </table>
       </div>
       {deleteTarget && (
-        <Modal
-          closeLabel={t('common.close')}
-          title={t('detail.deleteTitle')}
-          onClose={() => { setDeleteTarget(null); setTrashSpace(false) }}
+        <DeleteConfirmModal
           testId="home-confirm-delete"
-          footer={
-            <>
-              <span className="meta">{t('detail.deleteCannotUndo')}</span>
-              <div className="right">
-                <button className="btn btn-secondary btn-sm" onClick={() => { setDeleteTarget(null); setTrashSpace(false) }}>
-                  {t('common.cancel')}
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => void deleteInstance()}>
-                  {t('detail.delete')}
-                </button>
-              </div>
-            </>
-          }
-        >
-          <p className="meta">{t('detail.deleteConfirm', { name: deleteTarget.name })}</p>
-          {deleteTarget.transport === 'local' && !deleteTarget.useDefaultSpace && (
-            <label className="check mt12">
-              <input type="checkbox" checked={trashSpace} onChange={(event) => setTrashSpace(event.target.checked)} />
-              {t('detail.deleteSpace')}
-            </label>
-          )}
-        </Modal>
+          name={deleteTarget.name}
+          showTrashSpace={deleteTarget.transport === 'local' && !deleteTarget.useDefaultSpace}
+          trashSpace={trashSpace}
+          onTrashSpaceChange={setTrashSpace}
+          onClose={() => { setDeleteTarget(null); setTrashSpace(false) }}
+          onConfirm={() => void deleteInstance()}
+        />
       )}
     </section>
   )

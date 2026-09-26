@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { InstanceRecord, PatchInstanceInput } from '@shared/contracts'
+import { isValidProfile, type InstanceRecord, type PatchInstanceInput } from '@shared/contracts'
 import { LAUNCHERS, type LocalLauncher } from '@shared/local-launch'
 import { Icon } from '../lib/icons'
 import { useAppStore } from '../store'
@@ -53,10 +53,7 @@ export default function EditInstanceDialog({
       authMode
     }
     if (record.transport === 'local') {
-      if (
-        profile.trim() !== '' &&
-        (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(profile.trim()) || profile.trim().split('/').includes('..'))
-      ) {
+      if (profile.trim() !== '' && !isValidProfile(profile)) {
         toast('err', t('edit.failed'), t('edit.profileInvalid'))
         return
       }

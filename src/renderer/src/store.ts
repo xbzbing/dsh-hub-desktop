@@ -117,6 +117,10 @@ interface AppState {
       `ensureRecord` 只在缓存缺失时拉取,会把陈旧记录留在 store 里 */
   reloadRecord: (id: string) => Promise<void>
   select: (id: string | null) => void
+  /** 取回记录并选中；列表页与设置页跳转详情共用。 */
+  openDetail: (id: string) => void
+  /** 删除实例并提示成败；返回是否成功，由调用方清理自身状态并刷新列表。 */
+  removeInstance: (input: { id: string; name: string; trashSpace: boolean }) => Promise<boolean>
   /** 选择实例后打开其工作区；失败时保留详情，提示用户原因。 */
   openWorkspace: (id: string) => Promise<void>
   /** 断开指定实例的内嵌工作区，不停止其运行时。 */
@@ -146,13 +150,13 @@ let workspaceNavigationGeneration = 0
 /** 正在等待主进程 openView 返回的实例；状态事件不得对同一实例重复触发打开。 */
 let openViewInFlight: string | null = null
 
-  /** 系统主题监听的取消函数，避免重复订阅。 */
+/** 系统主题监听的取消函数，避免重复订阅。 */
 let systemThemeUnsubscribe: (() => void) | null = null
 
 function initialTheme(): 'light' | 'dark' {
   const saved = localStorage.getItem('dshhub-theme')
   if (saved === 'light' || saved === 'dark') return saved
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  return resolveTheme('system')
 }
 
 function applyTheme(theme: 'light' | 'dark'): void {
@@ -176,9 +180,18 @@ function initialLanguage(): Language {
   return resolveLanguage(null, navigator.language)
 }
 
-/** 主进程提供的系统区域设置;hydrate 前用 navigator.language 兜底 */
-function systemLocaleFallback(): string {
-  return navigator.language
+const INITIAL_LANGUAGE = initialLanguage()
+
+/**
+ * 落盘后的设置统一在此应用：解析语言与主题、写入 DOM 主题并同步 store。
+ * `hydrateSettings` 与 `updateSettings` 共用，保证首屏与保存后的状态一致。
+ */
+function applySettings(settings: Settings): void {
+  const { systemLocale } = useAppStore.getState()
+  const theme = resolveTheme(settings.theme)
+  const language = resolveLanguage(settings.language, systemLocale)
+  applyTheme(theme)
+  useAppStore.setState({ settings, language, theme, t: createTranslator(language) })
 }
 
 export const useAppStore = create<AppState>()((set, get) => ({
@@ -204,9 +217,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   vaultStatus: null,
   toasts: [],
   settings: DEFAULT_SETTINGS,
-  language: initialLanguage(),
-  t: createTranslator(initialLanguage()),
-  systemLocale: systemLocaleFallback(),
+  language: INITIAL_LANGUAGE,
+  t: createTranslator(INITIAL_LANGUAGE),
+  /** 主进程提供的系统区域设置;hydrate 前用 navigator.language 兜底 */
+  systemLocale: navigator.language,
 
   /**
    * 在 theme='system' 时随系统外观更新实际主题，不改变用户偏好。
@@ -228,11 +242,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   hydrateSettings: async () => {
     const result = await window.dshHub?.settings.get()
     if (!result?.ok) return
-    const settings = result.value
-    const locale = get().systemLocale
-    const language = resolveLanguage(settings.language, locale)
-    applyTheme(resolveTheme(settings.theme))
-    set({ settings, language, theme: resolveTheme(settings.theme), t: createTranslator(language) })
+    applySettings(result.value)
   },
 
   updateSettings: async (patch) => {
@@ -240,11 +250,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // 让调用方在保存失败时显示错误提示；store 不保留硬编码文案。
     if (!result) throw new Error('settings-unavailable')
     if (!result.ok) throw new Error(result.message)
-    const settings = result.value
-    const locale = get().systemLocale
-    const language = resolveLanguage(settings.language, locale)
-    applyTheme(resolveTheme(settings.theme))
-    set({ settings, language, theme: resolveTheme(settings.theme), t: createTranslator(language) })
+    applySettings(result.value)
   },
 
   load: async () => {
@@ -445,6 +451,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
       settingsOpen: false,
       pendingOpen: []
     })
+  },
+
+  openDetail: (id) => {
+    void get().ensureRecord(id)
+    get().select(id)
+  },
+
+  removeInstance: async (input) => {
+    const t = get().t
+    const result = await window.dshHub?.instances.remove(input.id, { trashSpace: input.trashSpace })
+    if (!result?.ok) {
+      if (result) get().toast('err', t('detail.deleteFailed'), result.message)
+      return false
+    }
+    get().toast('ok', t('detail.deleted', { name: input.name }))
+    return true
   },
 
   openWorkspace: async (id) => {

@@ -1,5 +1,7 @@
 /**
+ * HTTP 直连传输 —— 不 import Electron。
  *
+ * 远程实例没有本地进程可管：`start` = 校验端点 → 健康探测 → 认证模式探测
  * → 发布 running（携带探测结论）；`stop` = 发布 stopped（无进程回收）。
  */
 import type { HttpInstance, InstanceRuntimeStatus, InstanceStatusEvent } from '@shared/contracts'
@@ -38,6 +40,7 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
   const probe = options.probe ?? httpHealthProbe
   const detect = options.detect ?? ((url: string) => detectAuthMode(url))
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
+  // 重试次数默认值与本机实例（5 次，见 local-runtime/local-runtime.ts）不同，调整前先确认两侧差异是否有意。
   const healthProbeRetries = options.healthProbeRetries ?? 3
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
   const now = options.now ?? (() => Date.now())

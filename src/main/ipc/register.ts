@@ -1,6 +1,6 @@
 /**
- *
- * 白名单通道（preload 再暴露一层）；非法入参返回 `IpcResult` 错误信封而非抛异常，
+ * 注册 IPC 白名单通道（preload 再暴露一层）。
+ * 非法入参返回 `IpcResult` 错误信封而非抛异常。
  */
 import { ipcMain } from 'electron'
 import { z } from 'zod'
@@ -43,9 +43,6 @@ export interface RuntimeDeps {
   externalDshScanner?: ExternalDshScanner
   /** 只读探测本机可执行 dsh，供创建向导选择是否使用。 */
   pathProbe?: PathProbe
-  /**
-   * 才在登录成功时写入,勾选取消即忘掉。
-   */
   /** 用户显式提供的外部本机 dsh token 必须通过本机端点验收后才持久化。 */
   verifyExternalAccess?: (url: string) => Promise<boolean>
 }

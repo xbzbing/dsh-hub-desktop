@@ -4,7 +4,6 @@
  */
 import type { InstanceRecord, InstanceRuntimeStatus, Transport } from '@shared/contracts'
 import type { MessageKey } from '@shared/i18n/messages'
-import type { Translator } from '@shared/i18n'
 import type { IconName } from './icons'
 
 export type DisplayStatus =
@@ -105,21 +104,6 @@ export function compactWorkspaceAddress(address: string): string {
   } catch {
     return address.length > 64 ? `${address.slice(0, 61)}…` : address
   }
-}
-
-/**
- * 运行时长(毫秒)→ 人类可读。
- * 文案通过翻译器生成，避免在此硬编码语言文本。
- */
-export function fmtDuration(ms: number, t: Translator): string {
-  if (!Number.isFinite(ms) || ms < 0) return '—'
-  const seconds = Math.floor(ms / 1000)
-  if (seconds < 60) return t('duration.seconds', { n: seconds })
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return t('duration.minutes', { n: minutes })
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return t('duration.hours', { h: hours, m: minutes % 60 })
-  return t('duration.days', { d: Math.floor(hours / 24), h: hours % 24 })
 }
 
 /**

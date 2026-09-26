@@ -20,8 +20,7 @@ export default function SettingsView(): ReactNode {
   const toast = useAppStore((state) => state.toast)
   const userDataPath = useAppStore((state) => state.userDataPath)
   const createWithExistingSpace = useAppStore((state) => state.createWithExistingSpace)
-  const select = useAppStore((state) => state.select)
-  const ensureRecord = useAppStore((state) => state.ensureRecord)
+  const openDetail = useAppStore((state) => state.openDetail)
   const [vault, setVault] = useState<VaultStatusSnapshot | null>(null)
   const [spaces, setSpaces] = useState<LocalSpaceSnapshot[]>([])
   const [trashTarget, setTrashTarget] = useState<LocalSpaceSnapshot | null>(null)
@@ -51,11 +50,6 @@ export default function SettingsView(): ReactNode {
   }).format(new Date(value))
 
   const totalSpaceBytes = spaces.reduce((total, space) => total + space.sizeBytes, 0)
-
-  const openInstanceDetail = (id: string): void => {
-    void ensureRecord(id)
-    select(id)
-  }
 
   const trashSpace = (): void => {
     const space = trashTarget
@@ -262,7 +256,7 @@ export default function SettingsView(): ReactNode {
                 <span className="meta num" role="cell">{t('spaces.modifiedAt', { time: formatTime(space.modifiedAt) })}</span>
                 <span className="spaces-actions" role="cell">
                   {space.inUse ? (
-                    <button className="btn btn-secondary btn-sm" onClick={() => openInstanceDetail(space.id)}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => openDetail(space.id)}>
                       {t('spaces.instanceDetail')}
                     </button>
                   ) : (

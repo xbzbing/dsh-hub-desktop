@@ -89,8 +89,9 @@ export interface SshTunnelManager {
   stop(id: string): Promise<void>
   stopAll(): Promise<void>
   /**
-   * 该目标的全部条目。这是**显式、独立、破坏性**的操作,不属于连接确认流程:连接时指纹
-   * 变化一律拒绝且不自动清理;只有用户主动调用本方法后,下一次连接才会重新走首次 TOFU。
+   * 忘记某实例主机的已信任公钥 —— 删除 hub 私有 known_hosts 中该目标的全部条目。
+   * 这是**显式、独立、破坏性**的操作,不属于连接确认流程:连接时指纹变化一律拒绝
+   * 且不自动清理;只有用户主动调用本方法后,下一次连接才会重新走首次 TOFU。
    */
   forgetHostKey(instance: SshInstance): Promise<void>
 }
@@ -130,8 +131,8 @@ export function socketsDirFor(dataRoot: string): string {
   return join(tmpdir(), `dsh-hub-ssh-${createHash('sha1').update(dataRoot).digest('hex').slice(0, 8)}`)
 }
 
-/** 每个实例使用独立的 ControlPath slug，避免共享 SSH 主连接。 */
-export function controlSlug(instance: SshInstance): string {
+/** 实例标识的 12 位 slug；ControlPath 与 askpass socket 共用，避免两套命名各自漂移。 */
+export function controlSlug(instance: { id: string }): string {
   return instance.id.replace(/-/g, '').slice(0, 12)
 }
 
@@ -261,7 +262,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (!askpass) return null
     const scripts = await ensureAskpassScripts(join(dataRoot, 'ssh'), askpassNode.command, askpassNode.args)
     const server = await startAskpassServer({
-      socketPath: askpassSocketPath(socketsDirFor(dataRoot), controlSlug2(entry)),
+      socketPath: askpassSocketPath(socketsDirFor(dataRoot), controlSlug(entry)),
       onPrompt: async ({ prompt }) => {
         emit(entry.id, 'starting', { detail: '等待输入 SSH 口令（不落盘）' })
         const secret = await askpass({ instanceId: entry.id, prompt })
@@ -273,16 +274,25 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     return server
   }
 
-  /** askpass socket 用的实例 slug(= 实例 UUID 前 12 hex) */
-  function controlSlug2(entry: TunnelEntry): string {
-    return entry.id.replace(/-/g, '').slice(0, 12)
-  }
-
   /** 端口可用性 = 未被本管理器保留 + 可绑定（portProbe 可注入） */
   async function isPortAvailable(port: number): Promise<boolean> {
     if (reservedPorts.has(port)) return false
     if (portProbe) return portProbe(port)
     return isPortFree(port)
+  }
+
+  /**
+   * 释放条目占用的资源：从注册表移除、归还本地端口、关掉 askpass 服务。
+   * `dropControlPath` 为真时一并删除本条目的 ControlPath（带 force，文件不存在不算错）。
+   */
+  function disposeEntry(entry: TunnelEntry, { dropControlPath }: { dropControlPath: boolean }): void {
+    entries.delete(entry.id)
+    reservedPorts.delete(entry.localPort)
+    if (dropControlPath) {
+      void rm(entry.controlPath, { force: true }).catch(() => undefined)
+    }
+    if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
+    entry.askpassServer = null
   }
 
   /** 本地端口分配串行链：保留集的 check-then-add 必须原子，并发分配不得抢到同一端口 */
@@ -322,7 +332,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
           SSH_ASKPASS_REQUIRE: 'force',
           DISPLAY: process.env['DISPLAY'] ?? 'dsh-hub',
           ELECTRON_RUN_AS_NODE: '1',
-          DSH_HUB_ASKPASS_SOCKET: askpassSocketPath(socketsDirFor(dataRoot), controlSlug2(entry))
+          DSH_HUB_ASKPASS_SOCKET: askpassSocketPath(socketsDirFor(dataRoot), controlSlug(entry))
         }
       : { SSH_ASKPASS_REQUIRE: 'never' as const }
     const child = spawnImpl({
@@ -336,20 +346,17 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     return child
   }
 
-  /** 端口可用性探测（findFreePort 的 probe 注入点，含保留集） */
-  const portAvailabilityProbe = (port: number): Promise<boolean> => {
-    return isPortAvailable(port)
-  }
-
   async function waitForReady(entry: TunnelEntry, child: SpawnedProcess): Promise<void> {
-    if (entry.stopping || entry.child !== child) return
+    // 探测与重试都要重新判定：期间条目可能已被 stop 摘除或换成新子进程。
+    const stale = (): boolean => entry.stopping || entry.child !== child
+    if (stale()) return
     const deadline = now() + readyTimeoutMs
     while (now() < deadline) {
-      if (entry.stopping || entry.child !== child) return
+      if (stale()) return
       const healthy = await probe(entry.url, healthTimeoutMs)
-      if (entry.stopping || entry.child !== child) return
+      if (stale()) return
       if (healthy) {
-        if (entry.stopping || entry.child !== child) return
+        if (stale()) return
         entry.ready = true
         entry.stableSince = now()
         entry.forwardFailed = false
@@ -360,10 +367,10 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         })
         return
       }
-      if (entry.stopping || entry.child !== child) return
+      if (stale()) return
       await sleep(healthProbeRetryMs)
     }
-    if (entry.stopping || entry.child !== child) return
+    if (stale()) return
     // 就绪期限内远端 dsh 未响应：杀掉本次隧道，让看门狗按退避重连（远端可能正在重启）
     entry.pendingReason = { kind: 'connect', message: '远端 dsh 未就绪' }
     killProcessGroup(child, 'SIGKILL')
@@ -427,10 +434,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     if (!instance) {
       // 实例已被删除：停止隧道，不再重连
       entry.stopping = true
-      entries.delete(entry.id)
-      reservedPorts.delete(entry.localPort)
-      if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
-      entry.askpassServer = null
+      disposeEntry(entry, { dropControlPath: false })
       emit(entry.id, 'stopped', { detail: '实例已删除' })
       return
     }
@@ -442,7 +446,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         const port = await findFreePort({
           start: DEFAULT_PORT_RANGE_START,
           end: DEFAULT_PORT_RANGE_END,
-          probe: portAvailabilityProbe
+          probe: isPortAvailable
         })
         reservedPorts.add(port)
         if (entry.stopping) {
@@ -472,10 +476,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
       if (entry.stopping) return
       entry.stopping = true
       emit(id, 'error', { detail: `SSH 进程启动失败：${error.message}` })
-      entries.delete(id)
-      reservedPorts.delete(entry.localPort)
-      if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
-      entry.askpassServer = null
+      disposeEntry(entry, { dropControlPath: false })
     })
 
     child.on('exit', (code) => {
@@ -519,6 +520,8 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
 
     async start(instance) {
       const id = instance.id
+      /** 清掉本实例挂起的取消标记，并返回它原先是否被挂起。 */
+      const cancelIfRequested = (): boolean => cancelRequested.delete(id)
       if (entries.has(id) || startingIds.has(id)) {
         const existing = entries.get(id)
         if (existing) {
@@ -546,14 +549,14 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         return
       }
       startingIds.add(id)
-      cancelRequested.delete(id)
+      cancelIfRequested()
       latestInstances.set(id, instance)
       let allocatedPort: number | null = null
       try {
         emit(id, 'starting', { detail: '分配本地端口' })
         const localPort = await allocLocalPort(instance)
         allocatedPort = localPort
-        if (cancelRequested.delete(id)) {
+        if (cancelIfRequested()) {
           reservedPorts.delete(localPort)
           emit(id, 'stopped', { detail: '已取消启动' })
           return
@@ -561,7 +564,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         // known_hosts 落在 dataRoot/ssh（文件,无长度问题）;control socket 目录可能退化到 tmpdir
         await mkdir(join(dataRoot, 'ssh'), { recursive: true })
         await mkdir(socketsDirFor(dataRoot), { recursive: true })
-        if (cancelRequested.delete(id)) {
+        if (cancelIfRequested()) {
           reservedPorts.delete(localPort)
           emit(id, 'stopped', { detail: '已取消启动' })
           return
@@ -596,7 +599,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
           emit(id, 'error', { detail: '服务器指纹未确认（或已变化），已拒绝连接' })
           return
         }
-        if (cancelRequested.delete(id)) {
+        if (cancelIfRequested()) {
           reservedPorts.delete(localPort)
           emit(id, 'stopped', { detail: '已取消启动' })
           return
@@ -617,13 +620,9 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
         // entries 摘除并标记 stopping,spawn 却还没发生。此时若照常 spawn,这个 ssh 子进程
         // 就成了 stop() 再也找不到的孤儿（一直占着转发端口），而 UI 早已显示「隧道已停止」。
         // 与 reconnectInner 同款守卫；放弃时必须把本次已获取的资源按 stop() 的做法全部回滚。
-        const cancelPending = cancelRequested.delete(id)
+        const cancelPending = cancelIfRequested()
         if (entry.stopping || cancelPending) {
-          entries.delete(id)
-          reservedPorts.delete(entry.localPort)
-          void rm(entry.controlPath, { force: true }).catch(() => undefined)
-          if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
-          entry.askpassServer = null
+          disposeEntry(entry, { dropControlPath: true })
           emit(id, 'stopped', { detail: '已取消启动' })
           return
         }
@@ -659,11 +658,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
           await waitForProcessExit(child, 1_000)
         }
       }
-      entries.delete(id)
-      reservedPorts.delete(entry.localPort)
-      void rm(entry.controlPath, { force: true }).catch(() => undefined)
-      if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)
-      entry.askpassServer = null
+      disposeEntry(entry, { dropControlPath: true })
       emit(id, 'stopped', { detail: '隧道已停止' })
     },
 

@@ -10,7 +10,6 @@ import type { AuthRegistry } from '../auth/auth-registry'
 import type { Vault } from '../vault/vault'
 import type { AuditEntry } from '../audit/audit-log'
 import {
-  authSnapshot,
   parseId,
   probeWithStoredPassword,
   type IpcWrap,
@@ -59,7 +58,7 @@ export function registerAuthHandlers(deps: AuthHandlerDeps, wrap: IpcWrap): Auth
     if (stored === null) {
       throw new InstanceStoreError('invalid-input', '保险库中没有该实例的已存密码')
     }
-    return deps.auth.login(instanceId, stored, otp).then(authSnapshot)
+    return deps.auth.login(instanceId, stored, otp)
   }
 
   // Try one silent login when probing finds a stored password and an authentication state.
@@ -85,7 +84,7 @@ export function registerAuthHandlers(deps: AuthHandlerDeps, wrap: IpcWrap): Auth
         }
         // A successful manual login allows future silent login attempts.
         if (state?.phase === 'connected') memory.logoutSuppressed.delete(instanceId)
-        return authSnapshot(state)
+        return state
       })
   )
 
@@ -111,7 +110,7 @@ export function registerAuthHandlers(deps: AuthHandlerDeps, wrap: IpcWrap): Auth
       // 分区 Cookie 与 vault 会话清理完成后窗口才结束。
       deps.auth.beginLogout(instanceId)
       try {
-        const snapshot = authSnapshot(await deps.auth.logout(instanceId))
+        const snapshot = await deps.auth.logout(instanceId)
         // 「登出 → 任何探测」会立刻用已存密码复活会话。手动登录成功才解除。
         memory.logoutSuppressed.add(instanceId)
         // 清理是尽力而为：单步失败不拖垮后续步骤（否则 vault 遗忘与两条审计都会被跳过），
