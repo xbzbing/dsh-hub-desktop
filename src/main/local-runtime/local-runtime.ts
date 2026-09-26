@@ -545,7 +545,6 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     let version: string
     let runtimeSource: 'hub' | 'path'
     let scriptPath: string
-    /** 注入给 dush/duush 的 dsh 可执行文件;null = 不注入,由 wrapper 自行按 PATH 解析。 */
     let dshBin: string | null = null
     let resolved: { version: string; source: 'hub' | 'path'; command: string } | null = null
     if (plan?.kind === 'path') {
