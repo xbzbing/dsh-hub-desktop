@@ -283,12 +283,12 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
 
   /**
    * 释放条目占用的资源：从注册表移除、归还本地端口、关掉 askpass 服务。
-   * `dropControlPath` 只在本条目确实建过连接时打开，避免误删共享的主连接 socket。
+   * `dropControlPath` 为真时一并删除本条目的 ControlPath（带 force，文件不存在不算错）。
    */
-  function disposeEntry(entry: TunnelEntry, options: { dropControlPath: boolean }): void {
+  function disposeEntry(entry: TunnelEntry, { dropControlPath }: { dropControlPath: boolean }): void {
     entries.delete(entry.id)
     reservedPorts.delete(entry.localPort)
-    if (options.dropControlPath) {
+    if (dropControlPath) {
       void rm(entry.controlPath, { force: true }).catch(() => undefined)
     }
     if (entry.askpassServer) void entry.askpassServer.close().catch(() => undefined)

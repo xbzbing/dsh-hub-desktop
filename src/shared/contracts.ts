@@ -73,7 +73,7 @@ const SSH_HOST_SCHEMA = z
   .refine(isValidSshHost, 'host[:port] 形态的端口必须在 1–65535，或主机名不含冒号')
 
 /** 配置档案：首字符必须是字母数字，其余允许字母数字与 `.` `_` `/` `-`。 */
-export const PROFILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+const PROFILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 
 /**
  * 配置档案的形态校验（内部 trim）：匹配 `PROFILE_PATTERN` 且不含 `..` 段。
