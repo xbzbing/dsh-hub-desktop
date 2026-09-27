@@ -215,9 +215,12 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     try {
       scanned = await probe.scan()
     } catch {
-      // keyscan 拿不到公钥(主机不可达/网络抖动):不做 TOFU 判定,交给 ssh 自己连接并归因
+      // keyscan 拿不到公钥(主机不可达/网络抖动):不做 TOFU 判定,放行交给 ssh 自己连接。
+      // 这是安全的 fail-open —— ssh 侧以 StrictHostKeyChecking=yes + 私有 UserKnownHostsFile
+      // 运行（见 ssh-args），未知主机在 ssh 层直接失败关闭，hub 放行不等于自动信任。
       return true
     }
+    // 同理，keyscan 返回空（远端未出示任何公钥）时也放行给 ssh 兜底判定。
     if (scanned.length === 0) return true
     const evaluation = evaluateHostTrust(trusted, scanned)
     if (evaluation.verdict === 'trusted') return true
