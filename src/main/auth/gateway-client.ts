@@ -82,14 +82,9 @@ export interface GatewayClient {
   /** 是否持有会话 Cookie(不校验服务端有效性) */
   hasSession(): boolean
   login(input: LoginInput): Promise<GatewayResult<{ otpVerified: boolean }>>
-  /** 会话已存在但 OTP 未验时补验(`POST /otp/verify`) */
-  verifyOtp(otp: string): Promise<GatewayResult<null>>
-  verifyBackupCode(code: string): Promise<GatewayResult<null>>
   logout(): Promise<GatewayResult<null>>
   /** 静默恢复探测:带已存 Cookie 打 `GET /login-api/settings` */
   settings(): Promise<GatewayResult<GatewaySettings>>
-  /** 会话是否有效(200 → true;401 → false;其他 → 抛错判定为失败) */
-  probeSession(): Promise<boolean>
 }
 
 /** 归一化 basePath:保证 baseUrl 与路径拼接不产生双斜杠 */
@@ -229,22 +224,6 @@ export function createGatewayClient(options: GatewayClientOptions): GatewayClien
       return failureFrom(status, json)
     },
 
-    async verifyOtp(otp) {
-      const result = await request('/otp/verify', { method: 'POST', body: { otp } })
-      if (!result.ok) return result
-      const { status, json } = result.value
-      if (status === 200) return { ok: true, value: null }
-      return failureFrom(status, json)
-    },
-
-    async verifyBackupCode(code) {
-      const result = await request('/otp/verify-backup', { method: 'POST', body: { code } })
-      if (!result.ok) return result
-      const { status, json } = result.value
-      if (status === 200) return { ok: true, value: null }
-      return failureFrom(status, json)
-    },
-
     async logout() {
       const result = await request('/login/logout', { method: 'POST', body: {} })
       jar.clear()
@@ -275,14 +254,6 @@ export function createGatewayClient(options: GatewayClientOptions): GatewayClien
           raw: json
         }
       }
-    },
-
-    async probeSession() {
-      const result = await client.settings()
-      if (result.ok) return true
-      if (result.status === 401) return false
-      if (result.status === 302 || result.status === 303) return false
-      return false
     }
   }
 

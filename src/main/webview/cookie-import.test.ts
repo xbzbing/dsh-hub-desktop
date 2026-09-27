@@ -8,7 +8,7 @@ import {
 } from './cookie-import'
 
 describe('cookie-import（ Cookie 双写）', () => {
-  it('Cookie 属性与真实网关一致(Path=/; HttpOnly; SameSite=strict; 无 Secure)', () => {
+  it('https 端点:注入 Cookie 带 Secure(Path=/; HttpOnly; SameSite=strict)', () => {
     const record = toCookieRecord({
       origin: 'https://gw.example.com',
       basePath: '/dsh',
@@ -19,11 +19,19 @@ describe('cookie-import（ Cookie 双写）', () => {
       value: 'tok',
       path: '/',
       httpOnly: true,
-      secure: false,
+      secure: true,
       sameSite: 'strict'
     })
     // basePath 不改变 Cookie 路径,但 url 落在实例 origin 下
     expect(record.url).toBe('https://gw.example.com/dsh/')
+  })
+
+  it('http/LAN 端点:注入 Cookie 不带 Secure(否则无法写入分区)', () => {
+    const record = toCookieRecord({
+      origin: 'http://127.0.0.1:3080',
+      cookie: { name: 'dsh_auth', value: 'tok', expiresAt: 1_800_000_000_000 }
+    })
+    expect(record.secure).toBe(false)
   })
 
   it('保险库会话注入不写 expirationDate，避免 Chromium 分区持久化凭据', () => {

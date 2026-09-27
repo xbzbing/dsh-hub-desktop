@@ -35,6 +35,17 @@ export function isAllowedNpmRegistry(value: string): boolean {
   return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname)
 }
 
+/**
+ * 收敛环境变量提供的 npm 镜像地址：与设置项走同一信任根校验。
+ * registry 自证完整性且执行生命周期脚本，明文远程源会重开 MITM → 任意代码路径，
+ * 因此非 https（本地回环 http 除外）一律丢弃，返回 undefined 让调用方回落系统 npm 配置。
+ */
+export function sanitizeEnvRegistry(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim()
+  if (!trimmed) return undefined
+  return isAllowedNpmRegistry(trimmed) ? trimmed : undefined
+}
+
 export const SettingsSchema = z.object({
   /** 界面语言偏好；system 时解析为 OS locale 对应的 zh|en。 */
   language: z.enum(LANGUAGES).default('system'),

@@ -106,6 +106,7 @@ let installerFake: {
   hasIncompleteInstall: ReturnType<typeof vi.fn>
   resolveGlobalPrefix: ReturnType<typeof vi.fn>
   installGlobal: ReturnType<typeof vi.fn>
+  dispose: ReturnType<typeof vi.fn>
 }
 let ipcDeps: Parameters<typeof registerIpc>[1]
 
@@ -132,7 +133,8 @@ beforeEach(async () => {
     resolveEntry: vi.fn((v: string) => `/tmp/${v}`),
     hasIncompleteInstall: vi.fn(async () => false),
     resolveGlobalPrefix: vi.fn(async () => '/usr/local'),
-    installGlobal: vi.fn(async () => undefined)
+    installGlobal: vi.fn(async () => undefined),
+    dispose: vi.fn(() => undefined)
   }
   runtimeFake = {
     onStatus: vi.fn(() => () => undefined),
@@ -892,6 +894,12 @@ describe('registerIpc', () => {
     const result = (await invoke('app:ping', 'hello')) as { ok: boolean; value: { echo: string | null } }
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.value.echo).toBe('hello')
+  })
+
+  it('app:ping 非字符串入参 → invalid-input', async () => {
+    const result = (await invoke('app:ping', 123)) as { ok: boolean; code?: string }
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('invalid-input')
   })
 
   it('create 合法输入 → ok + 完整记录', async () => {

@@ -12,6 +12,7 @@ import type {
   LocalInstance
 } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
+import { isLoopbackHost } from '@shared/endpoint'
 import type { PortProbe } from './port-allocator'
 import type { InstallProgress } from './runtime-installer'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
@@ -93,7 +94,9 @@ export interface LocalRuntimeManager {
   /** 订阅 dsh 版本升级进度；返回取消订阅函数。 */
   onUpgradeProgress(listener: (event: DshVersionProgressEvent) => void): () => void
   /**
-   * 升级到 registry 最新稳定版：解析版本 →（运行中先停）→ 安装 → 回写注册表 →（升级前在运行则重启）。
+   * 升级到 registry 最新可用版本（按版本比较取最大，含 rc/alpha 等预发布渠道 —— dsh 以
+   * 预发布渠道持续发布，dist-tags.latest 常滞后）：解析版本 →（运行中先停）→ 安装 →
+   * 回写注册表 →（升级前在运行则重启）。
    * 公共空间且运行系统默认 dsh 的实例例外：先二次确认，确认后原位升级系统默认 dsh。
    * 调用立即返回并后台执行，进展经 onUpgradeProgress 回推；
    * 失败以 phase='error' 结束：隔离目录保留旧版，升级前在运行的实例停在停止态。
@@ -266,53 +269,66 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       entry.settleSpawn?.()
     }
     try {
-    // 在途续体身份守卫:探测/重试期间本条目的进程可能已退出(退出处理器会删条目并立即
-    // 放行队列,同 id 的第二次 start 随即拉起新进程)。陈旧续体不得再发布 running、
-    // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
-    // 下次 start 又 spawn 一个,两个 dsh 共享同一 DSH_HOME。
-    const stale = (): boolean => entry.stopping || entries.get(id) !== entry
-    const healthy = await retryProbe({
-      url,
-      probe,
-      retries: healthProbeRetries,
-      retryMs: healthProbeRetryMs,
-      timeoutMs: healthTimeoutMs,
-      shouldAbort: stale
-    })
-    if (healthy === null) return
-    if (!healthy) {
-      // 终局路径必须与超时路径对齐:杀进程、清条目、放行队列。
-      // 缺失任一项都会造成 head-of-line 阻塞(下一个实例等到 readyTimer 触发)
-      // 与无人回收的存活进程。
-      emit(id, 'error', {
-        detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`)
+      // dsh 打印的就绪 URL 直接喂给内嵌工作区视图：host 必须钉在回环，否则被篡改的
+      // stdout 行（`dsh web: http://attacker/…`）会让 hub 在工作区加载远端 origin。
+      let readyUrl: URL
+      try {
+        readyUrl = new URL(url)
+      } catch {
+        failReady(new Error('就绪 URL 无法解析'))
+        return
+      }
+      if (!isLoopbackHost(readyUrl.hostname)) {
+        failReady(new Error(`就绪 URL 主机非回环地址（${readyUrl.hostname}），已拒绝`))
+        return
+      }
+      // 在途续体身份守卫:探测/重试期间本条目的进程可能已退出(退出处理器会删条目并立即
+      // 放行队列,同 id 的第二次 start 随即拉起新进程)。陈旧续体不得再发布 running、
+      // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
+      // 下次 start 又 spawn 一个,两个 dsh 共享同一 DSH_HOME。
+      const stale = (): boolean => entry.stopping || entries.get(id) !== entry
+      const healthy = await retryProbe({
+        url,
+        probe,
+        retries: healthProbeRetries,
+        retryMs: healthProbeRetryMs,
+        timeoutMs: healthTimeoutMs,
+        shouldAbort: stale
       })
-      entry.stopping = true
+      if (healthy === null) return
+      if (!healthy) {
+        // 终局路径必须与超时路径对齐:杀进程、清条目、放行队列。
+        // 缺失任一项都会造成 head-of-line 阻塞(下一个实例等到 readyTimer 触发)
+        // 与无人回收的存活进程。
+        emit(id, 'error', {
+          detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`)
+        })
+        entry.stopping = true
+        if (entry.timer) {
+          clearTimeout(entry.timer)
+          entry.timer = null
+        }
+        killTree(entry, 'SIGKILL')
+        entries.delete(id)
+        entry.settleSpawn?.()
+        return
+      }
       if (entry.timer) {
         clearTimeout(entry.timer)
         entry.timer = null
       }
-      killTree(entry, 'SIGKILL')
-      entries.delete(id)
-      entry.settleSpawn?.()
-      return
-    }
-    if (entry.timer) {
-      clearTimeout(entry.timer)
-      entry.timer = null
-    }
-    entry.ready = true
-    entry.url = url
-    const port = Number(new URL(url).port)
-    entry.port = Number.isInteger(port) && port > 0 ? port : null
-    if (stale()) return
-    emit(id, 'running', {
-      version: entry.version,
-      runtimeSource: entry.runtimeSource,
-      ...(entry.port !== null ? { port: entry.port } : {}),
-      ...(entry.command !== undefined ? { command: entry.command } : {}),
-      detail: `已在 ${entry.home} 启动（dsh web）`
-    })
+      entry.ready = true
+      entry.url = url
+      const port = Number(readyUrl.port)
+      entry.port = Number.isInteger(port) && port > 0 ? port : null
+      if (stale()) return
+      emit(id, 'running', {
+        version: entry.version,
+        runtimeSource: entry.runtimeSource,
+        ...(entry.port !== null ? { port: entry.port } : {}),
+        ...(entry.command !== undefined ? { command: entry.command } : {}),
+        detail: `已在 ${entry.home} 启动（dsh web）`
+      })
       entry.settleSpawn?.() // 排他地放行下一个实例的启动
     } catch (error) {
       failReady(error)

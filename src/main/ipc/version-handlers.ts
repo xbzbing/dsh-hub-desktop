@@ -4,6 +4,7 @@
  */
 import { ipcMain } from 'electron'
 import { z } from 'zod'
+import { redactLine } from '@shared/redact'
 import {
   DSH_VERSION_IPC,
   type DshVersionCatalog,
@@ -92,8 +93,10 @@ export function registerVersionHandlers(store: InstanceStore, deps: VersionHandl
           installed: installed.map((item) => item.version).sort(newestFirst)
         }
       } catch (error) {
-        // registry 不可达等原因：把安装器的失败原因透传给向导展示。
-        throw new InstanceStoreError('internal', error instanceof Error ? error.message : String(error))
+        // registry 不可达等原因：透传失败原因供向导展示，但先脱敏（剥掉 URL 查询串）
+        // 并封顶长度，避免大段 stderr 灌进渲染层。
+        const raw = error instanceof Error ? error.message : String(error)
+        throw new InstanceStoreError('internal', redactLine(raw).slice(0, 300))
       }
     })
   )

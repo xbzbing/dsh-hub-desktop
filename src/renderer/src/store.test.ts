@@ -846,6 +846,31 @@ describe('store 活动日志（详情页底部信息栏）', () => {
     store.getState().clearActivity(id)
     expect(store.getState().activityLog[id]).toBeUndefined()
   })
+
+  it('每行分配单调递增 seq 作 React key：截尾后已存在行的 seq 不变', async () => {
+    const store = await freshStore()
+    const id = 'activity-seq'
+    // 先追加满 200 行
+    for (let index = 0; index < 200; index += 1) {
+      store.getState().appendActivity(id, { source: 'runtime', at: `t${index}`, detail: `行 ${index}` })
+    }
+    const before = store.getState().activityLog[id]!
+    // 记录截尾前尾部若干行的 seq（它们在下次追加后仍在窗口内）
+    const tailSeqBefore = before.slice(-3).map((line) => line.seq)
+    const tailDetailBefore = before.slice(-3).map((line) => (line.source === 'runtime' ? line.detail : ''))
+
+    // 再追加一行 → 触发截尾（首行被丢），窗口整体左移
+    store.getState().appendActivity(id, { source: 'runtime', at: 't200', detail: '行 200' })
+    const after = store.getState().activityLog[id]!
+    expect(after).toHaveLength(200)
+
+    // 原尾部三行现在位于倒数 4..2，seq 未变（若用 index 作 key 会全部左移一位 → 全量重挂）
+    const relocated = after.slice(-4, -1)
+    expect(relocated.map((line) => line.seq)).toEqual(tailSeqBefore)
+    expect(relocated.map((line) => (line.source === 'runtime' ? line.detail : ''))).toEqual(tailDetailBefore)
+    // seq 全局唯一，无重复
+    expect(new Set(after.map((line) => line.seq)).size).toBe(after.length)
+  })
 })
 
 describe('pendingOpen（启动完成后自动打开工作区）', () => {

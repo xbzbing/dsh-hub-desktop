@@ -1,4 +1,5 @@
 /**
+ * 本机运行时来源的纯决策与探测原语。
  *
  * 用户决策的获取优先级:「优先 hub 已装同版本 → 再探测 PATH → 都没有才下载,
  * 真要下载时需要用户确认」。本模块是其中的**纯决策与探测原语**:
@@ -17,13 +18,13 @@ import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { posix } from 'node:path'
 import type { LocalLauncher } from '@shared/local-launch'
+import { DSH_VERSION_PATTERN } from '@shared/contracts'
 import { execFileResult } from './exec-file'
 import { resolveCmdShim } from './cmd-shim'
 import { searchNodeDirs } from './node-dirs'
-import { VERSION_PATTERN } from './runtime-installer'
 import type { CommandRunner } from './runtime-installer'
 
-// 版本比较实现独立在 version-compare.ts（安装器与本模块共用，避免循环依赖）；
+// 版本比较实现独立在 version-compare.ts（安装器与本模块共用）；
 // 此处保留导出，调用方仍可从本模块取得。
 export { compareDshVersions } from './version-compare'
 import { compareDshVersions } from './version-compare'
@@ -189,7 +190,7 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
       const versioned = await runWith(probeCommand, probeArgs, timeoutMs, env)
       if (versioned.code !== 0) return null
       const version = firstLine(versioned.stdout)
-      if (!VERSION_PATTERN.test(version)) return null
+      if (!DSH_VERSION_PATTERN.test(version)) return null
       return { command, version }
     } catch {
       return null
@@ -250,7 +251,7 @@ export function createPathProbe(options: PathProbeOptions = {}): PathProbe {
             .filter((line) => line !== '')
           const command = lines[0] ?? ''
           const version = lines[1] ?? ''
-          if (isAbsoluteFor(platform, command) && VERSION_PATTERN.test(version)) {
+          if (isAbsoluteFor(platform, command) && DSH_VERSION_PATTERN.test(version)) {
             return { command, version }
           }
         }

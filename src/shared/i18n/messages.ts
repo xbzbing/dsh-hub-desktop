@@ -236,7 +236,7 @@ export const MESSAGES = {
   'wizard.nameHint': { zh: '只在本机使用，便于在侧边栏区分不同环境。', en: 'Local only; helps tell environments apart in the sidebar.' },
   'wizard.advanced': { zh: '高级设置（启动器 / 版本 / 端口）', en: 'Advanced (launcher / version / port)' },
   'wizard.versionLabel': { zh: 'dsh 版本', en: 'dsh version' },
-  'wizard.versionLatest': { zh: '跟随最新稳定版', en: 'Follow latest stable' },
+  'wizard.versionLatest': { zh: '跟随最新版本', en: 'Follow latest' },
   'wizard.versionLoading': { zh: '正在获取版本列表…', en: 'Loading version list…' },
   'wizard.versionFetchFailed': { zh: '获取版本列表失败：{msg}', en: 'Failed to load version list: {msg}' },
   'wizard.versionHint': {

@@ -39,11 +39,27 @@ function parseSshPort(rawPort: string): number | null {
   return inPortRange(rawPort) ? Number(rawPort) : null
 }
 
+/**
+ * SSH host 语法的单一真源：校验（isValidSshHost）与拆分（splitSshHostPort）共用同一组正则，
+ * 两者不会再各自维护而漂移。
+ * - `PLAIN_HOST_PORT`：`host:port`（主机名/别名/IPv4 + 十进制端口）。
+ * - `BRACKET_HOST_PORT`：`[v6]:port`（方括号 IPv6 + 端口）。
+ * - `BRACKET_HOST`：`[v6]`（方括号 IPv6，无端口）。方括号内只允许十六进制/冒号/点分尾，
+ *   非 IPv6 字面量（如 `[-flist]`）不匹配 → 被 isValidSshHost 拒绝，堵住 ssh-keyscan 选项注入面。
+ */
+const PLAIN_HOST_PORT = /^([A-Za-z0-9._-]+):(\d+)$/
+const BRACKET_HOST_PORT = /^\[([0-9a-fA-F:.]+)\]:(\d+)$/
+const BRACKET_HOST = /^\[([0-9a-fA-F:.]+)\]$/
+
 function isValidSshHost(host: string): boolean {
-  const portOfPlain = /^([A-Za-z0-9._-]+):(\d+)$/.exec(host)
+  const portOfPlain = PLAIN_HOST_PORT.exec(host)
   if (portOfPlain) return parseSshPort(portOfPlain[2] ?? '') !== null
   const portOfBracket = /^\[([0-9a-fA-F:.]+)\](?::(\d+))?$/.exec(host)
   if (portOfBracket) return portOfBracket[2] === undefined || parseSshPort(portOfBracket[2]) !== null
+  // 方括号只允许包裹 IPv6 字面量（仅十六进制/冒号/点分尾）。其余方括号内容一律拒绝：
+  // ssh-keyscan 会先剥掉方括号再作为位置参数传入，`[-flist]` → `-flist` 会被当作选项解析
+  // （argv 选项注入面），而顶层 `startsWith('-')` 守卫只看到 `[` 拦不住它。
+  if (host.startsWith('[') || host.endsWith(']')) return false
   if (host.includes(':')) {
     // 裸 IPv6（含 IPv4-mapped 点分尾巴 `::ffff:192.168.1.5`）：至少两个冒号且字符集合法
     return /^[0-9a-fA-F:.]+$/.test(host) && (host.match(/:/g)?.length ?? 0) >= 2
@@ -74,6 +90,16 @@ const SSH_HOST_SCHEMA = z
 
 /** 配置档案：首字符必须是字母数字，其余允许字母数字与 `.` `_` `/` `-`。 */
 const PROFILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+
+/**
+ * dsh 版本号允许的字符集：数字、字母与 `.+_-`（覆盖 `0.1.5-rc.2`、`0.1.6+build` 等）。
+ * 单一真源放在 shared —— 安装器（拼接隔离目录名，防路径穿越）与注册表 schema 边界共用它，
+ * 使非法版本在写入时即被拒，而非等到使用时。
+ */
+export const DSH_VERSION_PATTERN = /^[0-9A-Za-z.+_-]+$/
+
+/** 注册表里的 dshVersion 校验：允许为空/省略；非空时必须匹配版本字符集。 */
+const DSH_VERSION_SCHEMA = z.string().trim().max(64).regex(DSH_VERSION_PATTERN, '版本号含非法字符')
 
 /**
  * 配置档案的形态校验（内部 trim）：匹配 `PROFILE_PATTERN` 且不含 `..` 段。
@@ -108,7 +134,7 @@ export const LocalInstanceSchema = z.object({
   ...instanceBaseFields,
   transport: z.literal('local'),
   /** 已安装的 dsh 版本；null = 未安装。 */
-  dshVersion: z.string().trim().max(64).nullable().default(null),
+  dshVersion: DSH_VERSION_SCHEMA.nullable().default(null),
   /** 已分配的监听端口；null = 未分配。 */
   port: PORT_SCHEMA.nullable().default(null),
   /** 实例配置文件（相对 DSH_HOME） */
@@ -134,7 +160,14 @@ export const SshInstanceSchema = z.object({
   remotePort: PORT_SCHEMA.default(3080),
   /** 隧道本地端口；null = 未分配。 */
   localPort: PORT_SCHEMA.nullable().default(null),
-  /** 显式私钥路径；null = 默认，优先使用 agent。 */
+  /**
+   * 显式私钥路径；null = 默认，优先使用 agent。
+   *
+   * 这是唯一由渲染层提供、会到达主进程文件系统的路径（作为 `ssh -i <path>` 的参数），
+   * 是「IPC 不接受渲染层路径」规则下有意的有界例外：SSH 语义要求用户指名密钥文件，
+   * 且它只作为 `-i` 的独立 argv 值传入、不经 shell、不构成位置参数（无 `-o` 选项注入面），
+   * ssh 至多尝试把它当密钥加载。仅做长度约束。
+   */
   identityFile: z.string().trim().max(512).nullable().default(null)
 })
 
@@ -172,7 +205,7 @@ export const CreateInstanceInputSchema = z.discriminatedUnion('transport', [
     .object({
       ...createBaseFields,
       transport: z.literal('local'),
-      dshVersion: z.string().trim().max(64).optional(),
+      dshVersion: DSH_VERSION_SCHEMA.optional(),
       port: PORT_SCHEMA.optional(),
       profile: SAFE_PROFILE_SCHEMA.optional(),
       launcher: z.enum(LAUNCHERS).optional(),
@@ -227,7 +260,7 @@ export const PatchInstanceSchema = z
     /** null 用于清空备注 */
     notes: z.string().trim().max(2000).nullable().optional(),
     // —— local ——
-    dshVersion: z.string().trim().max(64).nullable().optional(),
+    dshVersion: DSH_VERSION_SCHEMA.nullable().optional(),
     port: PORT_SCHEMA.nullable().optional(),
     profile: SAFE_PROFILE_SCHEMA.nullable().optional(),
     launcher: z.enum(LAUNCHERS).nullable().optional(),
@@ -475,7 +508,14 @@ export interface AuthSignalEvent {
 
 // ===== 注册表文件与版本迁移 =====
 
-export const REGISTRY_SCHEMA_VERSION = 1
+/**
+ * 注册表 schema 版本。
+ * - v1：初始形态。
+ * - v2：`SSH_HOST_SCHEMA` 收紧（方括号只允许包裹 IPv6 字面量）与 `dshVersion` 收紧
+ *   （必须匹配 `DSH_VERSION_PATTERN`）后，旧版可能写入过 `[plainhost]` / 含空格的版本号；
+ *   v1→v2 迁移把这类历史值归一化，避免整表因单条不合法被隔离（见 registry 迁移器）。
+ */
+export const REGISTRY_SCHEMA_VERSION = 2
 
 export const RegistryFileSchema = z.object({
   schemaVersion: z.number('schemaVersion 必须是数字').int().min(1),
@@ -593,7 +633,7 @@ export interface DshVersionCatalog {
 export interface DshVersionCheck {
   /** 当前实例使用的 dsh 版本（状态事件优先，其次注册表）；来源未知时为 null。 */
   current: string | null
-  /** npm registry 上的最新稳定版本。 */
+  /** npm registry 上的最新可用版本（按版本比较取最大，含 rc/alpha 等预发布渠道）。 */
   latest: string
   /** 是否有可用更新；当前版本未知时按可升级即视为有更新。 */
   hasUpdate: boolean
@@ -741,18 +781,18 @@ export interface SshHostPortSplit {
  *   `[192.0.2.1]:2222` 等点分形态也必须能拆分，否则端口会静默回退）。
  */
 export function splitSshHostPort(host: string, fallbackPort: number): SshHostPortSplit {
-  const plain = /^([A-Za-z0-9._-]+):(\d+)$/.exec(host)
+  const plain = PLAIN_HOST_PORT.exec(host)
   if (plain) {
     const port = parseSshPort(plain[2] ?? '')
     if (port !== null) return { host: plain[1] ?? '', port, portEmbedded: true }
   }
-  const bracketedWithPort = /^\[([0-9a-fA-F:.]+)\]:(\d+)$/.exec(host)
+  const bracketedWithPort = BRACKET_HOST_PORT.exec(host)
   if (bracketedWithPort) {
     const port = parseSshPort(bracketedWithPort[2] ?? '')
     if (port !== null) return { host: bracketedWithPort[1] ?? '', port, portEmbedded: true }
   }
   // 方括号无端口形态 `[::1]`：只归一化主机形态，端口由调用方决定
-  const bracketedPlain = /^\[([0-9a-fA-F:.]+)\]$/.exec(host)
+  const bracketedPlain = BRACKET_HOST.exec(host)
   if (bracketedPlain) {
     return { host: bracketedPlain[1] ?? '', port: fallbackPort, portEmbedded: false }
   }

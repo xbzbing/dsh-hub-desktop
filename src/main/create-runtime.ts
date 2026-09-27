@@ -6,7 +6,7 @@ import type {
   InstanceStatusEvent,
   RuntimeConfirmRequest
 } from '@shared/contracts'
-import type { Settings } from '@shared/settings'
+import { sanitizeEnvRegistry, type Settings } from '@shared/settings'
 import { mapRuntimeTransition } from './audit/audit-mapping'
 import type { AuditEntry } from './audit/audit-log'
 import { startAutoStartInstances } from './local-runtime/auto-start'
@@ -62,8 +62,14 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
   let promptBroker: PromptBroker | null = null
 
   // npm registry 可经环境变量覆盖：默认跟随系统 npm 配置；
-  // 内网/海外网络慢时可指到镜像，如 DSH_HUB_NPM_REGISTRY=https://registry.npmmirror.com
-  const envNpmRegistry = process.env['DSH_HUB_NPM_REGISTRY']?.trim() || undefined
+  // 内网/海外网络慢时可指到镜像，如 DSH_HUB_NPM_REGISTRY=https://registry.npmmirror.com。
+  // registry 是整条下载链的信任根（自证完整性且执行生命周期脚本），环境变量与设置项走
+  // 同一 https-only 校验：非法值丢弃并告警，绝不让明文 http 镜像重开 MITM → 任意代码路径。
+  const rawEnvNpmRegistry = process.env['DSH_HUB_NPM_REGISTRY']
+  const envNpmRegistry = sanitizeEnvRegistry(rawEnvNpmRegistry)
+  if (rawEnvNpmRegistry?.trim() && envNpmRegistry === undefined) {
+    console.warn('[main] DSH_HUB_NPM_REGISTRY 不是合法的 https 镜像地址，已忽略')
+  }
   /** 生效镜像地址：设置优先，其次环境变量；空串 = 跟随系统 npm 配置。 */
   const effectiveRegistry = (): string => deps.readSettings().npmRegistry || envNpmRegistry || ''
   const installer = createRuntimeInstaller({

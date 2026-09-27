@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, normalizeSettings, resolveLanguage, SettingsSchema } from './settings'
+import { DEFAULT_SETTINGS, normalizeSettings, resolveLanguage, sanitizeEnvRegistry, SettingsSchema } from './settings'
 
 describe('settings（非敏感偏好）', () => {
   it('默认值:跟随系统语言与主题、不驻留托盘、不自启、开通知', () => {
@@ -103,5 +103,20 @@ describe('settings（非敏感偏好）', () => {
       language: 'en',
       npmRegistry: ''
     })
+  })
+
+  it('sanitizeEnvRegistry:环境变量镜像走同一信任根,非法值丢弃', () => {
+    // 合法值原样返回（去空白）
+    expect(sanitizeEnvRegistry('https://registry.npmmirror.com')).toBe('https://registry.npmmirror.com')
+    expect(sanitizeEnvRegistry('  https://registry.npmjs.org  ')).toBe('https://registry.npmjs.org')
+    expect(sanitizeEnvRegistry('http://127.0.0.1:4873')).toBe('http://127.0.0.1:4873')
+    // 空/未设置 → undefined（回落系统 npm 配置）
+    expect(sanitizeEnvRegistry(undefined)).toBeUndefined()
+    expect(sanitizeEnvRegistry('')).toBeUndefined()
+    expect(sanitizeEnvRegistry('   ')).toBeUndefined()
+    // 明文远程源与非法协议一律丢弃：绝不重开 MITM → 任意代码路径
+    expect(sanitizeEnvRegistry('http://evil.example.com/')).toBeUndefined()
+    expect(sanitizeEnvRegistry('file:///tmp/evil-registry')).toBeUndefined()
+    expect(sanitizeEnvRegistry('not a url')).toBeUndefined()
   })
 })

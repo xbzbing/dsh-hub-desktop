@@ -34,10 +34,14 @@ export type ToastKind = ToastItem['kind']
 /**
  * 实例活动日志行：运行状态事件的 detail 原文，或一次版本升级进度事件。
  * 详情页底部信息栏按时间顺序展示，标题区不再承载原始日志。
+ * `seq` 是追加时分配的单调递增序号，作为 React key —— 截尾到 200 行后按 index 做 key
+ * 会整体左移导致每次追加全量重挂，用不随截尾变化的 seq 才能稳定复用 DOM 节点。
  */
-export type ActivityLine =
+export type ActivityInput =
   | { source: 'runtime'; at: string; detail: string }
   | { source: 'version'; event: DshVersionProgressEvent }
+
+export type ActivityLine = ActivityInput & { seq: number }
 
 interface AppState {
   /** 首次列表是否已加载；加载时显示骨架屏。 */
@@ -87,7 +91,7 @@ interface AppState {
    */
   activityLog: Record<string, ActivityLine[]>
   /** 追加一行活动日志；连续重复行去重，超限丢弃最旧。 */
-  appendActivity: (instanceId: string, line: ActivityLine) => void
+  appendActivity: (instanceId: string, line: ActivityInput) => void
   /** 清空某实例的活动日志。 */
   clearActivity: (instanceId: string) => void
   /**
@@ -145,6 +149,8 @@ interface AppState {
 }
 
 let toastSeq = 0
+/** 活动日志行的单调递增序号（React key）：截尾到 200 行后不随之左移，DOM 节点稳定复用。 */
+let activitySeq = 0
 /** 最近一次工作区导航意图；过期 IPC 完成不得覆盖当前实例视图。 */
 let workspaceNavigationGeneration = 0
 /** 正在等待主进程 openView 返回的实例；状态事件不得对同一实例重复触发打开。 */
@@ -332,7 +338,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         last.event.error === line.event.error
       // 连续重复行去重：状态重播与同值进度事件不刷屏。
       if (duplicateRuntime || duplicateVersion) return state
-      const next = [...current, line]
+      // 分配单调递增 seq 作为 React key：截尾不改变已存在行的 seq，DOM 节点得以稳定复用。
+      const next = [...current, { ...line, seq: ++activitySeq }]
       return {
         activityLog: {
           ...state.activityLog,

@@ -1,4 +1,5 @@
 /**
+ * dsh 运行时安装器。
  *
  * 按版本把 `@deepseek-ai/dsh` 装进隔离目录 `runtimes/dsh-<version>/`，版本间零干扰；
  * 安装中写 `installing.json` 支持断点恢复；列表来自 npm registry。
@@ -8,8 +9,10 @@ import { readdirSync, statSync } from 'node:fs'
 import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
+import { DSH_VERSION_PATTERN } from '@shared/contracts'
 import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
+import { killProcessGroup } from '../transport/spawn'
 import { searchNodeDirs } from './node-dirs'
 import { compareDshVersions } from './version-compare'
 
@@ -157,9 +160,6 @@ function npmChildEnv(npm: NpmInvocation, extra: NodeJS.ProcessEnv): NodeJS.Proce
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
 
-/** 版本号只允许这些字符，避免拼接目录名被穿越（runtime-source 的 PATH 探测同样复用） */
-export const VERSION_PATTERN = /^[0-9A-Za-z.+_-]+$/
-
 export type { CommandResult, CommandRunner }
 
 /** npm 查询与安装的统一执行超时；超时即 kill 并按失败上报。 */
@@ -176,32 +176,56 @@ export const runCommand: CommandRunner = (command, args, options = {}) =>
 export type NpmRunner = (
   npm: NpmInvocation,
   args: string[],
-  options: { env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void }
+  options: { env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void; signal?: AbortSignal }
 ) => Promise<CommandResult>
 
-export const spawnNpm: NpmRunner = (npm, args, options) =>
+/** spawnNpm 内部使用的 spawn 依赖（默认 node:child_process 的 spawn）；测试借此确定性驱动 kill/退出路径。 */
+export type SpawnNpmImpl = typeof spawn
+
+export const spawnNpm = (
+  npm: NpmInvocation,
+  args: string[],
+  options: { env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void; signal?: AbortSignal },
+  spawnImpl: SpawnNpmImpl = spawn
+): Promise<CommandResult> =>
   new Promise<CommandResult>((resolve, reject) => {
-    const child = spawn(npm.command, [...npm.prefixArgs, ...args], {
+    // detached：npm 会 spawn 生命周期脚本 / node-gyp / git 等子进程；detached 让它们自成进程组，
+    // 超时或退出中止时可经 killProcessGroup（负 pid）整组带走，而不是只杀 npm 本体留下孤儿。
+    const child = spawnImpl(npm.command, [...npm.prefixArgs, ...args], {
       env: options.env,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32'
     })
     let stdout = ''
     let stderr = ''
     let pendingLine = ''
     let timeoutError: Error | null = null
+    let abortError: Error | null = null
     let forceKill: ReturnType<typeof setTimeout> | null = null
     // 生产安装全部走本函数：卡死的 npm 会占住安装/启动串行队列直至应用无法退出，
-    // 与 runCommand 同一 deadline，到点 kill 并以超时失败上报。
+    // 与 runCommand 同一 deadline，到点杀整组（含 npm spawn 的生命周期脚本子进程）并以超时失败上报。
     const timer = setTimeout(() => {
       timeoutError = new Error(`npm 执行超时（${COMMAND_TIMEOUT_MS} ms），已终止`)
-      child.kill('SIGTERM')
-      forceKill = setTimeout(() => child.kill('SIGKILL'), 5_000)
+      killProcessGroup(child, 'SIGTERM')
+      forceKill = setTimeout(() => killProcessGroup(child, 'SIGKILL'), 5_000)
       forceKill.unref?.()
     }, COMMAND_TIMEOUT_MS)
     timer.unref?.()
+    // 退出信号（stopAll）到达时终止在飞安装整组，避免退出后仍占着安装队列继续下载/装包。
+    const onAbort = (): void => {
+      abortError = new Error('npm 执行已取消（应用退出）')
+      killProcessGroup(child, 'SIGTERM')
+      forceKill ??= setTimeout(() => killProcessGroup(child, 'SIGKILL'), 3_000)
+      forceKill.unref?.()
+    }
+    if (options.signal) {
+      if (options.signal.aborted) onAbort()
+      else options.signal.addEventListener('abort', onAbort, { once: true })
+    }
     const cancelTimers = (): void => {
       clearTimeout(timer)
       if (forceKill) clearTimeout(forceKill)
+      options.signal?.removeEventListener('abort', onAbort)
     }
     child.stdout?.on('data', (chunk: Buffer) => {
       stdout += String(chunk)
@@ -220,6 +244,10 @@ export const spawnNpm: NpmRunner = (npm, args, options) =>
     child.on('close', (code, signal) => {
       cancelTimers()
       if (pendingLine !== '') options.onStderrLine?.(pendingLine)
+      if (abortError) {
+        reject(abortError)
+        return
+      }
       if (timeoutError) {
         reject(timeoutError)
         return
@@ -312,6 +340,12 @@ export interface RuntimeInstaller {
    * 只写入 prefix 自身的 lib/node_modules，不动 hub 隔离目录与其它安装。
    */
   installGlobal(prefix: string, version: string, onProgress?: (progress: InstallProgress) => void): Promise<void>
+  /**
+   * 应用退出时调用：终止在飞的 npm 安装子进程，避免退出后仍在后台下载。
+   * **一次性、不可逆**：内部 AbortController 一旦 abort 便永久失效，此后所有安装/查询都会立即
+   * 以「已取消」失败。仅供退出路径调用，不是可反复使用的幂等清理。
+   */
+  dispose(): void
 }
 
 const INSTALLING_MARKER = 'installing.json'
@@ -326,7 +360,7 @@ export function runtimeEntryFor(runtimesDir: string, version: string): string {
 }
 
 function assertVersion(version: string): void {
-  if (!VERSION_PATTERN.test(version)) {
+  if (!DSH_VERSION_PATTERN.test(version)) {
     throw new Error(`非法版本号：${version}`)
   }
 }
@@ -378,6 +412,9 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     installChain = next.catch(() => undefined)
     return next
   }
+
+  // 退出信号：stopAll 经 dispose() 触发，终止在飞的 npm 子进程，避免应用退出后安装仍在跑。
+  const abortController = new AbortController()
 
   // 只读元数据（versions/dist-tags）走独立串行链：不排在长安装后面 —— 否则安装进行中
   // 触发的「检查更新 / 版本列表」要等安装结束才返回。cacache 支持并发读写，读不依赖安装完成。
@@ -445,7 +482,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       const tags: unknown = JSON.parse(result.stdout || '{}')
       const latest =
         tags && typeof tags === 'object' ? (tags as Record<string, unknown>)['latest'] : undefined
-      if (typeof latest === 'string' && VERSION_PATTERN.test(latest)) return latest
+      if (typeof latest === 'string' && DSH_VERSION_PATTERN.test(latest)) return latest
     }
     const versions = await cachedVersions()
     if (versions.length === 0) throw new Error('registry 中没有可用的 dsh 版本')
@@ -470,6 +507,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       let lastDetail = ''
       result = await runNpm(npm, installArgs, {
         env,
+        signal: abortController.signal,
         onStderrLine: (line) => {
           const path = npmFetchPath(line)
           if (!path) return
@@ -524,7 +562,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       for (const name of names) {
         if (!name.startsWith('dsh-')) continue
         const version = name.slice('dsh-'.length)
-        if (!VERSION_PATTERN.test(version)) continue
+        if (!DSH_VERSION_PATTERN.test(version)) continue
         if (await this.hasIncompleteInstall(version)) continue
         const stats = await stat(join(options.runtimesDir, name)).catch(() => null)
         installed.push({
@@ -607,6 +645,10 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
         }
         onProgress?.({ phase: 'installing', version, percent: 100 })
       })
+    },
+
+    dispose(): void {
+      abortController.abort()
     }
   }
 

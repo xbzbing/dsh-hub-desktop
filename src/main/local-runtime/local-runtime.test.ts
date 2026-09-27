@@ -10,6 +10,16 @@ import type { InstallProgress, InstalledRuntime, RuntimeInstaller } from './runt
 import { createLocalRuntime, type LocalRuntimeManager } from './local-runtime'
 import type { SpawnInvocation, SpawnedProcess } from '../transport/spawn'
 
+// 进程组回收的平台机制（POSIX 负 pid / Windows taskkill）在 transport/spawn.test.ts 单测；
+// 这里只关心管理器「何时、以何信号回收」，故把 killProcessGroup 固定为直接 kill 子进程，
+// 让断言在任意宿主平台（含 Windows CI）稳定，不受真实 taskkill spawn 影响。
+vi.mock('../transport/spawn', async (importActual) => ({
+  ...(await importActual<typeof import('../transport/spawn')>()),
+  killProcessGroup: (child: { kill(signal?: NodeJS.Signals): boolean }, signal: NodeJS.Signals) => {
+    child.kill(signal)
+  }
+}))
+
 // 默认让登录 shell 环境解析返回 null：单测不真的起 `zsh -l -i -c 'env -0'`，
 // 保持 hermetic（不读跑测机器的 .zshrc、无交互 shell 卡死风险）。验证该特性的用例
 // 通过 shellEnv 选项注入固定 Map。mergeShellEnv 保留真实实现。
@@ -86,6 +96,7 @@ function makeFakeInstaller(overrides: Partial<RuntimeInstaller> = {}): RuntimeIn
     hasIncompleteInstall: async () => false,
     resolveGlobalPrefix: async () => null,
     installGlobal: vi.fn(async () => undefined),
+    dispose: () => undefined,
     ...overrides
   }
   return base as RuntimeInstaller & {
@@ -598,6 +609,40 @@ describe('createLocalRuntime', () => {
     expect(manager.statusOf(instance.id)?.detail).toContain('code=1')
     // 子进程的 stderr 是启动失败唯一的诊断来源,必须带进详情(该字样不含凭据)。
     expect(manager.statusOf(instance.id)?.detail).toContain('port already in use')
+  })
+
+  it('就绪行主机非回环 → error + 杀进程（不加载远端 origin）', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999997
+    child.killCall = []
+    child.kill = vi.fn((signal?: NodeJS.Signals) => {
+      child.killCall.push(signal ?? 'SIGTERM')
+      return true
+    }) as never
+    const probe = vi.fn(async () => true)
+
+    const manager = createLocalRuntime({
+      store: storeStub,
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: (() => child) as never,
+      probe,
+      readyTimeoutMs: 2000
+    })
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    // 被篡改的 stdout 打印远端 origin：主机非回环，必须拒绝、不得健康探测也不得进入 running
+    child.stdout.write('dsh web: http://attacker.example/?token=abc\n')
+    await starting
+    await waitForStatus(manager, instance.id, 'error')
+
+    expect(manager.statusOf(instance.id)?.detail).toContain('非回环')
+    expect(probe).not.toHaveBeenCalled()
+    expect(child.killCall).toContain('SIGKILL')
+    expect(manager.runningIds()).toEqual([])
   })
 
   it('stop:SIGTERM → 子进程退出 → stopped;未退出 → SIGKILL 兜底', async () => {

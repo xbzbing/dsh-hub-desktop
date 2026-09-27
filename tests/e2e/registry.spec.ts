@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { CreateInstanceInput } from '@shared/contracts'
+import { REGISTRY_SCHEMA_VERSION } from '@shared/contracts'
 
 /**
  * 注册表端到端：渲染进程 → preload 白名单 → ipcMain → instance-store → 磁盘。
@@ -50,7 +51,7 @@ test('create 通过真实桥接写入注册表并落盘', async () => {
     schemaVersion: number
     instances: Array<{ id: string }>
   }
-  expect(file.schemaVersion).toBe(1)
+  expect(file.schemaVersion).toBe(REGISTRY_SCHEMA_VERSION)
   expect(file.instances.map((item) => item.id)).toContain(created.value.id)
 })
 

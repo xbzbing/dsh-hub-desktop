@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "instances": [
+    {
+      "id": "5f2504e0-4f89-41d3-9a0c-0305e82c3401",
+      "name": "本地遗留版本号",
+      "transport": "local",
+      "authMode": "auto",
+      "notes": "v1 下 dshVersion 只限长度，写入过含空格的值",
+      "dshVersion": "0.1.5 rc1",
+      "port": 8010,
+      "profile": "dev",
+      "autoStart": false,
+      "createdAt": "2026-01-05T02:14:33.000Z",
+      "updatedAt": "2026-01-06T07:41:02.000Z"
+    },
+    {
+      "id": "5f2504e0-4f89-41d3-9a0c-0305e82c3402",
+      "name": "方括号主机",
+      "transport": "ssh",
+      "authMode": "gateway",
+      "host": "[build.example.internal]",
+      "port": 22,
+      "username": "xbzbing",
+      "remotePort": 3080,
+      "localPort": 32223,
+      "identityFile": null,
+      "createdAt": "2026-01-07T09:00:00.000Z",
+      "updatedAt": "2026-01-07T09:12:45.000Z"
+    },
+    {
+      "id": "5f2504e0-4f89-41d3-9a0c-0305e82c3403",
+      "name": "合法 IPv6 方括号",
+      "transport": "ssh",
+      "authMode": "auto",
+      "host": "[::1]",
+      "port": 2222,
+      "username": "dev",
+      "remotePort": 3080,
+      "localPort": null,
+      "identityFile": null,
+      "createdAt": "2026-01-08T11:20:10.000Z",
+      "updatedAt": "2026-01-08T11:20:10.000Z"
+    }
+  ]
+}

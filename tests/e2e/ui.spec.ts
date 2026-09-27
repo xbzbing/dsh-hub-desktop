@@ -56,7 +56,7 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   expect(new Set(launcherOptions).size).toBe(launcherOptions.length)
   expect(launcherOptions.every((value) => ['dsh', 'dush', 'duush'].includes(value))).toBe(true)
   await expect(win.getByTestId('wizard-launcher').locator('option:disabled')).toHaveCount(0)
-  // 版本管理下拉已接线：选项首项恒为「跟随最新稳定版」（空值），与镜像拉取结果无关（离线安全）。
+  // 版本管理下拉已接线：选项首项恒为「跟随最新版本」（空值），与镜像拉取结果无关（离线安全）。
   await expect(win.getByTestId('wizard-version')).toBeVisible()
   await expect(win.getByTestId('wizard-version').locator('option').first()).toHaveAttribute('value', '')
   await expect(win.getByText('请填写实例名称')).toBeHidden()

@@ -642,8 +642,8 @@ export default function DetailView(): ReactNode {
             {activity === undefined || activity.length === 0 ? (
               <p className="meta">{t('detail.log.empty')}</p>
             ) : (
-              activity.map((line, index) => (
-                <p className="detail-logmore__line num" key={index}>
+              activity.map((line) => (
+                <p className="detail-logmore__line num" key={line.seq}>
                   {formatActivity(line)}
                 </p>
               ))

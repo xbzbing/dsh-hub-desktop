@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { InstanceStatusEvent, SshInstance } from '@shared/contracts'
+import { redactLine } from '@shared/redact'
 import {
   DEFAULT_PORT_RANGE_END,
   DEFAULT_PORT_RANGE_START,
@@ -182,14 +183,15 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     while ((newlineIndex = entry.buffer.indexOf('\n')) !== -1) {
       const line = entry.buffer.slice(0, newlineIndex).replace(/\r$/, '')
       entry.buffer = entry.buffer.slice(newlineIndex + 1)
-      if (line.trim() !== '') entry.log.push(line)
+      // 日志行进 detail/归因前统一脱敏：剥掉行内 URL 的查询串（防 ?token= 等意外泄漏）。
+      if (line.trim() !== '') entry.log.push(redactLine(line))
     }
     if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
   }
 
   function drainLogBuffer(entry: TunnelEntry): void {
     const trailing = entry.buffer.trim()
-    if (trailing !== '') entry.log.push(trailing)
+    if (trailing !== '') entry.log.push(redactLine(trailing))
     entry.buffer = ''
     if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
   }
@@ -213,9 +215,12 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     try {
       scanned = await probe.scan()
     } catch {
-      // keyscan 拿不到公钥(主机不可达/网络抖动):不做 TOFU 判定,交给 ssh 自己连接并归因
+      // keyscan 拿不到公钥(主机不可达/网络抖动):不做 TOFU 判定,放行交给 ssh 自己连接。
+      // 这是安全的 fail-open —— ssh 侧以 StrictHostKeyChecking=yes + 私有 UserKnownHostsFile
+      // 运行（见 ssh-args），未知主机在 ssh 层直接失败关闭，hub 放行不等于自动信任。
       return true
     }
+    // 同理，keyscan 返回空（远端未出示任何公钥）时也放行给 ssh 兜底判定。
     if (scanned.length === 0) return true
     const evaluation = evaluateHostTrust(trusted, scanned)
     if (evaluation.verdict === 'trusted') return true
@@ -291,6 +296,26 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
   /** 分配并保留本地端口：优先沿用实例已持久化的 localPort（被占则递增），区间外向 65535 递进 */
   function allocLocalPort(instance: SshInstance): Promise<number> {
     const next = allocChain.then(() => allocLocalPortInner(instance))
+    allocChain = next.catch(() => undefined)
+    return next
+  }
+
+  /**
+   * 换一个本地端口（forward 失败重连用）：先释放旧端口再在区间内找新端口。
+   * 必须与 allocLocalPort 走同一条 allocChain —— 否则 findFreePort 与 reservedPorts.add
+   * 之间的窗口里，另一实例的并发分配会把同一端口观察为空闲而双双保留（重复 -L 绑定）。
+   */
+  function reallocLocalPort(previous: number): Promise<number> {
+    const next = allocChain.then(async () => {
+      reservedPorts.delete(previous)
+      const port = await findFreePort({
+        start: DEFAULT_PORT_RANGE_START,
+        end: DEFAULT_PORT_RANGE_END,
+        probe: isPortAvailable
+      })
+      reservedPorts.add(port)
+      return port
+    })
     allocChain = next.catch(() => undefined)
     return next
   }
@@ -431,14 +456,9 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     // 端口转发失败（本地端口被占）→ 换一个本地端口再试
     if (entry.forwardFailed) {
       entry.forwardFailed = false
-      reservedPorts.delete(entry.localPort)
       try {
-        const port = await findFreePort({
-          start: DEFAULT_PORT_RANGE_START,
-          end: DEFAULT_PORT_RANGE_END,
-          probe: isPortAvailable
-        })
-        reservedPorts.add(port)
+        // 经 allocChain 串行：check-then-add 原子，不与并发分配抢同一端口。
+        const port = await reallocLocalPort(entry.localPort)
         if (entry.stopping) {
           reservedPorts.delete(port)
           return

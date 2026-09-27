@@ -9,6 +9,7 @@
  * 两个解析函数是纯函数(便于穷举测试),IO 全部可注入。
  */
 import { execFile } from 'node:child_process'
+import { isLoopbackHost } from '@shared/endpoint'
 
 /** 探测到的一个外部 dsh web 进程 */
 export interface ExternalDshWeb {
@@ -51,8 +52,9 @@ export const WIN_PROCESS_SCRIPT =
  *   拉起的实例当成「外部实例」重复上报。
  */
 export function isDshWebCommand(command: string): boolean {
-  // 排除 shell / ps / grep 包装行:它们会把「dsh web」当参数,直接匹配会误报
-
+  // 排除 shell / ps / grep 包装行:它们会把「dsh web」当参数,直接匹配会误报。
+  // 第一条按命令名起始排除;第二条兜住绝对路径形态(如 /usr/bin/pgrep -f …/dsh web) ——
+  // 它不以 grep/pgrep 起始,却含 `/dsh web` 会命中下方锚点,必须由词边界匹配拦掉。
   if (/^(?:bash|sh|zsh|fish|ps|grep|pgrep|rg)\b/.test(command)) return false
   if (/\bgrep\b|\bpgrep\b/.test(command)) return false
   if (!/dsh/i.test(command)) return false
@@ -108,42 +110,70 @@ export function parseDshWebProcesses(psOutput: string): ExternalDshWeb[] {
 }
 
 /**
- * 解析 `lsof -nP -iTCP -sTCP:LISTEN` 输出 → pid → 首个监听端口。
- * 行形如:`node 84758 <user> 21u IPv4 0x… 0t0 TCP localhost:3080 (LISTEN)`。
+ * 从多条监听行里为每个 PID 选定端口，优先回环绑定：一个 PID 可能有多条监听
+ * （IPv4/IPv6 双栈、多端口）；接管固定连 `127.0.0.1:${port}`，回环优先使选择确定，
+ * 而不是取 lsof/netstat 恰好先输出的那条。POSIX 与 Windows 解析共用它。
+ * `isLoopbackHost`（@shared/endpoint）负责判定，含 `localhost` / `::1` / `127.x` / `*.localhost`。
  */
-export function parseListeningPorts(lsofOutput: string): Map<number, number> {
+function createLoopbackPreferredPicker(): {
+  offer: (pid: number, port: number, host: string) => void
+  result: () => Map<number, number>
+} {
   const ports = new Map<number, number>()
-  for (const line of lsofOutput.split('\n')) {
-    const match = /^\S+\s+(\d+)\s+.*\sTCP\s+.*?:(\d+)\s+\(LISTEN\)/.exec(line.trim())
-    if (!match) continue
-    const pid = Number(match[1])
-    const port = Number(match[2])
-    if (!Number.isInteger(pid) || port < 1 || port > 65_535) continue
-    if (!ports.has(pid)) ports.set(pid, port)
+  const loopbackPids = new Set<number>()
+  return {
+    offer(pid, port, host) {
+      // 回环绑定优先：已记录回环端口后不再被覆盖；首个回环端口覆盖此前的非回环记录。
+      if (loopbackPids.has(pid)) return
+      if (isLoopbackHost(host)) {
+        ports.set(pid, port)
+        loopbackPids.add(pid)
+      } else if (!ports.has(pid)) {
+        ports.set(pid, port)
+      }
+    },
+    result: () => ports
   }
-  return ports
 }
 
 /**
- * 解析 `netstat -ano -p tcp` 输出 → pid → 首个 TCP 监听端口。
+ * 解析 `lsof -nP -iTCP -sTCP:LISTEN` 输出 → pid → 监听端口（回环优先）。
+ * 行形如:`node 84758 <user> 21u IPv4 0x… 0t0 TCP localhost:3080 (LISTEN)`。
+ */
+export function parseListeningPorts(lsofOutput: string): Map<number, number> {
+  const picker = createLoopbackPreferredPicker()
+  for (const line of lsofOutput.split('\n')) {
+    const match = /^\S+\s+(\d+)\s+.*\sTCP\s+(\S+):(\d+)\s+\(LISTEN\)/.exec(line.trim())
+    if (!match) continue
+    const pid = Number(match[1])
+    const port = Number(match[3])
+    if (!Number.isInteger(pid) || port < 1 || port > 65_535) continue
+    picker.offer(pid, port, match[2] ?? '')
+  }
+  return picker.result()
+}
+
+/**
+ * 解析 `netstat -ano -p tcp` 输出 → pid → TCP 监听端口（回环优先）。
  * 行形如:`  TCP    127.0.0.1:3080    0.0.0.0:0    LISTENING    84758`。
  * UDP 行没有状态列,IPv6 本地地址形如 `[::]:3080`,都按列位与状态过滤。
  */
 export function parseWindowsListeningPorts(netstatOutput: string): Map<number, number> {
-  const ports = new Map<number, number>()
+  const picker = createLoopbackPreferredPicker()
   for (const line of netstatOutput.split('\n')) {
     const columns = line.trim().split(/\s+/)
     if (columns.length < 4) continue
     const [proto, local, , state, pidText] = columns
     if ((proto ?? '').toUpperCase() !== 'TCP') continue
     if ((state ?? '').toUpperCase() !== 'LISTENING') continue
-    const port = Number(/:(\d+)$/.exec(local ?? '')?.[1])
+    const localAddr = local ?? ''
+    const port = Number(/:(\d+)$/.exec(localAddr)?.[1])
     const pid = Number(pidText)
     if (!Number.isInteger(pid) || pid <= 0) continue
     if (!(port >= 1 && port <= 65_535)) continue
-    if (!ports.has(pid)) ports.set(pid, port)
+    picker.offer(pid, port, localAddr.replace(/:\d+$/, ''))
   }
-  return ports
+  return picker.result()
 }
 
 export interface ExternalDshScannerOptions {

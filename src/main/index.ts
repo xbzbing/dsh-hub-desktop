@@ -8,6 +8,7 @@ import { AUTH_IPC, WORKSPACE_HOTKEY_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
 import type { AuthProbeController } from './ipc/register'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
+import type { RuntimeInstaller } from './local-runtime/runtime-installer'
 import { createExternalDshScanner } from './local-runtime/external-dsh'
 import { listLocalSpaces, localSpacePath } from './local-runtime/local-spaces'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
@@ -22,6 +23,7 @@ import { clearSessionCookie } from './webview/session-cookie'
 import type { PromptBroker } from './ssh/prompt-broker'
 import type { AuthRegistry } from './auth/auth-registry'
 import { createInstanceStore } from './registry/instance-store'
+import { REGISTRY_MIGRATIONS } from './registry/migrations'
 import { createSettingsStore } from './settings/settings-store'
 import { resolveLanguage } from '@shared/settings'
 import type { SettingsStore } from './settings/settings-store'
@@ -165,6 +167,8 @@ let tunnels: SshTunnelManager | null = null
 let httpEndpoints: HttpEndpointManager | null = null
 let promptBroker: PromptBroker | null = null
 let auth: AuthRegistry | null = null
+/** dsh 运行时安装器（退出前需中止在飞的 npm 安装，故提到模块级）。 */
+let installerRef: RuntimeInstaller | null = null
 let quitting = false
 
 const gracefulQuit = createGracefulQuit({
@@ -172,6 +176,8 @@ const gracefulQuit = createGracefulQuit({
     quitting = true
   },
   cleanup: async () => {
+    // 先中止在飞的 npm 安装子进程，避免应用退出后仍在后台下载/装包。
+    installerRef?.dispose()
     const recycling: Array<Promise<void>> = []
     if (runtime) {
       recycling.push(runtime.stopAll().catch((error: unknown) => console.error('[main] 停止实例失败：', error)))
@@ -213,8 +219,12 @@ void app.whenReady().then(() => {
   registerRendererProtocol()
 
   const dataRoot = app.getPath('userData')
-  // 注册表落盘位置：<userData>/registry/instances.json（+ 滚动备份 + 损坏隔离）
-  const instanceStore = createInstanceStore({ dir: join(dataRoot, 'registry') })
+  // 注册表落盘位置：<userData>/registry/instances.json（+ 滚动备份 + 损坏隔离）；
+  // 接入 v1→v2 迁移链，历史的方括号主机 / 非法 dshVersion 归一化而非整表隔离。
+  const instanceStore = createInstanceStore({
+    dir: join(dataRoot, 'registry'),
+    migrations: REGISTRY_MIGRATIONS
+  })
   const vaultControl = createVaultControl(dataRoot)
   vault = vaultControl.vault
   const settings = createSettingsStore({ dir: dataRoot })
@@ -288,6 +298,7 @@ void app.whenReady().then(() => {
   httpEndpoints = runtimeController.httpEndpoints
   promptBroker = runtimeController.promptBroker
   const installer = runtimeController.installer
+  installerRef = installer
   const pathProbe = runtimeController.pathProbe
 
   const authController = createAuthController({
