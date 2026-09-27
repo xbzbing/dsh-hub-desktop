@@ -34,8 +34,7 @@ export function sleep(ms: number): Promise<void> {
  * 反复探测直到成功、次数用尽或 `shouldAbort` 返回 true。
  * 返回 null 表示已中止（调用方自行收尾），否则返回最后一次探测结论。
  *
- * 各 transport 传入的 `retries` 默认值并不相同：本机实例 5、HTTP 端点 3，
- * 两侧各自维护、不随本函数的调整而同步。
+ * `retries` 由各 transport 注入，默认值统一为 5（本机实例与 HTTP 端点一致）。
  */
 export async function retryProbe(options: {
   url: string
