@@ -1,0 +1,118 @@
+import type { ReactNode } from 'react'
+import type { InstanceRecord, InstanceStatusEvent } from '@shared/contracts'
+import type { Translator } from '@shared/i18n'
+import { Icon } from '../../lib/icons'
+import type { DisplayStatus } from '../../lib/format'
+import { DshVersionCheckButton, DshVersionPanel } from '../DshVersionControl'
+import type { DshVersionControl } from '../useDshVersionControl'
+
+export interface RuntimeCardProps {
+  t: Translator
+  record: InstanceRecord
+  status: InstanceStatusEvent | undefined
+  display: DisplayStatus
+  version: string
+  runCommand: string | null
+  localHome: string | undefined
+  canControlRuntime: boolean
+  restarting: boolean
+  stopping: boolean
+  versionControl: DshVersionControl | null
+  onOpenOrStart: () => void
+  onRestart: () => void
+  onStop: () => void
+  onEdit: () => void
+}
+
+/** 运行环境卡：版本/端口/数据目录/启动命令，打开工作区、重启、关闭、编辑与检查更新。 */
+export default function RuntimeCard(props: RuntimeCardProps): ReactNode {
+  const {
+    t,
+    record,
+    status,
+    display,
+    version,
+    runCommand,
+    localHome,
+    canControlRuntime,
+    restarting,
+    stopping,
+    versionControl,
+    onOpenOrStart,
+    onRestart,
+    onStop,
+    onEdit
+  } = props
+  return (
+    <div className="card runtime-card selectable">
+      <div className="card-head">
+        <h3>{t('detail.runtime')}</h3>
+        <span className="meta">{record.transport === 'local' ? t('detail.localSide') : t('detail.remoteSide')}</span>
+      </div>
+      <dl className="kv">
+        <dt>{t('detail.dshVersion')}</dt>
+        <dd className="num">{version}</dd>
+        {record.transport === 'local' && (
+          <>
+            <dt>{t('detail.port')}</dt>
+            {/* 已接管进程的运行端口优先使用状态事件中的端口。 */}
+            <dd className="num">{status?.port ?? record.port ?? t('detail.unassigned')}</dd>
+            <dt>{t('settings.dataDir')}</dt>
+            <dd className="num" title={t('detail.dataDirTitle')}>
+              {status?.runtimeSource === 'external'
+                ? t('detail.externalDataDir')
+                : (localHome ?? `…/homes/${record.id}`)}
+            </dd>
+            {/* 启动命令仅 hub 拉起的本机进程才有；尚未启动过的实例隐藏该行。 */}
+            {runCommand !== null && (
+              <>
+                <dt>{t('detail.runCommand')}</dt>
+                <dd className="num">{runCommand}</dd>
+              </>
+            )}
+          </>
+        )}
+      </dl>
+      {/* dsh 版本管理：检测结果与升级进度留在正文，检查更新按钮在下方操作行。 */}
+      <DshVersionPanel control={versionControl} />
+      <div className="row mt12 runtime-actions">
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={onOpenOrStart}
+          disabled={display === 'connecting'}
+          data-testid="open-view-btn"
+        >
+          <Icon name="external" />
+          {display === 'connecting'
+            ? t('detail.openingWorkspace')
+            : status?.status === 'running'
+              ? t('detail.openWorkspace')
+              : t('detail.startWorkspace')}
+        </button>
+        {/* 重启只针对 hub 拉起的运行中进程；外部接管的进程归用户所有。 */}
+        {canControlRuntime && (
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={onRestart}
+            disabled={restarting}
+            data-testid="restart-btn"
+          >
+            <Icon name="refresh" /> {restarting ? t('detail.restarting') : t('detail.restart')}
+          </button>
+        )}
+        {/* 关闭实例：断开工作区并停止 hub 托管的运行中进程；外部接管进程归用户所有，不提供。 */}
+        {canControlRuntime && (
+          <button className="btn btn-danger btn-sm" onClick={onStop} disabled={stopping} data-testid="stop-btn">
+            <Icon name="power" /> {stopping ? t('detail.stopping') : t('detail.stop')}
+          </button>
+        )}
+        {/* transport 不可修改；端口留空时自动分配，运行中修改在下次启动生效。 */}
+        <button className="btn btn-secondary btn-sm" onClick={onEdit} data-testid="edit-btn">
+          <Icon name="edit" /> {t('edit.openButton')}
+        </button>
+        {/* 检查更新与编辑同一行，放在编辑之后。 */}
+        <DshVersionCheckButton control={versionControl} />
+      </div>
+    </div>
+  )
+}
