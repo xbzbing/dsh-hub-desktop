@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { InstanceStatusEvent, SshInstance } from '@shared/contracts'
+import { redactLine } from '@shared/redact'
 import {
   DEFAULT_PORT_RANGE_END,
   DEFAULT_PORT_RANGE_START,
@@ -182,14 +183,15 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     while ((newlineIndex = entry.buffer.indexOf('\n')) !== -1) {
       const line = entry.buffer.slice(0, newlineIndex).replace(/\r$/, '')
       entry.buffer = entry.buffer.slice(newlineIndex + 1)
-      if (line.trim() !== '') entry.log.push(line)
+      // 日志行进 detail/归因前统一脱敏：剥掉行内 URL 的查询串（防 ?token= 等意外泄漏）。
+      if (line.trim() !== '') entry.log.push(redactLine(line))
     }
     if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
   }
 
   function drainLogBuffer(entry: TunnelEntry): void {
     const trailing = entry.buffer.trim()
-    if (trailing !== '') entry.log.push(trailing)
+    if (trailing !== '') entry.log.push(redactLine(trailing))
     entry.buffer = ''
     if (entry.log.length > LOG_BUFFER_LINES) entry.log.splice(0, entry.log.length - LOG_BUFFER_LINES)
   }

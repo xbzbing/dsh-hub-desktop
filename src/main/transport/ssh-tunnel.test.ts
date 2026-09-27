@@ -254,6 +254,27 @@ describe('createSshTunnels（隧道管理器 + 看门狗）', () => {
     expect(detail).not.toContain('SSH 会话异常退出（code=255）')
   })
 
+  it('子进程日志行进 detail 前脱敏:行内 URL 查询串被剥离', async () => {
+    const child = makeFakeChild()
+    const manager = createSshTunnels({
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: (() => child) as never,
+      probe: async () => true,
+      readyTimeoutMs: 2000
+    })
+    const instance = sshInstance()
+    await manager.start(instance)
+    await waitForStatus(manager, instance.id, 'running')
+
+    // 子进程若打印带查询串的 URL（如误把就绪地址回显到 stderr），归因 detail 不得带出 ?token=
+    child.stderr.write('ssh error near http://127.0.0.1:3080/?token=leaked-secret\n')
+    child.emit('exit', 1, null)
+    await waitForStatus(manager, instance.id, 'error')
+    const detail = manager.statusOf(instance.id)?.detail ?? ''
+    expect(detail).not.toContain('leaked-secret')
+    expect(detail).not.toContain('token=')
+  })
+
   it('看门狗:断线 → 归因 + 退避重连(第 N 次自动重连)', async () => {
     const children: FakeChild[] = []
     const spawnImpl = vi.fn(() => {
