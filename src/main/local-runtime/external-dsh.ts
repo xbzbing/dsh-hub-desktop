@@ -108,41 +108,70 @@ export function parseDshWebProcesses(psOutput: string): ExternalDshWeb[] {
   return found
 }
 
+/** lsof/netstat 的本地地址主机部分是否回环（含 IPv6 `[::1]`、`*` 视为非回环）。 */
+function isLoopbackListenHost(host: string): boolean {
+  const h = host.replace(/^\[/, '').replace(/\]$/, '').toLowerCase()
+  if (h === 'localhost' || h === '::1') return true
+  return /^127(\.\d{1,3}){1,3}$/.test(h)
+}
+
 /**
- * 解析 `lsof -nP -iTCP -sTCP:LISTEN` 输出 → pid → 首个监听端口。
+ * 解析 `lsof -nP -iTCP -sTCP:LISTEN` 输出 → pid → 监听端口。
  * 行形如:`node 84758 <user> 21u IPv4 0x… 0t0 TCP localhost:3080 (LISTEN)`。
+ * 一个 PID 可能有多行（IPv4/IPv6 双栈、多端口）：优先取回环绑定的端口，
+ * 使接管选择确定（`127.0.0.1:${port}` 连接与之一致），而不是取 lsof 恰好先输出的那条。
  */
 export function parseListeningPorts(lsofOutput: string): Map<number, number> {
   const ports = new Map<number, number>()
+  const loopbackPids = new Set<number>()
   for (const line of lsofOutput.split('\n')) {
-    const match = /^\S+\s+(\d+)\s+.*\sTCP\s+.*?:(\d+)\s+\(LISTEN\)/.exec(line.trim())
+    const match = /^\S+\s+(\d+)\s+.*\sTCP\s+(\S+):(\d+)\s+\(LISTEN\)/.exec(line.trim())
     if (!match) continue
     const pid = Number(match[1])
-    const port = Number(match[2])
+    const port = Number(match[3])
     if (!Number.isInteger(pid) || port < 1 || port > 65_535) continue
-    if (!ports.has(pid)) ports.set(pid, port)
+    const loopback = isLoopbackListenHost(match[2] ?? '')
+    // 回环绑定优先：已记录回环端口后不再被非回环覆盖；首个回环端口覆盖此前的非回环记录。
+    if (loopbackPids.has(pid)) continue
+    if (loopback) {
+      ports.set(pid, port)
+      loopbackPids.add(pid)
+    } else if (!ports.has(pid)) {
+      ports.set(pid, port)
+    }
   }
   return ports
 }
 
 /**
- * 解析 `netstat -ano -p tcp` 输出 → pid → 首个 TCP 监听端口。
+ * 解析 `netstat -ano -p tcp` 输出 → pid → TCP 监听端口。
  * 行形如:`  TCP    127.0.0.1:3080    0.0.0.0:0    LISTENING    84758`。
  * UDP 行没有状态列,IPv6 本地地址形如 `[::]:3080`,都按列位与状态过滤。
+ * 与 POSIX 同一口径：一个 PID 多条监听时优先回环绑定，使接管端口选择确定。
  */
 export function parseWindowsListeningPorts(netstatOutput: string): Map<number, number> {
   const ports = new Map<number, number>()
+  const loopbackPids = new Set<number>()
   for (const line of netstatOutput.split('\n')) {
     const columns = line.trim().split(/\s+/)
     if (columns.length < 4) continue
     const [proto, local, , state, pidText] = columns
     if ((proto ?? '').toUpperCase() !== 'TCP') continue
     if ((state ?? '').toUpperCase() !== 'LISTENING') continue
-    const port = Number(/:(\d+)$/.exec(local ?? '')?.[1])
+    const localAddr = local ?? ''
+    const port = Number(/:(\d+)$/.exec(localAddr)?.[1])
     const pid = Number(pidText)
     if (!Number.isInteger(pid) || pid <= 0) continue
     if (!(port >= 1 && port <= 65_535)) continue
-    if (!ports.has(pid)) ports.set(pid, port)
+    const host = localAddr.replace(/:\d+$/, '')
+    const loopback = isLoopbackListenHost(host)
+    if (loopbackPids.has(pid)) continue
+    if (loopback) {
+      ports.set(pid, port)
+      loopbackPids.add(pid)
+    } else if (!ports.has(pid)) {
+      ports.set(pid, port)
+    }
   }
   return ports
 }
