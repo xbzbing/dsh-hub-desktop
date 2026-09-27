@@ -279,6 +279,7 @@ describe('registerIpc', () => {
       'app:info',
       'app:ping',
       'app:open-homepage',
+      'app:open-about',
       'instances:list',
       'instances:get',
       'instances:create',
@@ -2009,6 +2010,32 @@ describe('registerIpc', () => {
     const result = (await invoke('instances:delete', created.value.id)) as { ok: boolean }
     expect(runtimeFake.stop).not.toHaveBeenCalled()
     expect(result.ok).toBe(true)
+  })
+
+  it('delete:保险库清理失败不阻断实例记录移除(留痕而非报错)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+      if (!created.ok) throw new Error('创建失败')
+      // 模拟 Windows 上 vault 落盘偶发失败：删除仍必须成功移除记录。
+      vaultFake['forgetInstance'] = vi.fn(async () => {
+        throw new Error('vault 落盘失败')
+      })
+
+      const result = (await invoke('instances:delete', created.value.id)) as {
+        ok: boolean
+        value: { removed: boolean }
+      }
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.value.removed).toBe(true)
+      expect(errSpy).toHaveBeenCalledWith(
+        '[ipc] 删除时清理保险库条目失败：',
+        created.value.id,
+        expect.any(Error)
+      )
+    } finally {
+      errSpy.mockRestore()
+    }
   })
 
   it('start:local 实例 → 交给 runtime.start 并立即返回(不阻塞安装/启动)', async () => {

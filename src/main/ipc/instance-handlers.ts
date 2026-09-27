@@ -164,17 +164,25 @@ export function registerInstanceHandlers(
         // 否则 dsh/ssh 进程继续存活(独占端口与 DSH_HOME),窗口也无 stopped 事件可回收
         const record = await store.get(instanceId)
         externalAccessUrls.delete(instanceId)
-        await deps.vault.forgetExternalAccessToken(instanceId)
+        // 停止传输层：进程/隧道/端点回收必须在移除记录前完成，失败要如实上报（不能留孤儿）。
         if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
         else if (record?.transport === 'http') await deps.http.stop(instanceId)
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
+        // 移入废纸篓是用户显式请求：失败必须上报（避免界面显示已删而磁盘数据仍在）。
         if (deleteOptions.trashSpace && record?.transport === 'local' && !record.useDefaultSpace) {
           if (!deps.trashLocalSpace) throw new InstanceStoreError('invalid-state', '本机隔离空间管理不可用')
           await deps.trashLocalSpace(instanceId)
         }
         deps.hideInstanceView?.()
         deps.auth.forget(instanceId)
-        await deps.vault.forgetInstance(instanceId)
+        // 凭据/分区会话清理是尽力而为：单步失败只留痕，绝不阻断实例记录移除 ——
+        // 否则 vault 落盘（Windows 上可能因文件占用/权限偶发失败）会让用户「删不掉实例」。
+        await deps.vault
+          .forgetExternalAccessToken(instanceId)
+          .catch((error: unknown) => console.error('[ipc] 删除时忘记外部访问 token 失败：', instanceId, error))
+        await deps.vault
+          .forgetInstance(instanceId)
+          .catch((error: unknown) => console.error('[ipc] 删除时清理保险库条目失败：', instanceId, error))
         await deps.clearPartitionSession?.(instanceId).catch(() => undefined)
         return { removed: await store.remove(instanceId) }
       })
