@@ -39,8 +39,20 @@ function parseSshPort(rawPort: string): number | null {
   return inPortRange(rawPort) ? Number(rawPort) : null
 }
 
+/**
+ * SSH host 语法的单一真源：校验（isValidSshHost）与拆分（splitSshHostPort）共用同一组正则，
+ * 两者不会再各自维护而漂移。
+ * - `PLAIN_HOST_PORT`：`host:port`（主机名/别名/IPv4 + 十进制端口）。
+ * - `BRACKET_HOST_PORT`：`[v6]:port`（方括号 IPv6 + 端口）。
+ * - `BRACKET_HOST`：`[v6]`（方括号 IPv6，无端口）。方括号内只允许十六进制/冒号/点分尾，
+ *   非 IPv6 字面量（如 `[-flist]`）不匹配 → 被 isValidSshHost 拒绝，堵住 ssh-keyscan 选项注入面。
+ */
+const PLAIN_HOST_PORT = /^([A-Za-z0-9._-]+):(\d+)$/
+const BRACKET_HOST_PORT = /^\[([0-9a-fA-F:.]+)\]:(\d+)$/
+const BRACKET_HOST = /^\[([0-9a-fA-F:.]+)\]$/
+
 function isValidSshHost(host: string): boolean {
-  const portOfPlain = /^([A-Za-z0-9._-]+):(\d+)$/.exec(host)
+  const portOfPlain = PLAIN_HOST_PORT.exec(host)
   if (portOfPlain) return parseSshPort(portOfPlain[2] ?? '') !== null
   const portOfBracket = /^\[([0-9a-fA-F:.]+)\](?::(\d+))?$/.exec(host)
   if (portOfBracket) return portOfBracket[2] === undefined || parseSshPort(portOfBracket[2]) !== null
@@ -769,18 +781,18 @@ export interface SshHostPortSplit {
  *   `[192.0.2.1]:2222` 等点分形态也必须能拆分，否则端口会静默回退）。
  */
 export function splitSshHostPort(host: string, fallbackPort: number): SshHostPortSplit {
-  const plain = /^([A-Za-z0-9._-]+):(\d+)$/.exec(host)
+  const plain = PLAIN_HOST_PORT.exec(host)
   if (plain) {
     const port = parseSshPort(plain[2] ?? '')
     if (port !== null) return { host: plain[1] ?? '', port, portEmbedded: true }
   }
-  const bracketedWithPort = /^\[([0-9a-fA-F:.]+)\]:(\d+)$/.exec(host)
+  const bracketedWithPort = BRACKET_HOST_PORT.exec(host)
   if (bracketedWithPort) {
     const port = parseSshPort(bracketedWithPort[2] ?? '')
     if (port !== null) return { host: bracketedWithPort[1] ?? '', port, portEmbedded: true }
   }
   // 方括号无端口形态 `[::1]`：只归一化主机形态，端口由调用方决定
-  const bracketedPlain = /^\[([0-9a-fA-F:.]+)\]$/.exec(host)
+  const bracketedPlain = BRACKET_HOST.exec(host)
   if (bracketedPlain) {
     return { host: bracketedPlain[1] ?? '', port: fallbackPort, portEmbedded: false }
   }
