@@ -7,12 +7,8 @@ import { delimiter, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { InstanceStatusEvent, LocalInstance, DshVersionProgressEvent } from '@shared/contracts'
 import type { InstallProgress, InstalledRuntime, RuntimeInstaller } from './runtime-installer'
-import {
-  createLocalRuntime,
-  type LocalRuntimeManager,
-  type SpawnInvocation,
-  type SpawnedProcess
-} from './local-runtime'
+import { createLocalRuntime, type LocalRuntimeManager } from './local-runtime'
+import type { SpawnInvocation, SpawnedProcess } from '../transport/spawn'
 
 // 默认让登录 shell 环境解析返回 null：单测不真的起 `zsh -l -i -c 'env -0'`，
 // 保持 hermetic（不读跑测机器的 .zshrc、无交互 shell 卡死风险）。验证该特性的用例

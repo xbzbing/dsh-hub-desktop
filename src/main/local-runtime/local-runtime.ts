@@ -13,21 +13,19 @@ import type {
 } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
 import type { PortProbe } from './port-allocator'
-import type { InstallProgress, RuntimeInstaller } from './runtime-installer'
+import type { InstallProgress } from './runtime-installer'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 import { isExternalRuntime, resolveSystemDshUsage } from './dsh-source-policy'
-import type { PathProbe } from './runtime-source'
 import { searchNodeDirs } from './node-dirs'
 import { resolveLoginPathOnce } from './login-path'
 import { resolveShellEnvOnce } from './shell-env'
 import { httpHealthProbe, retryProbe, type HealthProbe } from '../transport/probe'
 import { createStatusBus } from '../transport/status-bus'
-import { detachedSpawn, type SpawnedProcess, type SpawnInvocation, type SpawnLike } from '../transport/spawn'
-import { createLauncher } from './launch'
+import { detachedSpawn, killProcessGroup, type SpawnLike } from '../transport/spawn'
+import type { Entry } from './entry'
+import { createLauncher, type LaunchOptions } from './launch'
 
 export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
-export type { SpawnedProcess, SpawnInvocation, SpawnLike } // 定义位于 transport/spawn.ts。
-export { DEFAULT_LOCAL_PORT } from './launch' // 定义位于 launch.ts。
 
 /** dsh 就绪输出：`dsh web: http://127.0.0.1:52300/?token=...` */
 const READY_PATTERN = /dsh\s+web:\s+(https?:\/\/\S+)/i
@@ -38,10 +36,7 @@ const LOG_BUFFER_LINES = 80
 /** 未以换行结尾的残片上限:异常的超长单行只保留尾部,防止无界增长 */
 const LOG_BUFFER_MAX = 64 * 1024
 
-
-export interface LocalRuntimeOptions {
-  installer: RuntimeInstaller
-  dataRoot: string
+export interface LocalRuntimeOptions extends LaunchOptions {
   /** 实例注册表；升级编排完成后回写 dshVersion。 */
   store: Pick<InstanceStore, 'update'>
   /** 缺省用 Electron 自带 Node（ELECTRON_RUN_AS_NODE）执行 dsh 入口 */
@@ -62,10 +57,6 @@ export interface LocalRuntimeOptions {
   healthProbeRetryMs?: number
   now?: () => number
   /**
-   * 探测用户本机 PATH 上的 dsh；缺省不探测，来源决策退化为「hub → 下载」两级。
-   */
-  pathProbe?: PathProbe
-  /**
    * 为本机（`path` 来源）启动器解析一个真实 node 可执行文件；缺省按「同目录 → PATH」探测。
    * 注入以便测试固定该解析结果（默认实现要读真实文件系统）。
    */
@@ -85,11 +76,6 @@ export interface LocalRuntimeOptions {
    * 缺省 true；由设置项 inheritShellEnv 决定，读取函数注入以便运行中改设置即时生效。
    */
   inheritShellEnv?: () => boolean
-  /**
-   * 下载 dsh 前的用户确认口，返回 true 才继续下载；缺省视为拒绝。
-   * 生产装配必须注入，测试/受限环境注入 stub。
-   */
-  confirmDownload?: (version: string) => Promise<boolean>
   /**
    * 公共空间实例升级系统默认 dsh 前的二次确认：该升级全局生效。
    * 返回 false = 用户拒绝，本次升级不产生任何进度、不改任何状态。缺省视为拒绝。
@@ -132,37 +118,12 @@ export interface AdoptTarget {
   url?: string
 }
 
-/** 运行中/接管中的本机实例条目；由 launch.ts 的 spawnAndWatch 与本模块的 adopt 构造。 */
-export interface Entry {
-  /** hub spawn 的子进程;接管外部实例时为 null(进程归用户所有) */
-  child: SpawnedProcess | null
-  url: string | null
-  port: number | null
-  version: string
-  /** 本次启动的实际命令行(命令+参数),经状态事件展示;外部接管条目没有 hub 构造的命令行 */
-  command?: string
-  /** 运行时来源(hub=隔离目录 / path=用户本机 PATH / external=接管外部进程) */
-  runtimeSource: 'hub' | 'path' | 'external'
-  home: string
-  log: string[]
-  /** 未以换行结尾的残片：跨 chunk 的就绪行靠它拼接，否则会漏匹配就绪行 */
-  buffer: string
-  ready: boolean
-  stopping: boolean
-  timer: NodeJS.Timeout | null
-  /** 队列放行钩子:就绪 / 退出 / 出错 / 超时 任一发生时调用(TOCTOU 防线) */
-  settleSpawn?: () => void
-  /** 外部接管的 pid(仅展示与诊断;停止时不 kill) */
-  externalPid?: number
-}
-
 function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
   // Electron 主进程的 process.execPath 是 Electron 本体：以 ELECTRON_RUN_AS_NODE 退化为纯 Node 执行 dsh。
   // `--expose-internals` 是 dsh web profile 的硬性要求（cordis-plugin-hmr 需要），缺失时就绪后即崩
 
   return { command: process.execPath, args: ['--expose-internals'], env: { ELECTRON_RUN_AS_NODE: '1' } }
 }
-
 
 /**
  * 解析一个真实 node 可执行文件，供 hub 与本机启动器来源执行 dsh/dush/duush。
@@ -275,20 +236,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
 
   function killTree(entry: Entry, signal: NodeJS.Signals): void {
     // 外部接管的条目没有子进程(hub 没 spawn 过):绝不对它做任何 kill
-    const child = entry.child
-    if (!child) return
-    const pid = child.pid
-    if (pid === undefined) return
-    try {
-      // detached 启动 → 子进程自成进程组，负 pid 杀整组（包装 shell + 其全部后代）
-      process.kill(-pid, signal)
-    } catch {
-      try {
-        child.kill(signal)
-      } catch {
-        /* 已退出 */
-      }
-    }
+    if (entry.child) killProcessGroup(entry.child, signal)
   }
 
   async function waitForExit(entry: Entry, timeoutMs: number): Promise<boolean> {

@@ -8,14 +8,15 @@ import type { LocalInstance } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
 import { DEFAULT_PORT_RANGE_END, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
+import type { RuntimeInstaller } from './runtime-installer'
 import { followsSystemDsh } from './dsh-source-policy'
 import { resolveCmdShim } from './cmd-shim'
-import { planRuntimeSource } from './runtime-source'
+import { planRuntimeSource, type PathProbe } from './runtime-source'
 import { mergeLoginPath } from './login-path'
 import { mergeShellEnv } from './shell-env'
 import type { StatusBus } from '../transport/status-bus'
 import type { SpawnInvocation, SpawnLike } from '../transport/spawn'
-import type { Entry, LocalRuntimeOptions } from './local-runtime'
+import type { Entry } from './entry'
 
 /**
  * 本机 dsh web 的默认端口。与 dsh 自身默认端口一致：用户对 3080 有既有预期，
@@ -75,6 +76,16 @@ function logTail(entry: Entry, lines = 6): string {
   return entry.log.slice(-lines).join(' / ').split(' / ').map(redactLine).join(' / ')
 }
 
+/** 启动管线消费的运行时配置子集；`LocalRuntimeOptions` extends 它以保证键一致。 */
+export interface LaunchOptions {
+  installer: RuntimeInstaller
+  dataRoot: string
+  /** 探测用户本机 PATH 上的 dsh；缺省不探测，来源决策退化为「hub → 下载」两级。 */
+  pathProbe?: PathProbe
+  /** 下载 dsh 前的用户确认口，返回 true 才继续下载；缺省视为拒绝。 */
+  confirmDownload?: (version: string) => Promise<boolean>
+}
+
 /** createLauncher 的依赖：状态发布、共享状态、解析后的启动配置，以及管理器侧的进程监视/回收。 */
 export interface LauncherDeps {
   emit: StatusBus['emit']
@@ -82,8 +93,8 @@ export interface LauncherDeps {
   entries: Map<string, Entry>
   /** 取消代：取消点 >= 本任务 generation 时放弃启动。 */
   cancelGeneration: Map<string, number>
-  /** LocalRuntimeOptions 中启动段消费的子集。 */
-  options: Pick<LocalRuntimeOptions, 'installer' | 'pathProbe' | 'confirmDownload' | 'dataRoot'>
+  /** 运行时配置里启动段消费的子集。 */
+  options: LaunchOptions
   portProbe?: PortProbe
   homeDir: () => string
   profile: string
