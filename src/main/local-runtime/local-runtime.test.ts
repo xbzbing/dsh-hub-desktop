@@ -10,6 +10,16 @@ import type { InstallProgress, InstalledRuntime, RuntimeInstaller } from './runt
 import { createLocalRuntime, type LocalRuntimeManager } from './local-runtime'
 import type { SpawnInvocation, SpawnedProcess } from '../transport/spawn'
 
+// 进程组回收的平台机制（POSIX 负 pid / Windows taskkill）在 transport/spawn.test.ts 单测；
+// 这里只关心管理器「何时、以何信号回收」，故把 killProcessGroup 固定为直接 kill 子进程，
+// 让断言在任意宿主平台（含 Windows CI）稳定，不受真实 taskkill spawn 影响。
+vi.mock('../transport/spawn', async (importActual) => ({
+  ...(await importActual<typeof import('../transport/spawn')>()),
+  killProcessGroup: (child: { kill(signal?: NodeJS.Signals): boolean }, signal: NodeJS.Signals) => {
+    child.kill(signal)
+  }
+}))
+
 // 默认让登录 shell 环境解析返回 null：单测不真的起 `zsh -l -i -c 'env -0'`，
 // 保持 hermetic（不读跑测机器的 .zshrc、无交互 shell 卡死风险）。验证该特性的用例
 // 通过 shellEnv 选项注入固定 Map。mergeShellEnv 保留真实实现。

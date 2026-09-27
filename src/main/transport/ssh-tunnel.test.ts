@@ -9,6 +9,16 @@ import { parseKnownHosts } from '../ssh/host-trust'
 import { controlSlug, createSshTunnels, socketsDirFor, type SshTunnelManager } from './ssh-tunnel'
 import type { SpawnedProcess } from './spawn'
 
+// 进程组回收的平台机制（POSIX 负 pid / Windows taskkill）在 spawn.test.ts 单测；
+// 这里只关心「何时、以何信号回收」，故把 killProcessGroup 固定为直接 kill 子进程，
+// 让 killCall 断言在任意宿主平台（含 Windows CI）稳定，不受真实 taskkill spawn 影响。
+vi.mock('./spawn', async (importActual) => ({
+  ...(await importActual<typeof import('./spawn')>()),
+  killProcessGroup: (child: { kill(signal?: NodeJS.Signals): boolean }, signal: NodeJS.Signals) => {
+    child.kill(signal)
+  }
+}))
+
 const ISO = '2026-09-15T00:00:00.000Z'
 
 function sshInstance(overrides: Partial<SshInstance> = {}): SshInstance {
