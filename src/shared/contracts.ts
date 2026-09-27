@@ -44,6 +44,10 @@ function isValidSshHost(host: string): boolean {
   if (portOfPlain) return parseSshPort(portOfPlain[2] ?? '') !== null
   const portOfBracket = /^\[([0-9a-fA-F:.]+)\](?::(\d+))?$/.exec(host)
   if (portOfBracket) return portOfBracket[2] === undefined || parseSshPort(portOfBracket[2]) !== null
+  // 方括号只允许包裹 IPv6 字面量（仅十六进制/冒号/点分尾）。其余方括号内容一律拒绝：
+  // ssh-keyscan 会先剥掉方括号再作为位置参数传入，`[-flist]` → `-flist` 会被当作选项解析
+  // （argv 选项注入面），而顶层 `startsWith('-')` 守卫只看到 `[` 拦不住它。
+  if (host.startsWith('[') || host.endsWith(']')) return false
   if (host.includes(':')) {
     // 裸 IPv6（含 IPv4-mapped 点分尾巴 `::ffff:192.168.1.5`）：至少两个冒号且字符集合法
     return /^[0-9a-fA-F:.]+$/.test(host) && (host.match(/:/g)?.length ?? 0) >= 2

@@ -168,6 +168,10 @@ describe('createInstanceStore / 基础 CRUD', () => {
       sshInput({ host: 'server:99999' }),
       sshInput({ host: 'host:12ab' }),
       sshInput({ host: '[::1]:99999' }),
+      // 方括号只允许包裹 IPv6 字面量:内部前导 '-' 会在 ssh-keyscan 剥括号后成为选项(argv 注入)
+      sshInput({ host: '[-flist]' }),
+      sshInput({ host: '[-t]' }),
+      sshInput({ host: '[gg]' }),
       httpInput({ endpointUrl: 'ftp://x' }),
       httpInput({ endpointUrl: 'http://u:p@127.0.0.1:3080' }),
       localInput({ port: 0 }),
