@@ -868,11 +868,9 @@ const readableSite = (key: string): string => key.replace('\u0000', ' :: ')
 const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   // —— IPC 信封 message（渲染层 toast 直接展示 result.message） ——
   debt('src/main/ipc/instance-handlers.ts', ".refine((v) => v === null || v.trim() !== '', '口令不能为空串')"),
-  debt('src/main/registry/instance-store.ts', "if (!current) throw new InstanceStoreError('not-found', `实例不存在：${id}`)"),
+  debt('src/main/registry/instance-store.ts', "return new InstanceStoreError('not-found', `实例不存在：${id}`)"),
   debt('src/main/ipc/settings-handlers.ts', "if (!deps.openDataDir) throw new DataDirOpenError('internal', '打开数据目录不可用')"),
   debt('src/main/ipc/register.ts', "if (!deps.openHomepage) throw new HomepageOpenError('internal', '打开项目主页不可用')"),
-  debt('src/main/ipc/runtime-handlers.ts', "if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)"),
-  debt('src/main/ipc/runtime-handlers.ts', "if (!instance) throw new InstanceStoreError('not-found', `实例不存在：${instanceId}`)"),
   debt('src/main/shell/open-data-dir.ts', "if (dir === '') throw new DataDirOpenError('internal', '数据目录不可用')"),
   debt('src/main/registry/instance-store.ts', "return new InstanceStoreError('io-error', `注册表 IO 失败：${message}`)"),
   debt('src/main/ipc/ipc-utils.ts', "return fail('internal', '内部错误，请查看主进程日志')"),
@@ -908,8 +906,6 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/local-runtime/local-runtime.ts', "detail: `已断开接管（外部 dsh web 进程 pid ${entry.externalPid ?? '?'} 未终止）`"),
   debt('src/main/ipc/auth-handlers.ts', "throw new InstanceStoreError('invalid-input', '未勾选「记住密码」，没有已保存的密码可用')"),
   debt('src/main/ipc/auth-handlers.ts', "throw new InstanceStoreError('invalid-input', '保险库中没有该实例的已存密码')"),
-  debt('src/main/ipc/instance-handlers.ts', "throw new InstanceStoreError('not-found', `实例不存在：${parsed.instanceId}`)"),
-  debt('src/main/ipc/version-handlers.ts', "if (!record) throw new InstanceStoreError('not-found', `实例不存在：${String(id)}`)"),
   debt('src/main/ipc/version-handlers.ts', "if (!deps.installer) throw new InstanceStoreError('internal', 'dsh 版本管理能力不可用')"),
   debt('src/main/ipc/version-handlers.ts', "throw new InstanceStoreError('invalid-input', '该实例不支持升级')"),
   debt('src/main/local-runtime/runtime-installer.ts', "onProgress?.({ phase: 'installing', version, detail: '校验安装结果', percent: 95 })"),
