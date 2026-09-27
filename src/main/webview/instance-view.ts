@@ -69,7 +69,7 @@ export interface OpenInstanceViewArgs {
 export function isSameOriginLoginRedirect(
   redirectUrl: string | null,
   origin: string,
-  basePath = '/'
+  basePath: string
 ): boolean {
   if (!redirectUrl || !origin) return false
   try {
