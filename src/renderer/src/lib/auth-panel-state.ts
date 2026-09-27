@@ -87,11 +87,6 @@ export function lockRemaining(model: AuthPanelModel, now: number = Date.now()): 
   return Math.max(0, model.lockUntil - now)
 }
 
-/** 锁定是否已到期(到期后应重探以刷新状态与按钮可用性) */
-export function lockExpired(model: AuthPanelModel, now: number = Date.now()): boolean {
-  return model.lockUntil !== null && model.lockUntil <= now
-}
-
 /** 锁定剩余秒数(向上取整,用于按钮/提示文案) */
 export function lockSeconds(model: AuthPanelModel, now: number = Date.now()): number {
   return Math.ceil(lockRemaining(model, now) / 1000)

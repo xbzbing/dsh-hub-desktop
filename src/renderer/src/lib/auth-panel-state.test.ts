@@ -6,7 +6,6 @@ import {
   clearLock,
   closeAuthPanel,
   initialAuthPanelModel,
-  lockExpired,
   lockRemaining,
   lockSeconds,
   openAuthPanel
@@ -83,8 +82,6 @@ describe('auth-panel-state', () => {
     expect(lockRemaining(locked, T0 + 10_000)).toBe(20_000)
     expect(lockRemaining(locked, T0 + 30_000)).toBe(0)
     expect(lockSeconds(locked, T0 + 1)).toBe(30)
-    expect(lockExpired(locked, T0 + 29_999)).toBe(false)
-    expect(lockExpired(locked, T0 + 30_000)).toBe(true)
   })
 
   it('未锁定时 lockUntil 为 null 且不残留上次锁定', () => {
@@ -101,7 +98,6 @@ describe('auth-panel-state', () => {
       T0 + 1000
     )
     expect(unlocked.lockUntil).toBeNull()
-    expect(lockExpired(unlocked, T0 + 999_999)).toBe(false)
   })
 
   it('登录返回的快照走同一归约(锁定同样换算)', () => {
