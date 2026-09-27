@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { CreateInstanceInput, InstanceRecord, PatchInstanceInput } from '@shared/contracts'
+import { REGISTRY_SCHEMA_VERSION } from '@shared/contracts'
 import { createInstanceStore, InstanceStoreError } from './instance-store'
 
 /**
@@ -96,7 +97,7 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(new Date(record.createdAt).getTime()).not.toBeNaN()
 
     const file = (await readRegistryFile()) as { schemaVersion: number; instances: unknown[] }
-    expect(file.schemaVersion).toBe(1)
+    expect(file.schemaVersion).toBe(REGISTRY_SCHEMA_VERSION)
     expect(file.instances).toHaveLength(1)
   })
 
@@ -372,14 +373,13 @@ describe('createInstanceStore / 损坏恢复与迁移', () => {
     expect(corrupts.length).toBeLessThanOrEqual(5)
   })
 
-  it('v0 无版本号文件经注入迁移器升级到 v1', async () => {
+  it('v0 无版本号文件经注入迁移链升级到当前版本', async () => {
     const oldId = randomUUID()
     const migrated = tmpRun({
+      // 逐版迁移：本用例只验证「迁移链被逐级调用」，各步仅提升版本号、不改记录。
       migrations: {
-        0: (file: unknown) => ({
-          ...(file as object),
-          schemaVersion: 1
-        })
+        0: (file: unknown) => ({ ...(file as object), schemaVersion: 1 }),
+        1: (file: unknown) => ({ ...(file as object), schemaVersion: 2 })
       }
     })
     await writeFile(
@@ -403,7 +403,7 @@ describe('createInstanceStore / 损坏恢复与迁移', () => {
     expect(list[0]?.id).toBe(oldId)
     // 迁移后文件被重写为当前版本
     const file = (await readRegistryFile()) as { schemaVersion: number }
-    expect(file.schemaVersion).toBe(1)
+    expect(file.schemaVersion).toBe(REGISTRY_SCHEMA_VERSION)
   })
 
   it('缺少迁移器或文件来自未来版本 → 隔离', async () => {

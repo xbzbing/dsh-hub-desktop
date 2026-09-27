@@ -496,7 +496,14 @@ export interface AuthSignalEvent {
 
 // ===== 注册表文件与版本迁移 =====
 
-export const REGISTRY_SCHEMA_VERSION = 1
+/**
+ * 注册表 schema 版本。
+ * - v1：初始形态。
+ * - v2：`SSH_HOST_SCHEMA` 收紧（方括号只允许包裹 IPv6 字面量）与 `dshVersion` 收紧
+ *   （必须匹配 `DSH_VERSION_PATTERN`）后，旧版可能写入过 `[plainhost]` / 含空格的版本号；
+ *   v1→v2 迁移把这类历史值归一化，避免整表因单条不合法被隔离（见 registry 迁移器）。
+ */
+export const REGISTRY_SCHEMA_VERSION = 2
 
 export const RegistryFileSchema = z.object({
   schemaVersion: z.number('schemaVersion 必须是数字').int().min(1),

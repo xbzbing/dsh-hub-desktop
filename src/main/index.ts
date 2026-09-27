@@ -23,6 +23,7 @@ import { clearSessionCookie } from './webview/session-cookie'
 import type { PromptBroker } from './ssh/prompt-broker'
 import type { AuthRegistry } from './auth/auth-registry'
 import { createInstanceStore } from './registry/instance-store'
+import { REGISTRY_MIGRATIONS } from './registry/migrations'
 import { createSettingsStore } from './settings/settings-store'
 import { resolveLanguage } from '@shared/settings'
 import type { SettingsStore } from './settings/settings-store'
@@ -218,8 +219,12 @@ void app.whenReady().then(() => {
   registerRendererProtocol()
 
   const dataRoot = app.getPath('userData')
-  // 注册表落盘位置：<userData>/registry/instances.json（+ 滚动备份 + 损坏隔离）
-  const instanceStore = createInstanceStore({ dir: join(dataRoot, 'registry') })
+  // 注册表落盘位置：<userData>/registry/instances.json（+ 滚动备份 + 损坏隔离）；
+  // 接入 v1→v2 迁移链，历史的方括号主机 / 非法 dshVersion 归一化而非整表隔离。
+  const instanceStore = createInstanceStore({
+    dir: join(dataRoot, 'registry'),
+    migrations: REGISTRY_MIGRATIONS
+  })
   const vaultControl = createVaultControl(dataRoot)
   vault = vaultControl.vault
   const settings = createSettingsStore({ dir: dataRoot })

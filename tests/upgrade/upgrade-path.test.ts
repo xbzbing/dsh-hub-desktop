@@ -5,6 +5,7 @@ import { REGISTRY_SCHEMA_VERSION } from '@shared/contracts'
 import type { InstanceRecord } from '@shared/contracts'
 import { normalizeSettings, DEFAULT_SETTINGS } from '@shared/settings'
 import { createInstanceStore } from '../../src/main/registry/instance-store'
+import { REGISTRY_MIGRATIONS } from '../../src/main/registry/migrations'
 import { createSettingsStore } from '../../src/main/settings/settings-store'
 
 /**
@@ -48,7 +49,7 @@ describe('注册表跨版本升级路径', () => {
     await mkdir(registryDir, { recursive: true })
     await writeFile(join(registryDir, 'instances.json'), await fixture('registry-v1.json'), 'utf8')
 
-    const store = createInstanceStore({ dir: registryDir })
+    const store = createInstanceStore({ dir: registryDir, migrations: REGISTRY_MIGRATIONS })
     const list = await store.list()
 
     expect(list).toHaveLength(3)
@@ -110,7 +111,7 @@ describe('注册表跨版本升级路径', () => {
     // 这条断言就是「版本号不能空转」的守门人:谁把 REGISTRY_SCHEMA_VERSION 提到
     // fixtureVersion 之上,就必须同时给出 v{fixtureVersion} → v+1 的迁移器,
     // 否则 createInstanceStore 会把夹具当作「缺少迁移器」隔离,list() 变空 → 本用例红。
-    const store = createInstanceStore({ dir: registryDir })
+    const store = createInstanceStore({ dir: registryDir, migrations: REGISTRY_MIGRATIONS })
     const list = await store.list()
 
     if (REGISTRY_SCHEMA_VERSION > fixtureVersion) {
@@ -140,7 +141,7 @@ describe('注册表跨版本升级路径', () => {
     }
     await writeFile(join(registryDir, 'instances.json'), JSON.stringify(future, null, 2), 'utf8')
 
-    const store = createInstanceStore({ dir: registryDir })
+    const store = createInstanceStore({ dir: registryDir, migrations: REGISTRY_MIGRATIONS })
     // 拒绝降级读取:内存里是空的(不猜测语义),但**不得**销毁用户数据
     expect(await store.list()).toEqual([])
 
@@ -171,7 +172,7 @@ describe('注册表跨版本升级路径', () => {
     await mkdir(registryDir, { recursive: true })
     await writeFile(join(registryDir, 'instances.json'), await fixture('registry-v1.json'), 'utf8')
 
-    const store = createInstanceStore({ dir: registryDir })
+    const store = createInstanceStore({ dir: registryDir, migrations: REGISTRY_MIGRATIONS })
     await store.update('3f2504e0-4f89-41d3-9a0c-0305e82c3301', { name: '本地开发(改名)' })
 
     const after = (await readJson(join(registryDir, 'instances.json'))) as {
@@ -184,6 +185,51 @@ describe('注册表跨版本升级路径', () => {
     expect(ssh).toMatchObject({ transport: 'ssh', localPort: 32222, remotePort: 3080 })
     const renamed = after.instances.find((item) => item.id === '3f2504e0-4f89-41d3-9a0c-0305e82c3301')
     expect(renamed?.name).toBe('本地开发(改名)')
+  })
+
+  it('v1→v2 迁移:历史方括号主机与非法 dshVersion 归一化,合法值与其余字段保真', async () => {
+    const registryDir = join(dir, 'registry')
+    await mkdir(registryDir, { recursive: true })
+    // 关键回归:这些值在 v1 下合法、v2 收紧后会被拒。若无迁移，整表会被隔离、实例全部消失。
+    await writeFile(join(registryDir, 'instances.json'), await fixture('registry-v1-legacy.json'), 'utf8')
+
+    const store = createInstanceStore({ dir: registryDir, migrations: REGISTRY_MIGRATIONS })
+    const list = await store.list()
+
+    // 三条一条不少（不是整表隔离）
+    expect(list).toHaveLength(3)
+    const byId = new Map(list.map((item) => [item.id, item]))
+
+    // 含空格的 dshVersion → null（未固定），其余本地字段保真
+    const local = byId.get('5f2504e0-4f89-41d3-9a0c-0305e82c3401')
+    expect(local).toMatchObject({
+      transport: 'local',
+      name: '本地遗留版本号',
+      dshVersion: null,
+      port: 8010,
+      profile: 'dev'
+    })
+
+    // 方括号非 IPv6 主机 → 剥括号；端口/用户名/隧道端口等保真
+    const ssh = byId.get('5f2504e0-4f89-41d3-9a0c-0305e82c3402')
+    expect(ssh).toMatchObject({
+      transport: 'ssh',
+      host: 'build.example.internal',
+      port: 22,
+      username: 'xbzbing',
+      remotePort: 3080,
+      localPort: 32223
+    })
+
+    // 合法 IPv6 方括号：迁移不得改动它（记录里保持 [::1]，schema 接受方括号 IPv6 形态）
+    const ipv6 = byId.get('5f2504e0-4f89-41d3-9a0c-0305e82c3403')
+    expect(ipv6).toMatchObject({ transport: 'ssh', host: '[::1]', port: 2222 })
+
+    // 迁移路径不产生隔离垃圾，且落盘已重写为当前版本
+    const names = await readdir(registryDir)
+    expect(names.filter((name) => name.includes('.corrupt-'))).toEqual([])
+    const file = (await readJson(join(registryDir, 'instances.json'))) as { schemaVersion: number }
+    expect(file.schemaVersion).toBe(REGISTRY_SCHEMA_VERSION)
   })
 })
 
