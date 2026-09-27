@@ -48,7 +48,7 @@
 - 不做多用户/多租户(网关 README 已论证单实例下无法真正隔离)——hub 是**单用户**多实例管理器;
 - 不做 dsh `--host 0.0.0.0` 直连裸奔实例的"认证"(无网关的远程暴露本身就是安全问题,仅允许显式声明的 `auth: none`,并给出警告);
 - 不替代手机远程桥(dataelement 的 LAN mobile bridge 方向相反:手机连桌面);
-- 不管理 dsh 版本安装之外的其他运行时(Node 下载等)的完整生态——仅内置 dsh 版本安装,Node 用系统检测或捆绑。
+- 不管理 dsh 版本安装之外的其他运行时(Node 下载等)的完整生态——仅内置 dsh 版本安装,Node 与 npm 随应用捆绑(打包时把 `node_modules/npm` 放进 `resources/npm`,经应用自带 Node 以 `ELECTRON_RUN_AS_NODE` 运行 npm-cli.js),不依赖目标机预装 Node/npm。
 
 ---
 

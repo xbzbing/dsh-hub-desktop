@@ -361,6 +361,49 @@ describe('spawnNpm', () => {
   })
 })
 
+describe('resolveNpmInvocation (bundled npm)', () => {
+  it('随包 npm-cli.js 存在时最优先，经自带 Node 运行并带 ELECTRON_RUN_AS_NODE', async () => {
+    const npmCliJs = join('/app', 'resources', 'npm', 'bin', 'npm-cli.js')
+    // 只有捆绑脚本存在；系统探测一律探不到，验证 bundled 分支被优先选中
+    const exists = (path: string): boolean => path === npmCliJs
+    const run = vi.fn(async () => ({ code: 1, stdout: '', stderr: '' }))
+    const invocation = await resolveNpmInvocation(run, exists, { npmCliJs })
+    expect(invocation).toEqual({
+      command: process.execPath,
+      prefixArgs: [npmCliJs],
+      env: { ELECTRON_RUN_AS_NODE: '1' }
+    })
+    // 命中 bundled 即短路，不再触发系统 which 探测
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('随包 npm-cli.js 不存在时回退系统探测（不选 bundled）', async () => {
+    const originalPlatform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    try {
+      const posix = (path: string): string => path.replace(/\\/g, '/')
+      const missing = join('/app', 'resources', 'npm', 'bin', 'npm-cli.js')
+      const exists = (path: string): boolean => posix(path) === '/opt/homebrew/bin/npm'
+      const run = vi.fn(async () => ({ code: 1, stdout: '', stderr: '' }))
+      const invocation = await resolveNpmInvocation(run, exists, { npmCliJs: missing })
+      expect(invocation).not.toBeNull()
+      expect(posix(invocation!.command)).toBe('/opt/homebrew/bin/npm')
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+  })
+
+  it('可覆盖 nodeCommand 与 env（供非 Electron 宿主注入自带 Node）', async () => {
+    const npmCliJs = join('/app', 'npm', 'bin', 'npm-cli.js')
+    const invocation = await resolveNpmInvocation(vi.fn(), (path) => path === npmCliJs, {
+      npmCliJs,
+      nodeCommand: '/opt/node/bin/node',
+      env: {}
+    })
+    expect(invocation).toEqual({ command: '/opt/node/bin/node', prefixArgs: [npmCliJs], env: {} })
+  })
+})
+
 describe('resolveNpmInvocation (win32)', () => {
   it('返回 node.exe 直跑自带 npm-cli.js,绝不返回 .cmd', async () => {
     const originalPlatform = process.platform
@@ -470,6 +513,22 @@ describe('npm 子进程 PATH（GUI 启动时 node 不在 PATH 的场景）', () 
     })
     await progress.ensureInstalled(version, () => undefined)
     expect(pathDirs(progressPath)[0]).toBe(dirname(command))
+  })
+
+  it('捆绑 npm 的 env（ELECTRON_RUN_AS_NODE）叠加到子进程环境', async () => {
+    const run = vi.fn(async () => okRun(JSON.stringify(['0.1.5'])))
+    const installer = createRuntimeInstaller({
+      runtimesDir: tmpDir(),
+      cacheDir: tmpDir(),
+      run,
+      resolveNpm: async () => ({
+        command: process.execPath,
+        prefixArgs: ['/app/npm/bin/npm-cli.js'],
+        env: { ELECTRON_RUN_AS_NODE: '1' }
+      })
+    })
+    await installer.listAvailableVersions()
+    expect(envOf(run.mock.calls[0]).ELECTRON_RUN_AS_NODE).toBe('1')
   })
 })
 

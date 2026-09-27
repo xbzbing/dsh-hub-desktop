@@ -28,6 +28,8 @@ export interface NpmInvocation {
   command: string
   /** 紧随程序的固定参数；Windows 下为 npm-cli.js 路径，其余为空 */
   prefixArgs: string[]
+  /** 叠加到子进程环境的键；捆绑 npm 经应用自带 Node 运行时需 ELECTRON_RUN_AS_NODE=1。 */
+  env?: NodeJS.ProcessEnv
 }
 
 function defaultExists(path: string): boolean {
@@ -80,7 +82,32 @@ function defaultListDir(path: string): string[] {
 }
 
 /**
+ * 应用自带的 npm 调用方式：用当前进程的 Node（Electron 主进程即 `process.execPath` +
+ * `ELECTRON_RUN_AS_NODE=1`）直跑随包分发的 `npm-cli.js`。
+ *
+ * 打包产物不能假设目标机装了 Node/npm：Windows 常见「PATH 与常见安装位置均未找到 npm」
+ * 正是此因。捆绑的 npm-cli.js 让运行时安装与系统环境彻底解耦，系统 npm 仅作兜底。
+ */
+export interface BundledNpm {
+  /** 随包分发的 npm-cli.js 绝对路径（存在性由调用方保证）。 */
+  npmCliJs: string
+  /** 运行它的 Node 可执行文件；缺省用 `process.execPath`。 */
+  nodeCommand?: string
+  /** 让 Electron 本体退化为纯 Node 执行脚本的环境；缺省 `ELECTRON_RUN_AS_NODE=1`。 */
+  env?: NodeJS.ProcessEnv
+}
+
+function bundledNpmInvocation(bundled: BundledNpm): NpmInvocation {
+  return {
+    command: bundled.nodeCommand ?? process.execPath,
+    prefixArgs: [bundled.npmCliJs],
+    env: bundled.env ?? { ELECTRON_RUN_AS_NODE: '1' }
+  }
+}
+
+/**
  * 解析可用的 npm 调用方式，按优先级尝试：
+ * 0. 随包分发的 npm-cli.js（经应用自带 Node 运行；打包产物不依赖系统 Node/npm）
  * 1. node_modules 里的 npm-cli.js（开发环境 / npm 作为依赖存在时）
  * 2. PATH 与常见安装位置中 node.exe + 自带 npm-cli.js 的组合（仅 Windows）
  * 3. 系统 PATH 上的 npm（which 定位，仅 Unix）
@@ -89,8 +116,12 @@ function defaultListDir(path: string): string[] {
  */
 export async function resolveNpmInvocation(
   run: CommandRunner = runCommand,
-  exists: (path: string) => boolean = defaultExists
+  exists: (path: string) => boolean = defaultExists,
+  bundled: BundledNpm | null = null
 ): Promise<NpmInvocation | null> {
+  // 捆绑 npm 优先且平台无关：脚本随包分发，存在即用，彻底不依赖系统 Node/npm。
+  if (bundled !== null && exists(bundled.npmCliJs)) return bundledNpmInvocation(bundled)
+
   const npmCliJs = resolveNpmCliJs()
 
   if (process.platform === 'win32') {
@@ -151,11 +182,14 @@ export async function resolveNpmInvocation(
  * npm 子进程的 env：把 npm 自身目录与常见 node 落点前置到 PATH。
  * GUI 启动（Finder/Dock）只继承 launchd 最小 PATH，node 目录常不在其中，
  * npm 入口脚本的 `#!/usr/bin/env node` 会以 `env: node: No such file or directory` 失败。
+ *
+ * 捆绑 npm 经应用自带 Node 运行（`npm.command` 即 Electron/Node 本体），其 `npm.env`
+ * （ELECTRON_RUN_AS_NODE=1）在此叠加，让 Electron 退化为纯 Node 执行 npm-cli.js。
  */
 function npmChildEnv(npm: NpmInvocation, extra: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const dirs = [dirname(npm.command), ...searchNodeDirs(homedir(), defaultListDir)]
   const path = [...new Set([...dirs, ...(process.env.PATH ?? '').split(delimiter)])].join(delimiter)
-  return { ...process.env, PATH: path, ...extra }
+  return { ...process.env, PATH: path, ...npm.env, ...extra }
 }
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
@@ -308,6 +342,11 @@ export interface RuntimeInstallerOptions {
   runNpm?: NpmRunner
   /** npm 调用方式解析（注入便于测试）；默认按平台探测系统 npm。 */
   resolveNpm?: () => Promise<NpmInvocation | null>
+  /**
+   * 随包分发的 npm（打包产物不依赖系统 Node/npm）；提供时最优先，
+   * 经应用自带 Node 运行 npm-cli.js。默认 resolveNpm 会把它前置到探测链。
+   */
+  bundledNpm?: BundledNpm
   /** 文件存在性检查（注入便于测试）；默认使用 fs.statSync */
   exists?: (path: string) => boolean
   /** 只读元数据（versions 列表）内存缓存时长；0 = 关闭缓存。默认 60s（注入便于测试）。 */
@@ -394,7 +433,8 @@ export function globalRuntimeEntry(prefix: string, platform: NodeJS.Platform = p
 export function createRuntimeInstaller(options: RuntimeInstallerOptions): RuntimeInstaller {
   const run = options.run ?? runCommand
   const runNpm = options.runNpm ?? spawnNpm
-  const resolveNpm = options.resolveNpm ?? (() => resolveNpmInvocation(run, options.exists))
+  const resolveNpm =
+    options.resolveNpm ?? (() => resolveNpmInvocation(run, options.exists, options.bundledNpm ?? null))
 
   /** 解析当前生效的 registry：动态回调优先，其次静态配置。 */
   function currentRegistry(): string | undefined {

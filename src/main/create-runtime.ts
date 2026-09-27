@@ -1,4 +1,5 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { DSH_VERSION_PROGRESS_EVENT, INSTANCE_STATUS_EVENT } from '@shared/contracts'
 import type {
@@ -13,7 +14,7 @@ import { startAutoStartInstances } from './local-runtime/auto-start'
 import { createLocalRuntime } from './local-runtime/local-runtime'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
-import type { RuntimeInstaller } from './local-runtime/runtime-installer'
+import type { BundledNpm, RuntimeInstaller } from './local-runtime/runtime-installer'
 import { createPathProbe } from './local-runtime/runtime-source'
 import type { PathProbe } from './local-runtime/runtime-source'
 import type { InstanceStore } from './registry/instance-store'
@@ -55,6 +56,18 @@ export interface RuntimeController {
 }
 
 /**
+ * 定位随包分发的 npm-cli.js（electron-builder 经 extraResources 放在
+ * `process.resourcesPath/npm/bin/npm-cli.js`）。开发期 npm 由系统提供，返回 undefined
+ * 让安装器走系统探测；文件缺失时同样返回 undefined，退回系统 npm 兜底。
+ */
+function resolveBundledNpm(): BundledNpm | undefined {
+  if (!app.isPackaged) return undefined
+  const npmCliJs = join(process.resourcesPath, 'npm', 'bin', 'npm-cli.js')
+  if (!existsSync(npmCliJs)) return undefined
+  return { npmCliJs }
+}
+
+/**
  * 本地运行时、SSH 隧道、HTTP 端点与提示代理的初始化，以及状态事件接线。
  */
 export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeController {
@@ -75,7 +88,11 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
   const installer = createRuntimeInstaller({
     runtimesDir: join(deps.dataRoot, 'runtimes'),
     cacheDir: join(deps.dataRoot, 'npm-cache'),
-    getRegistry: () => effectiveRegistry() || undefined
+    getRegistry: () => effectiveRegistry() || undefined,
+    // 随包分发 npm-cli.js（electron-builder extraResources），经应用自带 Node
+    // （ELECTRON_RUN_AS_NODE）运行：打包产物不再依赖目标机装有 Node/npm，Windows
+    // 「PATH 与常见安装位置均未找到 npm」自此不再阻断本机实例的运行时安装。
+    bundledNpm: resolveBundledNpm()
   })
   // 运行时确认走 hub 风格的渲染层对话框（prompt broker 推送 + 渲染层挂载时快照补拉）。
   // 无窗口可应答、broker 未装配或用户拒绝/超时，一律按「取消」处理——绝不静默下载、

@@ -24,6 +24,18 @@ extraResources:
     to: tray.png
   - from: resources/tray@2x.png
     to: tray@2x.png
+  # 随包分发 npm：运行时安装经应用自带 Node（ELECTRON_RUN_AS_NODE）跑 npm-cli.js，
+  # 打包产物不再依赖目标机装有 Node/npm（尤见 Windows「未找到 npm」）。
+  # 源目录 build/npm-runtime/npm 由 `pnpm bundle:npm` 解引用生成（pnpm 的符号链接
+  # 无法被 electron-builder 递归复制）。用 `from: build/npm-runtime, to: .` 复制整个
+  # 暂存根：electron-builder 会过滤复制源**根部**的 node_modules，但子目录
+  # `npm/node_modules` 得以保留；resolveBundledNpm() 读 process.resourcesPath/npm/bin/npm-cli.js。
+  - from: build/npm-runtime
+    to: .
+    filter:
+      - '**/*'
+      - '!**/{test,tests,docs,man,changelogs}/**'
+      - '!**/*.md'
 mac:
   icon: build/icon.icns
   # 只保留应用实际支持的 Chromium 语言包，控制包体积。
