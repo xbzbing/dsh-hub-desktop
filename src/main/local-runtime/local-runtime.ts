@@ -269,66 +269,66 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       entry.settleSpawn?.()
     }
     try {
-    // dsh 打印的就绪 URL 直接喂给内嵌工作区视图：host 必须钉在回环，否则被篡改的
-    // stdout 行（`dsh web: http://attacker/…`）会让 hub 在工作区加载远端 origin。
-    let readyUrl: URL
-    try {
-      readyUrl = new URL(url)
-    } catch {
-      failReady(new Error('就绪 URL 无法解析'))
-      return
-    }
-    if (!isLoopbackHost(readyUrl.hostname)) {
-      failReady(new Error(`就绪 URL 主机非回环地址（${readyUrl.hostname}），已拒绝`))
-      return
-    }
-    // 在途续体身份守卫:探测/重试期间本条目的进程可能已退出(退出处理器会删条目并立即
-    // 放行队列,同 id 的第二次 start 随即拉起新进程)。陈旧续体不得再发布 running、
-    // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
-    // 下次 start 又 spawn 一个,两个 dsh 共享同一 DSH_HOME。
-    const stale = (): boolean => entry.stopping || entries.get(id) !== entry
-    const healthy = await retryProbe({
-      url,
-      probe,
-      retries: healthProbeRetries,
-      retryMs: healthProbeRetryMs,
-      timeoutMs: healthTimeoutMs,
-      shouldAbort: stale
-    })
-    if (healthy === null) return
-    if (!healthy) {
-      // 终局路径必须与超时路径对齐:杀进程、清条目、放行队列。
-      // 缺失任一项都会造成 head-of-line 阻塞(下一个实例等到 readyTimer 触发)
-      // 与无人回收的存活进程。
-      emit(id, 'error', {
-        detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`)
+      // dsh 打印的就绪 URL 直接喂给内嵌工作区视图：host 必须钉在回环，否则被篡改的
+      // stdout 行（`dsh web: http://attacker/…`）会让 hub 在工作区加载远端 origin。
+      let readyUrl: URL
+      try {
+        readyUrl = new URL(url)
+      } catch {
+        failReady(new Error('就绪 URL 无法解析'))
+        return
+      }
+      if (!isLoopbackHost(readyUrl.hostname)) {
+        failReady(new Error(`就绪 URL 主机非回环地址（${readyUrl.hostname}），已拒绝`))
+        return
+      }
+      // 在途续体身份守卫:探测/重试期间本条目的进程可能已退出(退出处理器会删条目并立即
+      // 放行队列,同 id 的第二次 start 随即拉起新进程)。陈旧续体不得再发布 running、
+      // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
+      // 下次 start 又 spawn 一个,两个 dsh 共享同一 DSH_HOME。
+      const stale = (): boolean => entry.stopping || entries.get(id) !== entry
+      const healthy = await retryProbe({
+        url,
+        probe,
+        retries: healthProbeRetries,
+        retryMs: healthProbeRetryMs,
+        timeoutMs: healthTimeoutMs,
+        shouldAbort: stale
       })
-      entry.stopping = true
+      if (healthy === null) return
+      if (!healthy) {
+        // 终局路径必须与超时路径对齐:杀进程、清条目、放行队列。
+        // 缺失任一项都会造成 head-of-line 阻塞(下一个实例等到 readyTimer 触发)
+        // 与无人回收的存活进程。
+        emit(id, 'error', {
+          detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`)
+        })
+        entry.stopping = true
+        if (entry.timer) {
+          clearTimeout(entry.timer)
+          entry.timer = null
+        }
+        killTree(entry, 'SIGKILL')
+        entries.delete(id)
+        entry.settleSpawn?.()
+        return
+      }
       if (entry.timer) {
         clearTimeout(entry.timer)
         entry.timer = null
       }
-      killTree(entry, 'SIGKILL')
-      entries.delete(id)
-      entry.settleSpawn?.()
-      return
-    }
-    if (entry.timer) {
-      clearTimeout(entry.timer)
-      entry.timer = null
-    }
-    entry.ready = true
-    entry.url = url
-    const port = Number(readyUrl.port)
-    entry.port = Number.isInteger(port) && port > 0 ? port : null
-    if (stale()) return
-    emit(id, 'running', {
-      version: entry.version,
-      runtimeSource: entry.runtimeSource,
-      ...(entry.port !== null ? { port: entry.port } : {}),
-      ...(entry.command !== undefined ? { command: entry.command } : {}),
-      detail: `已在 ${entry.home} 启动（dsh web）`
-    })
+      entry.ready = true
+      entry.url = url
+      const port = Number(readyUrl.port)
+      entry.port = Number.isInteger(port) && port > 0 ? port : null
+      if (stale()) return
+      emit(id, 'running', {
+        version: entry.version,
+        runtimeSource: entry.runtimeSource,
+        ...(entry.port !== null ? { port: entry.port } : {}),
+        ...(entry.command !== undefined ? { command: entry.command } : {}),
+        detail: `已在 ${entry.home} 启动（dsh web）`
+      })
       entry.settleSpawn?.() // 排他地放行下一个实例的启动
     } catch (error) {
       failReady(error)
