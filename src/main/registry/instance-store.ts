@@ -61,6 +61,16 @@ export function instanceNotFoundError(id: string): InstanceStoreError {
   return new InstanceStoreError('not-found', `实例不存在：${id}`)
 }
 
+/** 取实例，查不到即抛 not-found；收敛各 handler 的「get + 空值守卫」两行样板。 */
+export async function requireInstance(
+  store: Pick<InstanceStore, 'get'>,
+  id: string
+): Promise<InstanceRecord> {
+  const instance = await store.get(id)
+  if (!instance) throw instanceNotFoundError(id)
+  return instance
+}
+
 export interface InstanceStoreOptions {
   /** 注册表目录（main 进程传 `<userData>/registry`） */
   dir: string

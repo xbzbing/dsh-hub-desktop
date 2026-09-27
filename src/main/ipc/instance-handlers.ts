@@ -19,7 +19,7 @@ import {
   type LocalSpaceSnapshot
 } from '@shared/contracts'
 import { resolveSshKeyPreview } from '../ssh/key-preview'
-import { InstanceStoreError, instanceNotFoundError, type InstanceStore } from '../registry/instance-store'
+import { InstanceStoreError, requireInstance, type InstanceStore } from '../registry/instance-store'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { ExternalDshScanner } from '../local-runtime/external-dsh'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
@@ -222,10 +222,7 @@ export function registerInstanceHandlers(
       wrap(async () => {
         // 只有用户主动「忘记该主机指纹」后,下一次连接才会重新走首次 TOFU 确认。
         const parsed = z.object({ instanceId: z.uuid() }).parse(input)
-        const instance = await store.get(parsed.instanceId)
-        if (!instance) {
-          throw instanceNotFoundError(parsed.instanceId)
-        }
+        const instance = await requireInstance(store, parsed.instanceId)
         if (instance.transport !== 'ssh') {
           throw new InstanceStoreError('invalid-input', '只有 SSH 隧道实例才有主机指纹')
         }
