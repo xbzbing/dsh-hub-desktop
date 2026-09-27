@@ -642,15 +642,11 @@ export default function DetailView(): ReactNode {
             {activity === undefined || activity.length === 0 ? (
               <p className="meta">{t('detail.log.empty')}</p>
             ) : (
-              activity.map((line, index) => {
-                // 截尾到 200 行后 index 会错位关联 DOM，用时间戳 + 序号构造稳定 key。
-                const at = line.source === 'runtime' ? line.at : line.event.at
-                return (
-                  <p className="detail-logmore__line num" key={`${at}-${index}`}>
-                    {formatActivity(line)}
-                  </p>
-                )
-              })
+              activity.map((line) => (
+                <p className="detail-logmore__line num" key={line.seq}>
+                  {formatActivity(line)}
+                </p>
+              ))
             )}
           </div>
         </Modal>
