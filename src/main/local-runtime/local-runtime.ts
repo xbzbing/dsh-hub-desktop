@@ -94,7 +94,9 @@ export interface LocalRuntimeManager {
   /** 订阅 dsh 版本升级进度；返回取消订阅函数。 */
   onUpgradeProgress(listener: (event: DshVersionProgressEvent) => void): () => void
   /**
-   * 升级到 registry 最新稳定版：解析版本 →（运行中先停）→ 安装 → 回写注册表 →（升级前在运行则重启）。
+   * 升级到 registry 最新可用版本（按版本比较取最大，含 rc/alpha 等预发布渠道 —— dsh 以
+   * 预发布渠道持续发布，dist-tags.latest 常滞后）：解析版本 →（运行中先停）→ 安装 →
+   * 回写注册表 →（升级前在运行则重启）。
    * 公共空间且运行系统默认 dsh 的实例例外：先二次确认，确认后原位升级系统默认 dsh。
    * 调用立即返回并后台执行，进展经 onUpgradeProgress 回推；
    * 失败以 phase='error' 结束：隔离目录保留旧版，升级前在运行的实例停在停止态。

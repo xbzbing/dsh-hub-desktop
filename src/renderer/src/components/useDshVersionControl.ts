@@ -6,7 +6,7 @@ const BRIDGE = window.dshHub
 
 /** dsh 版本管理状态：检查按钮在操作行，检测结果与进度在卡片正文，两处共用它。 */
 export interface DshVersionControl {
-  /** 手动检查最新稳定版；失败保留可重试的错误提示。 */
+  /** 手动检查最新可用版本；失败保留可重试的错误提示。 */
   runCheck: () => Promise<void>
   /** 触发一键升级；进展经进度事件回推，被拒绝时展示错误提示。 */
   runUpgrade: () => Promise<void>
@@ -69,7 +69,7 @@ export function useDshVersionControl(instanceId: string | null): DshVersionContr
     })
   }, [instanceId, reloadRecord])
 
-  /** 手动检查最新稳定版；失败保留可重试的错误提示。 */
+  /** 手动检查最新可用版本；失败保留可重试的错误提示。 */
   const runCheck = async (): Promise<void> => {
     if (instanceId === null || checking || active) return
     setChecking(true)
