@@ -409,9 +409,10 @@ function InstanceItem(props: {
   dragPosition?: 'top' | 'bottom'
 }): ReactNode {
   const t = useAppStore((state) => state.t)
-  const statuses = useAppStore((state) => state.statuses)
-  const workspaceConnected = useAppStore((state) => state.workspaceConnected)
-  const display = toDisplayStatus(statuses[props.item.id]?.status, workspaceConnected[props.item.id] ?? true)
+  // 只订阅本实例的状态切片，避免任一实例的状态事件重渲染整列。
+  const status = useAppStore((state) => state.statuses[props.item.id]?.status)
+  const connected = useAppStore((state) => state.workspaceConnected[props.item.id] ?? true)
+  const display = toDisplayStatus(status, connected)
   const info = STATUS_INFO[display]
 
   const classNames = ['inst']

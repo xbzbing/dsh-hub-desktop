@@ -31,8 +31,11 @@ export default function App() {
   const wizardOpen = useAppStore((state) => state.wizardOpen)
   const toggleRail = useAppStore((state) => state.toggleRail)
   const setWizardOpen = useAppStore((state) => state.setWizardOpen)
-  const statuses = useAppStore((state) => state.statuses)
-  const workspaceConnected = useAppStore((state) => state.workspaceConnected)
+  // 只订阅当前选中实例的状态切片，避免非选中实例的状态事件重渲染整个外壳。
+  const selectedStatus = useAppStore((state) => (selection ? state.statuses[selection] : undefined))
+  const selectedConnected = useAppStore((state) =>
+    selection ? state.workspaceConnected[selection] ?? true : true
+  )
   const workspaceOpen = useAppStore((state) => state.workspaceOpen)
   const workspaceOpening = useAppStore((state) => state.workspaceOpening)
   const setWorkspaceOpen = useAppStore((state) => state.setWorkspaceOpen)
@@ -102,7 +105,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [setWizardOpen, toggleRail])
 
-  const selectedStatus = selection ? statuses[selection] : undefined
   const selectedInstance = selection ? instances.find((instance) => instance.id === selection) : undefined
   const workspaceAddress = workspaceOpen && selectedInstance
     ? compactWorkspaceAddress(selectedInstance.address)
@@ -134,7 +136,7 @@ export default function App() {
               ? workspaceAddress ?? selectedInstance?.name ?? t('common.unknown')
               : selectedStatus !== undefined && selection !== null
                 ? t(
-                    STATUS_INFO[toDisplayStatus(selectedStatus.status, workspaceConnected[selection] ?? true)]
+                    STATUS_INFO[toDisplayStatus(selectedStatus.status, selectedConnected)]
                       .labelKey
                   )
                 : t('nav.instanceCount', { n: instances.length })}
