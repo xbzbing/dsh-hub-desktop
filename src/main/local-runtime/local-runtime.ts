@@ -173,7 +173,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const stopGraceMs = options.stopGraceMs ?? 3_000
   const stopAllDrainMs = options.stopAllDrainMs ?? 10_000
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
-  // 重试次数默认 5 次；HTTP 端点为 3 次，差异说明见 probe.ts 的 retryProbe。
+  // 就绪探测重试次数默认 5 次，与 HTTP 端点一致；见 probe.ts 的 retryProbe。
   const healthProbeRetries = options.healthProbeRetries ?? 5
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
   const portProbe = options.portProbe
