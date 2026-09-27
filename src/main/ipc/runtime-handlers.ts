@@ -21,7 +21,7 @@ import {
 } from '@shared/contracts'
 import { httpDirectEndpoint } from '../transport/endpoint-resolver'
 import { shouldReuseLoadedView } from '../webview/instance-view'
-import { InstanceStoreError, instanceNotFound, type InstanceStore } from '../registry/instance-store'
+import { InstanceStoreError, instanceNotFoundError, type InstanceStore } from '../registry/instance-store'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { ExternalDshScanner } from '../local-runtime/external-dsh'
 import type { PathProbe } from '../local-runtime/runtime-source'
@@ -78,8 +78,9 @@ export function registerRuntimeHandlers(
 
   ipcMain.handle(INSTANCE_RUNTIME_IPC.start, (_event, id: unknown): Promise<IpcResult<null>> =>
     wrap(async () => {
-      const instance = await store.get(parseId(id))
-      if (!instance) throw instanceNotFound(String(id))
+      const instanceId = parseId(id)
+      const instance = await store.get(instanceId)
+      if (!instance) throw instanceNotFoundError(instanceId)
       if (instance.transport === 'local') {
         // 不 await：安装/启动可能耗时数十秒，进展与失败都走状态事件
         void deps.runtime.start(instance)
@@ -113,7 +114,7 @@ export function registerRuntimeHandlers(
     wrap(async () => {
       const instanceId = parseId(id)
       const instance = await store.get(instanceId)
-      if (!instance) throw instanceNotFound(String(id))
+      if (!instance) throw instanceNotFoundError(instanceId)
       if (instance.transport !== 'local') {
         throw new InstanceStoreError('invalid-input', '只有本机实例支持重启')
       }
@@ -211,7 +212,7 @@ export function registerRuntimeHandlers(
     }
 
     const instance = await store.get(instanceId)
-    if (!instance) throw instanceNotFound(instanceId)
+    if (!instance) throw instanceNotFoundError(instanceId)
     const status =
       instance.transport === 'ssh'
         ? deps.tunnels.statusOf(instanceId)
@@ -293,7 +294,7 @@ export function registerRuntimeHandlers(
         const instanceId = parseId(id)
         const targetPid = z.number().int().positive().parse(pid)
         const instance = await store.get(instanceId)
-        if (!instance) throw instanceNotFound(String(id))
+        if (!instance) throw instanceNotFoundError(instanceId)
         if (instance.transport !== 'local') {
           throw new InstanceStoreError('invalid-input', '只有本地实例才能接管本机 dsh web')
         }
@@ -401,7 +402,7 @@ export function registerRuntimeHandlers(
     wrap(async () => {
       const instanceId = parseId(id)
       const instance = await store.get(instanceId)
-      if (!instance) throw instanceNotFound(instanceId)
+      if (!instance) throw instanceNotFoundError(instanceId)
       if (workspaceTargetId === instanceId) workspaceTargetId = null
       deps.hideInstanceTooltip?.()
       deps.closeInstanceView?.(instanceId)

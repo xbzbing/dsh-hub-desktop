@@ -57,7 +57,7 @@ export class InstanceStoreError extends Error {
 }
 
 /** 按 id 查不到实例时的统一 not-found 错误；registry 与各 IPC handler 共用同一文案。 */
-export function instanceNotFound(id: string): InstanceStoreError {
+export function instanceNotFoundError(id: string): InstanceStoreError {
   return new InstanceStoreError('not-found', `实例不存在：${id}`)
 }
 
@@ -402,7 +402,7 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
         await ensureLoaded()
         const parsedPatch = parseOrThrow(() => PatchInstanceSchema.parse(patch))
         const current = (instances ?? []).find((record) => record.id === id)
-        if (!current) throw instanceNotFound(id)
+        if (!current) throw instanceNotFoundError(id)
         const record = parseOrThrow(() =>
           stamp({
             ...applyPatch(current, normalizePatch(parsedPatch)),

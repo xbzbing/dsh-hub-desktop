@@ -11,7 +11,7 @@ import {
   type IpcResult,
   type RuntimeConfirmPromptPayload
 } from '@shared/contracts'
-import { InstanceStoreError, instanceNotFound, type InstanceStore } from '../registry/instance-store'
+import { InstanceStoreError, instanceNotFoundError, type InstanceStore } from '../registry/instance-store'
 import { compareDshVersions } from '../local-runtime/runtime-source'
 import { resolveSystemDshUsage } from '../local-runtime/dsh-source-policy'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
@@ -32,7 +32,7 @@ export function registerVersionHandlers(store: InstanceStore, deps: VersionHandl
     wrap(async () => {
       const instanceId = parseId(id)
       const record = await store.get(instanceId)
-      if (!record) throw instanceNotFound(String(id))
+      if (!record) throw instanceNotFoundError(instanceId)
       if (!deps.installer) throw new InstanceStoreError('internal', 'dsh 版本管理能力不可用')
       const status = deps.runtime.statusOf(instanceId)
       let current = status?.version ?? (record.transport === 'local' ? record.dshVersion : null)
@@ -103,7 +103,7 @@ export function registerVersionHandlers(store: InstanceStore, deps: VersionHandl
     wrap(async () => {
       const instanceId = parseId(id)
       const record = await store.get(instanceId)
-      if (!record) throw instanceNotFound(String(id))
+      if (!record) throw instanceNotFoundError(instanceId)
       const eligibility = upgradeEligibility(
         record,
         deps.runtime.statusOf(instanceId)?.runtimeSource

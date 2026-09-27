@@ -19,7 +19,7 @@ import {
   type LocalSpaceSnapshot
 } from '@shared/contracts'
 import { resolveSshKeyPreview } from '../ssh/key-preview'
-import { InstanceStoreError, instanceNotFound, type InstanceStore } from '../registry/instance-store'
+import { InstanceStoreError, instanceNotFoundError, type InstanceStore } from '../registry/instance-store'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { ExternalDshScanner } from '../local-runtime/external-dsh'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
@@ -224,7 +224,7 @@ export function registerInstanceHandlers(
         const parsed = z.object({ instanceId: z.uuid() }).parse(input)
         const instance = await store.get(parsed.instanceId)
         if (!instance) {
-          throw instanceNotFound(parsed.instanceId)
+          throw instanceNotFoundError(parsed.instanceId)
         }
         if (instance.transport !== 'ssh') {
           throw new InstanceStoreError('invalid-input', '只有 SSH 隧道实例才有主机指纹')
