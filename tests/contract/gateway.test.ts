@@ -32,10 +32,9 @@ describe('GatewayClient integration', () => {
     expect(record).not.toBeNull()
     expect(record?.attributes).toMatch(/HttpOnly/)
     expect(record?.attributes).toMatch(/SameSite=Strict/)
-    // 静默恢复:带 Cookie 打 settings
+    // 静默恢复:带 Cookie 打 settings（会话有效 → 200）
     const settings = await client.settings()
     expect(settings.ok).toBe(true)
-    expect(await client.probeSession()).toBe(true)
   })
 
   it('错误密码 → 401 invalid-credentials(统一错误码)', async () => {
@@ -58,7 +57,6 @@ describe('GatewayClient integration', () => {
       expect(settings.status).toBe(401)
       expect(settings.code).toBe('unauthenticated')
     }
-    expect(await client.probeSession()).toBe(false)
   })
 
   it('logout → 会话失效', async () => {
@@ -67,7 +65,9 @@ describe('GatewayClient integration', () => {
     const out = await client.logout()
     expect(out.ok).toBe(true)
     expect(client.hasSession()).toBe(false)
-    expect(await client.probeSession()).toBe(false)
+    // 登出后 settings 不再是 200（会话失效）
+    const settings = await client.settings()
+    expect(settings.ok).toBe(false)
   })
 
   it('网络不可达 → network 失败(不抛异常)', async () => {
