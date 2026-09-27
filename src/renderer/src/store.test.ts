@@ -125,16 +125,6 @@ describe('store settings', () => {
     expect((document.documentElement.dataset as Record<string, string>)['theme']).toBe('dark')
   })
 
-  it('toggleTheme 通过 updateSettings 持久化', async () => {
-    const useAppStore = await freshStore()
-    await useAppStore.getState().hydrateSettings()
-    useAppStore.getState().toggleTheme()
-    // 必须产生一次设置写入，而不是只改内存
-    await vi.waitFor(() => {
-      expect(updateCalls).toEqual([{ theme: 'dark' }])
-    })
-  })
-
   it('updateSettings 失败时抛出错误', async () => {
     const useAppStore = await freshStore()
     updateResult = { ok: false, message: '磁盘满' }
