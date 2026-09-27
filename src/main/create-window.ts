@@ -144,10 +144,13 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
     }
     if (process.platform !== 'darwin') {
       // 保留 accelerator（复制/粘贴/重载等）但不显示菜单栏；关于入口移到设置页。
+      // 「关于」项仍留在（不可见的）应用菜单里：用户不经菜单进入，但保留标准位置，
+      // 也让程序化触发（Menu.getApplicationMenu().click()，E2E 用）命中同一入口。
       const template: MenuItemConstructorOptions[] = [
         { role: 'editMenu' },
         { role: 'viewMenu' },
-        { role: 'windowMenu' }
+        { role: 'windowMenu' },
+        { role: 'help', submenu: [about] }
       ]
       const menu = Menu.buildFromTemplate(template)
       Menu.setApplicationMenu(menu)
