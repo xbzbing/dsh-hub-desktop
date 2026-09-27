@@ -7,7 +7,6 @@ import {
   clearLock,
   closeAuthPanel,
   initialAuthPanelModel,
-  lockExpired,
   lockRemaining,
   lockSeconds,
   openAuthPanel
@@ -91,26 +90,27 @@ export default function AuthPanel(): ReactNode {
     })
   }, [])
 
-  // 锁定倒计时:每秒重算剩余时间;到期后重探一次,让按钮与文案恢复
+  // 锁定倒计时:每秒重算剩余时间;到期后重探一次,让按钮与文案恢复。
+  // 依赖收窄到锁定到期时刻与目标实例:仅锁定态变化才重建 interval，不随每次认证状态抖动。
+  const lockUntil = model.lockUntil
+  const lockTargetId = model.target?.id
   useEffect(() => {
-    if (model.lockUntil === null) return
+    if (lockUntil === null) return
     const timer = setInterval(() => {
       setTick((value) => value + 1)
-      if (lockExpired(model)) {
-        clearInterval(timer)
-        // 到期时先解除锁定，再探测以刷新状态；探测失败不能使按钮保持禁用。
-        setModel((current) => clearLock(current))
-        const openId = model.target?.id
-        if (!openId) return
-        void BRIDGE?.auth.probe(openId).then((result) => {
-          // 取局部常量:属性收窄不会跨进闭包
-          const value = result?.ok ? result.value : null
-          if (value) setModel((current) => applyAuthSnapshot(current, openId, value))
-        })
-      }
+      if (Date.now() < lockUntil) return
+      clearInterval(timer)
+      // 到期时先解除锁定，再探测以刷新状态；探测失败不能使按钮保持禁用。
+      setModel((current) => clearLock(current))
+      if (!lockTargetId) return
+      void BRIDGE?.auth.probe(lockTargetId).then((result) => {
+        // 取局部常量:属性收窄不会跨进闭包
+        const value = result?.ok ? result.value : null
+        if (value) setModel((current) => applyAuthSnapshot(current, lockTargetId, value))
+      })
     }, 1000)
     return () => clearInterval(timer)
-  }, [model])
+  }, [lockUntil, lockTargetId])
 
   /** 供工作区浮层/详情页调用的入口(通过自定义事件打开) */
   useEffect(() => {
