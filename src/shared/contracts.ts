@@ -621,7 +621,7 @@ export interface DshVersionCatalog {
 export interface DshVersionCheck {
   /** 当前实例使用的 dsh 版本（状态事件优先，其次注册表）；来源未知时为 null。 */
   current: string | null
-  /** npm registry 上的最新稳定版本。 */
+  /** npm registry 上的最新可用版本（按版本比较取最大，含 rc/alpha 等预发布渠道）。 */
   latest: string
   /** 是否有可用更新；当前版本未知时按可升级即视为有更新。 */
   hasUpdate: boolean

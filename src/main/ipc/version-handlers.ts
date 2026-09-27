@@ -94,7 +94,7 @@ export function registerVersionHandlers(store: InstanceStore, deps: VersionHandl
         }
       } catch (error) {
         // registry 不可达等原因：透传失败原因供向导展示，但先脱敏（剥掉 URL 查询串）
-        // 并封顶长度，避免把本机文件路径等细节原样带到渲染层。
+        // 并封顶长度，避免大段 stderr 灌进渲染层。
         const raw = error instanceof Error ? error.message : String(error)
         throw new InstanceStoreError('internal', redactLine(raw).slice(0, 300))
       }
