@@ -931,6 +931,8 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/local-runtime/runtime-installer.ts', 'detail: `安装 ${DSH_PACKAGE_NAME}@${version}`'),
   debt('src/main/local-runtime/runtime-installer.ts', "const detail = `下载依赖 (${fetchCount})：${path}`"),
   debt('src/main/local-runtime/local-runtime.ts', "detail: error instanceof Error ? `解析就绪地址失败：${error.message}` : '解析就绪地址失败'"),
+  debt('src/main/local-runtime/local-runtime.ts', "failReady(new Error('就绪 URL 无法解析'))"),
+  debt('src/main/local-runtime/local-runtime.ts', "failReady(new Error(`就绪 URL 主机非回环地址（${readyUrl.hostname}），已拒绝`))"),
   debt('src/main/local-runtime/local-runtime.ts', 'detail: redactLine(`就绪 URL 无法访问（健康探测 ${healthProbeRetries} 次失败）：${url}`)'),
   debt('src/main/local-runtime/local-runtime.ts', 'detail: `已在 ${entry.home} 启动（dsh web）`'),
   // Runtime source messages.

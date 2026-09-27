@@ -12,6 +12,7 @@ import type {
   LocalInstance
 } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
+import { isLoopbackHost } from '@shared/endpoint'
 import type { PortProbe } from './port-allocator'
 import type { InstallProgress } from './runtime-installer'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
@@ -266,6 +267,19 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       entry.settleSpawn?.()
     }
     try {
+    // dsh 打印的就绪 URL 直接喂给内嵌工作区视图：host 必须钉在回环，否则被篡改的
+    // stdout 行（`dsh web: http://attacker/…`）会让 hub 在工作区加载远端 origin。
+    let readyUrl: URL
+    try {
+      readyUrl = new URL(url)
+    } catch {
+      failReady(new Error('就绪 URL 无法解析'))
+      return
+    }
+    if (!isLoopbackHost(readyUrl.hostname)) {
+      failReady(new Error(`就绪 URL 主机非回环地址（${readyUrl.hostname}），已拒绝`))
+      return
+    }
     // 在途续体身份守卫:探测/重试期间本条目的进程可能已退出(退出处理器会删条目并立即
     // 放行队列,同 id 的第二次 start 随即拉起新进程)。陈旧续体不得再发布 running、
     // 也不得在失败终局里 `entries.delete(id)` 误删新条目 —— 否则活进程沦为无主,
@@ -303,7 +317,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     }
     entry.ready = true
     entry.url = url
-    const port = Number(new URL(url).port)
+    const port = Number(readyUrl.port)
     entry.port = Number.isInteger(port) && port > 0 ? port : null
     if (stale()) return
     emit(id, 'running', {

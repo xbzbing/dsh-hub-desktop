@@ -600,6 +600,40 @@ describe('createLocalRuntime', () => {
     expect(manager.statusOf(instance.id)?.detail).toContain('port already in use')
   })
 
+  it('就绪行主机非回环 → error + 杀进程（不加载远端 origin）', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999997
+    child.killCall = []
+    child.kill = vi.fn((signal?: NodeJS.Signals) => {
+      child.killCall.push(signal ?? 'SIGTERM')
+      return true
+    }) as never
+    const probe = vi.fn(async () => true)
+
+    const manager = createLocalRuntime({
+      store: storeStub,
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: (() => child) as never,
+      probe,
+      readyTimeoutMs: 2000
+    })
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    // 被篡改的 stdout 打印远端 origin：主机非回环，必须拒绝、不得健康探测也不得进入 running
+    child.stdout.write('dsh web: http://attacker.example/?token=abc\n')
+    await starting
+    await waitForStatus(manager, instance.id, 'error')
+
+    expect(manager.statusOf(instance.id)?.detail).toContain('非回环')
+    expect(probe).not.toHaveBeenCalled()
+    expect(child.killCall).toContain('SIGKILL')
+    expect(manager.runningIds()).toEqual([])
+  })
+
   it('stop:SIGTERM → 子进程退出 → stopped;未退出 → SIGKILL 兜底', async () => {
     const child = new EventEmitter() as unknown as FakeChild
     child.stdout = new PassThrough()
