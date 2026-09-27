@@ -425,6 +425,11 @@ export function createLauncher(deps: LauncherDeps): Launcher {
       if (entries.get(id) !== entry) return
       if (entry.stopping) return
       entry.stopping = true
+      // 与下方 exit 处理器一致地清理就绪 timer，避免它在条目删除后仍空转到期。
+      if (entry.timer) {
+        clearTimeout(entry.timer)
+        entry.timer = null
+      }
       emit(id, 'error', { detail: `进程启动失败：${error.message}` })
       entries.delete(id)
       entry.settleSpawn?.()

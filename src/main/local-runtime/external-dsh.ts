@@ -51,8 +51,9 @@ export const WIN_PROCESS_SCRIPT =
  *   拉起的实例当成「外部实例」重复上报。
  */
 export function isDshWebCommand(command: string): boolean {
-  // 排除 shell / ps / grep 包装行:它们会把「dsh web」当参数,直接匹配会误报
-
+  // 排除 shell / ps / grep 包装行:它们会把「dsh web」当参数,直接匹配会误报。
+  // 第一条按命令名起始排除;第二条兜住绝对路径形态(如 /usr/bin/pgrep -f …/dsh web) ——
+  // 它不以 grep/pgrep 起始,却含 `/dsh web` 会命中下方锚点,必须由词边界匹配拦掉。
   if (/^(?:bash|sh|zsh|fish|ps|grep|pgrep|rg)\b/.test(command)) return false
   if (/\bgrep\b|\bpgrep\b/.test(command)) return false
   if (!/dsh/i.test(command)) return false
