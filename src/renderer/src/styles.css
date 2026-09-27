@@ -234,6 +234,10 @@ html[data-platform='darwin'] .app-shell.rail .topbar {
   grid-template-columns: repeat(2, 1fr);
   gap: var(--gap-lg);
 }
+/* 两栏卡片等高对齐：grid 默认 stretch，卡片内部内容顶端对齐即可视觉平齐。 */
+.settings-align > .card {
+  align-self: stretch;
+}
 .grid-3 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

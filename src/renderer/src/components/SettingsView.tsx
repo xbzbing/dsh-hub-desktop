@@ -99,105 +99,107 @@ export default function SettingsView(): ReactNode {
     <section data-testid="view-settings">
       <h2 className="h2">{t('settings.title')}</h2>
 
-      <div className="card mt12">
-        <div className="card-head">
-          <h3>{t('settings.language')}</h3>
-          <span className="meta">{t('settings.languageHint')}</span>
-        </div>
-        <div className="row mt12" style={{ gap: 8 }}>
-          {LANGUAGES.map((language: LanguagePreference) => (
-            <button
-              key={language}
-              className={`btn btn-sm ${settings.language === language ? 'btn-primary' : 'btn-secondary'}`}
-              data-testid={`settings-language-${language}`}
-              onClick={() => apply({ language })}
-            >
-              {language === 'system'
-                ? t('settings.languageSystem')
-                : language === 'zh'
-                  ? t('settings.languageChinese')
-                  : t('settings.languageEnglish')}
-            </button>
-          ))}
+      <div className="grid-2 mt12 settings-align">
+        <div className="card">
+          <div className="card-head">
+            <h3>{t('settings.language')}</h3>
+            <span className="meta">{t('settings.languageHint')}</span>
+          </div>
+          <div className="row mt12" style={{ gap: 8 }}>
+            {LANGUAGES.map((language: LanguagePreference) => (
+              <button
+                key={language}
+                className={`btn btn-sm ${settings.language === language ? 'btn-primary' : 'btn-secondary'}`}
+                data-testid={`settings-language-${language}`}
+                onClick={() => apply({ language })}
+              >
+                {language === 'system'
+                  ? t('settings.languageSystem')
+                  : language === 'zh'
+                    ? t('settings.languageChinese')
+                    : t('settings.languageEnglish')}
+              </button>
+            ))}
+          </div>
+
+          <div className="card-head mt12">
+            <h3>{t('settings.theme')}</h3>
+          </div>
+          <div className="row mt12" style={{ gap: 8 }}>
+            {THEMES.map((theme: Theme) => (
+              <button
+                key={theme}
+                className={`btn btn-sm ${settings.theme === theme ? 'btn-primary' : 'btn-secondary'}`}
+                data-testid={`settings-theme-${theme}`}
+                onClick={() => apply({ theme })}
+              >
+                {theme === 'system'
+                  ? t('settings.themeSystem')
+                  : theme === 'light'
+                    ? t('settings.themeLight')
+                    : t('settings.themeDark')}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="card-head mt12">
-          <h3>{t('settings.theme')}</h3>
-        </div>
-        <div className="row mt12" style={{ gap: 8 }}>
-          {THEMES.map((theme: Theme) => (
-            <button
-              key={theme}
-              className={`btn btn-sm ${settings.theme === theme ? 'btn-primary' : 'btn-secondary'}`}
-              data-testid={`settings-theme-${theme}`}
-              onClick={() => apply({ theme })}
-            >
-              {theme === 'system'
-                ? t('settings.themeSystem')
-                : theme === 'light'
-                  ? t('settings.themeLight')
-                  : t('settings.themeDark')}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="card mt12">
-        <label className="row" style={{ gap: 8, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            data-testid="settings-tray"
-            checked={settings.tray}
-            onChange={(event) => apply({ tray: event.target.checked })}
-          />
-          <span>{t('settings.tray')}</span>
-        </label>
-        <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            data-testid="settings-autostart"
-            checked={settings.autoStart}
-            onChange={(event) => apply({ autoStart: event.target.checked })}
-          />
-          <span>{t('settings.autoStart')}</span>
-        </label>
-        <label className="row mt12" style={{ gap: 8, alignItems: 'flex-start' }}>
-          <input
-            type="checkbox"
-            data-testid="settings-inherit-shell-env"
-            checked={settings.inheritShellEnv}
-            onChange={(event) => apply({ inheritShellEnv: event.target.checked })}
-          />
-          <span style={{ flex: 1 }}>
-            <span>{t('settings.inheritShellEnv')}</span>
-            <span className="meta" style={{ display: 'block', marginTop: 2 }}>
-              {t('settings.inheritShellEnvHint')}
+        <div className="card">
+          <label className="row" style={{ gap: 8, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              data-testid="settings-tray"
+              checked={settings.tray}
+              onChange={(event) => apply({ tray: event.target.checked })}
+            />
+            <span>{t('settings.tray')}</span>
+          </label>
+          <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              data-testid="settings-autostart"
+              checked={settings.autoStart}
+              onChange={(event) => apply({ autoStart: event.target.checked })}
+            />
+            <span>{t('settings.autoStart')}</span>
+          </label>
+          <label className="row mt12" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <input
+              type="checkbox"
+              data-testid="settings-inherit-shell-env"
+              checked={settings.inheritShellEnv}
+              onChange={(event) => apply({ inheritShellEnv: event.target.checked })}
+            />
+            <span style={{ flex: 1 }}>
+              <span>{t('settings.inheritShellEnv')}</span>
+              <span className="meta" style={{ display: 'block', marginTop: 2 }}>
+                {t('settings.inheritShellEnvHint')}
+              </span>
             </span>
-          </span>
-        </label>
-        <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
-          <span style={{ flex: 1 }}>
-            <span>{t('settings.workspaceCache')}</span>
-            <span className="meta" style={{ display: 'block', marginTop: 2 }}>
-              {t('settings.workspaceCacheHint')}
+          </label>
+          <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+            <span style={{ flex: 1 }}>
+              <span>{t('settings.workspaceCache')}</span>
+              <span className="meta" style={{ display: 'block', marginTop: 2 }}>
+                {t('settings.workspaceCacheHint')}
+              </span>
             </span>
-          </span>
-          <input
-            className="input"
-            type="number"
-            min={1}
-            max={10}
-            step={1}
-            value={settings.workspaceCacheSize}
-            aria-label={t('settings.workspaceCache')}
-            data-testid="settings-workspace-cache-size"
-            onChange={(event) => {
-              const value = Number(event.target.value)
-              if (Number.isInteger(value) && value >= 1 && value <= 10) apply({ workspaceCacheSize: value })
-            }}
-            style={{ width: 70 }}
-          />
-        </label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={10}
+              step={1}
+              value={settings.workspaceCacheSize}
+              aria-label={t('settings.workspaceCache')}
+              data-testid="settings-workspace-cache-size"
+              onChange={(event) => {
+                const value = Number(event.target.value)
+                if (Number.isInteger(value) && value >= 1 && value <= 10) apply({ workspaceCacheSize: value })
+              }}
+              style={{ width: 70 }}
+            />
+          </label>
+        </div>
       </div>
 
       <div className="card mt12">
