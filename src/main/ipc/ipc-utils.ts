@@ -121,12 +121,15 @@ export function toSummary(
 }
 
 /** 外部本机 dsh token 验收探测的超时：慢/半开的本地服务不得让接管流程无限期挂起。 */
-const EXTERNAL_ACCESS_PROBE_TIMEOUT_MS = 5_000
+export const EXTERNAL_ACCESS_PROBE_TIMEOUT_MS = 5_000
 
-export async function defaultVerifyExternalAccess(url: string): Promise<boolean> {
+export async function defaultVerifyExternalAccess(
+  url: string,
+  timeoutMs: number = EXTERNAL_ACCESS_PROBE_TIMEOUT_MS
+): Promise<boolean> {
   const response = await fetch(url, {
     redirect: 'manual',
-    signal: AbortSignal.timeout(EXTERNAL_ACCESS_PROBE_TIMEOUT_MS)
+    signal: AbortSignal.timeout(timeoutMs)
   })
   return response.status !== 401 && response.status !== 403
 }
