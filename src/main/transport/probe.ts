@@ -1,4 +1,5 @@
 /**
+ * 通用健康探测 —— 不 import Electron。
  *
  * 任何传输解析出的端点统一用同一套 HealthyProbe：
  * `GET <endpoint>/`，任意 HTTP 响应（200/302/401）即「传输就绪」；
@@ -27,4 +28,33 @@ export function sleep(ms: number): Promise<void> {
     const timer = setTimeout(resolve, ms)
     timer.unref?.()
   })
+}
+
+/**
+ * 反复探测直到成功、次数用尽或 `shouldAbort` 返回 true。
+ * 返回 null 表示已中止（调用方自行收尾），否则返回最后一次探测结论。
+ *
+ * 各 transport 传入的 `retries` 默认值并不相同：本机实例 5、HTTP 端点 3，
+ * 两侧各自维护、不随本函数的调整而同步。
+ */
+export async function retryProbe(options: {
+  url: string
+  probe: HealthProbe
+  /** 总尝试次数，含首次。 */
+  retries: number
+  /** 相邻两次探测的间隔；用 `sleep`，定时器 unref 不挂住进程。 */
+  retryMs: number
+  timeoutMs: number
+  /** 循环内每次探测前、以及循环结束后各判一次：返回 true 即中止。 */
+  shouldAbort: () => boolean
+}): Promise<boolean | null> {
+  let healthy = false
+  for (let attempt = 1; attempt <= options.retries; attempt++) {
+    if (options.shouldAbort()) return null
+    healthy = await options.probe(options.url, options.timeoutMs)
+    if (healthy) break
+    if (attempt < options.retries) await sleep(options.retryMs)
+  }
+  if (options.shouldAbort()) return null
+  return healthy
 }
