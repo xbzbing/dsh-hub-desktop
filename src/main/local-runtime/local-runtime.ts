@@ -2,7 +2,6 @@
  * 本机实例运行时：启动、接管与停止本地 dsh 进程，健康探测就绪，以及 dsh 版本升级。
  * 不 import Electron，状态只经 `onStatus` 向外发布，因此可脱离 Electron 单独测试。
  */
-import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { existsSync, readdirSync } from 'node:fs'
 import { delimiter, dirname, join } from 'node:path'
@@ -25,8 +24,15 @@ import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
 import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
 import { httpHealthProbe, retryProbe, type HealthProbe } from '../transport/probe'
 import { createStatusBus } from '../transport/status-bus'
+import {
+  detachedSpawn,
+  type SpawnedProcess,
+  type SpawnInvocation,
+  type SpawnLike
+} from '../transport/spawn'
 
 export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
+export type { SpawnedProcess, SpawnInvocation, SpawnLike } // 定义位于 transport/spawn.ts。
 
 /**
  * 本机 dsh web 的默认端口。与 dsh 自身默认端口一致：用户对 3080 有既有预期，
@@ -44,25 +50,6 @@ const LOG_BUFFER_LINES = 80
 
 /** 未以换行结尾的残片上限:异常的超长单行只保留尾部,防止无界增长 */
 const LOG_BUFFER_MAX = 64 * 1024
-
-export interface SpawnedProcess {
-  pid?: number | undefined
-  stdout: NodeJS.ReadableStream | null
-  stderr: NodeJS.ReadableStream | null
-  on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown
-  on(event: 'error', listener: (error: Error) => void): unknown
-  kill(signal?: NodeJS.Signals): boolean
-}
-
-export interface SpawnInvocation {
-  command: string
-  args: string[]
-  env: NodeJS.ProcessEnv
-  cwd: string
-  detached: boolean
-}
-
-export type SpawnLike = (invocation: SpawnInvocation) => SpawnedProcess
 
 export interface LocalRuntimeOptions {
   installer: RuntimeInstaller
@@ -194,14 +181,6 @@ interface LaunchPlan {
   customLauncherName: string | null
 }
 
-const defaultSpawn: SpawnLike = ({ command, args, env, cwd, detached }) =>
-  spawn(command, args, {
-    env,
-    cwd,
-    detached,
-    stdio: ['ignore', 'pipe', 'pipe']
-  })
-
 /**
  * 启动命令展示串:命令与参数原样拼接,含空白或引号的片段加双引号,
  * 供状态事件与详情页展示、复制到终端复现。
@@ -271,7 +250,7 @@ function resolveNodeFor(scriptPath: string, home: string): string | null {
 }
 
 export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeManager {
-  const spawnImpl = options.spawnImpl ?? defaultSpawn
+  const spawnImpl = options.spawnImpl ?? detachedSpawn
   const probe = options.probe ?? httpHealthProbe
   const nodeInvocation = options.nodeInvocation ?? defaultNodeInvocation()
   const profile = options.profile ?? 'web'
