@@ -18,6 +18,14 @@ vi.mock('./shell-env', async (importActual) => ({
   resolveShellEnvOnce: async () => null
 }))
 
+// 同理 mock 登录 PATH 解析：默认实现会真起登录 shell（mac/Linux）或读注册表（Windows），
+// 未注入 loginPath 的用例会命中它，非 hermetic 且子进程启动开销可能吃满测试超时预算。
+// 保留 mergeLoginPath 真实实现；注入 loginPath 的用例覆盖此默认，不受影响。
+vi.mock('./login-path', async (importActual) => ({
+  ...(await importActual<typeof import('./login-path')>()),
+  resolveLoginPathOnce: async () => null
+}))
+
 const ISO = '2026-09-15T00:00:00.000Z'
 
 function localInstance(overrides: Partial<LocalInstance> = {}): LocalInstance {

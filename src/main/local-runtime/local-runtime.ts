@@ -21,7 +21,12 @@ import { resolveLoginPathOnce } from './login-path'
 import { resolveShellEnvOnce } from './shell-env'
 import { httpHealthProbe, retryProbe, type HealthProbe } from '../transport/probe'
 import { createStatusBus } from '../transport/status-bus'
-import { detachedSpawn, killProcessGroup, type SpawnLike } from '../transport/spawn'
+import {
+  detachedSpawn,
+  killProcessGroup,
+  waitForProcessExit,
+  type SpawnLike
+} from '../transport/spawn'
 import type { Entry } from './entry'
 import { createLauncher, type LaunchOptions } from './launch'
 
@@ -240,23 +245,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   }
 
   async function waitForExit(entry: Entry, timeoutMs: number): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      let done = false
-      const finish = (exited: boolean): void => {
-        if (done) return
-        done = true
-        if (timer) clearTimeout(timer)
-        resolve(exited)
-      }
-      const timer = setTimeout(() => finish(false), timeoutMs)
-      timer.unref?.()
-      // 外部接管条目没有子进程:没什么可等的,视作「已退出」
-      if (!entry.child) {
-        finish(true)
-        return
-      }
-      entry.child.on('exit', () => finish(true))
-    })
+    // 外部接管条目没有子进程:没什么可等的,视作「已退出」
+    if (!entry.child) return true
+    return waitForProcessExit(entry.child, timeoutMs)
   }
 
   async function handleReady(id: string, entry: Entry, url: string): Promise<void> {
