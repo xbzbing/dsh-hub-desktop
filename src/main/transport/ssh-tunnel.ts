@@ -297,6 +297,26 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     return next
   }
 
+  /**
+   * 换一个本地端口（forward 失败重连用）：先释放旧端口再在区间内找新端口。
+   * 必须与 allocLocalPort 走同一条 allocChain —— 否则 findFreePort 与 reservedPorts.add
+   * 之间的窗口里，另一实例的并发分配会把同一端口观察为空闲而双双保留（重复 -L 绑定）。
+   */
+  function reallocLocalPort(previous: number): Promise<number> {
+    const next = allocChain.then(async () => {
+      reservedPorts.delete(previous)
+      const port = await findFreePort({
+        start: DEFAULT_PORT_RANGE_START,
+        end: DEFAULT_PORT_RANGE_END,
+        probe: isPortAvailable
+      })
+      reservedPorts.add(port)
+      return port
+    })
+    allocChain = next.catch(() => undefined)
+    return next
+  }
+
   async function allocLocalPortInner(instance: SshInstance): Promise<number> {
     const preferred = instance.localPort
     if (preferred !== null && (await isPortAvailable(preferred))) {
@@ -433,14 +453,9 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
     // 端口转发失败（本地端口被占）→ 换一个本地端口再试
     if (entry.forwardFailed) {
       entry.forwardFailed = false
-      reservedPorts.delete(entry.localPort)
       try {
-        const port = await findFreePort({
-          start: DEFAULT_PORT_RANGE_START,
-          end: DEFAULT_PORT_RANGE_END,
-          probe: isPortAvailable
-        })
-        reservedPorts.add(port)
+        // 经 allocChain 串行：check-then-add 原子，不与并发分配抢同一端口。
+        const port = await reallocLocalPort(entry.localPort)
         if (entry.stopping) {
           reservedPorts.delete(port)
           return
