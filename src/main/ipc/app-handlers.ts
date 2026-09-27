@@ -1,7 +1,11 @@
 import { app, ipcMain } from 'electron'
+import { z } from 'zod'
 import { IPC, type AppInfo, type PingResult } from '@shared/bridge'
 import type { IpcResult } from '@shared/contracts'
 import { systemLocale } from '../system-locale'
+
+/** ping 入参：字符串或省略/null；与其余通道一致在边界走 zod 校验。 */
+const PingMessageSchema = z.string().max(4096).nullish()
 
 export function registerAppHandlers(
   processVersions: NodeJS.ProcessVersions & { electron?: string },
@@ -22,9 +26,12 @@ export function registerAppHandlers(
   )
 
   ipcMain.handle(IPC.ping, (_event, message: unknown): Promise<IpcResult<PingResult>> =>
-    wrap(() => ({
-      echo: typeof message === 'string' && message !== '' ? message : null,
-      at: Date.now()
-    }))
+    wrap(() => {
+      const parsed = PingMessageSchema.parse(message)
+      return {
+        echo: parsed !== null && parsed !== undefined && parsed !== '' ? parsed : null,
+        at: Date.now()
+      }
+    })
   )
 }

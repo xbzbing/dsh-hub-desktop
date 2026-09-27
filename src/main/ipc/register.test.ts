@@ -896,6 +896,12 @@ describe('registerIpc', () => {
     if (result.ok) expect(result.value.echo).toBe('hello')
   })
 
+  it('app:ping 非字符串入参 → invalid-input', async () => {
+    const result = (await invoke('app:ping', 123)) as { ok: boolean; code?: string }
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('invalid-input')
+  })
+
   it('create 合法输入 → ok + 完整记录', async () => {
     const result = (await invoke('instances:create', VALID_LOCAL)) as {
       ok: boolean
