@@ -1,6 +1,8 @@
 /**
  *
- * `Path=/; HttpOnly; SameSite=Strict`(网关 Cookie 无 Secure;basePath 不改变 Cookie 路径)。
+ * `Path=/; HttpOnly; SameSite=Strict`（basePath 不改变 Cookie 路径）。
+ * Secure 按端点 scheme 决定：https 端点带 Secure（防降级到同主机 http 重放），
+ * 纯 HTTP/LAN 端点不带（否则无法写入分区）。
  * **顺序纪律**:先写分区 Cookie,再 loadURL —— 避免首帧 302 抖动。
  * 密码绝不进入渲染进程:渲染层只触发登录,凭据只在主进程内存中流转。
  */
@@ -35,6 +37,15 @@ export function cookieUrlFor(origin: string, basePath = '/'): string {
   return `${trimmedOrigin}${normalizedBase}/`
 }
 
+/** origin 是否 https —— 据此决定注入 Cookie 是否带 Secure。 */
+function isSecureOrigin(origin: string): boolean {
+  try {
+    return new URL(origin).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export function toCookieRecord(options: ImportCookieOptions): SessionCookieRecord {
   const { origin, basePath = '/', cookie } = options
   return {
@@ -43,7 +54,9 @@ export function toCookieRecord(options: ImportCookieOptions): SessionCookieRecor
     value: cookie.value,
     path: '/', // 网关源码核实:basePath 不改变 Cookie 路径
     httpOnly: true,
-    secure: false, // 网关 Cookie 刻意不带 Secure(纯 HTTP/LAN 场景)
+    // https 端点必须带 Secure，防会话 Cookie 被降级到同主机 http 请求重放；
+    // 纯 HTTP/LAN 端点（含回环）无 https 可依，保持 false 才能真正写入分区。
+    secure: isSecureOrigin(origin),
     sameSite: 'strict'
   }
 }
