@@ -148,7 +148,14 @@ export const SshInstanceSchema = z.object({
   remotePort: PORT_SCHEMA.default(3080),
   /** 隧道本地端口；null = 未分配。 */
   localPort: PORT_SCHEMA.nullable().default(null),
-  /** 显式私钥路径；null = 默认，优先使用 agent。 */
+  /**
+   * 显式私钥路径；null = 默认，优先使用 agent。
+   *
+   * 这是唯一由渲染层提供、会到达主进程文件系统的路径（作为 `ssh -i <path>` 的参数），
+   * 是「IPC 不接受渲染层路径」规则下有意的有界例外：SSH 语义要求用户指名密钥文件，
+   * 且它只作为 `-i` 的独立 argv 值传入、不经 shell、不构成位置参数（无 `-o` 选项注入面），
+   * ssh 至多尝试把它当密钥加载。仅做长度约束。
+   */
   identityFile: z.string().trim().max(512).nullable().default(null)
 })
 
