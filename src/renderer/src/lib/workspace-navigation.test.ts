@@ -6,7 +6,8 @@ import {
   toDisconnectedPatch,
   toOpenPatch,
   toOpeningPatch,
-  toSettingsPatch
+  toSettingsPatch,
+  toWizardClosedPatch
 } from './workspace-navigation'
 
 describe('createNavigationGuard', () => {
@@ -20,11 +21,26 @@ describe('createNavigationGuard', () => {
     expect(guard.isCurrent(second)).toBe(true)
   })
 
-  it('bump 只推进代号，不返回值（用于「切走即作废」的同步入口）', () => {
+  it('begin(id) 记录在途实例，clearInFlight 仅清同一实例', () => {
     const guard = createNavigationGuard()
-    const gen = guard.begin()
-    guard.bump()
-    expect(guard.isCurrent(gen)).toBe(false)
+    expect(guard.inFlight()).toBeNull()
+    guard.begin('a')
+    expect(guard.inFlight()).toBe('a')
+    // 后续导航切到别的实例：在途标记随之更新
+    guard.begin('b')
+    expect(guard.inFlight()).toBe('b')
+    // 过期完成回调用旧 id 清理，不能误清当前在途实例
+    guard.clearInFlight('a')
+    expect(guard.inFlight()).toBe('b')
+    guard.clearInFlight('b')
+    expect(guard.inFlight()).toBeNull()
+  })
+
+  it('begin() 不带 id 时不改变在途实例', () => {
+    const guard = createNavigationGuard()
+    guard.begin('a')
+    guard.begin()
+    expect(guard.inFlight()).toBe('a')
   })
 })
 
@@ -84,5 +100,10 @@ describe('导航 patch 构造器', () => {
       workspaceOpening: false,
       workspaceSuspended: true
     })
+  })
+
+  it('toWizardClosedPatch：有可恢复目标时清挂起，无目标时只关向导', () => {
+    expect(toWizardClosedPatch('a')).toEqual({ wizardOpen: false, workspaceSuspended: false })
+    expect(toWizardClosedPatch(null)).toEqual({ wizardOpen: false })
   })
 })

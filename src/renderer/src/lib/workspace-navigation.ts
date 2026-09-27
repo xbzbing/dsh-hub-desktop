@@ -4,7 +4,8 @@
  * 侧栏选中、打开/断开工作区、打开向导与设置页此前各自手工重复同一套「换视图」不变式：
  * 递增导航代（作废在途的过期 openView 响应）、隐藏原生视图、重置工作区标志位。
  * 本模块把这条不变式收敛为一处：
- * - `NavigationGuard` 持有导航代，`begin()` 递增并返回本次代号，`isCurrent(gen)` 判定是否仍是最新意图；
+ * - `NavigationGuard` 持有导航代与「在途打开的实例」，`begin()` 递增并返回本次代号，
+ *   `isCurrent(gen)` 判定是否仍是最新意图，`inFlight()` 给出正在打开的实例；
  * - 一组纯 patch 构造器给出每种导航目标下 store 应合入的状态片段。
  * IPC 副作用（hideView / openView）与 toast 仍留在 store 动作里，本模块只决定状态怎么变。
  */
@@ -30,19 +31,34 @@ export interface WorkspaceNavState {
 /**
  * 导航代守卫：换视图前 `begin()` 递增，异步 openView 完成时用 `isCurrent(gen)`
  * 判断本次响应是否仍属于最新导航意图，过期响应只作废自己、绝不激活原生视图。
+ * 同时持有「在途打开的实例」：`begin(id)` 记录，`inFlight()` 供状态事件判定
+ * 「该实例的 openView 还没回来」，`clearInFlight(id)` 在完成时清除。
  */
-export function createNavigationGuard(): {
-  begin: () => number
-  bump: () => void
+export interface NavigationGuard {
+  /** 换视图：递增导航代并返回本次代号；传 inFlightId 记录正在打开的实例。 */
+  begin: (inFlightId?: string) => number
+  /** 本次代号是否仍是最新导航意图。 */
   isCurrent: (generation: number) => boolean
-} {
+  /** 正在等待 openView 返回的实例；无则 null。 */
+  inFlight: () => string | null
+  /** 清除在途标记；仅当仍是同一实例时清，避免覆盖后续导航记录的实例。 */
+  clearInFlight: (id: string) => void
+}
+
+export function createNavigationGuard(): NavigationGuard {
   let generation = 0
+  let inFlightId: string | null = null
   return {
-    begin: () => (generation += 1),
-    bump: () => {
+    begin: (id) => {
       generation += 1
+      if (id !== undefined) inFlightId = id
+      return generation
     },
-    isCurrent: (candidate) => candidate === generation
+    isCurrent: (candidate) => candidate === generation,
+    inFlight: () => inFlightId,
+    clearInFlight: (id) => {
+      if (inFlightId === id) inFlightId = null
+    }
   }
 }
 
@@ -107,4 +123,14 @@ export function toSettingsPatch(open: boolean): Partial<WorkspaceNavState> {
 /** 向导遮挡工作区：先隐藏原生视图再挂载向导，标记为「已挂起、可恢复」。 */
 export function suspendForWizardPatch(): Partial<WorkspaceNavState> {
   return { workspaceOpen: false, workspaceOpening: false, workspaceSuspended: true }
+}
+
+/**
+ * 关闭向导：清 `wizardOpen`；若此前挂起过工作区（`resumeId` 非空）则一并清挂起标记，
+ * 由调用方随后重开该实例的工作区。
+ */
+export function toWizardClosedPatch(resumeId: string | null): Partial<WorkspaceNavState> & {
+  wizardOpen: false
+} {
+  return { wizardOpen: false, ...(resumeId !== null ? { workspaceSuspended: false } : {}) }
 }
