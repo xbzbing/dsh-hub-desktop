@@ -13,6 +13,15 @@ import type { Language, Settings, Theme } from '@shared/settings'
 import { createTranslator } from '@shared/i18n'
 import type { Translator } from '@shared/i18n'
 import { isAboutWindow } from './lib/window-mode'
+import {
+  createNavigationGuard,
+  suspendForWizardPatch,
+  toDetailPatch,
+  toDisconnectedPatch,
+  toOpenPatch,
+  toOpeningPatch,
+  toSettingsPatch
+} from './lib/workspace-navigation'
 
 /**
  * 渲染层出生或热重置时默认没有工作区：主进程的清零钩子只覆盖主框架导航（Cmd+R），
@@ -151,8 +160,8 @@ interface AppState {
 let toastSeq = 0
 /** 活动日志行的单调递增序号（React key）：截尾到 200 行后不随之左移，DOM 节点稳定复用。 */
 let activitySeq = 0
-/** 最近一次工作区导航意图；过期 IPC 完成不得覆盖当前实例视图。 */
-let workspaceNavigationGeneration = 0
+/** 工作区导航代守卫：换视图递增代号，过期 openView 响应据此自我作废。 */
+const navigation = createNavigationGuard()
 /** 正在等待主进程 openView 返回的实例；状态事件不得对同一实例重复触发打开。 */
 let openViewInFlight: string | null = null
 
@@ -446,18 +455,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 实例与总览导航优先于设置页：否则 settingsOpen 一直为 true，侧栏点击看似
   // 改了 selection，App 却始终渲染 SettingsView，用户被困在设置页。
   select: (id) => {
-    workspaceNavigationGeneration += 1
+    navigation.bump()
     void window.dshHub?.runtime?.hideView()
     // 挂起标记属于换 selection 前被遮挡的工作区；待打开标记同理——切走后
     // 不再等该实例启动完成，否则 running 事件会把界面强行拽回工作区。
-    set({
-      selection: id,
-      workspaceOpen: false,
-      workspaceOpening: false,
-      workspaceSuspended: false,
-      settingsOpen: false,
-      pendingOpen: []
-    })
+    set(toDetailPatch(id))
   },
 
   openDetail: (id) => {
@@ -480,20 +482,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // 已在同一实例的工作区内时不重开:重开会先隐藏原生视图,而重开请求若被
     // 主进程按同实例去重合并,渲染层不会再回传内容区边界,视图会停在零尺寸。
     if (get().selection === id && get().workspaceOpen) return
-    const generation = ++workspaceNavigationGeneration
+    const generation = navigation.begin()
     openViewInFlight = id
     try {
       void window.dshHub?.runtime?.hideView()
-      set({ selection: id, workspaceOpen: false, workspaceOpening: true, settingsOpen: false })
+      set(toOpeningPatch(id))
       const result = await window.dshHub?.runtime.openView(id)
       // A later selection/open request owns the native view. Stale responses only stop themselves.
-      if (generation !== workspaceNavigationGeneration || get().selection !== id) return
+      if (!navigation.isCurrent(generation) || get().selection !== id) return
       if (result?.ok) {
-        set((state) => ({
-          workspaceOpen: true,
-          workspaceOpening: false,
-          workspaceConnected: { ...state.workspaceConnected, [id]: true }
-        }))
+        set((state) => toOpenPatch(id, state.workspaceConnected))
         return
       }
       set({ workspaceOpening: false })
@@ -504,18 +502,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   disconnectWorkspace: async (id) => {
-    const generation = ++workspaceNavigationGeneration
+    const generation = navigation.begin()
     const result = await window.dshHub?.runtime.disconnectView(id)
-    if (generation !== workspaceNavigationGeneration) return
+    if (!navigation.isCurrent(generation)) return
     if (!result?.ok) {
       if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
       return
     }
-    set((state) => ({
-      workspaceOpen: false,
-      workspaceOpening: false,
-      workspaceConnected: { ...state.workspaceConnected, [id]: false }
-    }))
+    set((state) => toDisconnectedPatch(id, state.workspaceConnected))
     get().toast('ok', get().t('detail.disconnected'))
   },
 
@@ -527,9 +521,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return
     }
     if (status === 'starting') {
-      workspaceNavigationGeneration += 1
+      navigation.bump()
       void window.dshHub?.runtime?.hideView()
-      set({ selection: id, workspaceOpen: false, workspaceOpening: true, settingsOpen: false })
+      set(toOpeningPatch(id))
       return
     }
     void get().openWorkspace(id)
@@ -562,10 +556,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (open) {
       const suspendWorkspace = state.workspaceOpen && state.selection !== null
       if (suspendWorkspace) {
-        workspaceNavigationGeneration += 1
+        navigation.bump()
         // WebContentsView 是独立于 React DOM 的原生子视图；确认隐藏后才挂载向导，
         // 否则它会覆盖新建实例弹窗。
-        set({ workspaceOpen: false, workspaceOpening: false, workspaceSuspended: true })
+        set(suspendForWizardPatch())
         void Promise.resolve(window.dshHub?.runtime?.hideView()).finally(() => {
           if (!get().wizardOpen) set({ wizardOpen: true })
         })
@@ -590,17 +584,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setSettingsOpen: (open) => {
     if (open) {
-      workspaceNavigationGeneration += 1
+      navigation.bump()
       void window.dshHub?.runtime?.hideView()
     }
-    set({
-      settingsOpen: open,
-      workspaceOpen: false,
-      workspaceOpening: false,
-      // 打开设置页即放弃当前选中,被遮挡工作区不再有可恢复的目标,挂起与待打开
-      // 标记一并清除——否则实例启动完成会强制切回工作区、关掉设置页。
-      ...(open ? { selection: null, workspaceSuspended: false, pendingOpen: [] } : {})
-    })
+    // 打开设置页即放弃当前选中,被遮挡工作区不再有可恢复的目标,挂起与待打开
+    // 标记一并清除——否则实例启动完成会强制切回工作区、关掉设置页。
+    set(toSettingsPatch(open))
   },
 
   setPendingOpen: (id) => set((state) => ({ pendingOpen: [...state.pendingOpen, id] })),
