@@ -159,12 +159,6 @@ function npmChildEnv(npm: NpmInvocation, extra: NodeJS.ProcessEnv): NodeJS.Proce
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
 
-/**
- * 版本号只允许这些字符，避免拼接目录名被穿越（runtime-source 的 PATH 探测同样复用）。
- * 单一真源在 `@shared/contracts`（注册表 schema 与安装器共用同一字符集），此处再导出保持既有引用点。
- */
-export const VERSION_PATTERN = DSH_VERSION_PATTERN
-
 export type { CommandResult, CommandRunner }
 
 /** npm 查询与安装的统一执行超时；超时即 kill 并按失败上报。 */
@@ -350,7 +344,7 @@ export function runtimeEntryFor(runtimesDir: string, version: string): string {
 }
 
 function assertVersion(version: string): void {
-  if (!VERSION_PATTERN.test(version)) {
+  if (!DSH_VERSION_PATTERN.test(version)) {
     throw new Error(`非法版本号：${version}`)
   }
 }
@@ -472,7 +466,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       const tags: unknown = JSON.parse(result.stdout || '{}')
       const latest =
         tags && typeof tags === 'object' ? (tags as Record<string, unknown>)['latest'] : undefined
-      if (typeof latest === 'string' && VERSION_PATTERN.test(latest)) return latest
+      if (typeof latest === 'string' && DSH_VERSION_PATTERN.test(latest)) return latest
     }
     const versions = await cachedVersions()
     if (versions.length === 0) throw new Error('registry 中没有可用的 dsh 版本')
@@ -552,7 +546,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       for (const name of names) {
         if (!name.startsWith('dsh-')) continue
         const version = name.slice('dsh-'.length)
-        if (!VERSION_PATTERN.test(version)) continue
+        if (!DSH_VERSION_PATTERN.test(version)) continue
         if (await this.hasIncompleteInstall(version)) continue
         const stats = await stat(join(options.runtimesDir, name)).catch(() => null)
         installed.push({
