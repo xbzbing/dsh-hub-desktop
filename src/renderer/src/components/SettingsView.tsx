@@ -225,22 +225,6 @@ export default function SettingsView(): ReactNode {
         </div>
       </div>
 
-      <div className="card mt12">
-        <div className="card-head">
-          <h3>{t('about.open')}</h3>
-          <span className="meta">{t('about.sectionHint')}</span>
-        </div>
-        <div className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
-          <button
-            className="btn btn-secondary btn-sm"
-            data-testid="settings-open-about"
-            onClick={openAbout}
-          >
-            <Icon name="info" /> {t('about.open')}
-          </button>
-        </div>
-      </div>
-
       <details className="adv card spaces-card mt12" data-testid="settings-spaces">
         <summary>
           <h3>{t('spaces.title')}</h3>
@@ -297,32 +281,50 @@ export default function SettingsView(): ReactNode {
         )}
       </details>
 
-      <div className="card mt12" data-testid="settings-vault">
-        <div className="card-head">
-          <h3>{t('vault.title')}</h3>
-          <span className="meta">
-            {vault?.degraded ? t('vault.backendMemory') : t('vault.backendKeychain')}
-          </span>
-        </div>
-        {vault?.degraded && (
-          <div className="note n-warn mt12">
-            <Icon name="alert" />
-            <span>{t('vault.degraded')}</span>
+      <div className="grid-2 mt12">
+        <div className="card" data-testid="settings-vault">
+          <div className="card-head">
+            <h3>{t('vault.title')}</h3>
+            <span className="meta">
+              {vault?.degraded ? t('vault.backendMemory') : t('vault.backendKeychain')}
+            </span>
           </div>
-        )}
-        <div className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
-          <button
-            className="btn btn-secondary btn-sm"
-            data-testid="settings-clear-vault"
-            onClick={clearVault}
-          >
-            <Icon name="trash" /> {t('settings.clearCredentials')}
-          </button>
-          <span className="meta">
-            {vault && vault.rememberedInstances.length > 0
-              ? t('vault.remembered')
-              : t('vault.notRemembered')}
-          </span>
+          {vault?.degraded && (
+            <div className="note n-warn mt12">
+              <Icon name="alert" />
+              <span>{t('vault.degraded')}</span>
+            </div>
+          )}
+          <div className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              data-testid="settings-clear-vault"
+              onClick={clearVault}
+            >
+              <Icon name="trash" /> {t('settings.clearCredentials')}
+            </button>
+            <span className="meta">
+              {vault && vault.rememberedInstances.length > 0
+                ? t('vault.remembered')
+                : t('vault.notRemembered')}
+            </span>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head">
+            <h3>{t('about.open')}</h3>
+            <span className="meta">{t('about.sectionHint')}</span>
+          </div>
+          <div className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              data-testid="settings-open-about"
+              onClick={openAbout}
+            >
+              <Icon name="info" /> {t('about.open')}
+            </button>
+          </div>
         </div>
       </div>
       {trashTarget && (
