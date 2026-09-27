@@ -174,6 +174,9 @@ describe('createInstanceStore / 基础 CRUD', () => {
       sshInput({ host: '[gg]' }),
       httpInput({ endpointUrl: 'ftp://x' }),
       httpInput({ endpointUrl: 'http://u:p@127.0.0.1:3080' }),
+      // 版本号在写入边界即校验（防拼接目录名穿越），非法字符一律拒绝
+      localInput({ dshVersion: '../evil' }),
+      localInput({ dshVersion: '1.0 0' }),
       localInput({ port: 0 }),
       localInput({ port: 70000 })
     ]

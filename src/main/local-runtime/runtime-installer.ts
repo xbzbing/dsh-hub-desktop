@@ -9,6 +9,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
+import { DSH_VERSION_PATTERN } from '@shared/contracts'
 import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
 import { searchNodeDirs } from './node-dirs'
@@ -158,8 +159,11 @@ function npmChildEnv(npm: NpmInvocation, extra: NodeJS.ProcessEnv): NodeJS.Proce
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
 
-/** 版本号只允许这些字符，避免拼接目录名被穿越（runtime-source 的 PATH 探测同样复用） */
-export const VERSION_PATTERN = /^[0-9A-Za-z.+_-]+$/
+/**
+ * 版本号只允许这些字符，避免拼接目录名被穿越（runtime-source 的 PATH 探测同样复用）。
+ * 单一真源在 `@shared/contracts`（注册表 schema 与安装器共用同一字符集），此处再导出保持既有引用点。
+ */
+export const VERSION_PATTERN = DSH_VERSION_PATTERN
 
 export type { CommandResult, CommandRunner }
 
