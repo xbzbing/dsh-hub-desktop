@@ -86,6 +86,7 @@ function makeFakeInstaller(overrides: Partial<RuntimeInstaller> = {}): RuntimeIn
     hasIncompleteInstall: async () => false,
     resolveGlobalPrefix: async () => null,
     installGlobal: vi.fn(async () => undefined),
+    dispose: () => undefined,
     ...overrides
   }
   return base as RuntimeInstaller & {

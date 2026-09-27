@@ -106,6 +106,7 @@ let installerFake: {
   hasIncompleteInstall: ReturnType<typeof vi.fn>
   resolveGlobalPrefix: ReturnType<typeof vi.fn>
   installGlobal: ReturnType<typeof vi.fn>
+  dispose: ReturnType<typeof vi.fn>
 }
 let ipcDeps: Parameters<typeof registerIpc>[1]
 
@@ -132,7 +133,8 @@ beforeEach(async () => {
     resolveEntry: vi.fn((v: string) => `/tmp/${v}`),
     hasIncompleteInstall: vi.fn(async () => false),
     resolveGlobalPrefix: vi.fn(async () => '/usr/local'),
-    installGlobal: vi.fn(async () => undefined)
+    installGlobal: vi.fn(async () => undefined),
+    dispose: vi.fn(() => undefined)
   }
   runtimeFake = {
     onStatus: vi.fn(() => () => undefined),

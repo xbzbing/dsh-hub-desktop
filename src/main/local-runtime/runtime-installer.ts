@@ -181,7 +181,7 @@ export const runCommand: CommandRunner = (command, args, options = {}) =>
 export type NpmRunner = (
   npm: NpmInvocation,
   args: string[],
-  options: { env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void }
+  options: { env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void; signal?: AbortSignal }
 ) => Promise<CommandResult>
 
 export const spawnNpm: NpmRunner = (npm, args, options) =>
@@ -194,6 +194,7 @@ export const spawnNpm: NpmRunner = (npm, args, options) =>
     let stderr = ''
     let pendingLine = ''
     let timeoutError: Error | null = null
+    let abortError: Error | null = null
     let forceKill: ReturnType<typeof setTimeout> | null = null
     // 生产安装全部走本函数：卡死的 npm 会占住安装/启动串行队列直至应用无法退出，
     // 与 runCommand 同一 deadline，到点 kill 并以超时失败上报。
@@ -204,9 +205,21 @@ export const spawnNpm: NpmRunner = (npm, args, options) =>
       forceKill.unref?.()
     }, COMMAND_TIMEOUT_MS)
     timer.unref?.()
+    // 退出信号（stopAll）到达时终止在飞安装，避免退出后仍占着安装队列继续跑。
+    const onAbort = (): void => {
+      abortError = new Error('npm 执行已取消（应用退出）')
+      child.kill('SIGTERM')
+      forceKill ??= setTimeout(() => child.kill('SIGKILL'), 3_000)
+      forceKill.unref?.()
+    }
+    if (options.signal) {
+      if (options.signal.aborted) onAbort()
+      else options.signal.addEventListener('abort', onAbort, { once: true })
+    }
     const cancelTimers = (): void => {
       clearTimeout(timer)
       if (forceKill) clearTimeout(forceKill)
+      options.signal?.removeEventListener('abort', onAbort)
     }
     child.stdout?.on('data', (chunk: Buffer) => {
       stdout += String(chunk)
@@ -225,6 +238,10 @@ export const spawnNpm: NpmRunner = (npm, args, options) =>
     child.on('close', (code, signal) => {
       cancelTimers()
       if (pendingLine !== '') options.onStderrLine?.(pendingLine)
+      if (abortError) {
+        reject(abortError)
+        return
+      }
       if (timeoutError) {
         reject(timeoutError)
         return
@@ -317,6 +334,8 @@ export interface RuntimeInstaller {
    * 只写入 prefix 自身的 lib/node_modules，不动 hub 隔离目录与其它安装。
    */
   installGlobal(prefix: string, version: string, onProgress?: (progress: InstallProgress) => void): Promise<void>
+  /** 应用退出时调用：终止在飞的 npm 安装子进程，避免退出后仍在后台下载。 */
+  dispose(): void
 }
 
 const INSTALLING_MARKER = 'installing.json'
@@ -383,6 +402,9 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     installChain = next.catch(() => undefined)
     return next
   }
+
+  // 退出信号：stopAll 经 dispose() 触发，终止在飞的 npm 子进程，避免应用退出后安装仍在跑。
+  const abortController = new AbortController()
 
   // 只读元数据（versions/dist-tags）走独立串行链：不排在长安装后面 —— 否则安装进行中
   // 触发的「检查更新 / 版本列表」要等安装结束才返回。cacache 支持并发读写，读不依赖安装完成。
@@ -475,6 +497,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
       let lastDetail = ''
       result = await runNpm(npm, installArgs, {
         env,
+        signal: abortController.signal,
         onStderrLine: (line) => {
           const path = npmFetchPath(line)
           if (!path) return
@@ -612,6 +635,10 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
         }
         onProgress?.({ phase: 'installing', version, percent: 100 })
       })
+    },
+
+    dispose(): void {
+      abortController.abort()
     }
   }
 

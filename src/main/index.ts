@@ -8,6 +8,7 @@ import { AUTH_IPC, WORKSPACE_HOTKEY_EVENT } from '@shared/contracts'
 import { registerIpc } from './ipc/register'
 import type { AuthProbeController } from './ipc/register'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
+import type { RuntimeInstaller } from './local-runtime/runtime-installer'
 import { createExternalDshScanner } from './local-runtime/external-dsh'
 import { listLocalSpaces, localSpacePath } from './local-runtime/local-spaces'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
@@ -165,6 +166,8 @@ let tunnels: SshTunnelManager | null = null
 let httpEndpoints: HttpEndpointManager | null = null
 let promptBroker: PromptBroker | null = null
 let auth: AuthRegistry | null = null
+/** dsh 运行时安装器（退出前需中止在飞的 npm 安装，故提到模块级）。 */
+let installerRef: RuntimeInstaller | null = null
 let quitting = false
 
 const gracefulQuit = createGracefulQuit({
@@ -172,6 +175,8 @@ const gracefulQuit = createGracefulQuit({
     quitting = true
   },
   cleanup: async () => {
+    // 先中止在飞的 npm 安装子进程，避免应用退出后仍在后台下载/装包。
+    installerRef?.dispose()
     const recycling: Array<Promise<void>> = []
     if (runtime) {
       recycling.push(runtime.stopAll().catch((error: unknown) => console.error('[main] 停止实例失败：', error)))
@@ -288,6 +293,7 @@ void app.whenReady().then(() => {
   httpEndpoints = runtimeController.httpEndpoints
   promptBroker = runtimeController.promptBroker
   const installer = runtimeController.installer
+  installerRef = installer
   const pathProbe = runtimeController.pathProbe
 
   const authController = createAuthController({

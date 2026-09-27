@@ -320,6 +320,18 @@ describe('spawnNpm', () => {
       vi.useRealTimers()
     }
   })
+
+  it('signal abort 时 kill 子进程并以取消 reject（应用退出中止在飞安装）', async () => {
+    const controller = new AbortController()
+    const pending = spawnNpm(
+      { command: process.execPath, prefixArgs: ['-e', 'setInterval(() => {}, 1000)'] },
+      [],
+      { env: process.env, signal: controller.signal }
+    )
+    // 子进程起来后中止
+    setTimeout(() => controller.abort(), 30)
+    await expect(pending).rejects.toThrow(/已取消/)
+  })
 })
 
 describe('resolveNpmInvocation (win32)', () => {
