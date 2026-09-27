@@ -84,7 +84,7 @@ export function registerInstanceHandlers(
   )
 
   async function localSpaces(): Promise<LocalSpaceSnapshot[]> {
-    if (!deps.listLocalSpaces) throw new InstanceStoreError('invalid-state', 'local-space-unavailable')
+    if (!deps.listLocalSpaces) throw new InstanceStoreError('invalid-state', '本机隔离空间管理不可用')
     const records = await store.list()
     const localsById = new Map(
       records.filter((record) => record.transport === 'local').map((record) => [record.id, record.name])
@@ -100,9 +100,9 @@ export function registerInstanceHandlers(
     wrap(async () => {
       const instanceId = parseId(id)
       const space = (await localSpaces()).find((item) => item.id === instanceId)
-      if (!space) throw new InstanceStoreError('not-found', 'local-space-not-found')
-      if (space.inUse) throw new InstanceStoreError('invalid-state', 'local-space-in-use')
-      if (!deps.trashLocalSpace) throw new InstanceStoreError('invalid-state', 'local-space-unavailable')
+      if (!space) throw new InstanceStoreError('not-found', '找不到该本机隔离空间')
+      if (space.inUse) throw new InstanceStoreError('invalid-state', '该隔离空间正被实例占用，无法删除')
+      if (!deps.trashLocalSpace) throw new InstanceStoreError('invalid-state', '本机隔离空间管理不可用')
       await deps.trashLocalSpace(instanceId)
       return { trashed: true }
     })
@@ -114,8 +114,8 @@ export function registerInstanceHandlers(
       if (parsed.transport !== 'local') return store.create(parsed)
       if (parsed.existingSpaceId) {
         const space = (await localSpaces()).find((item) => item.id === parsed.existingSpaceId)
-        if (!space) throw new InstanceStoreError('not-found', 'local-space-not-found')
-        if (space.inUse) throw new InstanceStoreError('invalid-state', 'local-space-in-use')
+        if (!space) throw new InstanceStoreError('not-found', '找不到该本机隔离空间')
+        if (space.inUse) throw new InstanceStoreError('invalid-state', '该隔离空间正被实例占用，无法删除')
       }
       const { useExistingExternal, externalPid, externalAccess, ...recordInput } = parsed
       if (useExistingExternal !== true) return store.create(recordInput)
@@ -169,7 +169,7 @@ export function registerInstanceHandlers(
         else if (record?.transport === 'http') await deps.http.stop(instanceId)
         else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
         if (deleteOptions.trashSpace && record?.transport === 'local' && !record.useDefaultSpace) {
-          if (!deps.trashLocalSpace) throw new InstanceStoreError('invalid-state', 'local-space-unavailable')
+          if (!deps.trashLocalSpace) throw new InstanceStoreError('invalid-state', '本机隔离空间管理不可用')
           await deps.trashLocalSpace(instanceId)
         }
         deps.hideInstanceView?.()
