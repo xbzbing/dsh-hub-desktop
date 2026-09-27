@@ -323,6 +323,7 @@ void app.whenReady().then(() => {
     onSettingsChanged: applyNativeSettings,
     openDataDir: () => dataDirOpener.open(),
     openHomepage: () => homepageOpener.open(),
+    openAbout: () => windowController.openAbout(),
     hideInstanceView: () => workspaceHost.hide(),
     closeInstanceView: (instanceId) => workspaceHost.disconnect(instanceId),
     setInstanceViewBounds: (bounds) => workspaceHost.setBounds(bounds),

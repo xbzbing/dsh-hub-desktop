@@ -90,6 +90,11 @@ export default function SettingsView(): ReactNode {
     })
   }
 
+  /** 打开应用内「关于」叠加窗口；Windows/Linux 无菜单栏，设置页承担此入口。 */
+  const openAbout = (): void => {
+    void BRIDGE?.openAbout()
+  }
+
   return (
     <section data-testid="view-settings">
       <h2 className="h2">{t('settings.title')}</h2>
@@ -216,6 +221,22 @@ export default function SettingsView(): ReactNode {
             onClick={openDataDir}
           >
             {t('settings.openDataDir')}
+          </button>
+        </div>
+      </div>
+
+      <div className="card mt12">
+        <div className="card-head">
+          <h3>{t('about.open')}</h3>
+          <span className="meta">{t('about.sectionHint')}</span>
+        </div>
+        <div className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            data-testid="settings-open-about"
+            onClick={openAbout}
+          >
+            <Icon name="info" /> {t('about.open')}
           </button>
         </div>
       </div>

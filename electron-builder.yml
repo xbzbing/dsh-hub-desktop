@@ -54,6 +54,11 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
 win:
   icon: build/icon.ico
+  # 只保留应用实际支持的 Chromium 语言包（与 mac 一致），控制包体积并避免安装后
+  # 出现大量无关 .pak 语言文件。应用 UI 翻译由 app.asar 内的 i18n 模块处理（仅 zh/en）。
+  electronLanguages:
+    - en
+    - zh-CN
   target:
     - nsis
   # 资产名不带空格：GitHub Release 上传时会把空格归一化成点号，

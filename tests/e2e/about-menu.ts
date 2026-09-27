@@ -46,6 +46,22 @@ export async function openAboutViaMenu(app: ElectronApplication): Promise<Page> 
   return about
 }
 
+/**
+ * 从设置页的「关于」触发点打开面板（Windows/Linux 无菜单栏时的入口）。
+ * 调用前需已停在设置页。
+ */
+export async function openAboutViaSettings(app: ElectronApplication, win: Page): Promise<Page> {
+  let about: Page | undefined
+  await expect(async () => {
+    await win.getByTestId('settings-open-about').click()
+    about = aboutPage(app)
+    expect(about).toBeTruthy()
+    await about?.getByTestId('about-dialog').waitFor({ state: 'visible' })
+  }).toPass({ timeout: 15_000 })
+  if (!about) throw new Error('关于窗口未出现')
+  return about
+}
+
 /** 等待「关于」窗口已关闭（三种关闭途径共用的断言前置）。 */
 export async function expectAboutClosed(app: ElectronApplication): Promise<void> {
   await expect.poll(() => aboutPage(app)).toBeUndefined()

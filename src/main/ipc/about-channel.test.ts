@@ -25,13 +25,13 @@ type Envelope = { ok: true; value: unknown } | { ok: false; code: string; messag
 let handlers: Map<string, Listener>
 
 /** 只装配本用例需要的依赖:其余通道在注册期不被读取 */
-function register(openHomepage?: () => Promise<void>): void {
+function register(openHomepage?: () => Promise<void>, openAbout?: () => void): void {
   handlers = new Map()
   vi.mocked(ipcMain.handle).mockImplementation((channel, listener) => {
     handlers.set(channel as string, listener as Listener)
     return undefined as never
   })
-  registerIpc({} as never, { openHomepage } as unknown as IpcDeps)
+  registerIpc({} as never, { openHomepage, openAbout } as unknown as IpcDeps)
 }
 
 function invoke(channel: string, ...args: unknown[]): Promise<Envelope> {
@@ -79,6 +79,34 @@ describe('app:open-homepage（打开项目主页:不接受 URL 参数）', () =>
   it('未装配打开动作 → internal 错误信封(绝不假装成功)', async () => {
     register()
     const result = await invoke(IPC.openHomepage)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('internal')
+  })
+})
+
+describe('app:open-about（打开关于面板:不接受入参）', () => {
+  it('已注册且无入参调用成功(返回 null 信封)', async () => {
+    const openAbout = vi.fn()
+    register(undefined, openAbout)
+
+    expect(handlers.has(IPC.openAbout)).toBe(true)
+    await expect(invoke(IPC.openAbout)).resolves.toEqual({ ok: true, value: null })
+    expect(openAbout).toHaveBeenCalledTimes(1)
+  })
+
+  it('多传一个参数 → invalid-input，且不会触达打开动作', async () => {
+    const openAbout = vi.fn()
+    register(undefined, openAbout)
+
+    const rejected = await invoke(IPC.openAbout, 'anything')
+    expect(rejected.ok).toBe(false)
+    if (!rejected.ok) expect(rejected.code).toBe('invalid-input')
+    expect(openAbout).not.toHaveBeenCalled()
+  })
+
+  it('未装配打开动作 → internal 错误信封', async () => {
+    register()
+    const result = await invoke(IPC.openAbout)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.code).toBe('internal')
   })

@@ -871,6 +871,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/registry/instance-store.ts', "return new InstanceStoreError('not-found', `实例不存在：${id}`)"),
   debt('src/main/ipc/settings-handlers.ts', "if (!deps.openDataDir) throw new DataDirOpenError('internal', '打开数据目录不可用')"),
   debt('src/main/ipc/register.ts', "if (!deps.openHomepage) throw new HomepageOpenError('internal', '打开项目主页不可用')"),
+  debt('src/main/ipc/register.ts', "if (!deps.openAbout) throw new HomepageOpenError('internal', '打开关于面板不可用')"),
   debt('src/main/shell/open-data-dir.ts', "if (dir === '') throw new DataDirOpenError('internal', '数据目录不可用')"),
   debt('src/main/registry/instance-store.ts', "return new InstanceStoreError('io-error', `注册表 IO 失败：${message}`)"),
   debt('src/main/ipc/ipc-utils.ts', "return fail('internal', '内部错误，请查看主进程日志')"),

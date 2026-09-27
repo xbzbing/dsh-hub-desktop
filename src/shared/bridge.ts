@@ -45,7 +45,9 @@ export const IPC = {
   /** 空回显，用于验证双向 IPC 通路连通 */
   ping: 'app:ping',
   /** 用系统默认浏览器打开项目主页；无参数，URL 由主进程固定 */
-  openHomepage: 'app:open-homepage'
+  openHomepage: 'app:open-homepage',
+  /** 打开应用内「关于」叠加窗口；无参数，窗口由主进程构造 */
+  openAbout: 'app:open-about'
 } as const
 
 export interface AppInfo {
@@ -79,6 +81,8 @@ export interface DshHubBridge {
   ping: (message?: string) => Promise<IpcResult<PingResult>>
   /** 用系统默认浏览器打开项目主页（无参数，主进程固定 URL） */
   openHomepage: () => Promise<IpcResult<null>>
+  /** 打开应用内「关于」叠加窗口（无参数，主进程构造窗口） */
+  openAbout: () => Promise<IpcResult<null>>
   /** 已有本机隔离空间；路径只由主进程决定。 */
   spaces: {
     list: () => Promise<IpcResult<LocalSpaceSnapshot[]>>

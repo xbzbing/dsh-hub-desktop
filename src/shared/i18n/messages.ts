@@ -599,6 +599,8 @@ export const MESSAGES = {
 
   // —— 关于 ——
   'about.title': { zh: '关于 DSH Hub', en: 'About DSH Hub' },
+  'about.open': { zh: '关于', en: 'About' },
+  'about.sectionHint': { zh: '版本、项目主页与运行组件', en: 'Version, homepage and runtime components' },
   'about.homepage': { zh: '项目主页', en: 'Homepage' },
   'about.components': { zh: '运行组件', en: 'Runtime components' },
   'about.copyright': { zh: '版权所有 © 2026 xbzbing', en: 'Copyright © 2026 xbzbing' }

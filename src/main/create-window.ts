@@ -34,6 +34,8 @@ export interface WindowController {
   createWindow(): BrowserWindow
   showHubWindow(): void
   installApplicationMenu(): void
+  /** 打开应用内「关于」叠加窗口；供设置页触发点复用应用菜单同一入口。 */
+  openAbout(): void
   getHubWindow(): BrowserWindow | null
 }
 
@@ -128,6 +130,10 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
   /**
    * 应用菜单。macOS 的 App 菜单里「关于 DSH Hub」指向应用内面板，其余保留标准角色，
    * 以维持复制/粘贴、重载与开发者工具等系统快捷键。
+   *
+   * Windows / Linux 不设可见菜单栏：这些平台的菜单栏挂在标题栏下方占一整行，与设计稿
+   * 不符；「关于」入口改由设置页触发点承担（openAbout）。仍构建一个不可见的应用菜单，
+   * 让复制/粘贴、重载等标准快捷键（accelerator）继续可用。
    */
   function installApplicationMenu(): void {
     const language = resolveLanguage(deps.readSettings()?.language, systemLocale())
@@ -136,34 +142,42 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
       label: tr('about.title'),
       click: () => openAboutPanel()
     }
-    const template: MenuItemConstructorOptions[] =
-      process.platform === 'darwin'
-        ? [
-            {
-              label: app.name,
-              submenu: [
-                about,
-                { type: 'separator' },
-                { role: 'services' },
-                { type: 'separator' },
-                { role: 'hide' },
-                { role: 'hideOthers' },
-                { role: 'unhide' },
-                { type: 'separator' },
-                { role: 'quit' }
-              ]
-            },
-            { role: 'editMenu' },
-            { role: 'viewMenu' },
-            { role: 'windowMenu' }
-          ]
-        : [
-            { role: 'fileMenu' },
-            { role: 'editMenu' },
-            { role: 'viewMenu' },
-            { role: 'windowMenu' },
-            { role: 'help', submenu: [about] }
-          ]
+    if (process.platform !== 'darwin') {
+      // 保留 accelerator（复制/粘贴/重载等）但不显示菜单栏；关于入口移到设置页。
+      const template: MenuItemConstructorOptions[] = [
+        { role: 'editMenu' },
+        { role: 'viewMenu' },
+        { role: 'windowMenu' }
+      ]
+      const menu = Menu.buildFromTemplate(template)
+      Menu.setApplicationMenu(menu)
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.setMenuBarVisibility(false)
+          win.autoHideMenuBar = true
+        }
+      }
+      return
+    }
+    const template: MenuItemConstructorOptions[] = [
+      {
+        label: app.name,
+        submenu: [
+          about,
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' }
+        ]
+      },
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      { role: 'windowMenu' }
+    ]
     Menu.setApplicationMenu(Menu.buildFromTemplate(template))
   }
 
@@ -189,6 +203,13 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
         backgroundThrottling: !deps.e2eHidden
       }
     })
+
+    // Windows / Linux 菜单栏挂在标题栏下占一整行，与设计稿不符：隐藏它（Alt 也不唤出）。
+    // 关于入口改由设置页承担；应用菜单里的标准 accelerator 仍可用（见 installApplicationMenu）。
+    if (process.platform !== 'darwin') {
+      win.setMenuBarVisibility(false)
+      win.autoHideMenuBar = true
+    }
 
     win.once('ready-to-show', () => {
       if (!deps.e2eHidden) win.show()
@@ -253,6 +274,7 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
     createWindow,
     showHubWindow,
     installApplicationMenu,
+    openAbout: () => openAboutPanel(),
     getHubWindow: () => hubWindow
   }
 }

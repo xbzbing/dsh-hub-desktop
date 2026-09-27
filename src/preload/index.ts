@@ -47,6 +47,8 @@ const bridge: DshHubBridge = {
     ipcRenderer.invoke(IPC.ping, message ?? null) as Promise<IpcResult<PingResult>>,
   // 无参数:目标地址由主进程固定为项目主页,渲染层传不了 URL
   openHomepage: () => ipcRenderer.invoke(IPC.openHomepage) as Promise<IpcResult<null>>,
+  // 无参数:关于窗口由主进程构造，渲染层只触发打开动作
+  openAbout: () => ipcRenderer.invoke(IPC.openAbout) as Promise<IpcResult<null>>,
   spaces: {
     list: () => ipcRenderer.invoke(SPACE_IPC.list),
     trash: (id) => ipcRenderer.invoke(SPACE_IPC.trash, id)

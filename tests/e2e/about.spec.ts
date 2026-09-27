@@ -1,6 +1,6 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { buildLaunchArgs } from './launch-args'
-import { closeAboutWithEscape, expectAboutClosed, openAboutViaMenu } from './about-menu'
+import { closeAboutWithEscape, expectAboutClosed, openAboutViaMenu, openAboutViaSettings } from './about-menu'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { mkdir, rm } from 'node:fs/promises'
@@ -105,6 +105,18 @@ test('在列表页与设置页打开面板都停留在当前页，关闭后同�
   await win.getByTestId('settings-btn').click()
   await expect(win.getByTestId('view-settings')).toBeVisible()
   about = await openAboutViaMenu(app)
+  await expect(win.getByTestId('view-settings')).toBeVisible()
+  await closeAboutWithEscape(about)
+  await expectAboutClosed(app)
+  await expect(win.getByTestId('view-settings')).toBeVisible()
+})
+
+test('设置页「关于」触发点打开叠加窗口（无菜单栏平台的入口）', async () => {
+  await win.getByTestId('settings-btn').click()
+  await expect(win.getByTestId('view-settings')).toBeVisible()
+  const about = await openAboutViaSettings(app, win)
+  await expect(about.getByTestId('about-version')).toHaveText(`DSH Hub v${expectedVersion}`)
+  // 打开面板不改变宿主页面路由。
   await expect(win.getByTestId('view-settings')).toBeVisible()
   await closeAboutWithEscape(about)
   await expectAboutClosed(app)
