@@ -311,14 +311,14 @@ export default function DetailView(): ReactNode {
           version={version}
           runCommand={runCommand}
           localHome={localHome}
-          canControlRuntime={canControlRuntime}
-          restarting={restarting}
-          stopping={stopping}
+          control={{ canControl: canControlRuntime, restarting, stopping }}
           versionControl={versionControl}
-          onOpenOrStart={openOrStart}
-          onRestart={() => void restartRuntime()}
-          onStop={() => void stopRuntime()}
-          onEdit={() => setShowEdit(true)}
+          actions={{
+            openOrStart,
+            restart: () => void restartRuntime(),
+            stop: () => void stopRuntime(),
+            edit: () => setShowEdit(true)
+          }}
         />
 
         {record.transport === 'local' && (externalRuntime || showExternalTokenEditor) && (

@@ -232,14 +232,18 @@ export default function Wizard(): ReactNode {
               form={form}
               set={set}
               setForm={setForm}
-              externalWorkspace={externalWorkspace}
-              useExistingExternal={useExistingExternal}
-              setUseExistingExternal={setUseExistingExternal}
-              localLaunchers={localLaunchers}
-              versionOptions={versionOptions}
-              versionCatalog={versionCatalog}
-              versionCatalogError={versionCatalogError}
-              setVersionTouched={setVersionTouched}
+              external={{
+                workspace: externalWorkspace,
+                useExisting: useExistingExternal,
+                setUseExisting: setUseExistingExternal
+              }}
+              versions={{
+                localLaunchers,
+                versionOptions,
+                catalog: versionCatalog,
+                catalogError: versionCatalogError,
+                setVersionTouched
+              }}
               persistRegistry={persistRegistry}
             />
           )}

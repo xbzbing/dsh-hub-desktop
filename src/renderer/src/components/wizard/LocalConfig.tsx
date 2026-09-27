@@ -12,39 +12,39 @@ function registryOptionKey(url: string): string {
   return REGISTRY_PRESETS.some((preset) => preset.value === url) ? url : 'custom'
 }
 
+/** 外部 dsh 接管相关字段。 */
+export interface ExternalAdoption {
+  workspace: ExternalWorkspace | null
+  useExisting: boolean
+  setUseExisting: (value: boolean) => void
+}
+
+/** 版本目录与启动器探测结果（高级设置的版本/启动器下拉数据源）。 */
+export interface VersionCatalogState {
+  localLaunchers: Array<{ launcher: WizardForm['launcher']; version: string }>
+  versionOptions: string[]
+  catalog: DshVersionCatalog | null
+  catalogError: string | null
+  setVersionTouched: (value: boolean) => void
+}
+
 export interface LocalConfigProps {
   t: Translator
   form: WizardForm
   set: (key: Exclude<keyof WizardForm, 'useDefaultSpace'>) => (event: { target: { value: string } }) => void
   setForm: (updater: (current: WizardForm) => WizardForm) => void
-  externalWorkspace: ExternalWorkspace | null
-  useExistingExternal: boolean
-  setUseExistingExternal: (value: boolean) => void
-  localLaunchers: Array<{ launcher: WizardForm['launcher']; version: string }>
-  versionOptions: string[]
-  versionCatalog: DshVersionCatalog | null
-  versionCatalogError: string | null
-  setVersionTouched: (value: boolean) => void
+  external: ExternalAdoption
+  versions: VersionCatalogState
   persistRegistry: (url: string) => void
 }
 
 /** 本机实例配置：外部 dsh 接管选项 + 高级设置（启动器/版本/配置档案/端口/空间/镜像）。 */
 export default function LocalConfig(props: LocalConfigProps): ReactNode {
-  const {
-    t,
-    form,
-    set,
-    setForm,
-    externalWorkspace,
-    useExistingExternal,
-    setUseExistingExternal,
-    localLaunchers,
-    versionOptions,
-    versionCatalog,
-    versionCatalogError,
-    setVersionTouched,
-    persistRegistry
-  } = props
+  const { t, form, set, setForm, external, versions, persistRegistry } = props
+  const { workspace: externalWorkspace, useExisting: useExistingExternal, setUseExisting: setUseExistingExternal } =
+    external
+  const { localLaunchers, versionOptions, catalog: versionCatalog, catalogError: versionCatalogError, setVersionTouched } =
+    versions
   return (
     <>
       {externalWorkspace && (
