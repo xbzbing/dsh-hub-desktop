@@ -72,27 +72,19 @@ export default function Sidebar(): ReactNode {
     return () => cancelAnimationFrame(frame)
   }, [rail])
 
-  // 窗口失焦时清除悬停状态，防止切换应用后提示窗残留。
+  // 窗口失焦时清理悬停提示与拖拽状态：合并为一个 blur 监听器（两处都在切换应用时收尾）。
   useEffect(() => {
     const onBlur = (): void => {
       hoveredInstanceRef.current = null
       void window.dshHub?.runtime.hideTooltip()
-    }
-    window.addEventListener('blur', onBlur)
-    return () => window.removeEventListener('blur', onBlur)
-  }, [])
-
-  useEffect(() => () => void window.dshHub?.runtime.hideTooltip(), [])
-
-  // 窗口失焦时也清理拖拽状态
-  useEffect(() => {
-    const onBlur = (): void => {
       setDraggedId(null)
       setDragOverId(null)
     }
     window.addEventListener('blur', onBlur)
     return () => window.removeEventListener('blur', onBlur)
   }, [])
+
+  useEffect(() => () => void window.dshHub?.runtime.hideTooltip(), [])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
