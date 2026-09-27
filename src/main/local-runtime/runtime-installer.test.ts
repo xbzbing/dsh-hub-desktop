@@ -2,6 +2,8 @@ import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { EventEmitter } from 'node:events'
+import type { spawn } from 'node:child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CommandResult, NpmInvocation } from './runtime-installer'
 import {
@@ -331,6 +333,31 @@ describe('spawnNpm', () => {
     // 子进程起来后中止
     setTimeout(() => controller.abort(), 30)
     await expect(pending).rejects.toThrow(/已取消/)
+  })
+
+  it('abort 走注入 spawn：确定性驱动 kill 与退出，不依赖真实时序', async () => {
+    const emitter = new EventEmitter()
+    const kill = vi.fn()
+    const fakeChild = {
+      pid: undefined, // 无 pid：killProcessGroup 直接返回，不触碰真实进程
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      kill,
+      on: (event: string, listener: (...a: unknown[]) => void) => emitter.on(event, listener)
+    }
+    const spawnImpl = vi.fn(() => fakeChild) as unknown as typeof spawn
+    const controller = new AbortController()
+    const pending = spawnNpm(
+      { command: 'npm', prefixArgs: [] },
+      ['install'],
+      { env: process.env, signal: controller.signal },
+      spawnImpl
+    )
+    controller.abort()
+    // abort 后进程随即退出（被组信号带走），close 事件驱动 reject
+    emitter.emit('close', null, 'SIGTERM')
+    await expect(pending).rejects.toThrow(/已取消/)
+    expect(spawnImpl).toHaveBeenCalledOnce()
   })
 })
 

@@ -12,6 +12,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { DSH_VERSION_PATTERN } from '@shared/contracts'
 import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
+import { killProcessGroup } from '../transport/spawn'
 import { searchNodeDirs } from './node-dirs'
 import { compareDshVersions } from './version-compare'
 
@@ -178,11 +179,22 @@ export type NpmRunner = (
   options: { env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void; signal?: AbortSignal }
 ) => Promise<CommandResult>
 
-export const spawnNpm: NpmRunner = (npm, args, options) =>
+/** spawnNpm 内部使用的 spawn 依赖（默认 node:child_process 的 spawn）；测试借此确定性驱动 kill/退出路径。 */
+export type SpawnNpmImpl = typeof spawn
+
+export const spawnNpm = (
+  npm: NpmInvocation,
+  args: string[],
+  options: { env: NodeJS.ProcessEnv; onStderrLine?: (line: string) => void; signal?: AbortSignal },
+  spawnImpl: SpawnNpmImpl = spawn
+): Promise<CommandResult> =>
   new Promise<CommandResult>((resolve, reject) => {
-    const child = spawn(npm.command, [...npm.prefixArgs, ...args], {
+    // detached：npm 会 spawn 生命周期脚本 / node-gyp / git 等子进程；detached 让它们自成进程组，
+    // 超时或退出中止时可经 killProcessGroup（负 pid）整组带走，而不是只杀 npm 本体留下孤儿。
+    const child = spawnImpl(npm.command, [...npm.prefixArgs, ...args], {
       env: options.env,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32'
     })
     let stdout = ''
     let stderr = ''
@@ -191,19 +203,19 @@ export const spawnNpm: NpmRunner = (npm, args, options) =>
     let abortError: Error | null = null
     let forceKill: ReturnType<typeof setTimeout> | null = null
     // 生产安装全部走本函数：卡死的 npm 会占住安装/启动串行队列直至应用无法退出，
-    // 与 runCommand 同一 deadline，到点 kill 并以超时失败上报。
+    // 与 runCommand 同一 deadline，到点杀整组（含 npm spawn 的生命周期脚本子进程）并以超时失败上报。
     const timer = setTimeout(() => {
       timeoutError = new Error(`npm 执行超时（${COMMAND_TIMEOUT_MS} ms），已终止`)
-      child.kill('SIGTERM')
-      forceKill = setTimeout(() => child.kill('SIGKILL'), 5_000)
+      killProcessGroup(child, 'SIGTERM')
+      forceKill = setTimeout(() => killProcessGroup(child, 'SIGKILL'), 5_000)
       forceKill.unref?.()
     }, COMMAND_TIMEOUT_MS)
     timer.unref?.()
-    // 退出信号（stopAll）到达时终止在飞安装，避免退出后仍占着安装队列继续跑。
+    // 退出信号（stopAll）到达时终止在飞安装整组，避免退出后仍占着安装队列继续下载/装包。
     const onAbort = (): void => {
       abortError = new Error('npm 执行已取消（应用退出）')
-      child.kill('SIGTERM')
-      forceKill ??= setTimeout(() => child.kill('SIGKILL'), 3_000)
+      killProcessGroup(child, 'SIGTERM')
+      forceKill ??= setTimeout(() => killProcessGroup(child, 'SIGKILL'), 3_000)
       forceKill.unref?.()
     }
     if (options.signal) {
@@ -328,7 +340,11 @@ export interface RuntimeInstaller {
    * 只写入 prefix 自身的 lib/node_modules，不动 hub 隔离目录与其它安装。
    */
   installGlobal(prefix: string, version: string, onProgress?: (progress: InstallProgress) => void): Promise<void>
-  /** 应用退出时调用：终止在飞的 npm 安装子进程，避免退出后仍在后台下载。 */
+  /**
+   * 应用退出时调用：终止在飞的 npm 安装子进程，避免退出后仍在后台下载。
+   * **一次性、不可逆**：内部 AbortController 一旦 abort 便永久失效，此后所有安装/查询都会立即
+   * 以「已取消」失败。仅供退出路径调用，不是可反复使用的幂等清理。
+   */
   dispose(): void
 }
 

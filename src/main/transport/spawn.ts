@@ -36,7 +36,9 @@ export interface KillDeps {
 
 const defaultKillDeps: KillDeps = {
   platform: process.platform,
-  spawnKiller: (pid) => spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' })
+  // windowsHide：taskkill 不弹出控制台窗口。
+  spawnKiller: (pid) =>
+    spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
 }
 
 /**
