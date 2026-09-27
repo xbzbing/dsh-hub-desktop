@@ -62,15 +62,22 @@ export interface OpenInstanceViewArgs {
 }
 
 /**
- * Electron 的 `will-redirect` 是认证跳转已发生的确证；只接受同源根路径登录页。
- * 不按错误文字猜测，避免网络/TLS 错误被静默吞掉。
+ * Electron 的 `will-redirect` 是认证跳转已发生的确证；只接受同源的 `<basePath>/login`。
+ * 不按错误文字猜测，避免网络/TLS 错误被静默吞掉。带 basePath 的实例（如 `/dsh`）
+ * 网关 302 到 `/dsh/login`，根路径匹配会漏判、把正常登录跳转当真故障上报。
  */
-export function isSameOriginLoginRedirect(redirectUrl: string | null, origin: string): boolean {
+export function isSameOriginLoginRedirect(
+  redirectUrl: string | null,
+  origin: string,
+  basePath = '/'
+): boolean {
   if (!redirectUrl || !origin) return false
   try {
     const target = new URL(redirectUrl)
     const expectedOrigin = new URL(origin).origin
-    return target.origin === expectedOrigin && target.pathname.replace(/\/+$/, '') === '/login'
+    const base = basePath === '/' ? '' : basePath.replace(/\/+$/, '')
+    const expectedPath = `${base}/login`
+    return target.origin === expectedOrigin && target.pathname.replace(/\/+$/, '') === expectedPath
   } catch {
     return false
   }
@@ -144,7 +151,7 @@ export async function openInstanceView<W extends InstanceViewWindow>(
       // 原始 loadURL Promise 以 ERR_FAILED(-2) 拒绝,但窗口已经在同源认证页，
       // 不是连接或证书失败。仅在已实际观测到同源 /login 重定向时降级，避免吞掉
       // DNS、TLS、代理等真正的 ERR_FAILED。
-      if (code === 'ERR_FAILED' && isSameOriginLoginRedirect(redirectedTo, args.origin)) {
+      if (code === 'ERR_FAILED' && isSameOriginLoginRedirect(redirectedTo, args.origin, args.basePath)) {
         console.debug('[instance-view] 已重定向至同源登录页(正常),跳过:', redactUrl(redirectedTo ?? ''))
         return
       }
