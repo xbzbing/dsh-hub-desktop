@@ -74,6 +74,31 @@ export function applyAuthSnapshot(
 }
 
 /**
+ * 登录成功后是否应自动重新打开该实例的工作区。
+ *
+ * 仅在「连接态跃迁」（上一相位不是 connected，本次变为 connected）且该实例工作区此前
+ * 处于连接态时触发——用户从已打开的工作区返回详情来重新登录（远端重启后会话失效），
+ * 登录成功即自动恢复工作区，省去再手动点一次「打开工作区」。
+ * 排除条件：工作区已在前台、向导或设置页遮挡时不打开；首次从详情页登录
+ * （工作区从未连接过）保持停留在详情页。
+ */
+export function shouldReopenWorkspace(params: {
+  phase: AuthStateSnapshot['phase']
+  previousPhase: AuthStateSnapshot['phase'] | undefined
+  workspaceConnected: boolean
+  workspaceOpen: boolean
+  overlayBusy: boolean
+}): boolean {
+  return (
+    params.phase === 'connected' &&
+    params.previousPhase !== 'connected' &&
+    params.workspaceConnected &&
+    !params.workspaceOpen &&
+    !params.overlayBusy
+  )
+}
+
+/**
  * 清除锁定态。到期后即使探测失败也必须解除锁定，允许用户再次提交。
  */
 export function clearLock(model: AuthPanelModel): AuthPanelModel {

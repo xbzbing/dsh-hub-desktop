@@ -11,6 +11,7 @@ import RuntimeConfirmDialogs from './components/RuntimeConfirmDialogs'
 import AuthPanel from './components/AuthPanel'
 import SettingsView from './components/SettingsView'
 import { compactWorkspaceAddress, STATUS_INFO, toDisplayStatus } from './lib/format'
+import { shouldReopenWorkspace } from './lib/auth-panel-state'
 import { Icon } from './lib/icons'
 
 const BRIDGE = window.dshHub
@@ -58,9 +59,25 @@ export default function App() {
       useAppStore.getState().appendActivity(event.instanceId, { source: 'version', event })
     )
     // 认证相位写入 store；应用级订阅确保详情按钮收到状态更新。
-    const unsubscribeAuth = BRIDGE.auth.onState((event) =>
-      useAppStore.getState().applyAuthPhase(event.instanceId, event.state.phase)
-    )
+    // 「重新登录成功」时自动重开工作区：用户从已连接的工作区返回详情重新登录
+    // （远端 dsh 重启导致会话失效）后，无需再手动点「打开工作区」。手动登录、显式已存密码
+    // 登录、以及打开面板探测时的已存密码静默登录都经 auth:state 到达 connected，统一在此覆盖。
+    const unsubscribeAuth = BRIDGE.auth.onState((event) => {
+      const store = useAppStore.getState()
+      const previousPhase = store.authPhases[event.instanceId]
+      store.applyAuthPhase(event.instanceId, event.state.phase)
+      if (
+        shouldReopenWorkspace({
+          phase: event.state.phase,
+          previousPhase,
+          workspaceConnected: store.workspaceConnected[event.instanceId] ?? false,
+          workspaceOpen: store.workspaceOpen,
+          overlayBusy: store.wizardOpen || store.settingsOpen || store.workspaceOpening
+        })
+      ) {
+        void store.openWorkspace(event.instanceId)
+      }
+    })
     return () => {
       unsubscribeStatus()
       unsubscribeVersion()

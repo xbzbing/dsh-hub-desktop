@@ -8,7 +8,8 @@ import {
   initialAuthPanelModel,
   lockRemaining,
   lockSeconds,
-  openAuthPanel
+  openAuthPanel,
+  shouldReopenWorkspace
 } from './auth-panel-state'
 import type { AuthPanelModel } from './auth-panel-state'
 
@@ -148,5 +149,39 @@ describe('auth-panel-state', () => {
     expect(applyAuthState(initialAuthPanelModel, event('inst-a', snapshot({ phase: 'needs-auth' })), T0)).toEqual(
       initialAuthPanelModel
     )
+  })
+})
+
+describe('shouldReopenWorkspace', () => {
+  const base = {
+    phase: 'connected' as const,
+    previousPhase: 'await-credentials' as const,
+    workspaceConnected: true,
+    workspaceOpen: false,
+    overlayBusy: false
+  }
+
+  it('从已连接工作区重新登录成功后自动重开', () => {
+    expect(shouldReopenWorkspace(base)).toBe(true)
+  })
+
+  it('未连接过工作区（首次从详情页登录）不自动打开', () => {
+    expect(shouldReopenWorkspace({ ...base, workspaceConnected: false })).toBe(false)
+  })
+
+  it('登录未成功不打开', () => {
+    expect(shouldReopenWorkspace({ ...base, phase: 'await-otp' })).toBe(false)
+  })
+
+  it('上一相位已是 connected（并非重新登录跃迁）不重复打开', () => {
+    expect(shouldReopenWorkspace({ ...base, previousPhase: 'connected' })).toBe(false)
+  })
+
+  it('工作区已在前台时不重复打开', () => {
+    expect(shouldReopenWorkspace({ ...base, workspaceOpen: true })).toBe(false)
+  })
+
+  it('向导/设置页遮挡或正在打开时不打开', () => {
+    expect(shouldReopenWorkspace({ ...base, overlayBusy: true })).toBe(false)
   })
 })

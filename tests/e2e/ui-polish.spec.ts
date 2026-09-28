@@ -740,6 +740,104 @@ test('认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + pill h
   }
 })
 
+test('从已连接的工作区重新登录成功后自动重开工作区', async () => {
+  // 有状态假网关：带 cookie 且会话有效时 GET / 返回 200 受保护页面（工作区正常展示）；
+  // gate.authed 置回 false 模拟远端 dsh 重启导致会话失效，此后探测回落到登录态。
+  const gate = { authed: false }
+  const server = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://x')
+    const hasCookie = (req.headers.cookie ?? '').includes('dsh_auth=')
+    if (url.pathname === '/' || url.pathname === '/dsh' || url.pathname === '/dsh/') {
+      if (hasCookie && gate.authed) {
+        res.writeHead(200, { 'content-type': 'text/html' })
+        res.end('<!doctype html><title>ws</title><p>authed workspace</p>')
+        return
+      }
+      res.writeHead(302, { location: '/dsh/login' })
+      res.end()
+      return
+    }
+    if (url.pathname.endsWith('/login-api/settings')) {
+      if (hasCookie && gate.authed) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, config: { 'dsh-auth-gateway': { otpEnabled: false } } }))
+        return
+      }
+      res.writeHead(401, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: 'unauthenticated' }))
+      return
+    }
+    if (url.pathname.endsWith('/login/auth') && req.method === 'POST') {
+      gate.authed = true
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'set-cookie': 'dsh_auth=ticket123; Path=/; HttpOnly'
+      })
+      res.end(JSON.stringify({ ok: true }))
+      return
+    }
+    res.writeHead(404)
+    res.end()
+  })
+  await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen))
+  const address = server.address()
+  const port = typeof address === 'object' && address ? address.port : 0
+  test.setTimeout(60_000)
+  try {
+    const created = await win.evaluate(async (p) => {
+      const r = await window.dshHub.instances.create({
+        transport: 'http',
+        name: '重登自动重开实例',
+        authMode: 'auto',
+        endpointUrl: `http://127.0.0.1:${p}/dsh`
+      })
+      if (!r.ok) throw new Error(`create failed: ${JSON.stringify(r)}`)
+      const s = await window.dshHub.runtime.start(r.value.id)
+      return { id: r.value.id, startOk: s.ok }
+    }, port)
+    expect(created.startOk).toBe(true)
+    await win.waitForTimeout(600)
+    await win.reload()
+    await expect(win.getByTestId('app-shell')).toBeVisible()
+
+    await win.getByTestId('instances-table').getByText('重登自动重开实例', { exact: true }).click()
+    await expect(win.getByTestId('view-detail')).toBeVisible()
+
+    // 首次登录 → connected（密码入保险库供后续显式复用）
+    await win.getByTestId('login-btn').click()
+    await expect(win.getByTestId('auth-panel')).toBeVisible()
+    await win.getByTestId('auth-password').fill('pw1234')
+    await win.getByTestId('auth-submit').click()
+    await expect(win.getByTestId('auth-panel')).toBeHidden({ timeout: 10_000 })
+    await expect(win.getByTestId('login-btn')).toContainText('重新登录')
+
+    // 打开工作区建立「工作区已连接」态（带 cookie 命中 200 受保护页），再返回详情
+    await win.getByTestId('open-view-btn').click()
+    await expect(win.getByTestId('workspace-back-btn')).toBeVisible({ timeout: 20_000 })
+    await win.getByTestId('workspace-back-btn').click()
+    await expect(win.getByTestId('view-detail')).toBeVisible()
+
+    // 模拟远端 dsh 重启：现有会话失效，探测将回落到登录态。
+    gate.authed = false
+
+    // 从详情页触发重新登录：打开面板会探测并用已存密码静默复登，登录成功后
+    // （无论经静默复登还是显式提交）工作区都应自动重开，无需再手动点「打开工作区」。
+    await win.getByTestId('login-btn').click()
+    // 若面板停在密码/已存密码屏，点「使用已存密码」；若已静默复登成功则面板已关闭。
+    const useStored = win.getByTestId('auth-use-stored')
+    try {
+      await useStored.waitFor({ state: 'visible', timeout: 3_000 })
+      await useStored.click()
+    } catch {
+      // 静默复登已在探测阶段完成 → 面板未出现或已关闭，直接等待工作区重开。
+    }
+    // 关键断言：出现工作区返回按钮 = 已自动回到工作区，而非停在详情页
+    await expect(win.getByTestId('workspace-back-btn')).toBeVisible({ timeout: 20_000 })
+  } finally {
+    server.close()
+  }
+})
+
 test('OTP 屏无已存密码时密码输入框持续可见且可提交', async () => {
   const { server, port } = await startFakeOtpGateway()
   test.setTimeout(60_000)
