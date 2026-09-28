@@ -34,6 +34,7 @@ vi.mock('electron', () => {
   }
   return {
     WebContentsView: FakeWebContentsView,
+    BrowserWindow: { getFocusedWindow: vi.fn(() => null) },
     shell: { openExternal: vi.fn(async () => undefined) }
   }
 })
@@ -72,6 +73,7 @@ function fakeViews(): TestView[] {
 function hubWindow() {
   return {
     isDestroyed: vi.fn(() => false),
+    isFocused: vi.fn(() => true),
     // 暴露 focus 以便断言工作区路径**从不**抢宿主窗口焦点。
     focus: vi.fn(),
     // hide() 交还键盘焦点的目标(webContents 级,不激活窗口)。

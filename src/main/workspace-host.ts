@@ -1,4 +1,4 @@
-import { shell, WebContentsView, type BrowserWindow } from 'electron'
+import { BrowserWindow, shell, WebContentsView } from 'electron'
 import type { WorkspaceHotkeyEvent, WorkspaceViewBounds } from '@shared/contracts'
 import { redactUrl } from '@shared/redact'
 import { prepareInstanceView } from './webview/cookie-import'
@@ -128,6 +128,13 @@ export function createWorkspaceHost(
   function prepare(instanceId: string, url: string): WorkspaceView {
     const win = getHubWindow()
     if (!win || win.isDestroyed()) throw new Error('工作区主窗口不可用')
+    // 排查间歇性窗口抢焦点：记录一次工作区打开/复用的发起点与当时的窗口聚焦态。
+    // 后台事件（实例 running 后自动打开、会话重探）触发的打开会在此暴露 winFocused=false。
+    console.debug(
+      `[workspace-host] prepare winFocused=${String(win.isFocused())} appFocused=${String(
+        BrowserWindow.getFocusedWindow() !== null
+      )}`
+    )
     let entry = entries.get(instanceId)
     if (!entry) {
       entry = {
@@ -180,7 +187,16 @@ export function createWorkspaceHost(
    * 此时宿主窗口已是 key window。反过来在布局/激活过程中抢窗口焦点会打断 macOS 的
    * 应用激活，表现为「窗口点不到前台、输入落到下一层」。
    */
-  function focusEntry(entry: Entry): void {
+  function focusEntry(entry: Entry, source: string): void {
+    // 排查间歇性窗口抢焦点：记录本次聚焦的来源、宿主窗口在聚焦前是否已聚焦、
+    // 应用当前是否为前台。若窗口在非聚焦状态下经此路径变为前台，日志会给出触发来源。
+    const win = getHubWindow()
+    const winFocused = win !== null && !win.isDestroyed() ? win.isFocused() : null
+    console.debug(
+      `[workspace-host] focusEntry source=${source} winFocused=${String(winFocused)} appFocused=${String(
+        BrowserWindow.getFocusedWindow() !== null
+      )}`
+    )
     // 等本次布局提交完成后再转移键盘焦点，避免与窗口激活过程互相覆盖。
     setImmediate(() => {
       if (entry.view.webContents.isDestroyed()) return
@@ -232,12 +248,23 @@ export function createWorkspaceHost(
   }
 
   function reload(): void {
+    // 排查间歇性窗口抢焦点：会话静默重探成功后由主进程触发全量 reload，
+    // 可能在应用处于后台时发生；记录以便与 focus 事件对齐时间线。
+    console.debug(
+      `[workspace-host] reload count=${entries.size} appFocused=${String(
+        BrowserWindow.getFocusedWindow() !== null
+      )}`
+    )
     for (const entry of entries.values()) entry.view.webContents.reload()
   }
 
   function reloadSession(instanceId: string, sessionCookie: SessionCookie | null): Promise<void> {
     const entry = entries.get(instanceId)
     if (!entry || entry.view.webContents.isDestroyed()) return Promise.resolve()
+    // 排查间歇性窗口抢焦点：重新登录成功后由主进程触发，可能在应用后台时发生。
+    console.debug(
+      `[workspace-host] reloadSession appFocused=${String(BrowserWindow.getFocusedWindow() !== null)}`
+    )
     // originUrl 是主进程最后一次交给 prepare 的目标 URL（不等同于当前页：会话失效
     // 后视图可能已停在登录页），重新导航回它才能让工作区回到已登录页面。
     const plan = buildOpenViewPlan(entry.originUrl, sessionCookie)
@@ -279,7 +306,7 @@ export function createWorkspaceHost(
     // 只在「隐藏 → 显示」时接管焦点：后续每次布局变化都抢焦点会打断用户正在进行的输入。
     const becameVisible = visible && !active.visible
     active.visible = visible
-    if (becameVisible) focusEntry(active)
+    if (becameVisible) focusEntry(active, 'setBounds:becameVisible')
   }
 
   function closeAll(): void {
@@ -289,7 +316,7 @@ export function createWorkspaceHost(
   function focusActive(): void {
     if (activeId === null) return
     const entry = entries.get(activeId)
-    if (entry && !entry.view.webContents.isDestroyed()) focusEntry(entry)
+    if (entry && !entry.view.webContents.isDestroyed()) focusEntry(entry, 'focusActive')
   }
 
   return {
