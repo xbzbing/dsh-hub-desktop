@@ -5,6 +5,7 @@ import { createTranslator } from '@shared/i18n'
 import { resolveLanguage } from '@shared/settings'
 import type { Settings } from '@shared/settings'
 import { handleWindowClose } from './shell/close-to-tray'
+import { focusDebug } from './shell/focus-debug'
 import { systemLocale } from './system-locale'
 import type { WorkspaceHost } from './workspace-host'
 import type { WorkspaceTooltipHost } from './workspace-tooltip'
@@ -64,6 +65,13 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
   /** 从托盘召出主窗口(没有窗口就重建)；E2E 隐藏模式下保持不可见。 */
   function showHubWindow(): void {
     if (deps.e2eHidden) return
+    // 排查间歇性窗口抢焦点：showHubWindow 会 show()+focus() 把窗口顶到前台，
+    // 由托盘点击、Dock activate、second-instance 触发。记录调用栈以定位真实来源。
+    focusDebug(
+      `[create-window] showHubWindow appFocused=${String(
+        BrowserWindow.getFocusedWindow() !== null
+      )} stack=${new Error().stack?.split('\n').slice(2, 6).join(' | ') ?? ''}`
+    )
     if (hubWindow && !hubWindow.isDestroyed()) {
       hubWindow.show()
       hubWindow.focus()
