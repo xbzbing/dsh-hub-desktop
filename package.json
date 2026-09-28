@@ -6,7 +6,7 @@
   "private": true,
   "author": "xbzbing",
   "license": "MIT",
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@12.6.0",
   "scripts": {
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
@@ -55,6 +55,5 @@
     "vitest": "^4.1.11",
     "zod": "^4.6.5",
     "zustand": "^5.0.15"
-  },
-  "dependencies": {}
+  }
 }
