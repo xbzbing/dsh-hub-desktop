@@ -128,6 +128,12 @@ export default function DetailView(): ReactNode {
     }
   }
 
+  /** 在系统默认浏览器中打开实例地址；URL 由主进程解析（本机带 token，token 不经渲染层）。 */
+  const openInBrowser = async (): Promise<void> => {
+    const result = await window.dshHub?.runtime.openInBrowser(record.id)
+    if (result && !result.ok) toast('err', t('detail.openInBrowserFailed'), result.message)
+  }
+
   /** 复制全部日志（时间 + 阶段原文，逐行）。 */
   const copyActivity = async (): Promise<void> => {
     if (activity === undefined || activity.length === 0) return
@@ -294,8 +300,13 @@ export default function DetailView(): ReactNode {
           t={t}
           record={record}
           authPhase={authPhase}
+          canOpenInBrowser={
+            record.transport === 'http' ||
+            (record.transport === 'local' && status?.status === 'running')
+          }
           onLogin={openAuthPanel}
           onCopyAddress={() => void copyAddress()}
+          onOpenInBrowser={() => void openInBrowser()}
           onDisconnect={() => void disconnectWorkspace(record.id)}
           onLogout={() => void logout()}
         />

@@ -34,6 +34,7 @@ import { createStatusNotifier } from './shell/status-notifier'
 import { createDataDirOpener } from './shell/open-data-dir'
 import { createHomepageOpener } from './shell/open-homepage'
 import { createGracefulQuit } from './shell/graceful-quit'
+import { openExternalSafely } from './window-host-policy'
 import type { Vault } from './vault/vault'
 import type { Settings } from '@shared/settings'
 import { createWorkspaceHost } from './workspace-host'
@@ -332,6 +333,10 @@ void app.whenReady().then(() => {
     openHomepage: () => homepageOpener.open(),
     openAbout: () => windowController.openAbout(),
     hideInstanceView: () => workspaceHost.hide(),
+    // 在系统默认浏览器中打开实例地址：仅放行 http/https/mailto，其余协议拒绝。
+    openExternalUrl: async (url) => {
+      openExternalSafely(url, (target) => shell.openExternal(target))
+    },
     closeInstanceView: (instanceId) => workspaceHost.disconnect(instanceId),
     setInstanceViewBounds: (bounds) => workspaceHost.setBounds(bounds),
     showInstanceTooltip: (tooltip) => workspaceTooltipHost.show(tooltip),

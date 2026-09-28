@@ -10,15 +10,19 @@ export interface ConnectionCardProps {
   t: Translator
   record: InstanceRecord
   authPhase: AuthPhase | undefined
+  /** 是否显示「在浏览器中打开」：本机与 http/https 实例支持；本机需处于运行态。 */
+  canOpenInBrowser: boolean
   onLogin: () => void
   onCopyAddress: () => void
+  onOpenInBrowser: () => void
   onDisconnect: () => void
   onLogout: () => void
 }
 
-/** 连接方式卡：地址/端口/认证模式等事实文本，登录/复制地址/断开/登出操作。 */
+/** 连接方式卡：地址/端口/认证模式等事实文本，登录/复制地址/在浏览器中打开/断开/登出操作。 */
 export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
-  const { t, record, authPhase, onLogin, onCopyAddress, onDisconnect, onLogout } = props
+  const { t, record, authPhase, canOpenInBrowser, onLogin, onCopyAddress, onOpenInBrowser, onDisconnect, onLogout } =
+    props
   return (
     <div className="card selectable">
       <div className="card-head">
@@ -85,6 +89,15 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
         <button className="btn btn-secondary btn-sm" onClick={onCopyAddress}>
           <Icon name="copy" /> {t('detail.address')}
         </button>
+        {canOpenInBrowser && (
+          <button
+            className="btn btn-secondary btn-sm"
+            data-testid="open-in-browser-btn"
+            onClick={onOpenInBrowser}
+          >
+            <Icon name="external" /> {t('detail.openInBrowser')}
+          </button>
+        )}
         <button className="btn btn-secondary btn-sm" data-testid="disconnect-view-btn" onClick={onDisconnect}>
           <Icon name="close" /> {t('detail.disconnect')}
         </button>

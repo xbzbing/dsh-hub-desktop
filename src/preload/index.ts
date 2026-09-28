@@ -66,6 +66,7 @@ const bridge: DshHubBridge = {
     stop: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.stop, id),
     restart: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.restart, id),
     openView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openView, id),
+    openInBrowser: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openInBrowser, id),
     updateViewBounds: (bounds) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.updateViewBounds, bounds),
     showTooltip: (tooltip: WorkspaceTooltip) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.showTooltip, tooltip),
     hideTooltip: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.hideTooltip),

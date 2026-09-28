@@ -50,6 +50,7 @@ let tunnelsFake: {
   forgetHostKey: ReturnType<typeof vi.fn>
 }
 let openInstanceView: ReturnType<typeof vi.fn>
+let openExternalUrl: ReturnType<typeof vi.fn>
 let instanceViewUrlFake: ReturnType<typeof vi.fn>
 let externalDshScannerFake: { scan: ReturnType<typeof vi.fn> }
 let httpFake: {
@@ -224,6 +225,7 @@ beforeEach(async () => {
     filePath: vi.fn(() => '/tmp/settings.json')
   }
   openInstanceView = vi.fn()
+  openExternalUrl = vi.fn(async () => undefined)
   instanceViewUrlFake = vi.fn(() => null)
   externalDshScannerFake = { scan: vi.fn(async () => []) }
   promptBrokerFake = {
@@ -256,6 +258,7 @@ beforeEach(async () => {
     instanceViewUrl: instanceViewUrlFake as never,
     promptBroker: promptBrokerFake as never,
     openInstanceView: openInstanceView as never,
+    openExternalUrl: openExternalUrl as never,
     installer: installerFake as never
   }
   registerIpc(createInstanceStore({ dir }), ipcDeps)
@@ -290,6 +293,7 @@ describe('registerIpc', () => {
       'instances:stop',
       'instances:restart',
       'instances:openView',
+      'instances:openInBrowser',
       'instances:updateViewBounds',
       'instances:showTooltip',
       'instances:hideTooltip',
@@ -2234,6 +2238,62 @@ describe('registerIpc', () => {
     expect(result.ok).toBe(true)
     expect(order).toEqual(['probe-start', 'probe-end', 'open-view'])
     expect(openInstanceView.mock.calls[0]?.[1]).toBe('http://127.0.0.1:31234/?token=abc')
+  })
+
+  it('openInBrowser:http 实例用归一化端点交给系统浏览器', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程浏览器',
+      authMode: 'auto',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const opened = (await invoke('instances:openInBrowser', created.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    expect(openExternalUrl).toHaveBeenCalledWith('https://gw.example.com/dsh/')
+  })
+
+  it('openInBrowser:运行中的本机实例带 token 的就绪 URL 交给系统浏览器', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    runtimeFake.urlOf.mockReturnValue('http://127.0.0.1:31234/?token=abc')
+
+    const opened = (await invoke('instances:openInBrowser', created.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    expect(openExternalUrl).toHaveBeenCalledWith('http://127.0.0.1:31234/?token=abc')
+  })
+
+  it('openInBrowser:未运行的本机实例返回可见错误，不打开浏览器', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    runtimeFake.urlOf.mockReturnValue(null)
+
+    const opened = (await invoke('instances:openInBrowser', created.value.id)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(opened.ok).toBe(false)
+    expect(opened.code).toBe('invalid-state')
+    expect(openExternalUrl).not.toHaveBeenCalled()
+  })
+
+  it('openInBrowser:SSH 实例不支持在浏览器中打开', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'ssh',
+      name: '隧道浏览器',
+      host: 'dsh.internal',
+      username: 'dev'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const opened = (await invoke('instances:openInBrowser', created.value.id)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(opened.ok).toBe(false)
+    expect(opened.code).toBe('invalid-input')
+    expect(openExternalUrl).not.toHaveBeenCalled()
   })
 
   it('vault:status 返回降级与已记住实例', async () => {

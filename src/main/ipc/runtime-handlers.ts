@@ -53,6 +53,8 @@ export interface RuntimeHandlerDeps {
   vault: Vault
   verifyExternalAccess?: (url: string) => Promise<boolean>
   openInstanceView: (instance: InstanceRecord, url: string) => Promise<void>
+  /** 在系统默认浏览器中打开 URL；主进程按协议白名单校验后交给 shell.openExternal。 */
+  openExternalUrl?: (url: string) => Promise<void>
   hideInstanceView?: () => void
   closeInstanceView?: (instanceId: string) => void
   setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => void
@@ -247,6 +249,34 @@ export function registerRuntimeHandlers(
       } finally {
         if (openViewTasks.get(instanceId) === task) openViewTasks.delete(instanceId)
       }
+      return null
+    })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.openInBrowser, (_event, id: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      const instanceId = parseId(id)
+      const instance = await requireInstance(store, instanceId)
+      // 目标 URL 由主进程解析：渲染层只提供实例 id，无法指定任意打开地址。
+      // http/https 直接打开远程端点；本机实例打开带 token 的就绪 URL（token 不经渲染层）。
+      let url: string
+      if (instance.transport === 'http') {
+        url = httpDirectEndpoint(instance)
+      } else if (instance.transport === 'local') {
+        // 外部接管的实例用已验证的访问地址；hub 托管的实例用就绪 URL（含 BrowserAuth token）。
+        const savedAccess = externalAccessUrls.get(instanceId)
+        const resolved = savedAccess?.url ?? deps.runtime.urlOf(instanceId)
+        if (!resolved) {
+          throw new InstanceStoreError('invalid-state', '实例未在运行，无法在浏览器中打开')
+        }
+        url = resolved
+      } else {
+        throw new InstanceStoreError('invalid-input', '只有本机实例和远程实例支持在浏览器中打开')
+      }
+      if (!deps.openExternalUrl) {
+        throw new InstanceStoreError('internal', '在浏览器中打开不可用')
+      }
+      await deps.openExternalUrl(url)
       return null
     })
   )

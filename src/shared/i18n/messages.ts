@@ -401,6 +401,8 @@ export const MESSAGES = {
   'detail.restarting': { zh: '重启中…', en: 'Restarting…' },
   'detail.restartFailed': { zh: '重启失败', en: 'Failed to restart' },
   'detail.disconnect': { zh: '断开工作区', en: 'Disconnect workspace' },
+  'detail.openInBrowser': { zh: '在浏览器中打开', en: 'Open in browser' },
+  'detail.openInBrowserFailed': { zh: '在浏览器中打开失败', en: 'Failed to open in browser' },
   'detail.disconnected': { zh: '工作区已断开', en: 'Workspace disconnected' },
   'detail.externalTitle': { zh: '本机已在运行的 dsh web', en: 'dsh web already running on this machine' },
   'detail.externalCount': { zh: '检测到 {n} 个', en: '{n} detected' },

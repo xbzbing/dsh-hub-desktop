@@ -576,6 +576,8 @@ export const INSTANCE_RUNTIME_IPC = {
   /** 重启 hub 托管的本地 dsh 进程：先完全停止再按注册表配置重新拉起。 */
   restart: 'instances:restart',
   openView: 'instances:openView',
+  /** 在系统默认浏览器中打开实例地址；URL 由主进程解析，本机实例的 token 不经渲染层。 */
+  openInBrowser: 'instances:openInBrowser',
   updateViewBounds: 'instances:updateViewBounds',
   showTooltip: 'instances:showTooltip',
   hideTooltip: 'instances:hideTooltip',

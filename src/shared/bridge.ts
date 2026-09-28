@@ -105,6 +105,11 @@ export interface DshHubBridge {
     /** 重启 hub 托管的本地实例：等待完全停止后重新拉起；外部接管的进程会被拒绝。 */
     restart: (id: string) => Promise<IpcResult<null>>
     openView: (id: string) => Promise<IpcResult<null>>
+    /**
+     * 在系统默认浏览器中打开实例地址。目标 URL 由主进程解析：http/https 用远程地址，
+     * 本机实例带上已验证的 BrowserAuth token；token 不经渲染层。
+     */
+    openInBrowser: (id: string) => Promise<IpcResult<null>>
     updateViewBounds: (bounds: WorkspaceViewBounds) => Promise<IpcResult<null>>
     /** 显示位于原生工作区视图之上的只读名称提示。 */
     showTooltip: (tooltip: WorkspaceTooltip) => Promise<IpcResult<null>>
