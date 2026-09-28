@@ -34,6 +34,8 @@ export interface AuthClientOptions {
   now?: () => number
   /** 状态变化通知(UI 订阅点) */
   onState?: (state: AuthState) => void
+  /** 登录成功(密码/验证码通过)后回调：此时会话 Cookie 已写入罐，可供工作区刷新使用 */
+  onLoginSucceeded?: () => void
 }
 
 export interface AuthClient {
@@ -175,7 +177,10 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       const result = await gateway.login({ password, ...(otp === undefined ? {} : { otp }) })
       if (result.ok) {
         backoff.recordSuccess()
-        return apply({ type: 'login-succeeded', usedOtp: otp !== undefined })
+        const next = apply({ type: 'login-succeeded', usedOtp: otp !== undefined })
+        // 罐中此时已持有新会话 Cookie（gateway.login 在返回前完成 store）
+        options.onLoginSucceeded?.()
+        return next
       }
       return handleFailure(result)
     },

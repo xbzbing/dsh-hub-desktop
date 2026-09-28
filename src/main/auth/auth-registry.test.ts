@@ -44,6 +44,32 @@ describe('auth-registry（每实例客户端）', () => {
     expect(await registry.client('missing')).toBeNull()
   })
 
+  it('登录成功经注册表 onLoginSucceeded 透传(带 instanceId)；未成功不触发', async () => {
+    const calls: string[] = []
+    let succeeded = false
+    const registry = createAuthRegistry({
+      resolveEndpoint: async () => 'https://gw/dsh',
+      factory: (clientOptions) => {
+        const client = fakeClient()
+        client.login = vi.fn(async () => {
+          // 模拟真实客户端:仅在登录成功时回调
+          if (succeeded) clientOptions.onLoginSucceeded?.()
+          return {
+            ...initialState(),
+            phase: (succeeded ? 'connected' : 'needs-auth') as AuthState['phase']
+          }
+        })
+        return client
+      },
+      onLoginSucceeded: (id) => calls.push(id)
+    })
+    await registry.login('i1', 'pw')
+    expect(calls).toEqual([])
+    succeeded = true
+    await registry.login('i1', 'pw')
+    expect(calls).toEqual(['i1'])
+  })
+
   it('客户端状态变化经注册表 onState 广播(带 instanceId)', async () => {
     const seen: Array<[string, string]> = []
     let emit: ((state: AuthState) => void) | null = null

@@ -19,6 +19,8 @@ export interface AuthControllerDeps {
   /** SSH 隧道管理器（端点解析取实时隧道端口）；未装配返回 null */
   getTunnels: () => SshTunnelManager | null
   auditWrite: (entry: AuditEntry) => void
+  /** 登录成功（含已存密码静默登录）后回调：装配层据此刷新该实例的工作区会话 */
+  onAuthenticated?: (instanceId: string) => void
 }
 
 export interface AuthController {
@@ -96,7 +98,8 @@ export function createAuthController(deps: AuthControllerDeps): AuthController {
         lastErrorCode: state.lastErrorCode
       })
       if (state.phase === 'connected') void persistSessionIfOptedIn(instanceId)
-    }
+    },
+    onLoginSucceeded: (instanceId) => deps.onAuthenticated?.(instanceId)
   })
 
   authRegistryRef = auth

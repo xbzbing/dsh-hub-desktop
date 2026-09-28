@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createAuthClient } from './auth-client'
-import type { CookieJar } from './cookie-jar'
+import { createCookieJar, type CookieJar } from './cookie-jar'
 
 function fakeFetch(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
   return vi.fn(async (input: string | URL, init?: RequestInit) => {
@@ -250,6 +250,40 @@ describe('AuthClient（/ 编排）', () => {
     const state = await client.login('pw', '123456')
     expect(state.phase).toBe('connected')
     expect(client.hasSession()).toBe(true)
+  })
+
+  it('仅登录成功触发 onLoginSucceeded(失败不触发；回调时罐中已是新会话)', async () => {
+    const onLoginSucceeded = vi.fn()
+    const jarHeaderAtCallback: Array<string | null> = []
+    const jar = createCookieJar()
+    let failedFirst = true
+    const fetchImpl = fakeFetch((url) => {
+      if (url.includes('/login/auth')) {
+        if (failedFirst) {
+          failedFirst = false
+          return jsonResponse(401, { ok: false, error: 'invalid-credentials' })
+        }
+        return jsonResponse(200, { ok: true }, 'dsh_auth=new; Path=/; HttpOnly; SameSite=Strict')
+      }
+      return htmlResponse(302, '', '/login')
+    })
+    const client = createAuthClient({
+      instanceId: 'i1',
+      endpointUrl: 'https://gw/dsh',
+      jar,
+      fetchImpl,
+      onLoginSucceeded: () => {
+        jarHeaderAtCallback.push(jar.header())
+        onLoginSucceeded()
+      }
+    })
+    await client.probeAndRestore()
+    await client.login('pw')
+    expect(onLoginSucceeded).not.toHaveBeenCalled()
+    await client.login('pw')
+    expect(onLoginSucceeded).toHaveBeenCalledTimes(1)
+    // 回调时刻罐里已是登录响应写入的新会话，可供工作区刷新直接读取
+    expect(jarHeaderAtCallback).toEqual(['dsh_auth=new'])
   })
 
   it('400 otp-required → await-otp(验证码阶段)', async () => {

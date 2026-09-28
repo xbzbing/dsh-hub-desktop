@@ -15,7 +15,8 @@ vi.mock('electron', () => {
       setUserAgent: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
       setPermissionCheckHandler: vi.fn(),
-      on: vi.fn()
+      on: vi.fn(),
+      cookies: { set: vi.fn(async () => undefined) }
     }
     on = vi.fn((event: string, listener: (...args: unknown[]) => void) => {
       this.handlers.set(event, listener)
@@ -56,6 +57,7 @@ interface TestView {
       setPermissionRequestHandler: ReturnType<typeof vi.fn>
       setPermissionCheckHandler: ReturnType<typeof vi.fn>
       on: ReturnType<typeof vi.fn>
+      cookies: { set: ReturnType<typeof vi.fn> }
     }
     close: ReturnType<typeof vi.fn>
   }
@@ -199,6 +201,54 @@ describe('createWorkspaceHost', () => {
     const created = fakeViews()[0]
     host.reload()
     expect(created?.webContents.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('reloadSession 把新会话 Cookie 写回分区并把视图导航回目标 URL', async () => {
+    const hub = hubWindow()
+    const host = createWorkspaceHost(() => hub as never)
+    const id = '66666666-6666-4666-8666-666666666666'
+    host.prepare(id, 'https://gw.example.com/dsh/')
+    const created = fakeViews()[0]
+    const boundsCalls = created?.setBounds.mock.calls.length
+    const visibleCalls = created?.setVisible.mock.calls.length
+
+    await host.reloadSession(id, { name: 'dsh_auth', value: 'new-session', expiresAt: null })
+
+    expect(created?.webContents.session.cookies.set).toHaveBeenCalledWith({
+      url: 'https://gw.example.com/dsh/',
+      name: 'dsh_auth',
+      value: 'new-session',
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict'
+    })
+    expect(created?.webContents.loadURL).toHaveBeenCalledWith('https://gw.example.com/dsh/')
+    // 刷新只重载内容，不改变可见性与边界
+    expect(created?.setBounds.mock.calls.length).toBe(boundsCalls)
+    expect(created?.setVisible.mock.calls.length).toBe(visibleCalls)
+    // 只导航一次：未缓存视图的实例不会触发任何操作
+    expect(created?.webContents.loadURL).toHaveBeenCalledTimes(1)
+  })
+
+  it('reloadSession 无会话 Cookie 时仍导航(交给拦截层重新认证)', async () => {
+    const host = createWorkspaceHost(() => hubWindow() as never)
+    const id = '77777777-7777-4777-8777-777777777777'
+    host.prepare(id, 'http://127.0.0.1:3080/')
+    const created = fakeViews()[0]
+
+    await host.reloadSession(id, null)
+
+    expect(created?.webContents.session.cookies.set).not.toHaveBeenCalled()
+    expect(created?.webContents.loadURL).toHaveBeenCalledWith('http://127.0.0.1:3080/')
+  })
+
+  it('reloadSession 对未缓存视图是 no-op', async () => {
+    const host = createWorkspaceHost(() => hubWindow() as never)
+    await expect(
+      host.reloadSession('99999999-9999-4999-8999-999999999999', { name: 'dsh_auth', value: 'x', expiresAt: null })
+    ).resolves.toBeUndefined()
+    expect(fakeViews()).toHaveLength(0)
   })
 
   it('keeps a new workspace view hidden until the renderer supplies content bounds', () => {

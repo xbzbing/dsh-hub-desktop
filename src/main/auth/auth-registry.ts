@@ -17,6 +17,8 @@ export interface AuthRegistryOptions {
   /** 全局并发认证上限(设计默认 2) */
   maxConcurrentAuth?: number
   onState?: (instanceId: string, state: AuthState) => void
+  /** 登录成功(含已存密码静默登录)后回调，供装配层刷新对应工作区会话 */
+  onLoginSucceeded?: (instanceId: string) => void
   /**
    * 客户端创建后的恢复钩子：把 vault 里已记住的登录态灌进 Cookie 罐，
    * 使随后的 `probeAndRestore` 走静默恢复分支。**在返回客户端之前 await** ——
@@ -70,7 +72,8 @@ export function createAuthRegistry(options: AuthRegistryOptions): AuthRegistry {
       endpointUrl,
       ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
       ...(options.now === undefined ? {} : { now: options.now }),
-      onState: (state) => options.onState?.(instanceId, state)
+      onState: (state) => options.onState?.(instanceId, state),
+      onLoginSucceeded: () => options.onLoginSucceeded?.(instanceId)
     })
     clients.set(instanceId, created)
     // 先恢复已记住的登录态,再交给调用方探测(顺序是「重启静默复用」成立的前提);

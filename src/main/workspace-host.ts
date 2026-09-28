@@ -1,5 +1,8 @@
 import { shell, WebContentsView, type BrowserWindow } from 'electron'
 import type { WorkspaceHotkeyEvent, WorkspaceViewBounds } from '@shared/contracts'
+import { redactUrl } from '@shared/redact'
+import { prepareInstanceView } from './webview/cookie-import'
+import { buildOpenViewPlan, type SessionCookie } from './webview/open-view-plan'
 import { isAllowedInstanceNavigation, openExternalSafely } from './window-host-policy'
 import { toWorkspaceHotkey } from './workspace-hotkey'
 
@@ -30,6 +33,13 @@ export interface WorkspaceHost {
   setLocale(): void
   setBounds(bounds: WorkspaceViewBounds): void
   reload(): void
+  /**
+   * 重新加载指定实例的工作区视图：先把最新会话 Cookie 写回该实例分区，
+   * 再导航回视图最后一次准备加载的目标 URL。会话在远端重启后失效、用户重新
+   * 登录成功时调用；只作用于该实例，不改变可见性与边界。
+   * 未缓存视图时 no-op。
+   */
+  reloadSession(instanceId: string, sessionCookie: SessionCookie | null): Promise<void>
   hide(): void
   /**
    * 已缓存视图当前停在哪。只读，不改变可见性、边界或激活目标。
@@ -225,6 +235,33 @@ export function createWorkspaceHost(
     for (const entry of entries.values()) entry.view.webContents.reload()
   }
 
+  function reloadSession(instanceId: string, sessionCookie: SessionCookie | null): Promise<void> {
+    const entry = entries.get(instanceId)
+    if (!entry || entry.view.webContents.isDestroyed()) return Promise.resolve()
+    // originUrl 是主进程最后一次交给 prepare 的目标 URL（不等同于当前页：会话失效
+    // 后视图可能已停在登录页），重新导航回它才能让工作区回到已登录页面。
+    const plan = buildOpenViewPlan(entry.originUrl, sessionCookie)
+    // 先注入（顺序纪律与 instance-view 一致），再导航；注入失败不阻断刷新，
+    // 视图会经拦截层重新触发认证。
+    const inject =
+      plan.cookie !== null && plan.origin !== ''
+        ? prepareInstanceView(
+            entry.view.webContents.session.cookies,
+            { origin: plan.origin, basePath: plan.basePath, cookie: plan.cookie },
+            () => undefined
+          )
+        : Promise.resolve(false)
+    return inject.then(() => entry.view.webContents.loadURL(plan.url)).catch((error: unknown) => {
+      // 被更新导航取代（用户/其他流程已再次 loadURL）是常态，按调试记录；
+      // 其余错误记录以保留排查线索。
+      if ((error as { code?: unknown } | null)?.code === 'ERR_ABORTED') {
+        console.debug('[workspace-host] 会话刷新被更新的导航取代（正常）:', redactUrl(plan.url))
+        return
+      }
+      console.error('[workspace-host] 会话刷新工作区失败：', error)
+    })
+  }
+
   function loadedUrl(instanceId: string): string | null {
     const entry = entries.get(instanceId)
     if (!entry || entry.view.webContents.isDestroyed()) return null
@@ -261,6 +298,7 @@ export function createWorkspaceHost(
     setLocale,
     setBounds,
     reload,
+    reloadSession,
     hide,
     loadedUrl,
     disconnect,
