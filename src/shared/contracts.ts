@@ -540,6 +540,11 @@ export interface InstanceSummary {
   address: string
   /** 列表快照携带主进程已知的当前运行态，避免 renderer 重载后退回灰色 idle。 */
   runtimeStatus?: InstanceRuntimeStatus
+  /**
+   * 展示用 dsh 版本：运行中取主进程实时状态的版本，否则回落到本机实例注册表已固定的
+   * `dshVersion`；用于 renderer 重载后版本不退回 `—`（'custom' 占位与空值不携带）。
+   */
+  version?: string
   updatedAt: string
 }
 

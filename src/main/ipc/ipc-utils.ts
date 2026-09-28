@@ -99,7 +99,8 @@ export type ExternalAccessUrls = Map<string, { pid: number; port: number; url: s
 export function toSummary(
   record: InstanceRecord,
   runtimeStatus?: InstanceRuntimeStatus,
-  localHome?: string
+  localHome?: string,
+  runtimeVersion?: string
 ): InstanceSummary {
   const address =
     record.transport === 'local'
@@ -107,6 +108,12 @@ export function toSummary(
       : record.transport === 'ssh'
         ? `${record.host}:${record.remotePort}`
         : record.endpointUrl
+  // 运行中以实时状态版本为准，停止后回落到本机实例注册表固定的版本；'custom' 是占位符不是版本号。
+  const runtime = runtimeVersion !== undefined && runtimeVersion !== '' && runtimeVersion !== 'custom'
+    ? runtimeVersion
+    : undefined
+  const persisted = record.transport === 'local' ? (record.dshVersion ?? undefined) : undefined
+  const version = runtime ?? persisted
   return {
     id: record.id,
     name: record.name,
@@ -116,6 +123,7 @@ export function toSummary(
     authMode: record.authMode,
     address,
     ...(runtimeStatus ? { runtimeStatus } : {}),
+    ...(version !== undefined ? { version } : {}),
     updatedAt: record.updatedAt
   }
 }

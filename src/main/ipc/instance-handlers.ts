@@ -75,8 +75,21 @@ export function registerInstanceHandlers(
         : deps.runtime.statusOf(record.id)?.status
   }
 
+  /** 运行中的 dsh 版本（本机实例才有；停止后为 undefined，由 toSummary 回落到注册表 dshVersion）。 */
+  function versionFor(record: InstanceRecord): string | undefined {
+    return record.transport === 'local' ? deps.runtime.statusOf(record.id)?.version : undefined
+  }
+
   ipcMain.handle(INSTANCE_IPC.list, (): Promise<IpcResult<InstanceSummary[]>> =>
-    wrap(() => store.list().then((records) => records.map((record) => toSummary(record, statusFor(record), deps.localHomePath?.(record)))))
+    wrap(() =>
+      store
+        .list()
+        .then((records) =>
+          records.map((record) =>
+            toSummary(record, statusFor(record), deps.localHomePath?.(record), versionFor(record))
+          )
+        )
+    )
   )
 
   ipcMain.handle(INSTANCE_IPC.get, (_event, id: unknown): Promise<IpcResult<InstanceRecord | null>> =>
@@ -197,7 +210,9 @@ export function registerInstanceHandlers(
         }
         const ids = orderedIds.map((id) => parseId(id))
         const records = await store.reorder(ids)
-        return records.map((record) => toSummary(record, statusFor(record), deps.localHomePath?.(record)))
+        return records.map((record) =>
+          toSummary(record, statusFor(record), deps.localHomePath?.(record), versionFor(record))
+        )
       })
   )
 

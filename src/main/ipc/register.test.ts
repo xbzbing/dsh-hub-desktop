@@ -1945,6 +1945,50 @@ describe('registerIpc', () => {
     }
   })
 
+  it('list：本机实例停止后版本回落到注册表 dshVersion，不退回空', async () => {
+    const created = (await invoke('instances:create', { ...VALID_LOCAL, dshVersion: '0.1.7-rc.2' })) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    // 运行时未运行 → statusOf 返回 null（无实时版本），摘要应回落到注册表固定的版本。
+    currentStatus = null
+
+    const result = (await invoke('instances:list')) as {
+      ok: boolean
+      value: Array<{ id: string; version?: string }>
+    }
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const summary = result.value.find((item) => item.id === created.value.id)
+      expect(summary?.version).toBe('0.1.7-rc.2')
+    }
+  })
+
+  it('list：运行中的实时版本优先于注册表 dshVersion', async () => {
+    const created = (await invoke('instances:create', { ...VALID_LOCAL, dshVersion: '0.1.4' })) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    currentStatus = {
+      id: created.value.id,
+      status: 'running',
+      version: '0.1.7-rc.2',
+      at: '2026-09-28T00:00:00.000Z'
+    }
+
+    const result = (await invoke('instances:list')) as {
+      ok: boolean
+      value: Array<{ id: string; version?: string }>
+    }
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const summary = result.value.find((item) => item.id === created.value.id)
+      expect(summary?.version).toBe('0.1.7-rc.2')
+    }
+  })
+
   it('get 非法 id → invalid-input;不存在 → ok null', async () => {
     const bad = (await invoke('instances:get', 'not-a-uuid')) as { ok: boolean; code: string }
     expect(bad.ok).toBe(false)

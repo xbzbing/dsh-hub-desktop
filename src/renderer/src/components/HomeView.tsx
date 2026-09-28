@@ -79,7 +79,7 @@ function HomeContent(): ReactNode {
                 key={item.id}
                 item={item}
                 info={toStatusInfo(statuses[item.id]?.status, workspaceConnected[item.id] ?? true)}
-                version={statuses[item.id]?.version}
+                version={statuses[item.id]?.version ?? item.version}
                 onDetail={() => openDetail(item.id)}
                 onDelete={() => setDeleteTarget(item)}
               />
