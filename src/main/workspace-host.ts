@@ -1,6 +1,7 @@
 import { BrowserWindow, shell, WebContentsView } from 'electron'
 import type { WorkspaceHotkeyEvent, WorkspaceViewBounds } from '@shared/contracts'
 import { redactUrl } from '@shared/redact'
+import { focusDebug } from './shell/focus-debug'
 import { prepareInstanceView } from './webview/cookie-import'
 import { buildOpenViewPlan, type SessionCookie } from './webview/open-view-plan'
 import { isAllowedInstanceNavigation, openExternalSafely } from './window-host-policy'
@@ -130,7 +131,7 @@ export function createWorkspaceHost(
     if (!win || win.isDestroyed()) throw new Error('工作区主窗口不可用')
     // 排查间歇性窗口抢焦点：记录一次工作区打开/复用的发起点与当时的窗口聚焦态。
     // 后台事件（实例 running 后自动打开、会话重探）触发的打开会在此暴露 winFocused=false。
-    console.debug(
+    focusDebug(
       `[workspace-host] prepare winFocused=${String(win.isFocused())} appFocused=${String(
         BrowserWindow.getFocusedWindow() !== null
       )}`
@@ -192,7 +193,7 @@ export function createWorkspaceHost(
     // 应用当前是否为前台。若窗口在非聚焦状态下经此路径变为前台，日志会给出触发来源。
     const win = getHubWindow()
     const winFocused = win !== null && !win.isDestroyed() ? win.isFocused() : null
-    console.debug(
+    focusDebug(
       `[workspace-host] focusEntry source=${source} winFocused=${String(winFocused)} appFocused=${String(
         BrowserWindow.getFocusedWindow() !== null
       )}`
@@ -217,6 +218,13 @@ export function createWorkspaceHost(
     // 隐藏不会让 macOS 撤下该视图的键盘焦点;不交还的话按键继续落到不可见的
     // 工作区,宿主渲染层(浮层 Escape、Tab 圈闭)收不到任何输入。
     const win = getHubWindow()
+    // 排查间歇性窗口抢焦点：实例停止/断开会经此把焦点交还宿主 webContents，
+    // 若此时应用在后台，webContents.focus() 可能把窗口顶到前台。
+    focusDebug(
+      `[workspace-host] hide->webContents.focus winFocused=${String(
+        win !== null && !win.isDestroyed() ? win.isFocused() : null
+      )} appFocused=${String(BrowserWindow.getFocusedWindow() !== null)}`
+    )
     if (win && !win.isDestroyed()) win.webContents.focus()
   }
 
@@ -250,7 +258,7 @@ export function createWorkspaceHost(
   function reload(): void {
     // 排查间歇性窗口抢焦点：会话静默重探成功后由主进程触发全量 reload，
     // 可能在应用处于后台时发生；记录以便与 focus 事件对齐时间线。
-    console.debug(
+    focusDebug(
       `[workspace-host] reload count=${entries.size} appFocused=${String(
         BrowserWindow.getFocusedWindow() !== null
       )}`
@@ -262,7 +270,7 @@ export function createWorkspaceHost(
     const entry = entries.get(instanceId)
     if (!entry || entry.view.webContents.isDestroyed()) return Promise.resolve()
     // 排查间歇性窗口抢焦点：重新登录成功后由主进程触发，可能在应用后台时发生。
-    console.debug(
+    focusDebug(
       `[workspace-host] reloadSession appFocused=${String(BrowserWindow.getFocusedWindow() !== null)}`
     )
     // originUrl 是主进程最后一次交给 prepare 的目标 URL（不等同于当前页：会话失效

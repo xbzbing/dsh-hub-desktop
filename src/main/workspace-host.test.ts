@@ -35,6 +35,7 @@ vi.mock('electron', () => {
   return {
     WebContentsView: FakeWebContentsView,
     BrowserWindow: { getFocusedWindow: vi.fn(() => null) },
+    app: { getPath: vi.fn(() => '/tmp') },
     shell: { openExternal: vi.fn(async () => undefined) }
   }
 })
