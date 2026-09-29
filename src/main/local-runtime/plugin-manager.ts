@@ -16,6 +16,8 @@ import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
 import type { RuntimeInstaller } from './runtime-installer'
 import type { PathProbe } from './runtime-source'
+import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
+import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
 import { evaluateDshPeers, githubUrlFrom, npmUrlFrom } from './peer-compatibility'
 
 /** 插件命令执行超时：pnpm 安装可能较慢，给足余量（与安装器同量级）。 */
@@ -115,6 +117,17 @@ export interface PluginManagerOptions {
   resolveNode?: (scriptPath: string) => string | null
   /** Electron 自带 Node 兜底调用（缺省 execPath + ELECTRON_RUN_AS_NODE=1）。 */
   nodeInvocation?: { command: string; args: string[]; env: NodeJS.ProcessEnv }
+  /**
+   * 是否把登录 shell 完整环境合并进插件命令；false 时仅合并登录 PATH（回退）。
+   * 缺省 true；由设置项 inheritShellEnv 决定，读取函数注入以便运行中改设置即时生效。
+   * 与本机实例启动同源——打包后 GUI 从 Finder/Dock 启动只继承 launchd 最小 PATH，
+   * pnpm/node 目录不在其中，`dsh plugin` 转发 pnpm 会「pnpm not found」而失败。
+   */
+  inheritShellEnv?: () => boolean
+  /** 登录 shell 完整环境解析（含 .zshrc/.bashrc export）；null=不可用。缺省进程内缓存的真实解析。 */
+  shellEnv?: () => Promise<Map<string, string> | null>
+  /** 登录环境 PATH 解析（登录 shell / Windows 注册表）；null=不可用时回退继承 PATH。缺省进程内缓存的真实解析。 */
+  loginPath?: () => Promise<string | null>
 }
 
 export interface PluginManager {
@@ -200,6 +213,9 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   const nodeInvocation =
     options.nodeInvocation ??
     { command: process.execPath, args: [], env: { ELECTRON_RUN_AS_NODE: '1' } }
+  const inheritShellEnv = options.inheritShellEnv ?? ((): boolean => true)
+  const shellEnv = options.shellEnv ?? resolveShellEnvOnce
+  const loginPath = options.loginPath ?? resolveLoginPathOnce
 
   /** 实例的 DSH_HOME 与 profile（与启动路径同一推导）。 */
   function homeAndProfile(instance: LocalInstance): { home: string; profile: string } {
@@ -225,16 +241,31 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     throw new Error('未找到可用的 dsh：hub 隔离目录与 PATH 上都没有已安装的运行时')
   }
 
+  /**
+   * 解析子进程的基础环境：默认合并登录 shell 完整环境（含 .zshrc/.bashrc export），
+   * 关闭开关 / 解析失败时回退到仅合并登录 PATH。与本机实例启动同源——保证打包后 GUI
+   * 启动也能解析到 pnpm/node（`dsh plugin` 转发 pnpm 需要它们在 PATH 上）。
+   */
+  async function resolveBaseEnv(): Promise<NodeJS.ProcessEnv> {
+    const shellEnvMap = inheritShellEnv() ? await shellEnv().catch(() => null) : null
+    if (shellEnvMap !== null) return mergeShellEnv(process.env, shellEnvMap)
+    const loginEnvPath = await loginPath().catch(() => null)
+    return { ...process.env, PATH: mergeLoginPath(process.env.PATH ?? '', loginEnvPath) }
+  }
+
   /** 构造并执行一次插件命令；非零退出抛出脱敏后的 stderr 尾部。 */
   async function runPlugin(instance: LocalInstance, args: string[]): Promise<CommandResult> {
     const { home, profile } = homeAndProfile(instance)
     const entry = await resolveDshEntry(instance)
     const pluginArgs = ['plugin', '--profile', profile, ...args]
     const node = resolveNode(entry)
+    // 登录 shell 完整环境 / 仅登录 PATH（见 resolveBaseEnv）：打包后 GUI 启动缺 pnpm/node 目录，
+    // dsh plugin 转发 pnpm 会失败；node 目录始终前置，dsh 自己 spawn 的 pnpm 也解析到同一个 node。
+    const baseEnv = await resolveBaseEnv()
+    const basePath = baseEnv.PATH ?? ''
     const nodePath = node !== null ? dirname(node) : null
-    const basePath = process.env.PATH ?? ''
     const env: NodeJS.ProcessEnv = {
-      ...process.env,
+      ...baseEnv,
       PATH: nodePath !== null ? `${nodePath}${delimiter}${basePath}` : basePath,
       DSH_HOME: home
     }

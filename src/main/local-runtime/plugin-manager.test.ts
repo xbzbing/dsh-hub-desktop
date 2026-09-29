@@ -104,7 +104,11 @@ function baseOptions(run: PluginManagerOptions['run']): PluginManagerOptions {
     run,
     readManifest: manifestFor,
     readIcon: () => 'PHN2Zz48L3N2Zz4=',
-    resolveNode: () => '/runtimes/dsh-0.1.7-rc.2/node'
+    resolveNode: () => '/runtimes/dsh-0.1.7-rc.2/node',
+    // 注入桩避免真实起登录 shell（默认 resolveShellEnvOnce 会 spawn shell，拖慢并引入环境依赖）。
+    inheritShellEnv: () => false,
+    shellEnv: async () => null,
+    loginPath: async () => null
   }
 }
 

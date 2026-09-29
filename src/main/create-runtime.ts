@@ -112,7 +112,10 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
   const pluginManager = createPluginManager({
     installer,
     dataRoot: deps.dataRoot,
-    pathProbe
+    pathProbe,
+    // 与本机实例启动同源的环境继承：打包后 GUI 从 Finder/Dock 启动只继承 launchd 最小 PATH，
+    // 缺 pnpm/node 目录会让 dsh plugin 转发 pnpm 失败；运行中改设置即时生效。
+    inheritShellEnv: () => deps.readSettings().inheritShellEnv
   })
   const runtime = createLocalRuntime({
     installer,
