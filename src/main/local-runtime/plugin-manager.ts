@@ -31,6 +31,7 @@ import { evaluateDshPeers, githubUrlFrom, npmUrlFrom } from './peer-compatibilit
 import { createPluginStateStore } from './plugin-state'
 import type { AutoDisabledPlugin, PluginStateStore } from './plugin-state'
 import { createProfileBundleStore } from './profile-bundles'
+import { userLayerDisablesHmr } from './profile-hmr'
 import type { ProfileBundleStore } from './profile-bundles'
 import { nodeModeExecutable } from '../node-mode'
 
@@ -332,6 +333,20 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   }
 
   /**
+   * 运行中的 Host 是否有 HMR：先看 profile 与 home 两层 patch 是否显式关闭（用户自己写的配置，
+   * 见 profile-hmr），否则按 profile 名 / web-app bundle 的启发式判断。
+   */
+  async function hmrAvailable(
+    instance: LocalInstance,
+    profileDir: string,
+    bundles: readonly string[] | null
+  ): Promise<boolean> {
+    const { home, profile } = homeAndProfile(instance)
+    if (await userLayerDisablesHmr(profileDir, home)) return false
+    return profileHasHmr(profile, bundles)
+  }
+
+  /**
    * 解析插件命令要用的 dsh 入口及其版本。判据与启动路径共用 dsh-source-policy：
    * 公共空间 + 自定义启动器（dush/duush）固定跟随系统 dsh（PATH 实测），其余走 planRuntimeSource。
    *
@@ -601,7 +616,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
         .write(instance.id, { ...state, bundleIndex })
         .catch((error: unknown) => console.error('[plugin] 写入插件检查状态失败：', error))
       // 启用/禁用走 dsh 的默认规则：有 HMR 即热生效，否则需重启。
-      return { name, enabled, application: defaultApplication(profileHasHmr(profile, bundles)) }
+      const hmr = await hmrAvailable(instance, profileDir, bundles)
+      return { name, enabled, application: defaultApplication(hmr) }
     },
 
     async reconcileRuntime(instance, runtimeVersion): Promise<RuntimeReconcileResult> {
@@ -662,7 +678,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       const plugins = await listPlugins(instance, 'zh', resolved)
       const hasHostSide = plugins.some((plugin) => plugin.hasHostSide && specMatchesName(spec, plugin.name))
       const after = await bundleStore.read(profileDir)
-      const hmr = profileHasHmr(profile, after?.bundles ?? before?.bundles ?? null)
+      const hmr = await hmrAvailable(instance, profileDir, after?.bundles ?? before?.bundles ?? null)
       return {
         hasHostSide,
         application: replaced ? 'restart-required' : defaultApplication(hmr)
@@ -692,7 +708,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       await runPlugin(instance, ['remove', name], resolved)
       await persistCheck(instance.id, name, null)
       // 卸载走 dsh 的默认规则（无「替换已装包」特例）：有 HMR 即热卸载，否则需重启。
-      return { hasHostSide, application: defaultApplication(profileHasHmr(profile, before?.bundles ?? null)) }
+      const hmr = await hmrAvailable(instance, profileDir, before?.bundles ?? null)
+      return { hasHostSide, application: defaultApplication(hmr) }
     }
   }
 }

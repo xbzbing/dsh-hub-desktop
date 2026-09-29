@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPluginManager, profileHasHmr } from './plugin-manager'
 import type { PluginManagerOptions } from './plugin-manager'
 import { InstanceStoreError } from '../registry/instance-store'
@@ -75,6 +78,12 @@ function fakeBundles(initial: { bundles: string[]; dependencies: string[] }): {
   }
   return { store, calls, current: state.current as ProfileBundles }
 }
+
+const tempRoots: string[] = []
+
+afterEach(async () => {
+  await Promise.all(tempRoots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
 
 /** 内存版状态存储：验证检查结果落盘与读回。 */
 function memoryStore(): PluginStateStore {
@@ -825,6 +834,30 @@ describe('createPluginManager mutations', () => {
     expect(
       (await headless.remove(localInstance({ profile: 'headless' }), '@xbzbing/dsh-git-panel')).application
     ).toBe('restart-required')
+  })
+
+  it('install：profile 层 patch 显式关闭 HMR → 全新安装也要重启（保守覆盖启发式）', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'plugin-manager-hmr-'))
+    tempRoots.push(dataRoot)
+    // profile 'web' 本会被启发式判为有 HMR，但用户层 patch 显式关掉了它。
+    const profileDir = join(dataRoot, 'homes', 'inst-1', 'profiles', 'web')
+    await mkdir(profileDir, { recursive: true })
+    await writeFile(join(profileDir, 'cordis.patch.yml'), '- id: hmr\n  disabled: true\n', 'utf8')
+
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      dataRoot,
+      bundleStore: fakeBundles({
+        bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+        dependencies: ['@xbzbing/dsh-git-panel']
+      }).store
+    })
+    expect((await manager.install(localInstance(), 'new-plugin')).application).toBe('restart-required')
   })
 
   it('install：spec 原样透传给 add', async () => {
