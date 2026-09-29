@@ -42,6 +42,7 @@ import { sshTunnelEndpoint } from './endpoint-resolver'
 import { httpHealthProbe, sleep, type HealthProbe } from './probe'
 import { buildSshArgs } from './ssh-args'
 import { createStatusBus } from './status-bus'
+import { nodeModeExecutable } from '../node-mode'
 import {
   detachedSpawn,
   killProcessGroup,
@@ -154,7 +155,7 @@ export function createSshTunnels(options: SshTunnelOptions): SshTunnelManager {
   const now = options.now ?? (() => Date.now())
   const askpass = options.askpass
   const confirmHostKey = options.confirmHostKey
-  const askpassNode = options.askpassNode ?? { command: process.execPath, args: [] }
+  const askpassNode = options.askpassNode ?? { command: nodeModeExecutable(), args: [] }
   const resolveTarget =
     options.resolveTarget ?? ((instance: Pick<SshInstance, 'host' | 'port' | 'username'>) => resolveSshTarget(instance, sshCommand))
   const trustProbeFactory =

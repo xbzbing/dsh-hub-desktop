@@ -10,6 +10,7 @@ import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { DSH_VERSION_PATTERN } from '@shared/contracts'
+import { nodeModeExecutable } from '../node-mode'
 import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
 import { killProcessGroup } from '../transport/spawn'
@@ -99,7 +100,7 @@ export interface BundledNpm {
 
 function bundledNpmInvocation(bundled: BundledNpm): NpmInvocation {
   return {
-    command: bundled.nodeCommand ?? process.execPath,
+    command: bundled.nodeCommand ?? nodeModeExecutable(),
     prefixArgs: [bundled.npmCliJs],
     env: bundled.env ?? { ELECTRON_RUN_AS_NODE: '1' }
   }

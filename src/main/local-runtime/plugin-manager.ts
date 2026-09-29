@@ -19,6 +19,7 @@ import type { PathProbe } from './runtime-source'
 import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
 import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
 import { evaluateDshPeers, githubUrlFrom, npmUrlFrom } from './peer-compatibility'
+import { nodeModeExecutable } from '../node-mode'
 
 /** 插件命令执行超时：pnpm 安装可能较慢，给足余量（与安装器同量级）。 */
 const PLUGIN_COMMAND_TIMEOUT_MS = 10 * 60_000
@@ -212,7 +213,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   const resolveNode = options.resolveNode ?? defaultResolveNode
   const nodeInvocation =
     options.nodeInvocation ??
-    { command: process.execPath, args: [], env: { ELECTRON_RUN_AS_NODE: '1' } }
+    { command: nodeModeExecutable(), args: [], env: { ELECTRON_RUN_AS_NODE: '1' } }
   const inheritShellEnv = options.inheritShellEnv ?? ((): boolean => true)
   const shellEnv = options.shellEnv ?? resolveShellEnvOnce
   const loginPath = options.loginPath ?? resolveLoginPathOnce

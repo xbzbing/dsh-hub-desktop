@@ -22,6 +22,7 @@ import { resolveLoginPathOnce } from './login-path'
 import { resolveShellEnvOnce } from './shell-env'
 import { httpHealthProbe, retryProbe, type HealthProbe } from '../transport/probe'
 import { createStatusBus } from '../transport/status-bus'
+import { nodeModeExecutable } from '../node-mode'
 import {
   detachedSpawn,
   killProcessGroup,
@@ -127,10 +128,10 @@ export interface AdoptTarget {
 }
 
 function defaultNodeInvocation(): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
-  // Electron 主进程的 process.execPath 是 Electron 本体：以 ELECTRON_RUN_AS_NODE 退化为纯 Node 执行 dsh。
+  // macOS 用 Helper 二进制并带 ELECTRON_RUN_AS_NODE 退化为纯 Node 执行 dsh（避免 Dock 图标闪现；见 node-mode）。
   // `--expose-internals` 是 dsh web profile 的硬性要求（cordis-plugin-hmr 需要），缺失时就绪后即崩
 
-  return { command: process.execPath, args: ['--expose-internals'], env: { ELECTRON_RUN_AS_NODE: '1' } }
+  return { command: nodeModeExecutable(), args: ['--expose-internals'], env: { ELECTRON_RUN_AS_NODE: '1' } }
 }
 
 /**
