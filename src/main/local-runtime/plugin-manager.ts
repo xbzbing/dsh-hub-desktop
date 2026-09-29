@@ -10,7 +10,13 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { delimiter, dirname, join, resolve as resolvePath } from 'node:path'
 import { homedir } from 'node:os'
-import type { LocalInstance, PluginCheckRecord, PluginCheckSnapshot } from '@shared/contracts'
+import type {
+  LocalInstance,
+  PluginCheckRecord,
+  PluginCheckSnapshot,
+  PluginEnableResult,
+  PluginMutationResult
+} from '@shared/contracts'
 import { redactLine } from '@shared/redact'
 import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
@@ -81,11 +87,6 @@ export interface PluginUpdateCheck {
   modifiedAt: string | null
 }
 
-/** 插件改动结果：是否含 host 半（决定是否提醒重启）。 */
-export interface PluginMutationResult {
-  hasHostSide: boolean
-}
-
 interface PluginManifest {
   name?: string
   version?: string
@@ -148,7 +149,7 @@ export interface PluginManagerOptions {
 }
 
 /** 渲染层挂载时恢复的检查状态：持久化的标记 + 当前在飞检查。 */
-export type { PluginCheckSnapshot }
+export type { PluginCheckSnapshot, PluginEnableResult, PluginMutationResult }
 
 export interface PluginManager {
   list(instance: LocalInstance, locale?: PluginLocale): Promise<PluginInfo[]>
@@ -175,13 +176,31 @@ export interface RuntimeReconcileResult {
   disabled: AutoDisabledPlugin[]
 }
 
-/** 启用/禁用结果。 */
-export interface PluginEnableResult {
-  name: string
-  enabled: boolean
+const DSH_PEER = '@deepseek-ai/dsh'
+
+/** 含 web-app bundle 的 profile 才有 HMR 服务（headless/SDK/ACP 显式关闭）。 */
+const WEB_APP_BUNDLE = '@deepseek-ai/dsh-web-app'
+
+/**
+ * 运行中的 Host 是否具备 HMR（决定改动能否热生效）。
+ *
+ * 与 dsh 的 `change()` 同口径：`ownerContext.get('hmr') !== undefined ? applied : restart-required`。
+ * hmr 服务由 base bundle 提供、仅在有 profileContext 时启用，headless/SDK/ACP 在自己的 patch 里
+ * 显式关闭。这里按「profile 名或加载清单里出现 web-app」判定；判定不出时按「无 HMR」保守处理
+ * （宁可提示重启，也不谎称已生效）。
+ */
+export function profileHasHmr(profile: string, bundles: readonly string[] | null): boolean {
+  if (profile === 'web') return true
+  return bundles !== null && bundles.includes(WEB_APP_BUNDLE)
 }
 
-const DSH_PEER = '@deepseek-ai/dsh'
+/** dsh 语义下的生效结果：`applied` 已热生效；`restart-required` 需重启 Host。 */
+export type PluginApplication = 'applied' | 'restart-required'
+
+/** 非「替换已装包」的操作：有 HMR 即热生效，否则需重启。 */
+function defaultApplication(hmr: boolean): PluginApplication {
+  return hmr ? 'applied' : 'restart-required'
+}
 
 function defaultReadManifest(dir: string): PluginManifest | null {
   try {
@@ -581,7 +600,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       await stateStore
         .write(instance.id, { ...state, bundleIndex })
         .catch((error: unknown) => console.error('[plugin] 写入插件检查状态失败：', error))
-      return { name, enabled }
+      // 启用/禁用走 dsh 的默认规则：有 HMR 即热生效，否则需重启。
+      return { name, enabled, application: defaultApplication(profileHasHmr(profile, bundles)) }
     },
 
     async reconcileRuntime(instance, runtimeVersion): Promise<RuntimeReconcileResult> {
@@ -630,13 +650,23 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     },
 
     async install(instance, spec): Promise<PluginMutationResult> {
+      const { home, profile } = homeAndProfile(instance)
+      const profileDir = join(home, 'profiles', profile)
+      const before = await bundleStore.read(profileDir)
+      // 安装前该包名已在 dependencies 里 = 替换/升级/重装已装包：dsh 对此无条件要求重启
+      // （Node 模块缓存无法为已加载的包载入新模块代），只有全新包名才能 HMR 即装即用。
+      const replaced = before !== null && before.dependencies.some((name) => specMatchesName(spec, name))
+
       const resolved = await resolveDshEntry(instance)
       await runPlugin(instance, ['add', spec], resolved)
-      // 安装后按包名读元数据判 host 半：spec 可能是 name / name@ver / github: / file:，
-      // 统一以列表里出现的新插件为准（含 host 半即提醒重启）。
       const plugins = await listPlugins(instance, 'zh', resolved)
       const hasHostSide = plugins.some((plugin) => plugin.hasHostSide && specMatchesName(spec, plugin.name))
-      return { hasHostSide }
+      const after = await bundleStore.read(profileDir)
+      const hmr = profileHasHmr(profile, after?.bundles ?? before?.bundles ?? null)
+      return {
+        hasHostSide,
+        application: replaced ? 'restart-required' : defaultApplication(hmr)
+      }
     },
 
     async upgrade(instance, name, version): Promise<PluginMutationResult> {
@@ -645,16 +675,24 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       await runPlugin(instance, ['add', `${name}@${version}`], resolved)
       // 升级完成即清掉该插件的可升级标记（标记只在再次检查或升级时变化）。
       await persistCheck(instance.id, name, null)
-      return { hasHostSide: hadHostSide || (await hostSideOf(instance, name, resolved)) }
+      // 升级必然替换已装包 → 与 dsh 同口径：即使有 HMR 也要重启才能换掉已加载的模块代。
+      return {
+        hasHostSide: hadHostSide || (await hostSideOf(instance, name, resolved)),
+        application: 'restart-required'
+      }
     },
 
     async remove(instance, name): Promise<PluginMutationResult> {
+      const { home, profile } = homeAndProfile(instance)
+      const profileDir = join(home, 'profiles', profile)
+      const before = await bundleStore.read(profileDir)
       const resolved = await resolveDshEntry(instance)
       // 卸载前先判 host 半（卸载后包已不在，读不到元数据）。
       const hasHostSide = await hostSideOf(instance, name, resolved)
       await runPlugin(instance, ['remove', name], resolved)
       await persistCheck(instance.id, name, null)
-      return { hasHostSide }
+      // 卸载走 dsh 的默认规则（无「替换已装包」特例）：有 HMR 即热卸载，否则需重启。
+      return { hasHostSide, application: defaultApplication(profileHasHmr(profile, before?.bundles ?? null)) }
     }
   }
 }

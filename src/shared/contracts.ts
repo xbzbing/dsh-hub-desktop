@@ -765,15 +765,26 @@ export interface PluginUpdateCheck {
   modifiedAt: string | null
 }
 
-/** 插件改动结果：是否含 host 半（决定是否提醒重启）。 */
+/**
+ * 插件改动结果。
+ *
+ * `application` 与 dsh 自身的 ChangeResult.application 同口径（dsh plugin CLI 不返回该字段，
+ * 由 hub 按同一规则推断）：
+ * - `applied`：已热生效，无需重启（仅 HMR 可用的 profile，如 web）；
+ * - `restart-required`：已保存但未激活，需重启 Host（替换/升级已装包时无条件如此，
+ *   Node 模块缓存无法为已加载的包换模块代；或 profile 无 HMR）。
+ */
 export interface PluginMutationResult {
   hasHostSide: boolean
+  application: 'applied' | 'restart-required'
 }
 
 /** 插件启用/禁用结果。 */
 export interface PluginEnableResult {
   name: string
   enabled: boolean
+  /** 与 dsh 的 ChangeResult.application 同口径（见 PluginMutationResult）。 */
+  application: 'applied' | 'restart-required'
 }
 
 /** 单个插件持久化的检查结果（不含「当前版本」，由渲染层按已装版本现算是否有更新）。 */

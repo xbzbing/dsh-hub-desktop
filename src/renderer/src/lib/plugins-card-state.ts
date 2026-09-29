@@ -102,6 +102,26 @@ export function pluginKindKey(plugin: Pick<PluginInfo, 'hasHostSide' | 'hasClien
   return 'detail.plugin.kind.none'
 }
 
+/**
+ * 插件改动后的提示方案（纯函数，便于测试）。
+ *
+ * 判据来自 dsh 的 ChangeResult.application（dsh plugin CLI 不返回，由主进程按同一规则推断）：
+ * - 实例未运行 → 改动已保存，下次启动生效（没有运行中的 Host 可重启）；
+ * - `applied` → 已热生效，无需重启；
+ * - `restart-required` → 需重启实例（替换/升级已装包，或 profile 无 HMR）。
+ */
+export type PluginApplyNotice = 'saved' | 'applied' | 'restart-required'
+
+export function pluginApplyNotice(input: {
+  /** 实例当前是否运行中。 */
+  running: boolean
+  /** 主进程按 dsh 规则算出的生效结果。 */
+  application: 'applied' | 'restart-required'
+}): PluginApplyNotice {
+  if (!input.running) return 'saved'
+  return input.application
+}
+
 /** 安装来源的 i18n 键选择。 */
 export function pluginSourceKey(source: PluginInfo['installSource']): MessageKey {
   switch (source) {

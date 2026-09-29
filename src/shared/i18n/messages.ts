@@ -410,10 +410,6 @@ export const MESSAGES = {
     zh: '该插件随宿主 bundle 加载，无法单独禁用',
     en: 'This plugin loads with its host bundle and cannot be disabled individually'
   },
-  'detail.plugin.toggleHint': {
-    zh: '{name} 已{action}；运行中的实例通常立即生效，未生效请重启实例',
-    en: '{name} {action}; running instances usually apply it immediately, otherwise restart the instance'
-  },
   'detail.plugin.removeFailed': { zh: '卸载失败：{msg}', en: 'Failed to uninstall: {msg}' },
   'detail.plugin.installFailed': { zh: '安装失败：{msg}', en: 'Failed to install: {msg}' },
   'detail.plugin.upgradeFailed': { zh: '升级失败：{msg}', en: 'Failed to upgrade: {msg}' },
@@ -422,21 +418,24 @@ export const MESSAGES = {
     zh: '确认卸载「{name}」？卸载后该实例将不再加载此插件。',
     en: 'Uninstall "{name}"? This instance will no longer load it.'
   },
-  'detail.plugin.removeHostHint': {
-    zh: '该插件包含 host 端代码，卸载后可能需要重启实例才能完全生效。',
-    en: 'This plugin includes host-side code; a restart may be needed to fully take effect.'
-  },
   'detail.plugin.restartTitle': { zh: '需要重启实例', en: 'Restart required' },
   'detail.plugin.restartBody': {
-    zh: '「{name}」包含 host 端代码，需重启实例后生效。是否立即重启？',
-    en: '"{name}" includes host-side code and needs a restart to take effect. Restart now?'
+    zh: '「{name}」的改动需要重启实例后才能生效（升级或替换已安装的插件时，运行中的实例无法热替换已加载的模块）。是否立即重启？',
+    en: 'Changes to "{name}" take effect only after a restart: a running instance cannot hot-swap modules for an already-installed plugin. Restart now?'
   },
   'detail.plugin.restartNow': { zh: '立即重启', en: 'Restart now' },
   'detail.plugin.restartLater': { zh: '稍后手动', en: 'Later' },
-  'detail.plugin.clientOnlyHint': {
-    zh: '已生效，刷新工作区页面即可看到变化。',
-    en: 'Done — refresh the workspace page to see the change.'
+  /** 实例未运行：改动已保存，下次启动自然生效。 */
+  'detail.plugin.savedHint': {
+    zh: '「{name}」已保存，启动实例后生效。',
+    en: '"{name}" is saved and takes effect when the instance starts.'
   },
+  /** 运行中且 HMR 可用（全新安装/启用禁用/卸载）：已热生效，无需重启。 */
+  'detail.plugin.appliedHint': {
+    zh: '「{name}」已即时生效，无需重启实例。',
+    en: '"{name}" is already active — no restart needed.'
+  },
+  'detail.plugin.mutationDone': { zh: '插件已更新', en: 'Plugin updated' },
   'detail.plugin.installTitle': { zh: '安装插件', en: 'Install plugin' },
   'detail.plugin.installLabel': { zh: '插件标识', en: 'Plugin identifier' },
   'detail.plugin.installPlaceholder': {
@@ -486,12 +485,16 @@ export const MESSAGES = {
   'detail.plugin.log.enableFailed': { zh: '{name} 启用失败：{msg}', en: 'Failed to enable {name}: {msg}' },
   'detail.plugin.log.disableFailed': { zh: '{name} 禁用失败：{msg}', en: 'Failed to disable {name}: {msg}' },
   'detail.plugin.log.restartHint': {
-    zh: '{name} 含 host 端代码，需重启实例后生效',
-    en: '{name} includes host-side code; restart the instance to take effect'
+    zh: '{name} 的改动需重启实例后生效',
+    en: 'Changes to {name} take effect after restarting the instance'
   },
-  'detail.plugin.log.clientHint': {
-    zh: '{name} 已生效，刷新工作区页面即可看到变化',
-    en: '{name} is active; refresh the workspace page to see the change'
+  'detail.plugin.log.savedHint': {
+    zh: '{name} 已保存，启动实例后生效',
+    en: '{name} saved; takes effect when the instance starts'
+  },
+  'detail.plugin.log.appliedHint': {
+    zh: '{name} 已即时生效，无需重启',
+    en: '{name} is already active; no restart needed'
   },
   'detail.plugin.upgradeBlocked': {
     zh: '{latest} 要求 dsh {peer}，当前 {current} 不满足，已阻止升级',

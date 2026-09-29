@@ -173,11 +173,12 @@ test('列表渲染 + 手风琴详情 + 检查升级（兼容给升级按钮）',
   await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toContainText('1.1.0')
 })
 
-test('卸载二次确认：含 host 半时提示重启', async () => {
+test('卸载二次确认：确认框只说明后果，不再按 host 半预告重启', async () => {
   await win.getByTestId('plugin-remove-demo-plugin').click()
   await expect(win.getByTestId('plugin-remove-confirm')).toBeVisible()
-  // demo-plugin 含 host 半（dsh.bundle.patch）→ 确认框内出现重启提示。
-  await expect(win.getByTestId('plugin-remove-host-hint')).toBeVisible()
+  // 是否需要重启由改动后的 application 决定（升级/替换已装包才必然重启），
+  // 确认框不按 host 半预告，避免误导。
+  await expect(win.getByTestId('plugin-remove-host-hint')).toHaveCount(0)
   // 收尾：关闭确认框，避免影响后续用例。
   await win.keyboard.press('Escape')
   await expect(win.getByTestId('plugin-remove-confirm')).toBeHidden()

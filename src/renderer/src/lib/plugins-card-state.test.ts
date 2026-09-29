@@ -4,6 +4,7 @@ import {
   initialCheckState,
   pluginKindKey,
   pluginSourceKey,
+  pluginApplyNotice,
   pruneChecks,
   restoreChecks,
   showsIncompatibleWarning,
@@ -194,5 +195,20 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
       autoDisabled: []
     })
     expect(restored).toEqual({})
+  })
+})
+
+describe('pluginApplyNotice（改动后的提示方案）', () => {
+  it('实例未运行 → 已保存，下次启动生效（没有可重启的 Host）', () => {
+    expect(pluginApplyNotice({ running: false, application: 'applied' })).toBe('saved')
+    expect(pluginApplyNotice({ running: false, application: 'restart-required' })).toBe('saved')
+  })
+
+  it('运行中 + applied（全新安装且 HMR 可用）→ 已即时生效', () => {
+    expect(pluginApplyNotice({ running: true, application: 'applied' })).toBe('applied')
+  })
+
+  it('运行中 + restart-required（升级/替换已装包，或 profile 无 HMR）→ 需重启', () => {
+    expect(pluginApplyNotice({ running: true, application: 'restart-required' })).toBe('restart-required')
   })
 })

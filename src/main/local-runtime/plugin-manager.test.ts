@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createPluginManager } from './plugin-manager'
+import { createPluginManager, profileHasHmr } from './plugin-manager'
 import type { PluginManagerOptions } from './plugin-manager'
 import { InstanceStoreError } from '../registry/instance-store'
 import type { LocalInstance } from '@shared/contracts'
@@ -483,7 +483,8 @@ describe('createPluginManager.check', () => {
     const manager = createPluginManager({ ...baseOptions(run), stateStore, bundleStore: bundles.store })
 
     const result = await manager.setEnabled(localInstance(), '@xbzbing/dsh-git-panel', false)
-    expect(result).toEqual({ name: '@xbzbing/dsh-git-panel', enabled: false })
+    // profile 'web' 有 HMR → 启用/禁用走 dsh 默认规则，热生效
+    expect(result).toEqual({ name: '@xbzbing/dsh-git-panel', enabled: false, application: 'applied' })
     expect(bundles.current.bundles).toEqual(['@deepseek-ai/dsh-base', 'dsh-free-search'])
     expect(bundles.current.dependencies).toEqual(['@xbzbing/dsh-git-panel', 'dsh-free-search'])
     // 记下原索引（1），供重新启用时插回原位
@@ -733,6 +734,97 @@ describe('createPluginManager mutations', () => {
     const removeCall = run.mock.calls.find(([, args]) => args.includes('remove'))!
     expect(removeCall[1]).toContain('remove')
     expect(removeCall[1]).toContain('@xbzbing/dsh-git-panel')
+  })
+
+  it('profileHasHmr：web profile 与含 web-app bundle 的 profile 有 HMR，其余保守为无', () => {
+    expect(profileHasHmr('web', null)).toBe(true)
+    expect(profileHasHmr('my-web', ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])).toBe(true)
+    expect(profileHasHmr('headless', ['@deepseek-ai/dsh-base'])).toBe(false)
+    expect(profileHasHmr('custom', null)).toBe(false)
+  })
+
+  it('install（全新包名 + web/HMR）→ applied；已装包名 → restart-required', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    // 全新包名：before 里没有 new-plugin
+    const fresh = createPluginManager({
+      ...baseOptions(run),
+      bundleStore: fakeBundles({
+        bundles: ['@deepseek-ai/dsh-base'],
+        dependencies: ['@xbzbing/dsh-git-panel']
+      }).store
+    })
+    expect((await fresh.install(localInstance(), 'new-plugin')).application).toBe('applied')
+
+    // 已装包名（重装/替换）→ 即使有 HMR 也必须重启
+    const replace = createPluginManager({
+      ...baseOptions(run),
+      bundleStore: fakeBundles({
+        bundles: ['@deepseek-ai/dsh-base'],
+        dependencies: ['@xbzbing/dsh-git-panel']
+      }).store
+    })
+    expect(
+      (await replace.install(localInstance(), '@xbzbing/dsh-git-panel@1.2.0')).application
+    ).toBe('restart-required')
+  })
+
+  it('install：无 HMR 的 profile → 即使全新包名也需重启', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      bundleStore: fakeBundles({
+        bundles: ['@deepseek-ai/dsh-base'],
+        dependencies: ['@xbzbing/dsh-git-panel']
+      }).store
+    })
+    const instance = localInstance({ profile: 'headless' })
+    expect((await manager.install(instance, 'new-plugin')).application).toBe('restart-required')
+  })
+
+  it('upgrade → 无条件 restart-required（替换已装包无法热替换模块代）', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const manager = createPluginManager({ ...baseOptions(run) })
+    const result = await manager.upgrade(localInstance(), '@xbzbing/dsh-git-panel', '1.2.0')
+    expect(result.application).toBe('restart-required')
+  })
+
+  it('remove → 走默认规则：web/HMR 下 applied，无 HMR 下 restart-required', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const web = createPluginManager({
+      ...baseOptions(run),
+      bundleStore: fakeBundles({
+        bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+        dependencies: ['@xbzbing/dsh-git-panel']
+      }).store
+    })
+    expect((await web.remove(localInstance(), '@xbzbing/dsh-git-panel')).application).toBe('applied')
+
+    const headless = createPluginManager({
+      ...baseOptions(run),
+      bundleStore: fakeBundles({
+        bundles: ['@deepseek-ai/dsh-base'],
+        dependencies: ['@xbzbing/dsh-git-panel']
+      }).store
+    })
+    expect(
+      (await headless.remove(localInstance({ profile: 'headless' }), '@xbzbing/dsh-git-panel')).application
+    ).toBe('restart-required')
   })
 
   it('install：spec 原样透传给 add', async () => {

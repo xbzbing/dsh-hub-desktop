@@ -10,6 +10,7 @@ import { useAppStore } from '../../store'
 import {
   canOfferUpgrade,
   initialCheckState,
+  pluginApplyNotice,
   pluginKindKey,
   pluginSourceKey,
   pruneChecks,
@@ -39,7 +40,6 @@ interface RowBusy {
 /** 卸载二次确认目标。 */
 interface RemoveTarget {
   name: string
-  hasHostSide: boolean
 }
 
 /** 重启提醒目标（改动含 host 半后弹出）。 */
@@ -57,6 +57,8 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   const workspaceConnected = useAppStore(
     (state) => state.workspaceConnected[instanceId] ?? false
   )
+  /** 实例是否运行中：决定改动提示是「已保存」还是「已生效/需重启」。 */
+  const instanceRunning = useAppStore((state) => state.statuses[instanceId]?.status === 'running')
 
   /** 把一条插件操作日志写入实例底部信息栏（与运行时状态同一时间线）。 */
   const logActivity = useCallback(
@@ -180,15 +182,25 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     }
   }
 
-  /** 改动含 host 半时提示重启；否则提示刷新页面即可（两者都写入实例日志）。 */
-  const afterMutation = (name: string, hasHostSide: boolean): void => {
-    if (hasHostSide) {
+  /**
+   * 改动后的提示：按 dsh 的生效语义（主进程算出的 application）与实例运行状态决定——
+   * 未运行 → 已保存，下次启动生效；applied → 已即时生效；restart-required → 提示重启。
+   * 「是否需要重启」与插件有没有 host 半无关：升级/替换已装包时即使有 HMR 也必须重启。
+   */
+  const afterMutation = (name: string, application: 'applied' | 'restart-required'): void => {
+    const notice = pluginApplyNotice({ running: instanceRunning, application })
+    if (notice === 'restart-required') {
       logActivity(t('detail.plugin.log.restartHint', { name }))
       setRestartPrompt({ name })
-    } else {
-      logActivity(t('detail.plugin.log.clientHint', { name }))
-      toast('ok', t('detail.plugin.installed'), t('detail.plugin.clientOnlyHint'))
+      return
     }
+    if (notice === 'saved') {
+      logActivity(t('detail.plugin.log.savedHint', { name }))
+      toast('ok', t('detail.plugin.mutationDone'), t('detail.plugin.savedHint', { name }))
+      return
+    }
+    logActivity(t('detail.plugin.log.appliedHint', { name }))
+    toast('ok', t('detail.plugin.mutationDone'), t('detail.plugin.appliedHint', { name }))
   }
 
   const runUpgrade = async (name: string, version: string): Promise<void> => {
@@ -210,7 +222,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
       return next
     })
     await load({ keepChecks: true })
-    afterMutation(name, result.value.hasHostSide)
+    afterMutation(name, result.value.application)
   }
 
   /** 启用/禁用插件：改 profile 的加载清单，禁用后仍在列表可见（可升级/卸载/再启用）。 */
@@ -230,14 +242,8 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
       return
     }
     logActivity(t(enabled ? 'detail.plugin.log.enabled' : 'detail.plugin.log.disabled', { name }))
-    toast(
-      'ok',
-      t('detail.plugin.toggleHint', {
-        name,
-        action: enabled ? t('detail.plugin.enable') : t('detail.plugin.disable')
-      })
-    )
     await load({ keepChecks: true })
+    afterMutation(name, result.value.application)
   }
 
   const confirmRemove = async (): Promise<void> => {
@@ -255,7 +261,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     }
     logActivity(t('detail.plugin.log.removed', { name }))
     await load({ keepChecks: true })
-    afterMutation(name, result.value.hasHostSide)
+    afterMutation(name, result.value.application)
   }
 
   const submitInstall = async (spec: string): Promise<void> => {
@@ -270,7 +276,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     logActivity(t('detail.plugin.log.installed', { spec }))
     setShowInstall(false)
     await load({ keepChecks: true })
-    afterMutation(spec, result.value.hasHostSide)
+    afterMutation(spec, result.value.application)
   }
 
   const confirmRestart = (): void => {
@@ -381,7 +387,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
               onCheck={() => void runCheck(plugin.name)}
               onUpgrade={(version) => void runUpgrade(plugin.name, version)}
               onToggleEnabled={(enabled) => void runToggle(plugin.name, enabled)}
-              onRemove={() => setRemoveTarget({ name: plugin.name, hasHostSide: plugin.hasHostSide })}
+              onRemove={() => setRemoveTarget({ name: plugin.name })}
               onOpenLink={openLink}
             />
           ))}
@@ -672,11 +678,6 @@ function RemovePluginModal(props: {
       }
     >
       <p className="meta">{t('detail.plugin.removeConfirmBody', { name: target.name })}</p>
-      {target.hasHostSide && (
-        <p className="meta mt8" data-testid="plugin-remove-host-hint">
-          {t('detail.plugin.removeHostHint')}
-        </p>
-      )}
     </Modal>
   )
 }
