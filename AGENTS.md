@@ -60,7 +60,8 @@ scripts/release/ 发布检查和校验和脚本
 - 不使用 `git add .` 或 `git add -A`；只暂存明确确认过的路径。
 - 实验在隔离副本中进行，结束后删除实验文件。
 - 提交前确认 `git status --short` 只包含预期文件。
-- 除非用户明确要求，不创建提交；提交信息使用 `feat|fix|chore|refactor|test|docs: 描述`。
+- 可按照阶段/功能粒度创建提交，无需逐次征询；提交信息使用 `feat|fix|chore|refactor|test|docs: 描述`。
+- **推送（`git push`）必须先征得用户同意**；用户未明确同意时只提交不推送。
 
 ## 常用命令
 
