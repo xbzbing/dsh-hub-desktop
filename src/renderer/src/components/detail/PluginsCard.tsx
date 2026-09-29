@@ -344,10 +344,36 @@ function PluginRow(props: {
           <span className="plugin-source">{t(pluginSourceKey(plugin.installSource))}</span>
         </button>
         <div className="row plugin-actions" style={{ gap: 8 }}>
-          {/* 「已是最新」内联在操作行最左，不换行占一整行。 */}
+          {/* 检查结果内联在操作行最左，不换行占整行：已最新 / 不兼容警告 / 检查失败。 */}
           {showsUpToDate(check) && (
             <span className="meta plugin-status-inline" data-testid={`plugin-uptodate-${plugin.name}`}>
               {t('detail.plugin.uptodate')}
+            </span>
+          )}
+          {showsIncompatibleWarning(check) && check.result !== null && (
+            <span
+              className="meta err-text plugin-status-inline"
+              title={t('detail.plugin.incompatible', {
+                latest: check.result.latest,
+                peer: check.result.dshPeer ?? '—',
+                current: check.result.dshVersion ?? '—'
+              })}
+              data-testid={`plugin-incompatible-${plugin.name}`}
+            >
+              {t('detail.plugin.incompatible', {
+                latest: check.result.latest,
+                peer: check.result.dshPeer ?? '—',
+                current: check.result.dshVersion ?? '—'
+              })}
+            </span>
+          )}
+          {check.status === 'error' && check.error !== null && (
+            <span
+              className="meta err-text plugin-status-inline"
+              title={t('detail.plugin.checkFailed', { msg: check.error })}
+              data-testid={`plugin-check-error-${plugin.name}`}
+            >
+              {t('detail.plugin.checkFailed', { msg: check.error })}
             </span>
           )}
           {plugin.githubUrl && (
@@ -404,23 +430,6 @@ function PluginRow(props: {
           </button>
         </div>
       </div>
-
-      {/* 检查结果：兼容有新版给升级按钮（操作行内），不兼容给警告，失败给错误；
-          「已是最新」内联在操作行最左，不在此另起一行。 */}
-      {showsIncompatibleWarning(check) && check.result !== null && (
-        <p className="meta err-text plugin-check-result" data-testid={`plugin-incompatible-${plugin.name}`}>
-          {t('detail.plugin.incompatible', {
-            latest: check.result.latest,
-            peer: check.result.dshPeer ?? '—',
-            current: check.result.dshVersion ?? '—'
-          })}
-        </p>
-      )}
-      {check.status === 'error' && check.error !== null && (
-        <p className="meta err-text plugin-check-result" data-testid={`plugin-check-error-${plugin.name}`}>
-          {t('detail.plugin.checkFailed', { msg: check.error })}
-        </p>
-      )}
 
       {expanded && (
         <PluginDetail t={t} plugin={plugin} check={check} onOpenLink={onOpenLink} />

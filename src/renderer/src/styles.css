@@ -2127,13 +2127,13 @@ details.adv[open] {
 .plugin-actions {
   flex: none;
 }
-.plugin-check-result {
-  margin: 6px 0 0 20px;
-}
-/* 「已是最新」内联在操作行最左：不换行、不占整行。 */
+/* 检查结果内联在操作行最左：不换行、单行超长时省略号截断（完整文案见 title）。 */
 .plugin-status-inline {
   align-self: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
 }
 .plugin-detail {
   margin: 10px 0 4px 20px;
