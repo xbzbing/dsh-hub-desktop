@@ -10,6 +10,7 @@ import {
   INSTANCE_STATUS_EVENT,
   DSH_VERSION_IPC,
   DSH_VERSION_PROGRESS_EVENT,
+  PLUGIN_IPC,
   WORKSPACE_HOTKEY_EVENT,
   SETTINGS_IPC,
   SSH_IPC,
@@ -85,6 +86,15 @@ const bridge: DshHubBridge = {
       ipcRenderer.invoke(DSH_VERSION_IPC.confirmList) as Promise<IpcResult<RuntimeConfirmPromptPayload[]>>,
     replyRuntimeConfirm: (requestId: string, accepted: boolean) =>
       ipcRenderer.invoke(DSH_VERSION_IPC.confirmReply, requestId, accepted)
+  },
+  plugin: {
+    list: (id: string) => ipcRenderer.invoke(PLUGIN_IPC.list, id),
+    check: (id: string, name: string) => ipcRenderer.invoke(PLUGIN_IPC.check, id, name),
+    install: (id: string, spec: string) => ipcRenderer.invoke(PLUGIN_IPC.install, id, spec),
+    upgrade: (id: string, name: string, version: string) =>
+      ipcRenderer.invoke(PLUGIN_IPC.upgrade, id, name, version),
+    remove: (id: string, name: string) => ipcRenderer.invoke(PLUGIN_IPC.remove, id, name),
+    openExternal: (url: string) => ipcRenderer.invoke(PLUGIN_IPC.openExternal, url)
   },
   onInstanceStatus: (listener) => subscribe(INSTANCE_STATUS_EVENT, listener),
   onVersionProgress: (listener) => subscribe(DSH_VERSION_PROGRESS_EVENT, listener),

@@ -1,0 +1,124 @@
+/**
+ * dsh 插件 peer 兼容判定与元数据派生的纯原语。
+ *
+ * 插件用 `peerDependencies["@deepseek-ai/dsh"]` 声明主包要求（dsh-0.1.7-rc.2 起加载器按此做闸），
+ * hub 检查升级时需把候选版本的该范围与实例当前 dsh 版本比对。此处只覆盖插件实际用到的范围子集：
+ * `>=x`、`>x`、`<=x`、`<x`、`^x`、`~x`、`=x`、裸版本、空格分隔的交集、`||` 分隔的并集。
+ * prerelease（`-rc.2` 等）参与比较，比较底层复用 `compareDshVersions`（数字感知）。
+ *
+ * 刻意不引入 `semver` 运行时依赖（zod 仍是唯一新增运行时依赖）：范围形态有限且可穷举测试。
+ */
+import { compareDshVersions } from './version-compare'
+
+/** 剥掉版本前缀里的 `v`（`v1.2.3` → `1.2.3`）。 */
+function stripV(version: string): string {
+  return version.startsWith('v') || version.startsWith('V') ? version.slice(1) : version
+}
+
+/** 拆版本为数字段与 prerelease 后缀（`^` / `~` 扩展用）。 */
+function splitCore(version: string): { major: number; minor: number; patch: number } {
+  const core = version.split('-')[0] ?? version
+  const parts = core.split('.')
+  return {
+    major: Number(parts[0] ?? 0) || 0,
+    minor: Number(parts[1] ?? 0) || 0,
+    patch: Number(parts[2] ?? 0) || 0
+  }
+}
+
+/** 把 `^x` / `~x` 展开为等价的 `>=lower <upper` 边界对。 */
+function caretTildeBounds(operator: '^' | '~', version: string): { lower: string; upper: string } {
+  const { major, minor } = splitCore(version)
+  if (operator === '~') {
+    // ~1.2.3 := >=1.2.3 <1.3.0；~1.2 := >=1.2.0 <1.3.0；~1 := >=1.0.0 <2.0.0
+    const hasMinor = version.split('-')[0]?.split('.').length ?? 0
+    const upper = hasMinor >= 2 ? `${major}.${minor + 1}.0` : `${major + 1}.0.0`
+    return { lower: version, upper }
+  }
+  // ^1.2.3 := >=1.2.3 <2.0.0；^0.2.3 := >=0.2.3 <0.3.0；^0.0.3 := >=0.0.3 <0.0.4
+  let upper: string
+  if (major > 0) upper = `${major + 1}.0.0`
+  else if (minor > 0) upper = `0.${minor + 1}.0`
+  else upper = `0.0.${splitCore(version).patch + 1}`
+  return { lower: version, upper }
+}
+
+/** 单个比较子句（`>=x` / `^x` / 裸版本…）对目标版本是否成立。 */
+function satisfiesComparator(comparator: string, target: string): boolean {
+  const token = comparator.trim()
+  if (token === '' || token === '*' || token === 'x' || token === 'X') return true
+
+  const opMatch = /^(>=|<=|>|<|=)?\s*(.+)$/.exec(token)
+  const operator = opMatch?.[1] ?? ''
+  const rawVersion = stripV((opMatch?.[2] ?? token).trim())
+
+  if (rawVersion.startsWith('^') || rawVersion.startsWith('~')) {
+    const { lower, upper } = caretTildeBounds(rawVersion[0] as '^' | '~', stripV(rawVersion.slice(1)))
+    return compareDshVersions(target, lower) >= 0 && compareDshVersions(target, upper) < 0
+  }
+
+  const cmp = compareDshVersions(target, rawVersion)
+  switch (operator) {
+    case '>=':
+      return cmp >= 0
+    case '<=':
+      return cmp <= 0
+    case '>':
+      return cmp > 0
+    case '<':
+      return cmp < 0
+    case '=':
+    case '':
+      return cmp === 0
+    default:
+      return false
+  }
+}
+
+/**
+ * 判定 dsh 版本是否满足 peer 范围。空/缺省范围视为「无约束（满足）」。
+ * `||` 分隔的任一子范围成立即成立；子范围内空格分隔的比较子句需全部成立（交集）。
+ * 解析异常一律按「不满足」返回 false（宁可提示不兼容，也不误放行升级）。
+ */
+export function satisfiesDshPeer(range: string | null | undefined, dshVersion: string | null | undefined): boolean {
+  if (range === null || range === undefined || range.trim() === '') return true
+  if (dshVersion === null || dshVersion === undefined || dshVersion.trim() === '') return false
+  const target = stripV(dshVersion.trim())
+  try {
+    return range
+      .split('||')
+      .map((sub) => sub.trim())
+      .some((sub) => {
+        if (sub === '') return true
+        // 展开 `>=x <y` 里 caret/tilde 与运算符间可能无空格的情形：按空白切子句。
+        const comparators = sub.split(/\s+/).filter((token) => token !== '')
+        if (comparators.length === 0) return true
+        return comparators.every((comparator) => satisfiesComparator(comparator, target))
+      })
+  } catch {
+    return false
+  }
+}
+
+/** 从 npm `repository` 字段派生 GitHub 网页地址；非 github 或无法解析返回 null。 */
+export function githubUrlFrom(repository: unknown): string | null {
+  const raw =
+    typeof repository === 'string'
+      ? repository
+      : repository && typeof repository === 'object' && 'url' in repository
+        ? String((repository as { url: unknown }).url ?? '')
+        : ''
+  if (raw === '') return null
+  // 归一化：git+https://github.com/a/b.git / git@github.com:a/b.git / github:a/b
+  const shorthand = /^github:([^/]+\/[^/#]+)/.exec(raw)
+  if (shorthand?.[1]) return `https://github.com/${shorthand[1].replace(/\.git$/, '')}`
+  const match = /github\.com[/:]([^/]+\/[^/#?]+?)(?:\.git)?(?:[#?].*)?$/i.exec(raw)
+  if (!match?.[1]) return null
+  return `https://github.com/${match[1]}`
+}
+
+/** npm 包名派生 npm 网页地址；仅接受合法 npm 包名（scoped / unscoped）。 */
+export function npmUrlFrom(name: string): string | null {
+  if (!/^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i.test(name)) return null
+  return `https://www.npmjs.com/package/${name}`
+}

@@ -301,6 +301,7 @@ void app.whenReady().then(() => {
   const installer = runtimeController.installer
   installerRef = installer
   const pathProbe = runtimeController.pathProbe
+  const pluginManager = runtimeController.pluginManager
 
   const authController = createAuthController({
     getVault: () => vault,
@@ -323,6 +324,7 @@ void app.whenReady().then(() => {
     http: httpEndpoints,
     auth,
     installer,
+    pluginManager,
     externalDshScanner: createExternalDshScanner(),
     pathProbe,
     vault: vault as Vault,

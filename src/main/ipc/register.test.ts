@@ -109,6 +109,13 @@ let installerFake: {
   installGlobal: ReturnType<typeof vi.fn>
   dispose: ReturnType<typeof vi.fn>
 }
+let pluginManagerFake: {
+  list: ReturnType<typeof vi.fn>
+  check: ReturnType<typeof vi.fn>
+  install: ReturnType<typeof vi.fn>
+  upgrade: ReturnType<typeof vi.fn>
+  remove: ReturnType<typeof vi.fn>
+}
 let ipcDeps: Parameters<typeof registerIpc>[1]
 
 beforeEach(async () => {
@@ -226,6 +233,22 @@ beforeEach(async () => {
   }
   openInstanceView = vi.fn()
   openExternalUrl = vi.fn(async () => undefined)
+  pluginManagerFake = {
+    list: vi.fn(async () => []),
+    check: vi.fn(async () => ({
+      name: 'p',
+      current: '1.0.0',
+      latest: '1.0.0',
+      hasUpdate: false,
+      compatible: true,
+      dshPeer: null,
+      dshVersion: null,
+      modifiedAt: null
+    })),
+    install: vi.fn(async () => ({ hasHostSide: false })),
+    upgrade: vi.fn(async () => ({ hasHostSide: false })),
+    remove: vi.fn(async () => ({ hasHostSide: false }))
+  }
   instanceViewUrlFake = vi.fn(() => null)
   externalDshScannerFake = { scan: vi.fn(async () => []) }
   promptBrokerFake = {
@@ -259,7 +282,8 @@ beforeEach(async () => {
     promptBroker: promptBrokerFake as never,
     openInstanceView: openInstanceView as never,
     openExternalUrl: openExternalUrl as never,
-    installer: installerFake as never
+    installer: installerFake as never,
+    pluginManager: pluginManagerFake as never
   }
   registerIpc(createInstanceStore({ dir }), ipcDeps)
 })
@@ -307,6 +331,12 @@ describe('registerIpc', () => {
       'dsh-version:list',
       'dsh-version:confirmList',
       'dsh-version:confirmReply',
+      'plugin:list',
+      'plugin:check',
+      'plugin:install',
+      'plugin:upgrade',
+      'plugin:remove',
+      'plugin:openExternal',
       'ssh:keyPreview',
       'ssh:hostKeyReply',
       'ssh:hostKeyForget',
@@ -666,6 +696,95 @@ describe('registerIpc', () => {
       value: { canUpgrade: boolean; reason?: string }
     }
     expect(result.value).toMatchObject({ canUpgrade: false, reason: 'not-local' })
+  })
+
+  it('plugin:list：本机实例转发给 pluginManager', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    pluginManagerFake.list.mockResolvedValueOnce([{ name: 'p', version: '1.0.0' }])
+    const result = (await invoke('plugin:list', created.value.id)) as {
+      ok: boolean
+      value: Array<{ name: string }>
+    }
+    expect(result.ok).toBe(true)
+    expect(result.value[0]?.name).toBe('p')
+    expect(pluginManagerFake.list).toHaveBeenCalled()
+  })
+
+  it('plugin:list：非 local 实例报 invalid-input', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: 'HTTP',
+      authMode: 'auto',
+      endpointUrl: 'http://127.0.0.1:1/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    const result = (await invoke('plugin:list', created.value.id)) as { ok: boolean; code?: string }
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('invalid-input')
+  })
+
+  it('plugin:upgrade：显式版本经校验后转发', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    const result = (await invoke('plugin:upgrade', created.value.id, 'dsh-free-search', '0.4.40')) as {
+      ok: boolean
+    }
+    expect(result.ok).toBe(true)
+    expect(pluginManagerFake.upgrade).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.value.id }),
+      'dsh-free-search',
+      '0.4.40'
+    )
+  })
+
+  it('plugin:install：非法 spec 被拒（含 shell 元字符）', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    const result = (await invoke('plugin:install', created.value.id, 'foo; rm -rf /')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('invalid-input')
+    expect(pluginManagerFake.install).not.toHaveBeenCalled()
+  })
+
+  it('plugin:openExternal：白名单外域名被拒，白名单内放行', async () => {
+    const denied = (await invoke('plugin:openExternal', 'https://evil.example.com/x')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(denied.ok).toBe(false)
+    expect(denied.code).toBe('invalid-input')
+    expect(openExternalUrl).not.toHaveBeenCalled()
+
+    const allowed = (await invoke('plugin:openExternal', 'https://www.npmjs.com/package/x')) as {
+      ok: boolean
+    }
+    expect(allowed.ok).toBe(true)
+    expect(openExternalUrl).toHaveBeenCalledWith('https://www.npmjs.com/package/x')
+  })
+
+  it('plugin:list：pluginManager 未装配 → ok:false code=internal', async () => {
+    registerIpc(createInstanceStore({ dir }), { ...ipcDeps, pluginManager: undefined })
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    const result = (await invoke('plugin:list', created.value.id)) as { ok: boolean; code?: string }
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('internal')
   })
 
   it('check/list：installer 未装配 → ok:false code=internal', async () => {

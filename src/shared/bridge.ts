@@ -26,6 +26,9 @@ import type {
   InstanceSummary,
   LocalLauncherSnapshot,
   LocalSpaceSnapshot,
+  PluginInfo,
+  PluginMutationResult,
+  PluginUpdateCheck,
   VaultPolicy,
   VaultStatusSnapshot,
   IpcResult,
@@ -138,6 +141,21 @@ export interface DshHubBridge {
     listRuntimeConfirms: () => Promise<IpcResult<RuntimeConfirmPromptPayload[]>>
     /** 回复运行时确认；accepted=false 即取消本次动作（启动取消 / 升级不处理）。 */
     replyRuntimeConfirm: (requestId: string, accepted: boolean) => Promise<IpcResult<null>>
+  }
+  /** 本机实例的 dsh 插件管理：列表、检查升级、安装、升级、卸载（profile 与 DSH_HOME 由主进程推导）。 */
+  plugin: {
+    /** 列出实例 profile 已装插件及其元数据。 */
+    list: (id: string) => Promise<IpcResult<PluginInfo[]>>
+    /** 检查某插件的最新版本与 dsh peer 兼容性。 */
+    check: (id: string, name: string) => Promise<IpcResult<PluginUpdateCheck>>
+    /** 安装插件；spec 为 npm 名 / name@version / github: / file: 形态。 */
+    install: (id: string, spec: string) => Promise<IpcResult<PluginMutationResult>>
+    /** 升级到指定版本（显式版本，非 latest）。 */
+    upgrade: (id: string, name: string, version: string) => Promise<IpcResult<PluginMutationResult>>
+    /** 卸载插件。 */
+    remove: (id: string, name: string) => Promise<IpcResult<PluginMutationResult>>
+    /** 在系统默认浏览器打开插件的 npm / GitHub 链接（仅 https 且经域名白名单）。 */
+    openExternal: (url: string) => Promise<IpcResult<null>>
   }
   /** 订阅实例状态事件；返回取消订阅函数（渲染层不接触原始 IPC 事件对象） */
   onInstanceStatus: (listener: (event: InstanceStatusEvent) => void) => () => void

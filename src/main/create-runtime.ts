@@ -15,6 +15,8 @@ import { createLocalRuntime } from './local-runtime/local-runtime'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import type { BundledNpm, RuntimeInstaller } from './local-runtime/runtime-installer'
+import { createPluginManager } from './local-runtime/plugin-manager'
+import type { PluginManager } from './local-runtime/plugin-manager'
 import { createPathProbe } from './local-runtime/runtime-source'
 import type { PathProbe } from './local-runtime/runtime-source'
 import type { InstanceStore } from './registry/instance-store'
@@ -51,6 +53,8 @@ export interface RuntimeController {
   httpEndpoints: HttpEndpointManager
   installer: RuntimeInstaller
   pathProbe: PathProbe
+  /** dsh 插件管理器（仅本机实例）。 */
+  pluginManager: PluginManager
   /** 在状态订阅与窗口就位后拉起勾选了自动启动的本机实例 */
   startAutoStart: () => void
 }
@@ -105,6 +109,11 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
     return promptBroker.requestConfirm(payload)
   }
   const pathProbe = createPathProbe()
+  const pluginManager = createPluginManager({
+    installer,
+    dataRoot: deps.dataRoot,
+    pathProbe
+  })
   const runtime = createLocalRuntime({
     installer,
     dataRoot: deps.dataRoot,
@@ -188,5 +197,5 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
     })
   }
 
-  return { runtime, promptBroker, tunnels, httpEndpoints, installer, pathProbe, startAutoStart }
+  return { runtime, promptBroker, tunnels, httpEndpoints, installer, pathProbe, pluginManager, startAutoStart }
 }

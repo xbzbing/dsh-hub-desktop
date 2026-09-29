@@ -675,6 +675,90 @@ export interface DshVersionProgressEvent {
 /** 主进程 → 渲染进程的 dsh 版本升级进度事件。 */
 export const DSH_VERSION_PROGRESS_EVENT = 'dsh:version-progress'
 
+/** dsh 插件管理通道（仅本机实例；profile 与 DSH_HOME 由主进程按实例推导）。 */
+export const PLUGIN_IPC = {
+  /** 列出实例 profile 已装插件及其本地元数据。 */
+  list: 'plugin:list',
+  /** 检查某插件的最新版本与 dsh peer 兼容性（联网 view）。 */
+  check: 'plugin:check',
+  /** 安装插件；spec 为 npm 名 / name@version / github: / file: 形态。 */
+  install: 'plugin:install',
+  /** 升级到指定版本（显式版本，非 latest）。 */
+  upgrade: 'plugin:upgrade',
+  /** 卸载插件。 */
+  remove: 'plugin:remove',
+  /** 在系统默认浏览器打开插件的 npm / GitHub 链接（仅 https 且经域名白名单）。 */
+  openExternal: 'plugin:openExternal'
+} as const
+
+/**
+ * 插件安装 spec 校验：npm 包名（scoped/unscoped，可带 @version）、`github:owner/repo`
+ * （可带 #ref）、`git+https://…`、`file:` 本地路径。长度封顶，拒绝空白与命令注入面。
+ */
+export const PLUGIN_SPEC_SCHEMA = z
+  .string()
+  .trim()
+  .min(1, '插件标识不能为空')
+  .max(512, '插件标识过长')
+  .refine((value) => {
+    if (/[\s;&|`$<>]/.test(value)) return false
+    if (/^(github:|git\+https:\/\/|file:)/.test(value)) return true
+    // npm 包名（可选 scope）+ 可选 @version。
+    return /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(@[\w.+-]+)?$/i.test(value)
+  }, '插件标识形态非法（仅支持 npm 名 / name@version / github: / file:）')
+
+/** dsh 插件名校验（scoped / unscoped npm 包名，不含版本）。 */
+export const PLUGIN_NAME_SCHEMA = z
+  .string()
+  .trim()
+  .min(1)
+  .max(256)
+  .regex(/^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i, '插件名形态非法')
+
+/** 解析出的已装插件信息（渲染层展示用；图标以 data-uri 内联）。 */
+export interface PluginInfo {
+  name: string
+  version: string
+  description: string | null
+  author: string | null
+  license: string | null
+  npmUrl: string | null
+  githubUrl: string | null
+  iconDataUri: string | null
+  /** 第三方运行时依赖名（不含 peer）。 */
+  dependencies: string[]
+  /** `peerDependencies["@deepseek-ai/dsh"]` 范围；null = 未声明。 */
+  dshPeer: string | null
+  /** `engines.node` 范围；null = 未声明。 */
+  nodeEngine: string | null
+  /** 含 host 半（改动后需重启实例）。 */
+  hasHostSide: boolean
+  /** 含 client 半（改动后刷新页面即可）。 */
+  hasClientSide: boolean
+  /** 安装来源。 */
+  installSource: 'npm' | 'github' | 'file' | 'unknown'
+}
+
+/** 插件检查升级结果。 */
+export interface PluginUpdateCheck {
+  name: string
+  current: string
+  latest: string
+  hasUpdate: boolean
+  /** latest 的 dsh peer 是否满足实例当前 dsh 版本。 */
+  compatible: boolean
+  dshPeer: string | null
+  dshVersion: string | null
+  /** latest 发布时间（ISO）；null = registry 未返回。 */
+  modifiedAt: string | null
+}
+
+/** 插件改动结果：是否含 host 半（决定是否提醒重启）。 */
+export interface PluginMutationResult {
+  hasHostSide: boolean
+}
+
+
 export const WorkspaceViewBoundsSchema = z
   .object({
     x: z.number().int().min(0).max(10_000),

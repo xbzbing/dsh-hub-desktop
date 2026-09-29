@@ -13,6 +13,7 @@ import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { ExternalDshScanner } from '../local-runtime/external-dsh'
 import type { PathProbe } from '../local-runtime/runtime-source'
 import type { RuntimeInstaller } from '../local-runtime/runtime-installer'
+import type { PluginManager } from '../local-runtime/plugin-manager'
 import type { SshTunnelManager } from '../transport/ssh-tunnel'
 import type { HttpEndpointManager } from '../transport/http-endpoint'
 import type { PromptBroker } from '../ssh/prompt-broker'
@@ -28,6 +29,7 @@ import { registerRuntimeHandlers } from './runtime-handlers'
 import { registerAuthHandlers, type AuthProbeController } from './auth-handlers'
 import { registerVaultHandlers } from './vault-handlers'
 import { registerVersionHandlers } from './version-handlers'
+import { registerPluginHandlers } from './plugin-handlers'
 import { wrap, type ExternalAccessUrls } from './ipc-utils'
 
 export type { AuthProbeController }
@@ -115,6 +117,12 @@ export interface VersionDeps {
   installer?: RuntimeInstaller
 }
 
+/** dsh 插件管理通道依赖。 */
+export interface PluginDeps {
+  /** 插件管理器；缺省时插件通道返回 internal 错误信封。 */
+  pluginManager?: PluginManager
+}
+
 /** 交互式提示通道（SSH 主机指纹/口令、升级确认）依赖。 */
 export interface PromptDeps {
   promptBroker: PromptBroker
@@ -136,6 +144,7 @@ export interface IpcDeps
     SettingsDeps,
     SpaceDeps,
     VersionDeps,
+    PluginDeps,
     PromptDeps,
     AuditDeps {
   /**
@@ -187,6 +196,7 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
   registerInstanceHandlers(store, deps, externalAccessUrls, wrap)
   registerRuntimeHandlers(store, deps, { externalAccessUrls, probe: authProbe.probe }, wrap)
   registerVersionHandlers(store, deps, wrap)
+  registerPluginHandlers(store, { pluginManager: deps.pluginManager, openExternalUrl: deps.openExternalUrl }, wrap)
   registerVaultHandlers(deps, externalAccessUrls, wrap)
 
   registerSettingsHandlers(
