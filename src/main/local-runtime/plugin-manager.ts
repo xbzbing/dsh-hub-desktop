@@ -24,6 +24,8 @@ import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
 import { evaluateDshPeers, githubUrlFrom, npmUrlFrom } from './peer-compatibility'
 import { createPluginStateStore } from './plugin-state'
 import type { PluginStateStore } from './plugin-state'
+import { createProfileBundleStore } from './profile-bundles'
+import type { ProfileBundleStore } from './profile-bundles'
 import { nodeModeExecutable } from '../node-mode'
 
 /** 插件命令执行超时：pnpm 安装可能较慢，给足余量（与安装器同量级）。 */
@@ -53,6 +55,11 @@ export interface PluginInfo {
   hasClientSide: boolean
   /** 安装来源：npm registry / github / 本地 file / 未知。 */
   installSource: 'npm' | 'github' | 'file' | 'unknown'
+  /**
+   * 是否在 profile 的加载清单（`dsh.profile.bundles`）里。
+   * null = 该插件不由清单控制（无 host 半，随宿主 bundle 加载），无法单独禁用。
+   */
+  enabled: boolean | null
 }
 
 /** 界面语言：与 app 的 Language 一致（system 已解析为 zh|en）。 */
@@ -136,6 +143,8 @@ export interface PluginManagerOptions {
   loginPath?: () => Promise<string | null>
   /** 检查状态持久化（注入便于测试）；缺省写 `<dataRoot>/plugin-state/<id>.json`。 */
   stateStore?: PluginStateStore
+  /** profile 加载清单读写（注入便于测试）；缺省直接读写 profile 的 package.json。 */
+  bundleStore?: ProfileBundleStore
 }
 
 /** 渲染层挂载时恢复的检查状态：持久化的标记 + 当前在飞检查。 */
@@ -149,6 +158,14 @@ export interface PluginManager {
   remove(instance: LocalInstance, name: string): Promise<PluginMutationResult>
   /** 读取该实例的持久化检查状态（含在飞检查），供渲染层挂载时恢复标记。 */
   checkState(instance: LocalInstance): Promise<PluginCheckSnapshot>
+  /** 启用/禁用插件（改 profile 的 bundles，保留 dependencies）；返回变更后的状态。 */
+  setEnabled(instance: LocalInstance, name: string, enabled: boolean): Promise<PluginEnableResult>
+}
+
+/** 启用/禁用结果。 */
+export interface PluginEnableResult {
+  name: string
+  enabled: boolean
 }
 
 const DSH_PEER = '@deepseek-ai/dsh'
@@ -230,6 +247,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   const shellEnv = options.shellEnv ?? resolveShellEnvOnce
   const loginPath = options.loginPath ?? resolveLoginPathOnce
   const stateStore = options.stateStore ?? createPluginStateStore(options.dataRoot)
+  const bundleStore = options.bundleStore ?? createProfileBundleStore()
 
   /**
    * 在飞检查的插件名（实例 id → 名字集合）。检查在后台跑到结束（用户切走也不中止），
@@ -270,7 +288,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     if (record === null) delete updates[name]
     else updates[name] = record
     await stateStore
-      .write(instanceId, { lastCheckedAt: new Date().toISOString(), updates })
+      .write(instanceId, { lastCheckedAt: new Date().toISOString(), updates, bundleIndex: state.bundleIndex })
       .catch((error: unknown) => {
         // 状态落盘失败不影响本次检查结果：只是重启后看不到标记。
         console.error('[plugin] 写入插件检查状态失败：', error)
@@ -383,7 +401,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     name: string,
     entry: { from?: string; version?: string; resolved?: string; path?: string },
     profileNodeModules: string,
-    locale: PluginLocale
+    locale: PluginLocale,
+    bundles: readonly string[] | null
   ): PluginInfo {
     const topLevelDir = join(profileNodeModules, ...name.split('/'))
     const manifestDir = readManifest(topLevelDir) !== null ? topLevelDir : (entry.path ?? topLevelDir)
@@ -410,7 +429,13 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       nodeEngine: manifest.engines?.node ?? null,
       hasHostSide: typeof dsh.bundle?.patch === 'string' && dsh.bundle.patch !== '',
       hasClientSide: dsh.client !== undefined && dsh.client !== null,
-      installSource: installSourceOf(entry)
+      installSource: installSourceOf(entry),
+      // 只有含 host 半（dsh.bundle.patch）的插件才由 bundles 决定加载与否；
+      // 纯 client 插件随宿主 bundle 加载，无法单独禁用 → null。
+      enabled:
+        typeof dsh.bundle?.patch === 'string' && dsh.bundle.patch !== ''
+          ? bundles === null || bundles.includes(name)
+          : null
     }
   }
 
@@ -442,8 +467,11 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     // scoped 包（@scope/name）在其中的 <scope>/<name> 子目录不存在；顶层软链才是可靠读取位置。
     const { home, profile } = homeAndProfile(instance)
     const profileNodeModules = join(home, 'profiles', profile, 'node_modules')
+    // 加载清单决定「启用/禁用」状态；清单读不到（profile 尚未初始化）时按「未知」处理，
+    // 由 infoFromPath 视作启用，避免把全部插件误显示为已禁用。
+    const bundles = (await bundleStore.read(join(home, 'profiles', profile)))?.bundles ?? null
     return Object.entries(deps)
-      .map(([name, entry]) => infoFromPath(name, entry, profileNodeModules, locale))
+      .map(([name, entry]) => infoFromPath(name, entry, profileNodeModules, locale, bundles))
       .sort((a, b) => a.name.localeCompare(b.name))
   }
 
@@ -505,6 +533,37 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
         updates: state.updates,
         checking: [...(inFlightChecks.get(instance.id) ?? [])]
       }
+    },
+
+    async setEnabled(instance, name, enabled): Promise<PluginEnableResult> {
+      const { home, profile } = homeAndProfile(instance)
+      const profileDir = join(home, 'profiles', profile)
+      const profileBundles = await bundleStore.read(profileDir)
+      const bundles = profileBundles?.bundles ?? []
+      if (profileBundles !== null && !profileBundles.dependencies.includes(name)) {
+        throw new InstanceStoreError('not-found', `插件未安装：${name}`)
+      }
+      // 只有含 host 半的插件由 bundles 控制；纯 client 插件随宿主 bundle 加载，禁不掉。
+      const resolved = await resolveDshEntry(instance)
+      const plugins = await listPlugins(instance, 'zh', resolved)
+      const target = plugins.find((plugin) => plugin.name === name)
+      if (target === undefined || !target.hasHostSide) {
+        throw new InstanceStoreError('invalid-input', '该插件不含 host 半，无法单独禁用')
+      }
+      const state = await stateStore.read(instance.id)
+      const bundleIndex = { ...state.bundleIndex }
+      let insertAt: number | undefined
+      if (enabled) {
+        insertAt = bundleIndex[name]
+      } else {
+        const at = bundles.indexOf(name)
+        if (at >= 0) bundleIndex[name] = at
+      }
+      await bundleStore.setEnabled(profileDir, name, enabled, insertAt)
+      await stateStore
+        .write(instance.id, { ...state, bundleIndex })
+        .catch((error: unknown) => console.error('[plugin] 写入插件检查状态失败：', error))
+      return { name, enabled }
     },
 
     async install(instance, spec): Promise<PluginMutationResult> {

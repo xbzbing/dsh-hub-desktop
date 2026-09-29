@@ -18,13 +18,14 @@ afterEach(async () => {
 describe('createPluginStateStore', () => {
   it('未写过时返回空状态（lastCheckedAt=null，无更新项）', async () => {
     const store = createPluginStateStore(await tempRoot())
-    expect(await store.read('inst-1')).toEqual({ lastCheckedAt: null, updates: {} })
+    expect(await store.read('inst-1')).toEqual({ lastCheckedAt: null, updates: {}, bundleIndex: {} })
   })
 
   it('写入后可读回（含插件检查摘要）', async () => {
     const store = createPluginStateStore(await tempRoot())
     await store.write('inst-1', {
       lastCheckedAt: '2026-09-29T10:00:00.000Z',
+      bundleIndex: { 'dsh-better-sidebar': 7 },
       updates: {
         'dsh-better-sidebar': {
           latest: '0.24.1',
@@ -39,21 +40,22 @@ describe('createPluginStateStore', () => {
     expect(state.lastCheckedAt).toBe('2026-09-29T10:00:00.000Z')
     expect(state.updates['dsh-better-sidebar']?.latest).toBe('0.24.1')
     expect(state.updates['dsh-better-sidebar']?.compatible).toBe(true)
+    expect(state.bundleIndex['dsh-better-sidebar']).toBe(7)
   })
 
   it('不同实例互不影响', async () => {
     const store = createPluginStateStore(await tempRoot())
-    await store.write('inst-1', { lastCheckedAt: 'a', updates: {} })
-    expect(await store.read('inst-2')).toEqual({ lastCheckedAt: null, updates: {} })
+    await store.write('inst-1', { lastCheckedAt: 'a', updates: {}, bundleIndex: {} })
+    expect(await store.read('inst-2')).toEqual({ lastCheckedAt: null, updates: {}, bundleIndex: {} })
   })
 
   it('文件损坏或字段类型不对时按空状态处理，不抛错', async () => {
     const root = await tempRoot()
     const store = createPluginStateStore(root)
     // 非法 JSON
-    await store.write('broken', { lastCheckedAt: null, updates: {} })
+    await store.write('broken', { lastCheckedAt: null, updates: {}, bundleIndex: {} })
     await writeFile(join(root, 'plugin-state', 'broken.json'), '{not json', 'utf8')
-    expect(await store.read('broken')).toEqual({ lastCheckedAt: null, updates: {} })
+    expect(await store.read('broken')).toEqual({ lastCheckedAt: null, updates: {}, bundleIndex: {} })
 
     // 脏字段：缺 latest 的项被丢弃，其余保留
     await writeFile(

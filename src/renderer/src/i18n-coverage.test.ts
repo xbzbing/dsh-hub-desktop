@@ -934,6 +934,11 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件列表输出')"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件版本信息输出')"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('未找到可用的 dsh：hub 隔离目录与 PATH 上都没有已安装的运行时')"),
+  debt('src/main/local-runtime/plugin-manager.ts', "throw new InstanceStoreError('not-found', `插件未安装：${name}`)"),
+  debt('src/main/local-runtime/plugin-manager.ts', "throw new InstanceStoreError('invalid-input', '该插件不含 host 半，无法单独禁用')"),
+  debt('src/main/local-runtime/profile-bundles.ts', "if (!isRecord(manifest)) throw new Error('profile package.json 结构异常，未做改动')"),
+  debt('src/main/local-runtime/profile-bundles.ts', "throw new Error('该实例的 profile 尚未初始化（缺少 package.json），请先启动一次实例')"),
+  debt('src/main/local-runtime/profile-bundles.ts', "throw new Error(`profile 正被 dsh 占用（${lockPath}），请稍后重试`)"),
 
   // Runtime status messages displayed by App.tsx and DetailView.
   debt('src/main/local-runtime/launch.ts', ": '分配端口并启动进程（端口区间不可用，改由 dsh 自动选择）'"),

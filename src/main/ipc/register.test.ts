@@ -116,6 +116,7 @@ let pluginManagerFake: {
   install: ReturnType<typeof vi.fn>
   upgrade: ReturnType<typeof vi.fn>
   remove: ReturnType<typeof vi.fn>
+  setEnabled: ReturnType<typeof vi.fn>
 }
 let ipcDeps: Parameters<typeof registerIpc>[1]
 
@@ -249,7 +250,8 @@ beforeEach(async () => {
     checkState: vi.fn(async () => ({ lastCheckedAt: null, updates: {}, checking: [] })),
     install: vi.fn(async () => ({ hasHostSide: false })),
     upgrade: vi.fn(async () => ({ hasHostSide: false })),
-    remove: vi.fn(async () => ({ hasHostSide: false }))
+    remove: vi.fn(async () => ({ hasHostSide: false })),
+    setEnabled: vi.fn(async (instance, name, enabled) => ({ name, enabled }))
   }
   instanceViewUrlFake = vi.fn(() => null)
   externalDshScannerFake = { scan: vi.fn(async () => []) }
@@ -339,6 +341,7 @@ describe('registerIpc', () => {
       'plugin:install',
       'plugin:upgrade',
       'plugin:remove',
+      'plugin:setEnabled',
       'plugin:openExternal',
       'ssh:keyPreview',
       'ssh:hostKeyReply',
@@ -780,6 +783,27 @@ describe('registerIpc', () => {
     expect(result.ok).toBe(false)
     expect(result.code).toBe('invalid-input')
     expect(pluginManagerFake.install).not.toHaveBeenCalled()
+  })
+
+  it('plugin:setEnabled：校验入参后转发（布尔 + 包名）', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    const result = (await invoke('plugin:setEnabled', created.value.id, 'dsh-free-search', false)) as {
+      ok: boolean
+      value: { name: string; enabled: boolean }
+    }
+    expect(result.ok).toBe(true)
+    expect(result.value).toEqual({ name: 'dsh-free-search', enabled: false })
+
+    const bad = (await invoke('plugin:setEnabled', created.value.id, 'dsh-free-search', 'nope')) as {
+      ok: boolean
+      code?: string
+    }
+    expect(bad.ok).toBe(false)
+    expect(bad.code).toBe('invalid-input')
   })
 
   it('plugin:openExternal：白名单外域名被拒，白名单内放行', async () => {

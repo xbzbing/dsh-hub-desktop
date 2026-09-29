@@ -20,6 +20,8 @@ export interface PluginCheckState {
   lastCheckedAt: string | null
   /** 插件名 → 检查结果摘要（仅记录检查过的插件）。 */
   updates: Record<string, PluginCheckRecord>
+  /** 插件名 → 被禁用时在 `dsh.profile.bundles` 里的索引，重新启用时按它插回原位。 */
+  bundleIndex: Record<string, number>
 }
 
 export interface PluginStateStore {
@@ -28,7 +30,7 @@ export interface PluginStateStore {
   write(instanceId: string, state: PluginCheckState): Promise<void>
 }
 
-const EMPTY_STATE: PluginCheckState = { lastCheckedAt: null, updates: {} }
+const EMPTY_STATE: PluginCheckState = { lastCheckedAt: null, updates: {}, bundleIndex: {} }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -36,7 +38,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** 宽松解析：字段类型不对就丢弃该字段，不因单条脏数据丢掉整份状态。 */
 function parseState(raw: unknown): PluginCheckState {
-  if (!isRecord(raw)) return { ...EMPTY_STATE, updates: {} }
+  if (!isRecord(raw)) return { ...EMPTY_STATE, updates: {}, bundleIndex: {} }
   const lastCheckedAt = typeof raw.lastCheckedAt === 'string' ? raw.lastCheckedAt : null
   const updates: Record<string, PluginCheckRecord> = {}
   const source = isRecord(raw.updates) ? raw.updates : {}
@@ -51,7 +53,12 @@ function parseState(raw: unknown): PluginCheckState {
       modifiedAt: typeof value.modifiedAt === 'string' ? value.modifiedAt : null
     }
   }
-  return { lastCheckedAt, updates }
+  const bundleIndex: Record<string, number> = {}
+  const indexSource = isRecord(raw.bundleIndex) ? raw.bundleIndex : {}
+  for (const [name, value] of Object.entries(indexSource)) {
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 0) bundleIndex[name] = value
+  }
+  return { lastCheckedAt, updates, bundleIndex }
 }
 
 export function createPluginStateStore(dataRoot: string): PluginStateStore {
@@ -63,7 +70,7 @@ export function createPluginStateStore(dataRoot: string): PluginStateStore {
       try {
         return parseState(JSON.parse(await readFile(fileFor(instanceId), 'utf8')))
       } catch {
-        return { ...EMPTY_STATE, updates: {} }
+        return { ...EMPTY_STATE, updates: {}, bundleIndex: {} }
       }
     },
 

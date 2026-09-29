@@ -387,6 +387,20 @@ export const MESSAGES = {
   'detail.plugin.checkFailed': { zh: '检查失败：{msg}', en: 'Check failed: {msg}' },
   'detail.plugin.remove': { zh: '卸载', en: 'Uninstall' },
   'detail.plugin.removing': { zh: '卸载中…', en: 'Uninstalling…' },
+  'detail.plugin.disable': { zh: '禁用', en: 'Disable' },
+  'detail.plugin.enable': { zh: '启用', en: 'Enable' },
+  'detail.plugin.disabling': { zh: '处理中…', en: 'Working…' },
+  'detail.plugin.disabled': { zh: '已禁用', en: 'Disabled' },
+  'detail.plugin.enableFailed': { zh: '启用失败：{msg}', en: 'Failed to enable: {msg}' },
+  'detail.plugin.disableFailed': { zh: '禁用失败：{msg}', en: 'Failed to disable: {msg}' },
+  'detail.plugin.cannotDisable': {
+    zh: '该插件随宿主 bundle 加载，无法单独禁用',
+    en: 'This plugin loads with its host bundle and cannot be disabled individually'
+  },
+  'detail.plugin.toggleHint': {
+    zh: '{name} 已{action}；运行中的实例通常立即生效，未生效请重启实例',
+    en: '{name} {action}; running instances usually apply it immediately, otherwise restart the instance'
+  },
   'detail.plugin.removeFailed': { zh: '卸载失败：{msg}', en: 'Failed to uninstall: {msg}' },
   'detail.plugin.installFailed': { zh: '安装失败：{msg}', en: 'Failed to install: {msg}' },
   'detail.plugin.upgradeFailed': { zh: '升级失败：{msg}', en: 'Failed to upgrade: {msg}' },
@@ -452,6 +466,12 @@ export const MESSAGES = {
   'detail.plugin.log.removing': { zh: '开始卸载 {name}', en: 'Uninstalling {name}' },
   'detail.plugin.log.removed': { zh: '已卸载 {name}', en: '{name} uninstalled' },
   'detail.plugin.log.removeFailed': { zh: '{name} 卸载失败：{msg}', en: 'Failed to uninstall {name}: {msg}' },
+  'detail.plugin.log.enabling': { zh: '正在启用 {name}', en: 'Enabling {name}' },
+  'detail.plugin.log.disabling': { zh: '正在禁用 {name}', en: 'Disabling {name}' },
+  'detail.plugin.log.enabled': { zh: '已启用 {name}', en: '{name} enabled' },
+  'detail.plugin.log.disabled': { zh: '已禁用 {name}', en: '{name} disabled' },
+  'detail.plugin.log.enableFailed': { zh: '{name} 启用失败：{msg}', en: 'Failed to enable {name}: {msg}' },
+  'detail.plugin.log.disableFailed': { zh: '{name} 禁用失败：{msg}', en: 'Failed to disable {name}: {msg}' },
   'detail.plugin.log.restartHint': {
     zh: '{name} 含 host 端代码，需重启实例后生效',
     en: '{name} includes host-side code; restart the instance to take effect'

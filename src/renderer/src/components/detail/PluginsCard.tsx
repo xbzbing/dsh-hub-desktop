@@ -32,6 +32,7 @@ const CHECK_CONCURRENCY = 4
 interface RowBusy {
   upgrading: boolean
   removing: boolean
+  toggling: boolean
 }
 
 /** 卸载二次确认目标。 */
@@ -113,7 +114,8 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     void load()
   }, [load])
 
-  const rowBusy = (name: string): RowBusy => busy[name] ?? { upgrading: false, removing: false }
+  const rowBusy = (name: string): RowBusy =>
+    busy[name] ?? { upgrading: false, removing: false, toggling: false }
   const setRowBusy = (name: string, patch: Partial<RowBusy>): void =>
     setBusy((prev) => ({ ...prev, [name]: { ...rowBusy(name), ...patch } }))
 
@@ -191,6 +193,33 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     })
     await load({ keepChecks: true })
     afterMutation(name, result.value.hasHostSide)
+  }
+
+  /** 启用/禁用插件：改 profile 的加载清单，禁用后仍在列表可见（可升级/卸载/再启用）。 */
+  const runToggle = async (name: string, enabled: boolean): Promise<void> => {
+    if (!BRIDGE) return
+    setRowBusy(name, { toggling: true })
+    logActivity(
+      enabled ? t('detail.plugin.log.enabling', { name }) : t('detail.plugin.log.disabling', { name })
+    )
+    const result = await BRIDGE.plugin.setEnabled(instanceId, name, enabled)
+    setRowBusy(name, { toggling: false })
+    if (!result.ok) {
+      const key = enabled ? 'detail.plugin.log.enableFailed' : 'detail.plugin.log.disableFailed'
+      const toastKey = enabled ? 'detail.plugin.enableFailed' : 'detail.plugin.disableFailed'
+      logActivity(t(key, { name, msg: result.message }))
+      toast('err', t(toastKey, { msg: result.message }))
+      return
+    }
+    logActivity(t(enabled ? 'detail.plugin.log.enabled' : 'detail.plugin.log.disabled', { name }))
+    toast(
+      'ok',
+      t('detail.plugin.toggleHint', {
+        name,
+        action: enabled ? t('detail.plugin.enable') : t('detail.plugin.disable')
+      })
+    )
+    await load({ keepChecks: true })
   }
 
   const confirmRemove = async (): Promise<void> => {
@@ -311,6 +340,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
               locked={checkingAll}
               onCheck={() => void runCheck(plugin.name)}
               onUpgrade={(version) => void runUpgrade(plugin.name, version)}
+              onToggleEnabled={(enabled) => void runToggle(plugin.name, enabled)}
               onRemove={() => setRemoveTarget({ name: plugin.name, hasHostSide: plugin.hasHostSide })}
               onOpenLink={openLink}
             />
@@ -355,12 +385,30 @@ function PluginRow(props: {
   locked: boolean
   onCheck: () => void
   onUpgrade: (version: string) => void
+  onToggleEnabled: (enabled: boolean) => void
   onRemove: () => void
   onOpenLink: (url: string | null) => void
 }): ReactNode {
-  const { t, plugin, expanded, onToggle, check, busy, locked, onCheck, onUpgrade, onRemove, onOpenLink } = props
+  const {
+    t,
+    plugin,
+    expanded,
+    onToggle,
+    check,
+    busy,
+    locked,
+    onCheck,
+    onUpgrade,
+    onToggleEnabled,
+    onRemove,
+    onOpenLink
+  } = props
+  const disabled = plugin.enabled === false
   return (
-    <li className="plugin-row" data-testid={`plugin-row-${plugin.name}`}>
+    <li
+      className={disabled ? 'plugin-row plugin-row--disabled' : 'plugin-row'}
+      data-testid={`plugin-row-${plugin.name}`}
+    >
       <div className="plugin-row-head">
         <button
           className="plugin-expand"
@@ -383,6 +431,11 @@ function PluginRow(props: {
           </span>
           <span className="badge num">{plugin.version}</span>
           <span className="plugin-source">{t(pluginSourceKey(plugin.installSource))}</span>
+          {disabled && (
+            <span className="badge plugin-disabled-badge" data-testid={`plugin-disabled-${plugin.name}`}>
+              {t('detail.plugin.disabled')}
+            </span>
+          )}
         </button>
         <div className="row plugin-actions" style={{ gap: 8 }}>
           {/* 检查结果内联在操作行最左，不换行占整行：已最新 / 不兼容警告 / 检查失败。 */}
@@ -426,6 +479,31 @@ function PluginRow(props: {
               data-testid={`plugin-github-${plugin.name}`}
             >
               <Icon name="github" />
+            </button>
+          )}
+          {plugin.enabled === null ? (
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled
+              title={t('detail.plugin.cannotDisable')}
+              data-testid={`plugin-toggle-${plugin.name}`}
+            >
+              <Icon name="power" />
+            </button>
+          ) : (
+            <button
+              className="btn btn-ghost btn-sm plugin-toggle-btn"
+              onClick={() => onToggleEnabled(!plugin.enabled)}
+              disabled={busy.toggling}
+              title={disabled ? t('detail.plugin.enable') : t('detail.plugin.disable')}
+              data-testid={`plugin-toggle-${plugin.name}`}
+            >
+              <Icon name="power" />
+              {busy.toggling
+                ? t('detail.plugin.disabling')
+                : disabled
+                  ? t('detail.plugin.enable')
+                  : t('detail.plugin.disable')}
             </button>
           )}
           <button

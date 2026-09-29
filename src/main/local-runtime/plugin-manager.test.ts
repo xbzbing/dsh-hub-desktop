@@ -5,6 +5,7 @@ import { InstanceStoreError } from '../registry/instance-store'
 import type { LocalInstance } from '@shared/contracts'
 import type { CommandResult } from './exec-file'
 import type { PluginCheckState, PluginStateStore } from './plugin-state'
+import type { ProfileBundleStore, ProfileBundles } from './profile-bundles'
 
 /** 路径分隔符归一化，使断言在 win32（反斜杠）与 POSIX 上一致。 */
 const toPosix = (path: string): string => path.replace(/\\/g, '/')
@@ -51,11 +52,35 @@ function fakeInstaller(): PluginManagerOptions['installer'] {
   }
 }
 
+/** 内存版 profile 清单：验证启用/禁用只改 bundles、保留 dependencies。 */
+function fakeBundles(initial: { bundles: string[]; dependencies: string[] }): {
+  store: ProfileBundleStore
+  calls: Array<{ name: string; enabled: boolean; insertAt?: number }>
+  current: ProfileBundles
+} {
+  const state = { current: { ...initial } }
+  const calls: Array<{ name: string; enabled: boolean; insertAt?: number }> = []
+  const store: ProfileBundleStore = {
+    read: async () => ({ ...state.current }),
+    setEnabled: async (_dir, name, enabled, insertAt) => {
+      calls.push({ name, enabled, ...(insertAt === undefined ? {} : { insertAt }) })
+      const without = state.current.bundles.filter((item) => item !== name)
+      if (!enabled) state.current.bundles = without
+      else if (!state.current.bundles.includes(name)) {
+        const at = insertAt !== undefined && insertAt >= 0 && insertAt <= without.length ? insertAt : without.length
+        state.current.bundles = [...without.slice(0, at), name, ...without.slice(at)]
+      }
+      return state.current.bundles
+    }
+  }
+  return { store, calls, current: state.current as ProfileBundles }
+}
+
 /** 内存版状态存储：验证检查结果落盘与读回。 */
 function memoryStore(): PluginStateStore {
   const files = new Map<string, PluginCheckState>()
   return {
-    read: async (instanceId) => files.get(instanceId) ?? { lastCheckedAt: null, updates: {} },
+    read: async (instanceId) => files.get(instanceId) ?? { lastCheckedAt: null, updates: {}, bundleIndex: {} },
     write: async (instanceId, state) => {
       files.set(instanceId, state)
     }
@@ -376,6 +401,7 @@ describe('createPluginManager.check', () => {
     const stateStore = memoryStore()
     await stateStore.write('inst-1', {
       lastCheckedAt: null,
+      bundleIndex: {},
       updates: {
         '@xbzbing/dsh-git-panel': {
           latest: '1.0.9',
@@ -400,6 +426,7 @@ describe('createPluginManager.check', () => {
     const stateStore = memoryStore()
     await stateStore.write('inst-1', {
       lastCheckedAt: '2026-09-29T00:00:00.000Z',
+      bundleIndex: {},
       updates: {
         '@xbzbing/dsh-git-panel': {
           latest: '2.0.0',
@@ -436,6 +463,82 @@ describe('createPluginManager.check', () => {
     release()
     await pending
     expect((await manager.checkState(localInstance())).checking).toEqual([])
+  })
+
+  it('setEnabled(禁用)：只从 bundles 移除，dependencies 不动，并记下原索引', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const bundles = fakeBundles({
+      bundles: ['@deepseek-ai/dsh-base', '@xbzbing/dsh-git-panel', 'dsh-free-search'],
+      dependencies: ['@xbzbing/dsh-git-panel', 'dsh-free-search']
+    })
+    const stateStore = memoryStore()
+    const manager = createPluginManager({ ...baseOptions(run), stateStore, bundleStore: bundles.store })
+
+    const result = await manager.setEnabled(localInstance(), '@xbzbing/dsh-git-panel', false)
+    expect(result).toEqual({ name: '@xbzbing/dsh-git-panel', enabled: false })
+    expect(bundles.current.bundles).toEqual(['@deepseek-ai/dsh-base', 'dsh-free-search'])
+    expect(bundles.current.dependencies).toEqual(['@xbzbing/dsh-git-panel', 'dsh-free-search'])
+    // 记下原索引（1），供重新启用时插回原位
+    expect((await stateStore.read('inst-1')).bundleIndex['@xbzbing/dsh-git-panel']).toBe(1)
+  })
+
+  it('setEnabled(启用)：按记录的原索引插回', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const bundles = fakeBundles({
+      bundles: ['@deepseek-ai/dsh-base', 'dsh-free-search'],
+      dependencies: ['@xbzbing/dsh-git-panel', 'dsh-free-search']
+    })
+    const stateStore = memoryStore()
+    await stateStore.write('inst-1', {
+      lastCheckedAt: null,
+      updates: {},
+      bundleIndex: { '@xbzbing/dsh-git-panel': 1 }
+    })
+    const manager = createPluginManager({ ...baseOptions(run), stateStore, bundleStore: bundles.store })
+
+    await manager.setEnabled(localInstance(), '@xbzbing/dsh-git-panel', true)
+    expect(bundles.calls[0]).toEqual({ name: '@xbzbing/dsh-git-panel', enabled: true, insertAt: 1 })
+    expect(bundles.current.bundles).toEqual(['@deepseek-ai/dsh-base', '@xbzbing/dsh-git-panel', 'dsh-free-search'])
+  })
+
+  it('setEnabled：列表里已装但非本 profile 依赖的插件被拒', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const bundles = fakeBundles({ bundles: [], dependencies: ['other-plugin'] })
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      stateStore: memoryStore(),
+      bundleStore: bundles.store
+    })
+    await expect(manager.setEnabled(localInstance(), '@xbzbing/dsh-git-panel', false)).rejects.toThrow(/未安装/)
+  })
+
+  it('list：按 bundles 给出 enabled（无 host 半的插件为 null）', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const bundles = fakeBundles({
+      bundles: ['@xbzbing/dsh-git-panel'],
+      dependencies: ['@xbzbing/dsh-git-panel', 'dsh-free-search']
+    })
+    const manager = createPluginManager({ ...baseOptions(run), bundleStore: bundles.store })
+    const plugins = await manager.list(localInstance())
+    // git-panel 在清单里 → 启用；free-search 不在 → 已禁用
+    expect(plugins.find((p) => p.name === '@xbzbing/dsh-git-panel')?.enabled).toBe(true)
+    expect(plugins.find((p) => p.name === 'dsh-free-search')?.enabled).toBe(false)
   })
 
   it('未安装的插件 → 抛错', async () => {

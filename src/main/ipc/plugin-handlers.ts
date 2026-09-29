@@ -14,6 +14,7 @@ import {
   type IpcResult,
   type LocalInstance,
   type PluginCheckSnapshot,
+  type PluginEnableResult,
   type PluginInfo,
   type PluginMutationResult,
   type PluginUpdateCheck
@@ -99,6 +100,18 @@ export function registerPluginHandlers(store: InstanceStore, deps: PluginHandler
       if (!deps.pluginManager) throw new InstanceStoreError('internal', '插件管理能力不可用')
       return deps.pluginManager.remove(instance, pluginName)
     })
+  )
+
+  ipcMain.handle(
+    PLUGIN_IPC.setEnabled,
+    (_event, id: unknown, name: unknown, enabled: unknown): Promise<IpcResult<PluginEnableResult>> =>
+      wrap(async () => {
+        const instance = await requireLocal(id)
+        const pluginName = PLUGIN_NAME_SCHEMA.parse(name)
+        const wantEnabled = z.boolean().parse(enabled)
+        if (!deps.pluginManager) throw new InstanceStoreError('internal', '插件管理能力不可用')
+        return deps.pluginManager.setEnabled(instance, pluginName, wantEnabled)
+      })
   )
 
   ipcMain.handle(PLUGIN_IPC.openExternal, (_event, url: unknown): Promise<IpcResult<null>> =>

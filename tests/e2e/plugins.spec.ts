@@ -109,6 +109,24 @@ test.beforeAll(async () => {
     VERSION
   )
   expect(created.ok).toBe(true)
+  if (!created.ok) throw new Error('创建实例失败')
+  // 播种 profile package.json：dsh 的加载清单决定「启用/禁用」，hub 改的就是它。
+  const profileDir = join(DATA_DIR, 'homes', created.value.id, 'profiles', 'web')
+  await mkdir(profileDir, { recursive: true })
+  await writeFile(
+    join(profileDir, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'dsh-profile-web',
+        private: true,
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'demo-plugin'] } },
+        dependencies: { 'demo-plugin': '1.0.0' }
+      },
+      undefined,
+      2
+    )}\n`,
+    'utf8'
+  )
   await win.reload()
   await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 15_000 })
 })
@@ -120,6 +138,11 @@ test.afterAll(async () => {
 
 /** 打开该实例详情（本机未运行 → openFromSidebar 不直接进工作区，用 detail 按钮直达）。 */
 async function openDetail(): Promise<void> {
+  // 侧栏详情按钮是开关：已在详情页时再点会收起，故先判断。
+  if (await win.getByTestId('view-detail').isVisible()) {
+    await expect(win.getByTestId('plugins-card')).toBeVisible()
+    return
+  }
   const detailBtn = win.locator('[data-testid^="detail-"]').first()
   await detailBtn.click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
@@ -203,3 +226,21 @@ test('一键检查：批量进行中锁定单行检查按钮，结束后解锁',
   await expect(rowCheck).toBeEnabled()
 })
 
+
+test('禁用/启用：禁用后仍在列表可见并标注已禁用，可再次启用', async () => {
+  test.setTimeout(90_000)
+  await openDetail()
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible({ timeout: 15_000 })
+  // 初始为启用态（在 bundles 里）
+  await expect(win.getByTestId('plugin-disabled-demo-plugin')).toHaveCount(0)
+
+  await win.getByTestId('plugin-toggle-demo-plugin').click()
+  // 禁用后：行仍在，出现「已禁用」标注，按钮变为「启用」
+  await expect(win.getByTestId('plugin-disabled-demo-plugin')).toBeVisible({ timeout: 15_000 })
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible()
+  await expect(win.getByTestId('plugin-toggle-demo-plugin')).toContainText('启用')
+
+  // 重新启用：标注消失
+  await win.getByTestId('plugin-toggle-demo-plugin').click()
+  await expect(win.getByTestId('plugin-disabled-demo-plugin')).toHaveCount(0, { timeout: 15_000 })
+})

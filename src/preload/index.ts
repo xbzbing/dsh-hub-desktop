@@ -95,6 +95,8 @@ const bridge: DshHubBridge = {
     upgrade: (id: string, name: string, version: string) =>
       ipcRenderer.invoke(PLUGIN_IPC.upgrade, id, name, version),
     remove: (id: string, name: string) => ipcRenderer.invoke(PLUGIN_IPC.remove, id, name),
+    setEnabled: (id: string, name: string, enabled: boolean) =>
+      ipcRenderer.invoke(PLUGIN_IPC.setEnabled, id, name, enabled),
     openExternal: (url: string) => ipcRenderer.invoke(PLUGIN_IPC.openExternal, url)
   },
   onInstanceStatus: (listener) => subscribe(INSTANCE_STATUS_EVENT, listener),

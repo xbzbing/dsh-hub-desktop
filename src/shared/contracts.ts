@@ -689,6 +689,8 @@ export const PLUGIN_IPC = {
   upgrade: 'plugin:upgrade',
   /** 卸载插件。 */
   remove: 'plugin:remove',
+  /** 启用/禁用插件（改 profile 加载清单，保留依赖）。 */
+  setEnabled: 'plugin:setEnabled',
   /** 在系统默认浏览器打开插件的 npm / GitHub 链接（仅 https 且经域名白名单）。 */
   openExternal: 'plugin:openExternal'
 } as const
@@ -741,6 +743,11 @@ export interface PluginInfo {
   hasClientSide: boolean
   /** 安装来源。 */
   installSource: 'npm' | 'github' | 'file' | 'unknown'
+  /**
+   * 是否在 profile 加载清单（`dsh.profile.bundles`）里。
+   * null = 该插件不由清单控制（无 host 半，随宿主 bundle 加载），无法单独禁用。
+   */
+  enabled: boolean | null
 }
 
 /** 插件检查升级结果。 */
@@ -761,6 +768,12 @@ export interface PluginUpdateCheck {
 /** 插件改动结果：是否含 host 半（决定是否提醒重启）。 */
 export interface PluginMutationResult {
   hasHostSide: boolean
+}
+
+/** 插件启用/禁用结果。 */
+export interface PluginEnableResult {
+  name: string
+  enabled: boolean
 }
 
 /** 单个插件持久化的检查结果（不含「当前版本」，由渲染层按已装版本现算是否有更新）。 */

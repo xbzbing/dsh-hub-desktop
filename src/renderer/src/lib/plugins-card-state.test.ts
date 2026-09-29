@@ -137,7 +137,8 @@ function plugin(name: string, version: string): PluginInfo {
     nodeEngine: null,
     hasHostSide: true,
     hasClientSide: false,
-    installSource: 'npm'
+    installSource: 'npm',
+    enabled: true
   }
 }
 

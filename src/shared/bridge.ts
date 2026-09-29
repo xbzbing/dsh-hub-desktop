@@ -29,6 +29,7 @@ import type {
   PluginInfo,
   PluginMutationResult,
   PluginCheckSnapshot,
+  PluginEnableResult,
   PluginUpdateCheck,
   VaultPolicy,
   VaultStatusSnapshot,
@@ -157,6 +158,8 @@ export interface DshHubBridge {
     upgrade: (id: string, name: string, version: string) => Promise<IpcResult<PluginMutationResult>>
     /** 卸载插件。 */
     remove: (id: string, name: string) => Promise<IpcResult<PluginMutationResult>>
+    /** 启用/禁用插件（改 profile 加载清单，保留依赖；禁用后仍在列表可见）。 */
+    setEnabled: (id: string, name: string, enabled: boolean) => Promise<IpcResult<PluginEnableResult>>
     /** 在系统默认浏览器打开插件的 npm / GitHub 链接（仅 https 且经域名白名单）。 */
     openExternal: (url: string) => Promise<IpcResult<null>>
   }
