@@ -223,7 +223,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
             disabled={checkingAll || plugins === null || plugins.length === 0}
             data-testid="plugins-check-all-btn"
           >
-            <Icon name="search" />
+            <Icon name="sync" />
             {checkingAll ? t('detail.plugin.checkingAll') : t('detail.plugin.checkAll')}
           </button>
           <button
@@ -393,7 +393,7 @@ function PluginRow(props: {
             disabled={check.status === 'checking'}
             data-testid={`plugin-check-${plugin.name}`}
           >
-            <Icon name="search" />
+            <Icon name="sync" />
             {/* 两个候选文案叠放在同一 grid 单元，宽度取最大值：切「检查中…/检查升级」按钮不跳动，
                 中英文各自按各自的最长文案自适应。 */}
             <span className="btn-swap">

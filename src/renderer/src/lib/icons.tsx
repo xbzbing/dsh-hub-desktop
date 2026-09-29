@@ -39,6 +39,7 @@ export type IconName =
   | 'wifi'
   | 'dots'
   | 'github'
+  | 'sync'
 
 const ICONS: Record<IconName, JSX.Element> = {
   hub: (
@@ -190,6 +191,15 @@ const ICONS: Record<IconName, JSX.Element> = {
     <>
       <path d="M20 12a8 8 0 1 1-2.6-5.9" />
       <path d="M20 4v4h-4" />
+    </>
+  ),
+  sync: (
+    // 环形双向箭头：上弧顺时针、下弧逆时针，各带箭头，表示「检查更新 / 同步」。
+    <>
+      <path d="M4.8 12a7.2 7.2 0 0 1 12.3-5.1l1.9 1.9" />
+      <path d="M19 4v4.8h-4.8" />
+      <path d="M19.2 12a7.2 7.2 0 0 1-12.3 5.1l-1.9-1.9" />
+      <path d="M5 20v-4.8h4.8" />
     </>
   ),
   collapse: (

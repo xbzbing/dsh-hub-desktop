@@ -22,7 +22,7 @@ export function DshVersionCheckButton({
       disabled={control.checking || control.active}
       data-testid="check-version-btn"
     >
-      <Icon name="check" />
+      <Icon name="sync" />
       {control.checking ? t('detail.version.checking') : t('detail.version.check')}
     </button>
   )
