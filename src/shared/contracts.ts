@@ -747,9 +747,10 @@ export interface PluginUpdateCheck {
   current: string
   latest: string
   hasUpdate: boolean
-  /** latest 的 dsh peer 是否满足实例当前 dsh 版本。 */
+  /** latest 的 dsh peer 是否满足实例实际运行的 dsh 版本（与安装闸同口径）。 */
   compatible: boolean
   dshPeer: string | null
+  /** 执行插件命令所用 dsh 的版本；null = 未知（无法判定兼容，一律置 compatible=false）。 */
   dshVersion: string | null
   /** latest 发布时间（ISO）；null = registry 未返回。 */
   modifiedAt: string | null

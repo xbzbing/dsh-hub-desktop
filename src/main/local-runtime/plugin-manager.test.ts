@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createPluginManager } from './plugin-manager'
 import type { PluginManagerOptions } from './plugin-manager'
+import { InstanceStoreError } from '../registry/instance-store'
 import type { LocalInstance } from '@shared/contracts'
 import type { CommandResult } from './exec-file'
 
@@ -223,6 +224,38 @@ describe('createPluginManager.list', () => {
     const manager = createPluginManager(baseOptions(run))
     await expect(manager.list(localInstance())).rejects.toThrow(/失败（exit 1）：boom/)
   })
+
+  it('命令失败以 invalid-state 透出 dsh 的拒绝说明（不再收敛成内部错误）', async () => {
+    const rejection =
+      'dsh: installation rejected: Plugin dsh-better-sidebar@0.24.1 is incompatible with dsh 0.1.7-rc.2'
+    const run = vi.fn(async (): Promise<CommandResult> => ({ code: 1, stdout: '', stderr: rejection }))
+    const manager = createPluginManager(baseOptions(run))
+    await expect(manager.list(localInstance())).rejects.toBeInstanceOf(InstanceStoreError)
+    await expect(manager.list(localInstance())).rejects.toMatchObject({
+      code: 'invalid-state',
+      message: expect.stringContaining('installation rejected')
+    })
+  })
+
+  it('公共空间 + 自定义启动器（duush）跟随系统 dsh：用 PATH 实测入口，不用 hub 副本', async () => {
+    const calls: Array<{ args: string[]; env?: NodeJS.ProcessEnv }> = []
+    const run = vi.fn(async (command: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => {
+      void command
+      calls.push({ args, env: opts?.env })
+      return { code: 0, stdout: LIST_JSON, stderr: '' }
+    })
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      homeDir: () => '/Users/me',
+      pathProbe: {
+        probe: async () => ({ command: '/usr/local/bin/dsh', version: '0.2.0-rc.1' })
+      }
+    })
+    await manager.list(localInstance({ useDefaultSpace: true, launcher: 'duush', dshVersion: '0.1.7-rc.2' }))
+    // 入口取 PATH 上的系统 dsh，而不是 hub 已装的 0.1.7-rc.2 副本。
+    expect(calls[0]!.args[0]).toBe('/usr/local/bin/dsh')
+    expect(calls[0]!.env?.DSH_HOME).toBe('/Users/me/.dsh')
+  })
 })
 
 describe('createPluginManager.check', () => {
@@ -293,6 +326,57 @@ describe('createPluginManager.check', () => {
     const run = vi.fn(async (): Promise<CommandResult> => ({ code: 0, stdout: LIST_JSON, stderr: '' }))
     const manager = createPluginManager(baseOptions(run))
     await expect(manager.check(localInstance(), 'nope')).rejects.toThrow(/未安装/)
+  })
+
+  it('兼容判定按实际执行命令的 dsh 版本（注册表固定版本未装、回落到 hub 副本时不再误报兼容）', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          version: '0.24.1',
+          peerDependencies: { '@deepseek-ai/dsh-llm': '^0.2.0-rc.1' }
+        }),
+        stderr: ''
+      }
+    })
+    const manager = createPluginManager(baseOptions(run))
+    // 注册表固定 0.2.0-rc.1（hub 未装、PATH 未探到）→ 命令实际由 hub 的 0.1.7-rc.2 执行，
+    // 判定必须按 0.1.7-rc.2：0.24.1 的 ^0.2.0-rc.1 不满足 → 不给升级按钮。
+    const check = await manager.check(
+      localInstance({ dshVersion: '0.2.0-rc.1' }),
+      '@xbzbing/dsh-git-panel'
+    )
+    expect(check.dshVersion).toBe('0.1.7-rc.2')
+    expect(check.compatible).toBe(false)
+  })
+
+  it('公共空间 + 自定义启动器：按系统 dsh 版本判兼容（0.2.0-rc.1 满足 ^0.2.0-rc.1）', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          version: '0.24.1',
+          peerDependencies: { '@deepseek-ai/dsh-llm': '^0.2.0-rc.1' }
+        }),
+        stderr: ''
+      }
+    })
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      pathProbe: {
+        probe: async () => ({ command: '/usr/local/bin/dsh', version: '0.2.0-rc.1' })
+      }
+    })
+    const check = await manager.check(
+      localInstance({ useDefaultSpace: true, launcher: 'duush', dshVersion: '0.1.7-rc.2' }),
+      '@xbzbing/dsh-git-panel'
+    )
+    expect(check.dshVersion).toBe('0.2.0-rc.1')
+    expect(check.compatible).toBe(true)
   })
 })
 

@@ -930,7 +930,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/plugin-handlers.ts', "throw new InstanceStoreError('invalid-input', '链接必须是 npmjs.com 或 github.com 的 https 地址')"),
   debt('src/main/ipc/plugin-handlers.ts', "if (!deps.openExternalUrl) throw new InstanceStoreError('internal', '打开外链不可用')"),
   debt('src/main/local-runtime/plugin-manager.ts', "if (!current) throw new Error(`插件未安装：${name}`)"),
-  debt('src/main/local-runtime/plugin-manager.ts', "throw new Error(`dsh plugin ${args.join(' ')} 失败（exit ${result.code}）：${tail || '无 stderr'}`)"),
+  debt('src/main/local-runtime/plugin-manager.ts', "`dsh plugin ${args.join(' ')} 失败（exit ${result.code}）：${tail || '无 stderr'}`"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件列表输出')"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件版本信息输出')"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('未找到可用的 dsh：hub 隔离目录与 PATH 上都没有已安装的运行时')"),

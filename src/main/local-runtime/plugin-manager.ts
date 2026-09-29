@@ -14,8 +14,11 @@ import type { LocalInstance } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
 import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
-import type { RuntimeInstaller } from './runtime-installer'
-import type { PathProbe } from './runtime-source'
+import type { InstalledRuntime, RuntimeInstaller } from './runtime-installer'
+import { planRuntimeSource, type PathProbe } from './runtime-source'
+import { followsSystemDsh } from './dsh-source-policy'
+import { compareDshVersions } from './version-compare'
+import { InstanceStoreError } from '../registry/instance-store'
 import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
 import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
 import { evaluateDshPeers, githubUrlFrom, npmUrlFrom } from './peer-compatibility'
@@ -63,7 +66,7 @@ export interface PluginUpdateCheck {
   compatible: boolean
   /** latest 版本声明的 dsh peer 范围；null = 未声明。 */
   dshPeer: string | null
-  /** 实例当前 dsh 版本；null = 未知（无法判定兼容，一律置 compatible=false）。 */
+  /** 实例实际运行的 dsh 版本；null = 未知（无法判定兼容，一律置 compatible=false）。 */
   dshVersion: string | null
   /** latest 发布时间（ISO）；null = registry 未返回。 */
   modifiedAt: string | null
@@ -227,18 +230,42 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   }
 
   /**
-   * 解析可执行 dsh 入口：优先 hub 隔离目录已装版本，其次 PATH 探测。
-   * 插件命令只操作 profile 目录、转发 pnpm，任意 dsh 副本均可执行；此处仍尽量取实例实际使用的版本。
+   * 解析插件命令要用的 dsh 入口及其版本。判据与启动路径共用 dsh-source-policy：
+   * 公共空间 + 自定义启动器（dush/duush）固定跟随系统 dsh（PATH 实测），其余走 planRuntimeSource。
+   *
+   * 版本必须与真正执行命令的副本一致：dsh 的插件安装闸按自身版本判定 peer，若检查阶段用注册表
+   * 版本、执行阶段却落到另一个 hub 副本，就会出现「检查说可升级、安装被 dsh 拒绝」。
    */
-  async function resolveDshEntry(instance: LocalInstance): Promise<string> {
-    const installed = await options.installer.listInstalled().catch(() => [])
-    const preferred = instance.dshVersion
-    const hit =
-      (preferred && installed.find((item) => item.version === preferred)) ??
-      [...installed].sort((a, b) => a.version.localeCompare(b.version)).at(-1)
-    if (hit) return hit.entry
-    const path = options.pathProbe ? await options.pathProbe.probe().catch(() => null) : null
-    if (path) return path.command
+  async function resolveDshEntry(
+    instance: LocalInstance
+  ): Promise<{ entry: string; version: string }> {
+    const followSystemDsh = followsSystemDsh(instance.useDefaultSpace, instance.launcher)
+    const [installed, pathRuntime] = await Promise.all([
+      // 跟随系统 dsh 时 hub 副本不参与决策（与启动路径一致：不装副本、不理会固定版本）。
+      followSystemDsh
+        ? Promise.resolve([] as InstalledRuntime[])
+        : options.installer.listInstalled().catch(() => [] as InstalledRuntime[]),
+      options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
+    ])
+    const plan = followSystemDsh
+      ? pathRuntime === null
+        ? null
+        : { kind: 'path' as const, command: pathRuntime.command, version: pathRuntime.version }
+      : planRuntimeSource({
+          desiredVersion: instance.dshVersion,
+          hubInstalled: installed.map((item) => item.version),
+          pathRuntime
+        })
+    if (plan?.kind === 'path') return { entry: plan.command, version: plan.version }
+    if (plan?.kind === 'hub') {
+      const hit = installed.find((item) => item.version === plan.version)
+      if (hit) return { entry: hit.entry, version: hit.version }
+    }
+    // download（固定版本未安装）或系统 dsh 未探到：插件命令不触发运行时下载，
+    // 回落 hub 已装的最新副本（与实例的 hub 归属一致，判定宁可拦下不误放行），再回落 PATH 实测。
+    const newest = [...installed].sort((a, b) => compareDshVersions(a.version, b.version)).at(-1)
+    if (newest !== undefined) return { entry: newest.entry, version: newest.version }
+    if (pathRuntime !== null) return { entry: pathRuntime.command, version: pathRuntime.version }
     throw new Error('未找到可用的 dsh：hub 隔离目录与 PATH 上都没有已安装的运行时')
   }
 
@@ -254,12 +281,19 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     return { ...process.env, PATH: mergeLoginPath(process.env.PATH ?? '', loginEnvPath) }
   }
 
-  /** 构造并执行一次插件命令；非零退出抛出脱敏后的 stderr 尾部。 */
-  async function runPlugin(instance: LocalInstance, args: string[]): Promise<CommandResult> {
+  /**
+   * 构造并执行一次插件命令；非零退出抛 invalid-state（消息为脱敏后的 stderr 尾部）。
+   * dsh 拒绝安装（不兼容闸、pnpm 失败等）时，这段说明是用户唯一能看到的失败原因，
+   * 必须透出而不是收敛成「内部错误」。
+   */
+  async function runPlugin(
+    instance: LocalInstance,
+    args: string[],
+    resolved: { entry: string; version: string }
+  ): Promise<CommandResult> {
     const { home, profile } = homeAndProfile(instance)
-    const entry = await resolveDshEntry(instance)
     const pluginArgs = ['plugin', '--profile', profile, ...args]
-    const node = resolveNode(entry)
+    const node = resolveNode(resolved.entry)
     // 登录 shell 完整环境 / 仅登录 PATH（见 resolveBaseEnv）：打包后 GUI 启动缺 pnpm/node 目录，
     // dsh plugin 转发 pnpm 会失败；node 目录始终前置，dsh 自己 spawn 的 pnpm 也解析到同一个 node。
     const baseEnv = await resolveBaseEnv()
@@ -272,18 +306,21 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     }
     const invocation =
       node !== null
-        ? { command: node, args: [...nodeInvocation.args, entry, ...pluginArgs], env }
-        : entry.endsWith('.js')
+        ? { command: node, args: [...nodeInvocation.args, resolved.entry, ...pluginArgs], env }
+        : resolved.entry.endsWith('.js')
           ? {
               command: nodeInvocation.command,
-              args: [...nodeInvocation.args, entry, ...pluginArgs],
+              args: [...nodeInvocation.args, resolved.entry, ...pluginArgs],
               env: { ...env, ...nodeInvocation.env, DSH_HOME: home }
             }
-          : { command: entry, args: pluginArgs, env }
+          : { command: resolved.entry, args: pluginArgs, env }
     const result = await run(invocation.command, invocation.args, { env: invocation.env })
     if (result.code !== 0) {
       const tail = redactLine(result.stderr.trim()).split('\n').slice(-8).join('\n')
-      throw new Error(`dsh plugin ${args.join(' ')} 失败（exit ${result.code}）：${tail || '无 stderr'}`)
+      throw new InstanceStoreError(
+        'invalid-state',
+        `dsh plugin ${args.join(' ')} 失败（exit ${result.code}）：${tail || '无 stderr'}`
+      )
     }
     return result
   }
@@ -330,13 +367,21 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   }
 
   /** 判定一个包名当前是否含 host 半（改动后决定是否提醒重启）。 */
-  async function hostSideOf(instance: LocalInstance, name: string): Promise<boolean> {
-    const plugins = await list(instance)
+  async function hostSideOf(
+    instance: LocalInstance,
+    name: string,
+    resolved: { entry: string; version: string }
+  ): Promise<boolean> {
+    const plugins = await listPlugins(instance, 'zh', resolved)
     return plugins.find((plugin) => plugin.name === name)?.hasHostSide ?? false
   }
 
-  async function list(instance: LocalInstance, locale: PluginLocale = 'zh'): Promise<PluginInfo[]> {
-    const result = await runPlugin(instance, ['list', '--json'])
+  async function listPlugins(
+    instance: LocalInstance,
+    locale: PluginLocale,
+    resolved: { entry: string; version: string }
+  ): Promise<PluginInfo[]> {
+    const result = await runPlugin(instance, ['list', '--json'], resolved)
     let parsed: unknown
     try {
       parsed = JSON.parse(result.stdout || '[]')
@@ -355,21 +400,21 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   }
 
   return {
-    list,
+    async list(instance, locale = 'zh'): Promise<PluginInfo[]> {
+      return listPlugins(instance, locale, await resolveDshEntry(instance))
+    },
 
     async check(instance, name): Promise<PluginUpdateCheck> {
-      const plugins = await list(instance)
+      const resolved = await resolveDshEntry(instance)
+      const plugins = await listPlugins(instance, 'zh', resolved)
       const current = plugins.find((plugin) => plugin.name === name)
       if (!current) throw new Error(`插件未安装：${name}`)
       // view 联网取 latest 的版本、dsh peer 与发布时间。
-      const result = await runPlugin(instance, [
-        'view',
-        name,
-        'version',
-        'peerDependencies',
-        'time.modified',
-        '--json'
-      ])
+      const result = await runPlugin(
+        instance,
+        ['view', name, 'version', 'peerDependencies', 'time.modified', '--json'],
+        resolved
+      )
       let meta: {
         version?: string
         peerDependencies?: Record<string, string>
@@ -383,7 +428,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       const latest = meta.version ?? current.version
       const peers = meta.peerDependencies ?? {}
       const dshPeer = peers[DSH_PEER] ?? null
-      const dshVersion = instance.dshVersion ?? null
+      // 按**实际执行命令的** dsh 版本判定，与安装闸同口径：注册表字段可能与真正运行的副本不一致。
+      const dshVersion = resolved.version
       // 与 dsh 加载器同口径：主包与全部 @deepseek-ai/dsh-* 子包 peer 都要满足运行时版本，
       // 任一不满足即不兼容（0.24.1 的子包锁 ^0.2.0-rc.1，实例 0.1.7-rc.2 会被拦）。
       const incompatiblePeers = evaluateDshPeers(peers, dshVersion)
@@ -401,24 +447,27 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     },
 
     async install(instance, spec): Promise<PluginMutationResult> {
-      await runPlugin(instance, ['add', spec])
+      const resolved = await resolveDshEntry(instance)
+      await runPlugin(instance, ['add', spec], resolved)
       // 安装后按包名读元数据判 host 半：spec 可能是 name / name@ver / github: / file:，
       // 统一以列表里出现的新插件为准（含 host 半即提醒重启）。
-      const plugins = await list(instance)
+      const plugins = await listPlugins(instance, 'zh', resolved)
       const hasHostSide = plugins.some((plugin) => plugin.hasHostSide && specMatchesName(spec, plugin.name))
       return { hasHostSide }
     },
 
     async upgrade(instance, name, version): Promise<PluginMutationResult> {
-      const hadHostSide = await hostSideOf(instance, name)
-      await runPlugin(instance, ['add', `${name}@${version}`])
-      return { hasHostSide: hadHostSide || (await hostSideOf(instance, name)) }
+      const resolved = await resolveDshEntry(instance)
+      const hadHostSide = await hostSideOf(instance, name, resolved)
+      await runPlugin(instance, ['add', `${name}@${version}`], resolved)
+      return { hasHostSide: hadHostSide || (await hostSideOf(instance, name, resolved)) }
     },
 
     async remove(instance, name): Promise<PluginMutationResult> {
+      const resolved = await resolveDshEntry(instance)
       // 卸载前先判 host 半（卸载后包已不在，读不到元数据）。
-      const hasHostSide = await hostSideOf(instance, name)
-      await runPlugin(instance, ['remove', name])
+      const hasHostSide = await hostSideOf(instance, name, resolved)
+      await runPlugin(instance, ['remove', name], resolved)
       return { hasHostSide }
     }
   }
