@@ -874,7 +874,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/register.ts', "if (!deps.openAbout) throw new HomepageOpenError('internal', '打开关于面板不可用')"),
   debt('src/main/shell/open-data-dir.ts', "if (dir === '') throw new DataDirOpenError('internal', '数据目录不可用')"),
   debt('src/main/registry/instance-store.ts', "return new InstanceStoreError('io-error', `注册表 IO 失败：${message}`)"),
-  debt('src/main/ipc/ipc-utils.ts', "return fail('internal', '内部错误，请查看主进程日志')"),
+  debt('src/main/ipc/ipc-utils.ts', "return fail('internal', '内部错误，请查看应用日志')"),
   debt('src/main/ipc/instance-handlers.ts', "throw new InstanceStoreError('invalid-input', '只有 SSH 隧道实例才有主机指纹')"),
   debt('src/main/ipc/instance-handlers.ts', "if (!deps.listLocalSpaces) throw new InstanceStoreError('invalid-state', '本机隔离空间管理不可用')"),
   debt('src/main/ipc/instance-handlers.ts', "if (!deps.trashLocalSpace) throw new InstanceStoreError('invalid-state', '本机隔离空间管理不可用')"),

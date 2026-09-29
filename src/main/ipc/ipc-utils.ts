@@ -46,7 +46,7 @@ export async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>>
     if (error instanceof HomepageOpenError) return fail(error.code, error.message)
     // 内部错误不透传细节(可能含 fs 路径),只记主进程日志;只记错误类型与消息,不序列化整个错误对象
     console.error('[ipc] 未预期错误：', error instanceof Error ? `${error.name}: ${error.message}` : String(error))
-    return fail('internal', '内部错误，请查看主进程日志')
+    return fail('internal', '内部错误，请查看应用日志')
   }
 }
 
