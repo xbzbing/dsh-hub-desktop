@@ -228,6 +228,12 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
       <div className="card-head">
         <h3>{t('detail.plugin.title')}</h3>
         <div className="row" style={{ gap: 8 }}>
+          {/* 上次检查更新时刻：本会话内任一检查（单条或批量）完成即刷新，紧邻刷新按钮左侧。 */}
+          {lastCheckedAt !== null && (
+            <span className="meta plugin-last-checked" data-testid="plugins-last-checked">
+              {t('detail.plugin.lastChecked', { time: fmtLogTime(lastCheckedAt) })}
+            </span>
+          )}
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => void load()}
@@ -254,13 +260,6 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
           </button>
         </div>
       </div>
-
-      {/* 上次检查更新时刻：本会话内任一检查（单条或批量）完成即刷新。 */}
-      {lastCheckedAt !== null && (
-        <p className="meta plugin-last-checked" data-testid="plugins-last-checked">
-          {t('detail.plugin.lastChecked', { time: fmtLogTime(lastCheckedAt) })}
-        </p>
-      )}
 
       {loadError !== null && (
         <p className="meta err-text" data-testid="plugins-load-error">

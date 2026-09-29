@@ -2102,9 +2102,9 @@ details.adv[open] {
   white-space: nowrap;
   min-width: 0;
 }
-/* 上次检查更新时刻：卡头下方一行，次要色。 */
+/* 上次检查更新时刻：卡头操作区内、刷新按钮左侧，次要色，单行不折。 */
 .plugin-last-checked {
-  margin: 4px 0 0;
+  white-space: nowrap;
 }
 /* 检查升级按钮：两个候选文案叠放在同一 grid 单元，按钮宽度取二者最大，
    切「检查中…/检查升级」不跳动；中英文各按各自最长文案自适应，无需硬编码宽度。 */
