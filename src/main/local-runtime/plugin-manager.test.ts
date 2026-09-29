@@ -80,7 +80,7 @@ function fakeBundles(initial: { bundles: string[]; dependencies: string[] }): {
 function memoryStore(): PluginStateStore {
   const files = new Map<string, PluginCheckState>()
   return {
-    read: async (instanceId) => files.get(instanceId) ?? { lastCheckedAt: null, updates: {}, bundleIndex: {} },
+    read: async (instanceId) => files.get(instanceId) ?? { lastCheckedAt: null, updates: {}, bundleIndex: {}, runtimeVersion: null, autoDisabled: [] },
     write: async (instanceId, state) => {
       files.set(instanceId, state)
     }
@@ -402,6 +402,8 @@ describe('createPluginManager.check', () => {
     await stateStore.write('inst-1', {
       lastCheckedAt: null,
       bundleIndex: {},
+      runtimeVersion: null,
+      autoDisabled: [],
       updates: {
         '@xbzbing/dsh-git-panel': {
           latest: '1.0.9',
@@ -427,6 +429,8 @@ describe('createPluginManager.check', () => {
     await stateStore.write('inst-1', {
       lastCheckedAt: '2026-09-29T00:00:00.000Z',
       bundleIndex: {},
+      runtimeVersion: null,
+      autoDisabled: [],
       updates: {
         '@xbzbing/dsh-git-panel': {
           latest: '2.0.0',
@@ -500,7 +504,9 @@ describe('createPluginManager.check', () => {
     await stateStore.write('inst-1', {
       lastCheckedAt: null,
       updates: {},
-      bundleIndex: { '@xbzbing/dsh-git-panel': 1 }
+      bundleIndex: { '@xbzbing/dsh-git-panel': 1 },
+      runtimeVersion: null,
+      autoDisabled: []
     })
     const manager = createPluginManager({ ...baseOptions(run), stateStore, bundleStore: bundles.store })
 
@@ -539,6 +545,108 @@ describe('createPluginManager.check', () => {
     // git-panel 在清单里 → 启用；free-search 不在 → 已禁用
     expect(plugins.find((p) => p.name === '@xbzbing/dsh-git-panel')?.enabled).toBe(true)
     expect(plugins.find((p) => p.name === 'dsh-free-search')?.enabled).toBe(false)
+  })
+
+  it('reconcileRuntime：版本未变 → 无操作', async () => {
+    const stateStore = memoryStore()
+    await stateStore.write('inst-1', {
+      lastCheckedAt: null,
+      updates: {},
+      bundleIndex: {},
+      runtimeVersion: '0.2.0-rc.1',
+      autoDisabled: []
+    })
+    const bundles = fakeBundles({ bundles: ['a'], dependencies: ['a'] })
+    const manager = createPluginManager({
+      ...baseOptions(vi.fn()),
+      stateStore,
+      bundleStore: bundles.store
+    })
+    expect(await manager.reconcileRuntime(localInstance(), '0.2.0-rc.1')).toEqual({
+      checked: false,
+      disabled: []
+    })
+    expect(bundles.calls).toEqual([])
+  })
+
+  it('reconcileRuntime：版本变更 → 禁用与新版不兼容的 host 半插件并记录', async () => {
+    const bundles = fakeBundles({
+      bundles: ['@deepseek-ai/dsh-base', 'bad-plugin', 'good-plugin'],
+      dependencies: ['bad-plugin', 'good-plugin']
+    })
+    const stateStore = memoryStore()
+    // bad-plugin 要求 ^0.2.0-rc.1；good-plugin 无 dsh peer 约束
+    const manager = createPluginManager({
+      ...baseOptions(vi.fn()),
+      stateStore,
+      bundleStore: bundles.store,
+      readManifest: (dir) => {
+        if (dir.includes('bad-plugin')) {
+          return {
+            name: 'bad-plugin',
+            version: '1.0.0',
+            dsh: { bundle: { patch: './cordis.patch.yml' } },
+            peerDependencies: { '@deepseek-ai/dsh-llm': '^0.2.0-rc.1' }
+          }
+        }
+        if (dir.includes('good-plugin')) {
+          return {
+            name: 'good-plugin',
+            version: '2.0.0',
+            dsh: { bundle: { patch: './cordis.patch.yml' } },
+            peerDependencies: { '@deepseek-ai/dsh-llm': '^0.1.0' }
+          }
+        }
+        return null
+      }
+    })
+
+    const result = await manager.reconcileRuntime(localInstance(), '0.1.7-rc.2')
+    expect(result.checked).toBe(true)
+    expect(result.disabled).toEqual([{ name: 'bad-plugin', version: '1.0.0', dshVersion: '0.1.7-rc.2' }])
+    // 只移除了不兼容的那个，且记下原索引
+    expect(bundles.current.bundles).toEqual(['@deepseek-ai/dsh-base', 'good-plugin'])
+    const state = await stateStore.read('inst-1')
+    expect(state.runtimeVersion).toBe('0.1.7-rc.2')
+    expect(state.autoDisabled).toEqual([
+      { name: 'bad-plugin', version: '1.0.0', dshVersion: '0.1.7-rc.2' }
+    ])
+    expect(state.bundleIndex['bad-plugin']).toBe(1)
+    // checkState 会把提示明细带给渲染层
+    expect((await manager.checkState(localInstance())).autoDisabled).toHaveLength(1)
+  })
+
+  it('reconcileRuntime：纯 client 插件（无 host 半）不参与判定', async () => {
+    const bundles = fakeBundles({ bundles: ['@deepseek-ai/dsh-base'], dependencies: ['client-only'] })
+    const manager = createPluginManager({
+      ...baseOptions(vi.fn()),
+      stateStore: memoryStore(),
+      bundleStore: bundles.store,
+      readManifest: () => ({
+        name: 'client-only',
+        version: '1.0.0',
+        dsh: { client: { platform: 'web' } },
+        peerDependencies: { '@deepseek-ai/dsh-llm': '^9.0.0' }
+      })
+    })
+    expect(await manager.reconcileRuntime(localInstance(), '0.1.7-rc.2')).toEqual({
+      checked: true,
+      disabled: []
+    })
+  })
+
+  it('reconcileRuntime：profile 尚未初始化 → 只记版本，不判定', async () => {
+    const store: ProfileBundleStore = {
+      read: async () => null,
+      setEnabled: async () => []
+    }
+    const stateStore = memoryStore()
+    const manager = createPluginManager({ ...baseOptions(vi.fn()), stateStore, bundleStore: store })
+    expect(await manager.reconcileRuntime(localInstance(), '0.1.7-rc.2')).toEqual({
+      checked: false,
+      disabled: []
+    })
+    expect((await stateStore.read('inst-1')).runtimeVersion).toBe('0.1.7-rc.2')
   })
 
   it('未安装的插件 → 抛错', async () => {

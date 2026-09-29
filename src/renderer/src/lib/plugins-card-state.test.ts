@@ -153,7 +153,8 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
       updates: {
         a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: '0.2.0-rc.1', modifiedAt: null }
       },
-      checking: []
+      checking: [],
+      autoDisabled: []
     })
     expect(restored.a?.status).toBe('done')
     expect(restored.a?.result).toMatchObject({ current: '1.0.0', latest: '1.2.0', hasUpdate: true })
@@ -165,7 +166,8 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
       updates: {
         a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null }
       },
-      checking: []
+      checking: [],
+      autoDisabled: []
     })
     expect(restored.a).toBeUndefined()
   })
@@ -176,7 +178,8 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
       updates: {
         a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null }
       },
-      checking: ['a']
+      checking: ['a'],
+      autoDisabled: []
     })
     expect(restored.a).toEqual({ status: 'checking', result: null, error: null })
   })
@@ -187,7 +190,8 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
       updates: {
         a: { latest: '9.9.9', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null }
       },
-      checking: []
+      checking: [],
+      autoDisabled: []
     })
     expect(restored).toEqual({})
   })

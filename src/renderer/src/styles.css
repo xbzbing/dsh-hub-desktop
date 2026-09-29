@@ -2042,6 +2042,24 @@ details.adv[open] {
 .plugin-row:first-child {
   border-top: none;
 }
+/* 运行时变更后自动禁用不兼容插件的提示条。 */
+.plugin-auto-disabled {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--warn-soft);
+}
+.plugin-auto-disabled-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
 /* 已禁用：整行淡化，但操作（启用/升级/卸载/检查）照常可用。 */
 .plugin-row--disabled .plugin-name,
 .plugin-row--disabled .plugin-pkgname,

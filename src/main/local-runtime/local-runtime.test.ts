@@ -196,6 +196,42 @@ describe('createLocalRuntime', () => {
     ])
   })
 
+  it('beforeSpawn：在 spawn 前以解析出的 dsh 版本调用；抛错不阻断启动', async () => {
+    const child = new EventEmitter() as unknown as FakeChild
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.pid = 999993
+    child.killCall = []
+    child.kill = vi.fn(() => true) as never
+    const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
+    const seen: string[] = []
+
+    const manager = createLocalRuntime({
+      store: storeStub,
+      confirmDownload: async () => true,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      spawnImpl: spawnImpl as never,
+      probe: vi.fn(async () => true),
+      resolveNode: () => null,
+      readyTimeoutMs: 2000,
+      beforeSpawn: async (_instance, version) => {
+        seen.push(version)
+        throw new Error('核对失败也不该阻断启动')
+      }
+    })
+
+    const instance = localInstance()
+    const starting = manager.start(instance)
+    child.stdout.write(readyLine())
+    await starting
+    await waitForStatus(manager, instance.id, 'running')
+
+    // 版本来自启动计划（hub 固定版本），且核对失败不影响启动结果
+    expect(seen).toEqual(['0.1.5-rc.1'])
+    expect(spawnImpl).toHaveBeenCalled()
+  })
+
   it.each(['dush', 'duush'] as const)(
     '选择 %s 启动器时由 Hub 固定 web、回环端口和 --no-open',
     async (launcher) => {

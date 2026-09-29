@@ -795,6 +795,17 @@ export interface PluginCheckSnapshot {
   updates: Record<string, PluginCheckRecord>
   /** 正在检查中的插件名。 */
   checking: string[]
+  /** 最近一次「dsh 版本变更后核对」中被自动禁用的插件（供界面提示）。 */
+  autoDisabled: PluginAutoDisabled[]
+}
+
+/** 因与运行时 dsh 不兼容而被自动禁用的插件。 */
+export interface PluginAutoDisabled {
+  name: string
+  /** 被禁用时的插件版本。 */
+  version: string
+  /** 判定不兼容时的 dsh 版本。 */
+  dshVersion: string
 }
 
 

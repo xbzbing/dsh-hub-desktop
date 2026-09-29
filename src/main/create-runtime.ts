@@ -129,7 +129,18 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
     // 公共空间实例的升级改写的是系统默认 dsh（对所有使用者全局生效），必须二次确认；
     // 拒绝时本次升级不产生任何进度、不改任何状态。
     confirmSystemUpgrade: (latest, current) =>
-      confirmViaRenderer({ kind: 'system-dsh-upgrade', latest, current })
+      confirmViaRenderer({ kind: 'system-dsh-upgrade', latest, current }),
+    // dsh 运行时版本变更后的首次启动：核对已启用插件的 peer，自动禁用与新版不兼容的插件。
+    beforeSpawn: async (instance, version) => {
+      const result = await pluginManager.reconcileRuntime(instance, version)
+      if (result.disabled.length > 0) {
+        console.warn(
+          '[main] 已自动禁用与 dsh %s 不兼容的插件：%s',
+          version,
+          result.disabled.map((item) => `${item.name}@${item.version}`).join('、')
+        )
+      }
+    }
   })
 
   promptBroker = createPromptBroker({

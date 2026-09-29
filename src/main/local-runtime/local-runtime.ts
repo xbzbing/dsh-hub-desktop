@@ -88,6 +88,11 @@ export interface LocalRuntimeOptions extends LaunchOptions {
    * 返回 false = 用户拒绝，本次升级不产生任何进度、不改任何状态。缺省视为拒绝。
    */
   confirmSystemUpgrade?: (latest: string, current: string) => Promise<boolean>
+  /**
+   * 每次启动、确定目标 dsh 版本后、真正 spawn 前调用（不阻断启动流程的失败由实现方自行收敛）。
+   * 用于「dsh 版本变更后首次启动核对插件兼容性」这类与运行时版本绑定的准备工作。
+   */
+  beforeSpawn?: (instance: LocalInstance, version: string) => Promise<void>
 }
 
 export interface LocalRuntimeManager {
@@ -357,6 +362,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
 
   // 启动来源解析与 spawn 管线在 launch.ts；此处注入状态发布、共享状态、解析后的启动配置
   // 与管理器侧的就绪监视续体（watchStdout）和进程回收（killTree）。
+  const beforeSpawn = options.beforeSpawn
   const { resolveLaunch, spawnAndWatch } = createLauncher({
     emit,
     entries,
@@ -508,6 +514,15 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       try {
         const launch = await resolveLaunch(id, gen, instance)
         if (launch === null) return
+        // 目标版本已定、尚未 spawn：与运行时版本绑定的准备（如插件兼容性核对）在此进行；
+        // 失败只记日志，绝不阻断启动——插件问题不该让实例起不来。
+        if (beforeSpawn !== undefined) {
+          try {
+            await beforeSpawn(instance, launch.version)
+          } catch (error) {
+            console.error('[runtime] 启动前准备失败（已忽略，不影响启动）：', error)
+          }
+        }
         // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
         // 关键:串行段要等到「就绪或退出」才结束 —— 端口探测与 dsh 实际绑定之间存在竞态窗口,
         // 若只等 spawn 就放行,两个实例会抢同一端口,后启动的那个会崩溃。

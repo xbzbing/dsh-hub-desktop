@@ -15,6 +15,15 @@ import type { PluginCheckRecord } from '@shared/contracts'
 
 export type { PluginCheckRecord }
 
+/** 因与运行时 dsh 不兼容而被自动禁用的插件。 */
+export interface AutoDisabledPlugin {
+  name: string
+  /** 被禁用时的插件版本。 */
+  version: string
+  /** 判定不兼容时的 dsh 版本。 */
+  dshVersion: string
+}
+
 export interface PluginCheckState {
   /** 上次完成检查的时刻（ISO）；null = 尚未检查过。 */
   lastCheckedAt: string | null
@@ -22,6 +31,10 @@ export interface PluginCheckState {
   updates: Record<string, PluginCheckRecord>
   /** 插件名 → 被禁用时在 `dsh.profile.bundles` 里的索引，重新启用时按它插回原位。 */
   bundleIndex: Record<string, number>
+  /** 上次「运行时版本变更后核对插件兼容性」时记录的 dsh 版本；null = 尚未核对过。 */
+  runtimeVersion: string | null
+  /** 最近一次核对中因不兼容被自动禁用的插件（供界面提示）。 */
+  autoDisabled: AutoDisabledPlugin[]
 }
 
 export interface PluginStateStore {
@@ -30,7 +43,13 @@ export interface PluginStateStore {
   write(instanceId: string, state: PluginCheckState): Promise<void>
 }
 
-const EMPTY_STATE: PluginCheckState = { lastCheckedAt: null, updates: {}, bundleIndex: {} }
+const EMPTY_STATE: PluginCheckState = {
+  lastCheckedAt: null,
+  updates: {},
+  bundleIndex: {},
+  runtimeVersion: null,
+  autoDisabled: []
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -38,7 +57,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** 宽松解析：字段类型不对就丢弃该字段，不因单条脏数据丢掉整份状态。 */
 function parseState(raw: unknown): PluginCheckState {
-  if (!isRecord(raw)) return { ...EMPTY_STATE, updates: {}, bundleIndex: {} }
+  if (!isRecord(raw)) return { ...EMPTY_STATE, updates: {}, bundleIndex: {}, autoDisabled: [] }
   const lastCheckedAt = typeof raw.lastCheckedAt === 'string' ? raw.lastCheckedAt : null
   const updates: Record<string, PluginCheckRecord> = {}
   const source = isRecord(raw.updates) ? raw.updates : {}
@@ -58,7 +77,20 @@ function parseState(raw: unknown): PluginCheckState {
   for (const [name, value] of Object.entries(indexSource)) {
     if (typeof value === 'number' && Number.isInteger(value) && value >= 0) bundleIndex[name] = value
   }
-  return { lastCheckedAt, updates, bundleIndex }
+  const runtimeVersion = typeof raw.runtimeVersion === 'string' ? raw.runtimeVersion : null
+  const autoDisabled: AutoDisabledPlugin[] = []
+  if (Array.isArray(raw.autoDisabled)) {
+    for (const item of raw.autoDisabled) {
+      if (!isRecord(item)) continue
+      if (typeof item.name !== 'string' || typeof item.version !== 'string') continue
+      autoDisabled.push({
+        name: item.name,
+        version: item.version,
+        dshVersion: typeof item.dshVersion === 'string' ? item.dshVersion : ''
+      })
+    }
+  }
+  return { lastCheckedAt, updates, bundleIndex, runtimeVersion, autoDisabled }
 }
 
 export function createPluginStateStore(dataRoot: string): PluginStateStore {
@@ -70,7 +102,7 @@ export function createPluginStateStore(dataRoot: string): PluginStateStore {
       try {
         return parseState(JSON.parse(await readFile(fileFor(instanceId), 'utf8')))
       } catch {
-        return { ...EMPTY_STATE, updates: {}, bundleIndex: {} }
+        return { ...EMPTY_STATE, updates: {}, bundleIndex: {}, autoDisabled: [] }
       }
     },
 

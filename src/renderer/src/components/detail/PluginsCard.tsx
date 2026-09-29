@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { PluginInfo } from '@shared/contracts'
+import type { PluginAutoDisabled, PluginInfo } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
 import { fmtLogTime } from '../../lib/format'
@@ -76,6 +76,9 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   const [restartPrompt, setRestartPrompt] = useState<RestartPrompt | null>(null)
   /** 上次「检查更新」完成时刻（对整卡的批量或单条检查都刷新）；null = 本会话尚未检查。 */
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null)
+  /** 上次运行时核对中被自动禁用的插件（界面提示用）；null = 无。 */
+  const [autoDisabled, setAutoDisabled] = useState<PluginAutoDisabled[] | null>(null)
+  const [autoDisabledSeen, setAutoDisabledSeen] = useState(false)
   const [checkingAll, setCheckingAll] = useState(false)
 
   /**
@@ -101,13 +104,27 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
         } else {
           setChecks(restoreChecks(result.value, state.ok ? state.value : null))
         }
-        if (state.ok) setLastCheckedAt(state.value.lastCheckedAt)
+        if (state.ok) {
+          setLastCheckedAt(state.value.lastCheckedAt)
+          const disabled = state.value.autoDisabled
+          setAutoDisabled(disabled.length > 0 ? disabled : null)
+          if (disabled.length > 0 && !autoDisabledSeen) {
+            setAutoDisabledSeen(true)
+            const list = disabled.map((item) => item.name).join(t('common.listSeparator'))
+            const dshVersion = disabled[0]?.dshVersion ?? ''
+            logActivity(t('detail.plugin.log.autoDisabled', { dshVersion, list }))
+            toast('err', t('detail.plugin.autoDisabledTitle'), t('detail.plugin.autoDisabledBody', {
+              dshVersion,
+              list
+            }))
+          }
+        }
       } else {
         setLoadError(result.message)
         setPlugins([])
       }
     },
-    [instanceId, language]
+    [instanceId, language, autoDisabledSeen, logActivity, t, toast]
   )
 
   useEffect(() => {
@@ -309,6 +326,28 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
           </button>
         </div>
       </div>
+
+      {autoDisabled !== null && (
+        <div className="plugin-auto-disabled" data-testid="plugins-auto-disabled">
+          <Icon name="alert" />
+          <div className="plugin-auto-disabled-body">
+            <strong>{t('detail.plugin.autoDisabledTitle')}</strong>
+            <span className="meta">
+              {t('detail.plugin.autoDisabledBody', {
+                dshVersion: autoDisabled[0]?.dshVersion ?? '',
+                list: autoDisabled.map((item) => item.name).join(t('common.listSeparator'))
+              })}
+            </span>
+          </div>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setAutoDisabled(null)}
+            data-testid="plugins-auto-disabled-dismiss"
+          >
+            {t('detail.plugin.autoDisabledDismiss')}
+          </button>
+        </div>
+      )}
 
       {loadError !== null && (
         <p className="meta err-text" data-testid="plugins-load-error">

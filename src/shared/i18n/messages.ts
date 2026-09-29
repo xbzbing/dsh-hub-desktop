@@ -24,6 +24,8 @@ export const MESSAGES = {
   'common.loading': { zh: '加载中…', en: 'Loading…' },
   'common.backToOverview': { zh: '回到总览', en: 'Back to overview' },
   'common.unknown': { zh: '未知', en: 'Unknown' },
+  /** 列表连接符：中文用顿号、英文用逗号加空格（避免在代码里硬编码中日韩标点）。 */
+  'common.listSeparator': { zh: '、', en: ', ' },
 
   // —— 侧栏 / 导航 ——
   'nav.overview': { zh: '总览', en: 'Overview' },
@@ -387,6 +389,16 @@ export const MESSAGES = {
   'detail.plugin.checkFailed': { zh: '检查失败：{msg}', en: 'Check failed: {msg}' },
   'detail.plugin.remove': { zh: '卸载', en: 'Uninstall' },
   'detail.plugin.removing': { zh: '卸载中…', en: 'Uninstalling…' },
+  'detail.plugin.autoDisabledTitle': { zh: '已自动禁用不兼容的插件', en: 'Incompatible plugins disabled' },
+  'detail.plugin.autoDisabledBody': {
+    zh: 'dsh {dshVersion} 与以下插件的声明不兼容，已禁用它们以免启动异常：{list}。升级插件后可在列表中重新启用。',
+    en: 'dsh {dshVersion} is incompatible with these plugins, so they were disabled to avoid startup problems: {list}. Upgrade them, then re-enable them in the list.'
+  },
+  'detail.plugin.autoDisabledDismiss': { zh: '知道了', en: 'Got it' },
+  'detail.plugin.log.autoDisabled': {
+    zh: 'dsh {dshVersion} 不兼容，已自动禁用：{list}',
+    en: 'Incompatible with dsh {dshVersion}; disabled: {list}'
+  },
   'detail.plugin.disable': { zh: '禁用', en: 'Disable' },
   'detail.plugin.enable': { zh: '启用', en: 'Enable' },
   'detail.plugin.disabling': { zh: '处理中…', en: 'Working…' },

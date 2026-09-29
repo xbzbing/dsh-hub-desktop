@@ -23,7 +23,7 @@ import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
 import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
 import { evaluateDshPeers, githubUrlFrom, npmUrlFrom } from './peer-compatibility'
 import { createPluginStateStore } from './plugin-state'
-import type { PluginStateStore } from './plugin-state'
+import type { AutoDisabledPlugin, PluginStateStore } from './plugin-state'
 import { createProfileBundleStore } from './profile-bundles'
 import type { ProfileBundleStore } from './profile-bundles'
 import { nodeModeExecutable } from '../node-mode'
@@ -160,6 +160,19 @@ export interface PluginManager {
   checkState(instance: LocalInstance): Promise<PluginCheckSnapshot>
   /** 启用/禁用插件（改 profile 的 bundles，保留 dependencies）；返回变更后的状态。 */
   setEnabled(instance: LocalInstance, name: string, enabled: boolean): Promise<PluginEnableResult>
+  /**
+   * dsh 运行时版本变更后的首次启动：核对已启用插件的 peer 是否兼容新版本，
+   * 不兼容的自动禁用（移出 bundles）并返回明细。版本未变时为无操作。
+   */
+  reconcileRuntime(instance: LocalInstance, runtimeVersion: string): Promise<RuntimeReconcileResult>
+}
+
+/** 运行时变更后的核对结果。 */
+export interface RuntimeReconcileResult {
+  /** 本次是否真的做了核对（版本未变 / 无 profile 时为 false）。 */
+  checked: boolean
+  /** 因与新版 dsh 不兼容而被禁用的插件。 */
+  disabled: AutoDisabledPlugin[]
 }
 
 /** 启用/禁用结果。 */
@@ -288,7 +301,11 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     if (record === null) delete updates[name]
     else updates[name] = record
     await stateStore
-      .write(instanceId, { lastCheckedAt: new Date().toISOString(), updates, bundleIndex: state.bundleIndex })
+      .write(instanceId, {
+        ...state,
+        lastCheckedAt: new Date().toISOString(),
+        updates
+      })
       .catch((error: unknown) => {
         // 状态落盘失败不影响本次检查结果：只是重启后看不到标记。
         console.error('[plugin] 写入插件检查状态失败：', error)
@@ -531,7 +548,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       return {
         lastCheckedAt: state.lastCheckedAt,
         updates: state.updates,
-        checking: [...(inFlightChecks.get(instance.id) ?? [])]
+        checking: [...(inFlightChecks.get(instance.id) ?? [])],
+        autoDisabled: state.autoDisabled
       }
     },
 
@@ -564,6 +582,51 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
         .write(instance.id, { ...state, bundleIndex })
         .catch((error: unknown) => console.error('[plugin] 写入插件检查状态失败：', error))
       return { name, enabled }
+    },
+
+    async reconcileRuntime(instance, runtimeVersion): Promise<RuntimeReconcileResult> {
+      const state = await stateStore.read(instance.id)
+      if (state.runtimeVersion === runtimeVersion) return { checked: false, disabled: [] }
+
+      const { home, profile } = homeAndProfile(instance)
+      const profileDir = join(home, 'profiles', profile)
+      const profileBundles = await bundleStore.read(profileDir)
+      // profile 尚未初始化（实例从未真正启动过）：只记下版本，不做判定。
+      if (profileBundles === null) {
+        await stateStore
+          .write(instance.id, { ...state, runtimeVersion, autoDisabled: [] })
+          .catch((error: unknown) => console.error('[plugin] 写入插件检查状态失败：', error))
+        return { checked: false, disabled: [] }
+      }
+
+      const profileNodeModules = join(profileDir, 'node_modules')
+      const bundleIndex = { ...state.bundleIndex }
+      const disabled: AutoDisabledPlugin[] = []
+      for (const name of profileBundles.dependencies) {
+        if (!profileBundles.bundles.includes(name)) continue
+        const manifestDir = join(profileNodeModules, ...name.split('/'))
+        const manifest = readManifest(manifestDir)
+        const patch = manifest?.dsh?.bundle?.patch
+        // 只核对由 bundles 加载的 host 半插件（纯 client 插件不由清单控制）。
+        if (manifest === null || typeof patch !== 'string' || patch === '') continue
+        const peers = manifest.peerDependencies ?? {}
+        if (Object.keys(evaluateDshPeers(peers, runtimeVersion)).length === 0) continue
+        const at = profileBundles.bundles.indexOf(name)
+        if (at >= 0) bundleIndex[name] = at
+        try {
+          await bundleStore.setEnabled(profileDir, name, false)
+        } catch (error) {
+          // 单个插件写失败（例如锁竞争）不影响其它插件，也不阻断实例启动。
+          console.error('[plugin] 自动禁用不兼容插件失败：', name, error)
+          continue
+        }
+        disabled.push({ name, version: manifest.version ?? '—', dshVersion: runtimeVersion })
+      }
+
+      await stateStore
+        .write(instance.id, { ...state, runtimeVersion, bundleIndex, autoDisabled: disabled })
+        .catch((error: unknown) => console.error('[plugin] 写入插件检查状态失败：', error))
+      return { checked: true, disabled }
     },
 
     async install(instance, spec): Promise<PluginMutationResult> {
