@@ -142,6 +142,8 @@ Electron 44 起二进制按需下载：`pnpm install` 之后 `node_modules/elect
 
 - 运行时数据：`<userData>/`（可用环境变量 `DSH_HUB_DATA_DIR` 覆盖）；
   实例注册表在 `<userData>/registry/instances.json`
+- 主进程日志：`<userData>/logs/main.log`（按日轮转为 `main.log.<YYYY-MM-DD>`，归档保留 90 天；
+  仅主进程 console 输出，落盘前脱敏，不含凭据）
 - 仓库内 `hub-data/` 为本地运行 / E2E 数据（已 gitignore；E2E 自动隔离到 `hub-data/e2e*`）
 
 ## 安全与凭据纪律

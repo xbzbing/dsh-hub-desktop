@@ -48,6 +48,7 @@ import { createRuntimeController } from './create-runtime'
 import { createVaultControl } from './create-vault'
 import { auditWrite, createAudit } from './create-audit'
 import { installTopLevelFailureLoggers } from './shell/top-level-failure'
+import { installMainLogging } from './shell/main-log'
 
 installTopLevelFailureLoggers({
   log: (line) => console.error(line),
@@ -91,6 +92,15 @@ protocol.registerSchemesAsPrivileged([
  */
 const userDataOverride = process.env['DSH_HUB_DATA_DIR']?.trim()
 if (userDataOverride) app.setPath('userData', userDataOverride)
+
+/**
+ * 主进程日志落盘：console.* 输出经脱敏后追加到 `<userData>/logs/main.log`
+ * （轮转/保留/脱敏见 main-log.ts）。须在 `DSH_HUB_DATA_DIR` 覆盖之后安装，
+ * 日志目录才落在最终 userData 下；打包版 GUI 启动（stderr 无终端）也能留痕。
+ */
+const mainLog = installMainLogging({ dir: join(app.getPath('userData'), 'logs') })
+// 启动时清理过期归档（不阻塞启动）
+void mainLog.prune().catch((error: unknown) => console.error('[main] 主进程日志归档清理失败：', error))
 
 /**
  * E2E 隐藏窗口模式（`DSH_HUB_E2E_HIDDEN=1`）：测试仍启动真实应用，但窗口不显示、

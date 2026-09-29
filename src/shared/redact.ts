@@ -33,3 +33,31 @@ export function redactLine(line: string): string {
   // 句末标点不属于 URL：排除全/半角逗号、句号族、括号，避免「。，！」被吞进匹配。
   return line.replace(/https?:\/\/[^\s,。，；！？、()]+/gi, (match) => redactUrl(match))
 }
+
+/** PEM 私钥块 → 占位（落盘日志出现即整块替换） */
+const PEM_PRIVATE_KEY =
+  /-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----/g
+
+/** Authorization 头（Bearer/Basic）发射值 → 占位 */
+const AUTHORIZATION_HEADER = /(\bauthorization\b\s*:\s*)(?:bearer\s+\S+|basic\s+\S+)/gi
+
+/**
+ * 键值形态的凭据：`key=value` / `key: value`（key 为已知敏感名）。
+ * 值替换为 `***`；key 集合只收录确定意义的凭据名，不收录 `code`，
+ * 避免误掩 HTTP 状态码 / `exit code` 等排查信息。
+ */
+const CREDENTIAL_PAIR =
+  /\b((?:password|passwd|pwd|secret|token|access_token|api[_ -]?key|authToken|_authToken|npmToken|otp|totp|otp_code|cookie|set-cookie|session|auth|credential|private_key|client_secret|refresh_token)\b\s*[=:]\s*)[^&\s"'<,;]+/gi
+
+/**
+ * 逐行文本中的凭据形态统一脱敏（文件日志用，防护兜底）：
+ * 私钥块、Authorization 头、密码/OTP/Cookie/令牌等键值对。
+ * 与 audit 的「白名单投影」是两条防线：主进程日志是自由文本，
+ * 落盘前必须经本函数把敏感形态打掉（AGENTS.md：日志不得含密码/OTP/Cookie/私钥）。
+ */
+export function redactSecret(line: string): string {
+  return line
+    .replace(PEM_PRIVATE_KEY, '-----BEGIN PRIVATE KEY----- [REDACTED] -----END PRIVATE KEY-----')
+    .replace(AUTHORIZATION_HEADER, '$1[REDACTED]')
+    .replace(CREDENTIAL_PAIR, '$1***')
+}
