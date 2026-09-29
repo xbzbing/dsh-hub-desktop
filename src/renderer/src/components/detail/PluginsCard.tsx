@@ -4,6 +4,7 @@ import type { PluginInfo } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
 import { fmtLogTime } from '../../lib/format'
+import { runWithConcurrency } from '../../lib/concurrency'
 import { Modal } from '../Modal'
 import { useAppStore } from '../../store'
 import {
@@ -19,6 +20,12 @@ import {
 import InstallPluginDialog from './InstallPluginDialog'
 
 const BRIDGE = window.dshHub
+
+/**
+ * 一键检查的并发度：每个检查是一个独立的 `dsh plugin view` 子进程（联网），
+ * 串行太慢、无上限并发会同时拉起过多子进程与请求，取一个折中的小并发。
+ */
+const CHECK_CONCURRENCY = 4
 
 /** 一行插件的可变操作态：检查/升级/卸载进行中标记。 */
 interface RowBusy {
@@ -119,13 +126,20 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     setLastCheckedAt(new Date().toISOString())
   }
 
-  /** 一键批量检查所有插件更新（串行，避免 registry 限流）。 */
+  /**
+   * 一键批量检查所有插件更新：小并发（CHECK_CONCURRENCY）同时进行，避免串行过慢，
+   * 也不至于同时拉起过多子进程；批量期间单行检查按钮锁定，保证同一时刻只有系统检查在跑。
+   * 用户切换界面时本函数继续执行到结束，不中止已发起的检查。
+   */
   const runCheckAll = async (): Promise<void> => {
     if (!BRIDGE || plugins === null || checkingAll) return
     setCheckingAll(true)
     try {
-      for (const plugin of plugins) {
+      const targets = [...plugins]
+      for (const plugin of targets) {
         setChecks((prev) => ({ ...prev, [plugin.name]: { status: 'checking', result: null, error: null } }))
+      }
+      await runWithConcurrency(targets, CHECK_CONCURRENCY, async (plugin) => {
         const result = await BRIDGE.plugin.check(instanceId, plugin.name)
         setChecks((prev) => ({
           ...prev,
@@ -133,7 +147,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
             ? { status: 'done', result: result.value, error: null }
             : { status: 'error', result: null, error: result.message }
         }))
-      }
+      })
       setLastCheckedAt(new Date().toISOString())
     } finally {
       setCheckingAll(false)
@@ -288,6 +302,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
               onToggle={() => setExpanded((prev) => (prev === plugin.name ? null : plugin.name))}
               check={checkOf(plugin.name)}
               busy={rowBusy(plugin.name)}
+              locked={checkingAll}
               onCheck={() => void runCheck(plugin.name)}
               onUpgrade={(version) => void runUpgrade(plugin.name, version)}
               onRemove={() => setRemoveTarget({ name: plugin.name, hasHostSide: plugin.hasHostSide })}
@@ -330,12 +345,14 @@ function PluginRow(props: {
   onToggle: () => void
   check: PluginCheckState
   busy: RowBusy
+  /** 批量（系统）检查进行中：锁定单行检查按钮，同一时刻只让系统检查在跑。 */
+  locked: boolean
   onCheck: () => void
   onUpgrade: (version: string) => void
   onRemove: () => void
   onOpenLink: (url: string | null) => void
 }): ReactNode {
-  const { t, plugin, expanded, onToggle, check, busy, onCheck, onUpgrade, onRemove, onOpenLink } = props
+  const { t, plugin, expanded, onToggle, check, busy, locked, onCheck, onUpgrade, onRemove, onOpenLink } = props
   return (
     <li className="plugin-row" data-testid={`plugin-row-${plugin.name}`}>
       <div className="plugin-row-head">
@@ -408,7 +425,8 @@ function PluginRow(props: {
           <button
             className="btn btn-secondary btn-sm plugin-check-btn"
             onClick={onCheck}
-            disabled={check.status === 'checking'}
+            disabled={check.status === 'checking' || locked}
+            title={locked ? t('detail.plugin.checkLocked') : undefined}
             data-testid={`plugin-check-${plugin.name}`}
           >
             <Icon name="sync" />

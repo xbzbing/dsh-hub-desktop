@@ -55,6 +55,9 @@ if (cmd === 'list') {
   process.exit(0)
 }
 if (cmd === 'view') {
+  // 可选延迟：用于验证「批量检查期间单行检查按钮锁定」。
+  const delay = Number(process.env.DSH_E2E_PLUGIN_VIEW_DELAY_MS || '0')
+  if (delay > 0) { const until = Date.now() + delay; while (Date.now() < until) {} }
   const incompat = process.env.DSH_E2E_PLUGIN_INCOMPAT === '1'
   process.stdout.write(JSON.stringify({
     version: '1.1.0',
@@ -174,5 +177,29 @@ test('检查升级（不兼容）：给警告不给升级按钮', async () => {
   // 不兼容：出现警告，且不出现升级按钮。
   await expect(win.getByTestId('plugin-incompatible-demo-plugin')).toBeVisible({ timeout: 15_000 })
   await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toHaveCount(0)
+})
+
+test('一键检查：批量进行中锁定单行检查按钮，结束后解锁', async () => {
+  test.setTimeout(90_000)
+  // 以「view 慢响应」重启，制造可观察的批量检查窗口。
+  await app.close()
+  app = await electron.launch({
+    args: buildLaunchArgs(),
+    env: { ...process.env, DSH_HUB_DATA_DIR: DATA_DIR, DSH_E2E_PLUGIN_VIEW_DELAY_MS: '1500' }
+  })
+  win = await app.firstWindow()
+  await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 15_000 })
+  await openDetail()
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible({ timeout: 15_000 })
+
+  const rowCheck = win.getByTestId('plugin-check-demo-plugin')
+  await expect(rowCheck).toBeEnabled()
+  await win.getByTestId('plugins-check-all-btn').click()
+
+  // 批量检查进行中：单行检查按钮锁定（同一时刻只让系统检查在跑）。
+  await expect(rowCheck).toBeDisabled({ timeout: 10_000 })
+  // 批量结束后解锁，并给出升级按钮（view 返回 1.1.0）。
+  await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toBeVisible({ timeout: 30_000 })
+  await expect(rowCheck).toBeEnabled()
 })
 

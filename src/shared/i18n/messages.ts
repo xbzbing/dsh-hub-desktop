@@ -372,6 +372,10 @@ export const MESSAGES = {
   'detail.plugin.checking': { zh: '检查中…', en: 'Checking…' },
   'detail.plugin.checkAll': { zh: '一键检查', en: 'Check all' },
   'detail.plugin.checkingAll': { zh: '检查中…', en: 'Checking…' },
+  'detail.plugin.checkLocked': {
+    zh: '一键检查进行中，完成后可单独检查',
+    en: 'Check all is running; single checks unlock when it finishes'
+  },
   'detail.plugin.lastChecked': { zh: '上次检查更新：{time}', en: 'Last checked: {time}' },
   'detail.plugin.upgradeTo': { zh: '升级到 {version}', en: 'Upgrade to {version}' },
   'detail.plugin.upgrading': { zh: '升级中…', en: 'Upgrading…' },
