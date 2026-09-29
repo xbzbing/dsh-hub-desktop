@@ -19,6 +19,7 @@ import {
   type PluginCheckState
 } from '../../lib/plugins-card-state'
 import InstallPluginDialog from './InstallPluginDialog'
+import Switch from '../Switch'
 
 const BRIDGE = window.dshHub
 
@@ -520,31 +521,15 @@ function PluginRow(props: {
               <Icon name="github" />
             </button>
           )}
-          {plugin.enabled === null ? (
-            <button
-              className="btn btn-ghost btn-sm"
-              disabled
-              title={t('detail.plugin.cannotDisable')}
-              data-testid={`plugin-toggle-${plugin.name}`}
-            >
-              <Icon name="power" />
-            </button>
-          ) : (
-            <button
-              className="btn btn-ghost btn-sm plugin-toggle-btn"
-              onClick={() => onToggleEnabled(!plugin.enabled)}
-              disabled={busy.toggling}
-              title={disabled ? t('detail.plugin.enable') : t('detail.plugin.disable')}
-              data-testid={`plugin-toggle-${plugin.name}`}
-            >
-              <Icon name="power" />
-              {busy.toggling
-                ? t('detail.plugin.disabling')
-                : disabled
-                  ? t('detail.plugin.enable')
-                  : t('detail.plugin.disable')}
-            </button>
-          )}
+          {/* 启用/禁用开关：开=已加载。纯 client 插件不由清单控制，开关置灰并说明原因。 */}
+          <Switch
+            checked={!disabled}
+            onChange={(next) => onToggleEnabled(next)}
+            disabled={plugin.enabled === null || busy.toggling}
+            title={plugin.enabled === null ? t('detail.plugin.cannotDisable') : t('detail.plugin.enableToggle')}
+            ariaLabel={t('detail.plugin.enableToggle')}
+            testId={`plugin-toggle-${plugin.name}`}
+          />
           <button
             className="btn btn-secondary btn-sm plugin-check-btn"
             onClick={onCheck}

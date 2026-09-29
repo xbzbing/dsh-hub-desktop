@@ -234,13 +234,19 @@ test('禁用/启用：禁用后仍在列表可见并标注已禁用，可再次�
   // 初始为启用态（在 bundles 里）
   await expect(win.getByTestId('plugin-disabled-demo-plugin')).toHaveCount(0)
 
-  await win.getByTestId('plugin-toggle-demo-plugin').click()
-  // 禁用后：行仍在，出现「已禁用」标注，按钮变为「启用」
-  await expect(win.getByTestId('plugin-disabled-demo-plugin')).toBeVisible({ timeout: 15_000 })
-  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible()
-  await expect(win.getByTestId('plugin-toggle-demo-plugin')).toContainText('启用')
+  // 开关初始为开（已加载）
+  const toggle = win.getByTestId('plugin-toggle-demo-plugin')
+  await expect(toggle).toHaveAttribute('role', 'switch')
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
 
-  // 重新启用：标注消失
-  await win.getByTestId('plugin-toggle-demo-plugin').click()
-  await expect(win.getByTestId('plugin-disabled-demo-plugin')).toHaveCount(0, { timeout: 15_000 })
+  await toggle.click()
+  // 禁用后：开关变为关，行仍在，出现「已禁用」标注
+  await expect(toggle).toHaveAttribute('aria-checked', 'false', { timeout: 15_000 })
+  await expect(win.getByTestId('plugin-disabled-demo-plugin')).toBeVisible()
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible()
+
+  // 重新启用：开关回到开，标注消失
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true', { timeout: 15_000 })
+  await expect(win.getByTestId('plugin-disabled-demo-plugin')).toHaveCount(0)
 })

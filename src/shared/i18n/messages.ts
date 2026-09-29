@@ -400,8 +400,9 @@ export const MESSAGES = {
     en: 'Incompatible with dsh {dshVersion}; disabled: {list}'
   },
   'detail.plugin.disable': { zh: '禁用', en: 'Disable' },
+  /** 开关的读屏/悬停说明：开=启用（已加载），关=禁用（已装但未加载）。 */
+  'detail.plugin.enableToggle': { zh: '启用（已加载）', en: 'Enabled (loaded)' },
   'detail.plugin.enable': { zh: '启用', en: 'Enable' },
-  'detail.plugin.disabling': { zh: '处理中…', en: 'Working…' },
   'detail.plugin.disabled': { zh: '已禁用', en: 'Disabled' },
   'detail.plugin.enableFailed': { zh: '启用失败：{msg}', en: 'Failed to enable: {msg}' },
   'detail.plugin.disableFailed': { zh: '禁用失败：{msg}', en: 'Failed to disable: {msg}' },

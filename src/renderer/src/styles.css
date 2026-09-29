@@ -2042,6 +2042,51 @@ details.adv[open] {
 .plugin-row:first-child {
   border-top: none;
 }
+/* 开关（switch）：插件启用/禁用等二元即时状态。滑块位移表达开/关，键盘可达（原生 button）。 */
+.switch {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 19px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  /* 关闭态轨道：在明暗两种主题下都与卡片底色有对比（--fg 混色而非 --hover）。 */
+  background: color-mix(in oklch, var(--fg) 14%, var(--surface));
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.switch:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+.switch[data-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.switch-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  /* 滑块固定近白：两种主题下都压在轨道上清晰可见（深色主题的 --surface 会看不见）。 */
+  background: oklch(0.99 0.004 265);
+  box-shadow: var(--shadow-1);
+  transition: transform 0.15s ease;
+}
+.switch[data-checked='true'] .switch-knob {
+  transform: translateX(15px);
+}
+
 /* 运行时变更后自动禁用不兼容插件的提示条。 */
 .plugin-auto-disabled {
   display: flex;
