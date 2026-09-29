@@ -100,6 +100,34 @@ export function satisfiesDshPeer(range: string | null | undefined, dshVersion: s
   }
 }
 
+/** dsh 主包及其子包 peer 名（`@deepseek-ai/dsh` 或 `@deepseek-ai/dsh-*`）；dsh 加载器按整套版本闸判定。 */
+export function isDshPeerName(name: string): boolean {
+  return name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')
+}
+
+/** 不满足运行时版本的 dsh peer 明细（名 → 声明范围）。 */
+export type IncompatibleDshPeers = Record<string, string>
+
+/**
+ * 评估一份 peerDependencies 里所有 `@deepseek-ai/dsh(-*)` peer 对运行时 dsh 版本的兼容性，
+ * 与 dsh 加载器（evaluatePluginCompatibility）同口径：子包版本与 dsh 版本锁步，任一不满足即不兼容。
+ * dshVersion 未知时返回全部 dsh peer 为不兼容（无法判定，宁可拦下）。
+ * @returns 不满足的 peer 明细；全部满足时返回空对象。
+ */
+export function evaluateDshPeers(
+  peers: Record<string, string> | null | undefined,
+  dshVersion: string | null | undefined
+): IncompatibleDshPeers {
+  const incompatible: IncompatibleDshPeers = {}
+  if (!peers) return incompatible
+  for (const [name, range] of Object.entries(peers)) {
+    if (!isDshPeerName(name)) continue
+    if (typeof range !== 'string') continue
+    if (!satisfiesDshPeer(range, dshVersion)) incompatible[name] = range
+  }
+  return incompatible
+}
+
 /** 从 npm `repository` 字段派生 GitHub 网页地址；非 github 或无法解析返回 null。 */
 export function githubUrlFrom(repository: unknown): string | null {
   const raw =

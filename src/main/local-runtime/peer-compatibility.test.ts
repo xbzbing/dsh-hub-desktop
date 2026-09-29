@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { githubUrlFrom, npmUrlFrom, satisfiesDshPeer } from './peer-compatibility'
+import { evaluateDshPeers, githubUrlFrom, isDshPeerName, npmUrlFrom, satisfiesDshPeer } from './peer-compatibility'
 
 describe('satisfiesDshPeer', () => {
   it('空/缺省范围视为无约束', () => {
@@ -71,6 +71,58 @@ describe('satisfiesDshPeer', () => {
   it('git-panel 真实 peer：>=0.1.7-rc.2', () => {
     expect(satisfiesDshPeer('>=0.1.7-rc.2', '0.1.7-rc.2')).toBe(true)
     expect(satisfiesDshPeer('>=0.1.7-rc.2', '0.1.5')).toBe(false)
+  })
+})
+
+describe('isDshPeerName', () => {
+  it('识别 dsh 主包与子包', () => {
+    expect(isDshPeerName('@deepseek-ai/dsh')).toBe(true)
+    expect(isDshPeerName('@deepseek-ai/dsh-llm')).toBe(true)
+    expect(isDshPeerName('@deepseek-ai/dsh-client-ui-slots')).toBe(true)
+  })
+  it('非 dsh peer 返回 false', () => {
+    expect(isDshPeerName('@deepseek-ai/cordis')).toBe(false)
+    expect(isDshPeerName('react')).toBe(false)
+    expect(isDshPeerName('@huanlin/dsh-plugin-better-locale')).toBe(false)
+  })
+})
+
+describe('evaluateDshPeers', () => {
+  it('全部满足 → 空对象（兼容）', () => {
+    const peers = { '@deepseek-ai/dsh': '>=0.1.7-rc.2', '@deepseek-ai/dsh-llm': '^0.1.7-rc.1', react: '^18' }
+    expect(evaluateDshPeers(peers, '0.1.7-rc.2')).toEqual({})
+  })
+
+  it('子包锁 ^0.2.0-rc.1 而实例 0.1.7-rc.2 → 全部 dsh 子包不兼容（better-sidebar 0.24.1 真实场景）', () => {
+    const peers = {
+      react: '^18.2.0',
+      '@deepseek-ai/cordis': '^4.0.4',
+      '@deepseek-ai/dsh-llm': '^0.2.0-rc.1',
+      '@deepseek-ai/dsh-agent': '^0.2.0-rc.1',
+      '@deepseek-ai/dsh-session': '^0.2.0-rc.1'
+    }
+    const incompatible = evaluateDshPeers(peers, '0.1.7-rc.2')
+    expect(Object.keys(incompatible).sort()).toEqual([
+      '@deepseek-ai/dsh-agent',
+      '@deepseek-ai/dsh-llm',
+      '@deepseek-ai/dsh-session'
+    ])
+    // 非 dsh peer（react/cordis）不参与判定。
+    expect(incompatible['react']).toBeUndefined()
+    expect(incompatible['@deepseek-ai/cordis']).toBeUndefined()
+  })
+
+  it('dsh 版本未知 → 全部 dsh peer 视为不兼容', () => {
+    const peers = { '@deepseek-ai/dsh': '>=0.1.0', '@deepseek-ai/dsh-llm': '^0.1.0' }
+    expect(Object.keys(evaluateDshPeers(peers, null)).sort()).toEqual([
+      '@deepseek-ai/dsh',
+      '@deepseek-ai/dsh-llm'
+    ])
+  })
+
+  it('无 peer 或空 → 空对象', () => {
+    expect(evaluateDshPeers(null, '0.1.7')).toEqual({})
+    expect(evaluateDshPeers({}, '0.1.7')).toEqual({})
   })
 })
 
