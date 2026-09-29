@@ -25,6 +25,9 @@ import { isAllowedPluginLink } from './plugin-link-policy'
 /** 升级目标版本：与 dsh 版本号同字符集，长度封顶。 */
 const PLUGIN_VERSION_SCHEMA = z.string().trim().min(1).max(64).regex(DSH_VERSION_PATTERN, '版本号含非法字符')
 
+/** 插件元信息本地化语言；非法值回落 zh。 */
+const PLUGIN_LOCALE_SCHEMA = z.enum(['zh', 'en']).catch('zh')
+
 export interface PluginHandlerDeps {
   /** 缺省不装配（单测）→ 全部通道返回 internal 错误信封。 */
   pluginManager?: PluginManager
@@ -42,11 +45,11 @@ export function registerPluginHandlers(store: InstanceStore, deps: PluginHandler
     return record
   }
 
-  ipcMain.handle(PLUGIN_IPC.list, (_event, id: unknown): Promise<IpcResult<PluginInfo[]>> =>
+  ipcMain.handle(PLUGIN_IPC.list, (_event, id: unknown, locale: unknown): Promise<IpcResult<PluginInfo[]>> =>
     wrap(async () => {
       const instance = await requireLocal(id)
       if (!deps.pluginManager) throw new InstanceStoreError('internal', '插件管理能力不可用')
-      return deps.pluginManager.list(instance)
+      return deps.pluginManager.list(instance, PLUGIN_LOCALE_SCHEMA.parse(locale))
     })
   )
 

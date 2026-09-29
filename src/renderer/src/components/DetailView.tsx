@@ -371,13 +371,14 @@ export default function DetailView(): ReactNode {
       <div className="detail-delete" data-testid="detail-delete-area">
         <span className="meta">{t('detail.deleteBody')}</span>
         <button
-          className="detail-delete-btn"
+          className="detail-delete-btn detail-delete-btn--collapsed"
           onClick={() => setConfirmDelete(true)}
           data-testid="delete-btn"
           aria-label={t('detail.deleteInstance')}
+          title={t('detail.deleteInstance')}
         >
           <Icon name="trash" />
-          <span>{t('detail.deleteInstance')}</span>
+          <span className="detail-delete-label">{t('detail.deleteInstance')}</span>
         </button>
       </div>
 

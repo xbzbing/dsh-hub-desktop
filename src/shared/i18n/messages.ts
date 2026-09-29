@@ -370,6 +370,9 @@ export const MESSAGES = {
   'detail.plugin.loading': { zh: '正在加载插件…', en: 'Loading plugins…' },
   'detail.plugin.checkUpdate': { zh: '检查升级', en: 'Check update' },
   'detail.plugin.checking': { zh: '检查中…', en: 'Checking…' },
+  'detail.plugin.checkAll': { zh: '一键检查', en: 'Check all' },
+  'detail.plugin.checkingAll': { zh: '检查中…', en: 'Checking…' },
+  'detail.plugin.lastChecked': { zh: '上次检查更新：{time}', en: 'Last checked: {time}' },
   'detail.plugin.upgradeTo': { zh: '升级到 {version}', en: 'Upgrade to {version}' },
   'detail.plugin.upgrading': { zh: '升级中…', en: 'Upgrading…' },
   'detail.plugin.uptodate': { zh: '已是最新版本', en: 'Up to date' },
@@ -425,7 +428,7 @@ export const MESSAGES = {
   'detail.plugin.field.license': { zh: '许可', en: 'License' },
   'detail.plugin.field.github': { zh: 'GitHub', en: 'GitHub' },
   'detail.plugin.field.npm': { zh: 'npm', en: 'npm' },
-  'detail.plugin.field.modified': { zh: '更新时间', en: 'Updated' },
+  'detail.plugin.field.published': { zh: '发布时间', en: 'Published' },
   'detail.plugin.field.compat': { zh: '兼容版本', en: 'Compatibility' },
   'detail.plugin.field.deps': { zh: '第三方依赖', en: 'Dependencies' },
   'detail.plugin.field.kind': { zh: '类型', en: 'Type' },
@@ -436,6 +439,27 @@ export const MESSAGES = {
   'detail.plugin.kind.hostOnly': { zh: '仅 host', en: 'host only' },
   'detail.plugin.kind.none': { zh: '—', en: '—' },
   'detail.plugin.openLinkFailed': { zh: '打开链接失败', en: 'Failed to open link' },
+  'detail.plugin.log.installing': { zh: '开始安装插件 {spec}', en: 'Installing plugin {spec}' },
+  'detail.plugin.log.installed': { zh: '插件已安装：{spec}', en: 'Plugin installed: {spec}' },
+  'detail.plugin.log.installFailed': { zh: '插件安装失败（{spec}）：{msg}', en: 'Failed to install {spec}: {msg}' },
+  'detail.plugin.log.upgrading': { zh: '开始升级 {name} 到 {version}', en: 'Upgrading {name} to {version}' },
+  'detail.plugin.log.upgraded': { zh: '{name} 已升级到 {version}', en: '{name} upgraded to {version}' },
+  'detail.plugin.log.upgradeFailed': { zh: '{name} 升级失败：{msg}', en: 'Failed to upgrade {name}: {msg}' },
+  'detail.plugin.log.removing': { zh: '开始卸载 {name}', en: 'Uninstalling {name}' },
+  'detail.plugin.log.removed': { zh: '已卸载 {name}', en: '{name} uninstalled' },
+  'detail.plugin.log.removeFailed': { zh: '{name} 卸载失败：{msg}', en: 'Failed to uninstall {name}: {msg}' },
+  'detail.plugin.log.restartHint': {
+    zh: '{name} 含 host 端代码，需重启实例后生效',
+    en: '{name} includes host-side code; restart the instance to take effect'
+  },
+  'detail.plugin.log.clientHint': {
+    zh: '{name} 已生效，刷新工作区页面即可看到变化',
+    en: '{name} is active; refresh the workspace page to see the change'
+  },
+  'detail.plugin.upgradeBlocked': {
+    zh: '{latest} 要求 dsh {peer}，当前 {current} 不满足，已阻止升级',
+    en: 'v{latest} requires dsh {peer}; current {current} does not satisfy it — upgrade blocked'
+  },
 
   'runtime.confirm.downloadTitle': {
     zh: '未找到可复用的 dsh 运行时',

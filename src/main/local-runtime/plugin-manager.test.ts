@@ -129,6 +129,59 @@ describe('createPluginManager.list', () => {
     expect(freeSearch.dependencies).toEqual(['some-dep'])
   })
 
+  it('locale：读 locale/<lang>.json 的 meta 本地化 title/description', async () => {
+    const run = vi.fn(async (): Promise<CommandResult> => ({ code: 0, stdout: LIST_JSON, stderr: '' }))
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      readLocale: (p) => {
+        if (p.endsWith('/locale/zh.json') && p.includes('git-panel')) {
+          return { meta: { title: 'Git 面板', description: '中文简介' } }
+        }
+        if (p.endsWith('/locale/en.json') && p.includes('git-panel')) {
+          return { meta: { title: 'Git Panel', description: 'English desc' } }
+        }
+        return null
+      }
+    })
+    const zh = await manager.list(localInstance(), 'zh')
+    const zhGit = zh.find((plugin) => plugin.name === '@xbzbing/dsh-git-panel')!
+    expect(zhGit.title).toBe('Git 面板')
+    expect(zhGit.description).toBe('中文简介')
+
+    const en = await manager.list(localInstance(), 'en')
+    const enGit = en.find((plugin) => plugin.name === '@xbzbing/dsh-git-panel')!
+    expect(enGit.title).toBe('Git Panel')
+    expect(enGit.description).toBe('English desc')
+
+    // 无 locale 的插件：title=null，description 回落 package.json。
+    const zhSearch = zh.find((plugin) => plugin.name === 'dsh-free-search')!
+    expect(zhSearch.title).toBe(null)
+    expect(zhSearch.description).toBe('Search')
+  })
+
+  it('scoped 包元数据优先读 profile 顶层 node_modules（.pnpm 虚拟 store 里 scoped 子目录不存在）', async () => {
+    const readDirs: string[] = []
+    const run = vi.fn(async (): Promise<CommandResult> => ({ code: 0, stdout: LIST_JSON, stderr: '' }))
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      // 只有顶层 node_modules 路径能读到 manifest；list --json 的 .pnpm path 读不到（返回 null）。
+      readManifest: (dir) => {
+        readDirs.push(dir)
+        if (dir.includes('/.pnpm/')) return null
+        if (dir.includes('git-panel')) return GIT_PANEL_MANIFEST
+        return null
+      }
+    })
+    const plugins = await manager.list(
+      localInstance({ id: 'inst-1', useDefaultSpace: false, profile: null })
+    )
+    const gitPanel = plugins.find((plugin) => plugin.name === '@xbzbing/dsh-git-panel')!
+    // 顶层路径 = <dataRoot>/homes/<id>/profiles/web/node_modules/@xbzbing/dsh-git-panel
+    expect(gitPanel.version).toBe('1.1.0')
+    expect(gitPanel.hasHostSide).toBe(true)
+    expect(readDirs.some((dir) => dir.endsWith('/node_modules/@xbzbing/dsh-git-panel'))).toBe(true)
+  })
+
   it('命令拼装：plugin --profile <p> list --json，DSH_HOME 为隔离空间路径', async () => {
     const calls: Array<{ args: string[]; env?: NodeJS.ProcessEnv }> = []
     const run = vi.fn(async (command: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => {
@@ -201,6 +254,30 @@ describe('createPluginManager.check', () => {
     const check = await manager.check(localInstance({ dshVersion: '0.1.7-rc.2' }), '@xbzbing/dsh-git-panel')
     expect(check.compatible).toBe(false)
     expect(check.dshPeer).toBe('>=0.2.0')
+  })
+
+  it('不兼容：主包满足但 dsh 子包锁 ^0.2.0-rc.1（better-sidebar 0.24.1 真实场景）', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          version: '0.24.1',
+          peerDependencies: {
+            react: '^18.2.0',
+            '@deepseek-ai/dsh-llm': '^0.2.0-rc.1',
+            '@deepseek-ai/dsh-session': '^0.2.0-rc.1'
+          }
+        }),
+        stderr: ''
+      }
+    })
+    const manager = createPluginManager(baseOptions(run))
+    const check = await manager.check(localInstance({ dshVersion: '0.1.7-rc.2' }), '@xbzbing/dsh-git-panel')
+    // 主包 peer 未声明（dshPeer=null），但子包锁 0.2 → 整体不兼容，不给升级。
+    expect(check.compatible).toBe(false)
+    expect(check.dshPeer).toBe(null)
   })
 
   it('未安装的插件 → 抛错', async () => {

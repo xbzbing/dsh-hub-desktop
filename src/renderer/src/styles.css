@@ -493,6 +493,33 @@ h3,
 .detail-delete-btn:hover {
   background: color-mix(in oklch, var(--danger) 19%, var(--surface));
 }
+/* 默认收起为纯图标按钮；hover / focus 时展开出完整文案。 */
+.detail-delete-btn--collapsed {
+  gap: 0;
+  padding: 11px;
+  transition:
+    gap 0.14s ease,
+    padding 0.14s ease;
+}
+.detail-delete-btn--collapsed .detail-delete-label {
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transition:
+    max-width 0.16s ease,
+    opacity 0.14s ease;
+}
+.detail-delete-btn--collapsed:hover,
+.detail-delete-btn--collapsed:focus-visible {
+  gap: 9px;
+  padding: 11px 16px;
+}
+.detail-delete-btn--collapsed:hover .detail-delete-label,
+.detail-delete-btn--collapsed:focus-visible .detail-delete-label {
+  max-width: 160px;
+  opacity: 1;
+}
 .detail-delete-btn svg {
   width: 20px;
   height: 20px;
@@ -1993,6 +2020,13 @@ details.adv[open] {
 /* 插件管理卡：跨两栏整宽，容纳可展开的插件列表。 */
 .plugins-card {
   grid-column: 1 / -1;
+  /* 与上方「连接方式 / 运行环境」两卡拉开间隔（grid-2 用 mt20 顶部起始，此处独立卡需自带）。 */
+  margin-top: var(--gap-lg);
+}
+/* 纯图标按钮：只放一个 Icon，收窄内边距成正方形。 */
+.btn-icon {
+  padding-left: 9px;
+  padding-right: 9px;
 }
 .plugin-list {
   list-style: none;
@@ -2044,11 +2078,46 @@ details.adv[open] {
   justify-content: center;
   color: var(--muted);
 }
+/* 名称 + 包名两级标题：名称为主，包名作二级标题跟随其后（同一行，包名可省略）。 */
+.plugin-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
 .plugin-name {
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: none;
+  max-width: 100%;
+}
+/* 二级标题：原始包名，次要色、等宽、更小字号，空间不足时先被截断。 */
+.plugin-pkgname {
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* 上次检查更新时刻：卡头下方一行，次要色。 */
+.plugin-last-checked {
+  margin: 4px 0 0;
+}
+/* 检查升级按钮：两个候选文案叠放在同一 grid 单元，按钮宽度取二者最大，
+   切「检查中…/检查升级」不跳动；中英文各按各自最长文案自适应，无需硬编码宽度。 */
+.btn-swap {
+  display: inline-grid;
+}
+.btn-swap-cell {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  visibility: hidden;
+}
+.btn-swap-cell[data-active='true'] {
+  visibility: visible;
 }
 .plugin-source {
   font-size: 11px;
@@ -2060,6 +2129,11 @@ details.adv[open] {
 }
 .plugin-check-result {
   margin: 6px 0 0 20px;
+}
+/* 「已是最新」内联在操作行最左：不换行、不占整行。 */
+.plugin-status-inline {
+  align-self: center;
+  white-space: nowrap;
 }
 .plugin-detail {
   margin: 10px 0 4px 20px;

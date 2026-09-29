@@ -144,8 +144,8 @@ export interface DshHubBridge {
   }
   /** 本机实例的 dsh 插件管理：列表、检查升级、安装、升级、卸载（profile 与 DSH_HOME 由主进程推导）。 */
   plugin: {
-    /** 列出实例 profile 已装插件及其元数据。 */
-    list: (id: string) => Promise<IpcResult<PluginInfo[]>>
+    /** 列出实例 profile 已装插件及其元数据；locale 决定 meta 本地化语言（缺省 zh）。 */
+    list: (id: string, locale?: 'zh' | 'en') => Promise<IpcResult<PluginInfo[]>>
     /** 检查某插件的最新版本与 dsh peer 兼容性。 */
     check: (id: string, name: string) => Promise<IpcResult<PluginUpdateCheck>>
     /** 安装插件；spec 为 npm 名 / name@version / github: / file: 形态。 */

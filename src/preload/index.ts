@@ -88,7 +88,7 @@ const bridge: DshHubBridge = {
       ipcRenderer.invoke(DSH_VERSION_IPC.confirmReply, requestId, accepted)
   },
   plugin: {
-    list: (id: string) => ipcRenderer.invoke(PLUGIN_IPC.list, id),
+    list: (id: string, locale?: 'zh' | 'en') => ipcRenderer.invoke(PLUGIN_IPC.list, id, locale ?? 'zh'),
     check: (id: string, name: string) => ipcRenderer.invoke(PLUGIN_IPC.check, id, name),
     install: (id: string, spec: string) => ipcRenderer.invoke(PLUGIN_IPC.install, id, spec),
     upgrade: (id: string, name: string, version: string) =>

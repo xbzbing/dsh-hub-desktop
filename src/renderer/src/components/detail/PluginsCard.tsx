@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { PluginInfo } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
+import { fmtLogTime } from '../../lib/format'
 import { Modal } from '../Modal'
 import { useAppStore } from '../../store'
 import {
@@ -39,9 +40,19 @@ interface RestartPrompt {
 export default function PluginsCard(props: { t: Translator; instanceId: string }): ReactNode {
   const { t, instanceId } = props
   const toast = useAppStore((state) => state.toast)
+  const language = useAppStore((state) => state.language)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
+  const appendActivity = useAppStore((state) => state.appendActivity)
   const workspaceConnected = useAppStore(
     (state) => state.workspaceConnected[instanceId] ?? false
+  )
+
+  /** 把一条插件操作日志写入实例底部信息栏（与运行时状态同一时间线）。 */
+  const logActivity = useCallback(
+    (detail: string): void => {
+      appendActivity(instanceId, { source: 'runtime', at: new Date().toISOString(), detail })
+    },
+    [appendActivity, instanceId]
   )
 
   const [plugins, setPlugins] = useState<PluginInfo[] | null>(null)
@@ -53,12 +64,15 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   const [showInstall, setShowInstall] = useState(false)
   const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null)
   const [restartPrompt, setRestartPrompt] = useState<RestartPrompt | null>(null)
+  /** 上次「检查更新」完成时刻（对整卡的批量或单条检查都刷新）；null = 本会话尚未检查。 */
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null)
+  const [checkingAll, setCheckingAll] = useState(false)
 
   const load = useCallback(async (): Promise<void> => {
     if (!BRIDGE) return
     setLoading(true)
     setLoadError(null)
-    const result = await BRIDGE.plugin.list(instanceId)
+    const result = await BRIDGE.plugin.list(instanceId, language)
     setLoading(false)
     if (result.ok) {
       setPlugins(result.value)
@@ -67,7 +81,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
       setLoadError(result.message)
       setPlugins([])
     }
-  }, [instanceId])
+  }, [instanceId, language])
 
   useEffect(() => {
     void load()
@@ -79,6 +93,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
 
   const checkOf = (name: string): PluginCheckState => checks[name] ?? initialCheckState
 
+  /** 检查单个插件；返回是否成功（供批量检查汇总）。 */
   const runCheck = async (name: string): Promise<void> => {
     if (!BRIDGE) return
     setChecks((prev) => ({ ...prev, [name]: { status: 'checking', result: null, error: null } }))
@@ -88,23 +103,53 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     } else {
       setChecks((prev) => ({ ...prev, [name]: { status: 'error', result: null, error: result.message } }))
     }
+    setLastCheckedAt(new Date().toISOString())
   }
 
-  /** 改动含 host 半时提示重启；否则提示刷新页面即可。 */
+  /** 一键批量检查所有插件更新（串行，避免 registry 限流）。 */
+  const runCheckAll = async (): Promise<void> => {
+    if (!BRIDGE || plugins === null || checkingAll) return
+    setCheckingAll(true)
+    try {
+      for (const plugin of plugins) {
+        setChecks((prev) => ({ ...prev, [plugin.name]: { status: 'checking', result: null, error: null } }))
+        const result = await BRIDGE.plugin.check(instanceId, plugin.name)
+        setChecks((prev) => ({
+          ...prev,
+          [plugin.name]: result.ok
+            ? { status: 'done', result: result.value, error: null }
+            : { status: 'error', result: null, error: result.message }
+        }))
+      }
+      setLastCheckedAt(new Date().toISOString())
+    } finally {
+      setCheckingAll(false)
+    }
+  }
+
+  /** 改动含 host 半时提示重启；否则提示刷新页面即可（两者都写入实例日志）。 */
   const afterMutation = (name: string, hasHostSide: boolean): void => {
-    if (hasHostSide) setRestartPrompt({ name })
-    else toast('ok', t('detail.plugin.installed'), t('detail.plugin.clientOnlyHint'))
+    if (hasHostSide) {
+      logActivity(t('detail.plugin.log.restartHint', { name }))
+      setRestartPrompt({ name })
+    } else {
+      logActivity(t('detail.plugin.log.clientHint', { name }))
+      toast('ok', t('detail.plugin.installed'), t('detail.plugin.clientOnlyHint'))
+    }
   }
 
   const runUpgrade = async (name: string, version: string): Promise<void> => {
     if (!BRIDGE) return
     setRowBusy(name, { upgrading: true })
+    logActivity(t('detail.plugin.log.upgrading', { name, version }))
     const result = await BRIDGE.plugin.upgrade(instanceId, name, version)
     setRowBusy(name, { upgrading: false })
     if (!result.ok) {
+      logActivity(t('detail.plugin.log.upgradeFailed', { name, msg: result.message }))
       toast('err', t('detail.plugin.upgradeFailed', { msg: result.message }))
       return
     }
+    logActivity(t('detail.plugin.log.upgraded', { name, version }))
     await load()
     afterMutation(name, result.value.hasHostSide)
   }
@@ -114,23 +159,29 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     const { name } = removeTarget
     setRemoveTarget(null)
     setRowBusy(name, { removing: true })
+    logActivity(t('detail.plugin.log.removing', { name }))
     const result = await BRIDGE.plugin.remove(instanceId, name)
     setRowBusy(name, { removing: false })
     if (!result.ok) {
+      logActivity(t('detail.plugin.log.removeFailed', { name, msg: result.message }))
       toast('err', t('detail.plugin.removeFailed', { msg: result.message }))
       return
     }
+    logActivity(t('detail.plugin.log.removed', { name }))
     await load()
     afterMutation(name, result.value.hasHostSide)
   }
 
   const submitInstall = async (spec: string): Promise<void> => {
     if (!BRIDGE) return
+    logActivity(t('detail.plugin.log.installing', { spec }))
     const result = await BRIDGE.plugin.install(instanceId, spec)
     if (!result.ok) {
+      logActivity(t('detail.plugin.log.installFailed', { spec, msg: result.message }))
       toast('err', t('detail.plugin.installFailed', { msg: result.message }))
       return
     }
+    logActivity(t('detail.plugin.log.installed', { spec }))
     setShowInstall(false)
     await load()
     afterMutation(spec, result.value.hasHostSide)
@@ -167,6 +218,15 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
             <Icon name="refresh" /> {t('detail.plugin.refresh')}
           </button>
           <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => void runCheckAll()}
+            disabled={checkingAll || plugins === null || plugins.length === 0}
+            data-testid="plugins-check-all-btn"
+          >
+            <Icon name="search" />
+            {checkingAll ? t('detail.plugin.checkingAll') : t('detail.plugin.checkAll')}
+          </button>
+          <button
             className="btn btn-primary btn-sm"
             onClick={() => setShowInstall(true)}
             data-testid="plugins-install-btn"
@@ -175,6 +235,13 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
           </button>
         </div>
       </div>
+
+      {/* 上次检查更新时刻：本会话内任一检查（单条或批量）完成即刷新。 */}
+      {lastCheckedAt !== null && (
+        <p className="meta plugin-last-checked" data-testid="plugins-last-checked">
+          {t('detail.plugin.lastChecked', { time: fmtLogTime(lastCheckedAt) })}
+        </p>
+      )}
 
       {loadError !== null && (
         <p className="meta err-text" data-testid="plugins-load-error">
@@ -261,9 +328,6 @@ function PluginRow(props: {
           aria-label={plugin.name}
           data-testid={`plugin-expand-${plugin.name}`}
         >
-          <span className="plugin-expand-mark" aria-hidden="true">
-            {expanded ? '▾' : '◂'}
-          </span>
           {plugin.iconDataUri ? (
             <img className="plugin-icon" src={plugin.iconDataUri} alt="" width={20} height={20} />
           ) : (
@@ -271,29 +335,49 @@ function PluginRow(props: {
               <Icon name="hub" size={16} />
             </span>
           )}
-          <span className="plugin-name">{plugin.name}</span>
+          {/* 有本地化名称则名称为主、包名作二级标题跟随；无名称则包名作主标题。 */}
+          <span className="plugin-title-group">
+            <span className="plugin-name">{plugin.title ?? plugin.name}</span>
+            {plugin.title && <span className="plugin-pkgname num">{plugin.name}</span>}
+          </span>
           <span className="badge num">{plugin.version}</span>
           <span className="plugin-source">{t(pluginSourceKey(plugin.installSource))}</span>
         </button>
         <div className="row plugin-actions" style={{ gap: 8 }}>
-          {plugin.npmUrl && (
+          {/* 「已是最新」内联在操作行最左，不换行占一整行。 */}
+          {showsUpToDate(check) && (
+            <span className="meta plugin-status-inline" data-testid={`plugin-uptodate-${plugin.name}`}>
+              {t('detail.plugin.uptodate')}
+            </span>
+          )}
+          {plugin.githubUrl && (
             <button
-              className="btn btn-ghost btn-sm plugin-link"
-              onClick={() => onOpenLink(plugin.npmUrl)}
-              aria-label={t('detail.plugin.field.npm')}
-              data-testid={`plugin-npm-${plugin.name}`}
+              className="btn btn-ghost btn-sm btn-icon plugin-link"
+              onClick={() => onOpenLink(plugin.githubUrl)}
+              aria-label={t('detail.plugin.field.github')}
+              title={t('detail.plugin.field.github')}
+              data-testid={`plugin-github-${plugin.name}`}
             >
-              <Icon name="link" />
+              <Icon name="github" />
             </button>
           )}
           <button
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm plugin-check-btn"
             onClick={onCheck}
             disabled={check.status === 'checking'}
             data-testid={`plugin-check-${plugin.name}`}
           >
-            <Icon name="check" />
-            {check.status === 'checking' ? t('detail.plugin.checking') : t('detail.plugin.checkUpdate')}
+            <Icon name="search" />
+            {/* 两个候选文案叠放在同一 grid 单元，宽度取最大值：切「检查中…/检查升级」按钮不跳动，
+                中英文各自按各自的最长文案自适应。 */}
+            <span className="btn-swap">
+              <span className="btn-swap-cell" data-active={check.status !== 'checking'}>
+                {t('detail.plugin.checkUpdate')}
+              </span>
+              <span className="btn-swap-cell" data-active={check.status === 'checking'}>
+                {t('detail.plugin.checking')}
+              </span>
+            </span>
           </button>
           {canOfferUpgrade(check) && check.result !== null && (
             <button
@@ -309,23 +393,20 @@ function PluginRow(props: {
             </button>
           )}
           <button
-            className="btn btn-danger btn-sm"
+            className="btn btn-danger btn-sm btn-icon plugin-remove-btn"
             onClick={onRemove}
             disabled={busy.removing}
+            aria-label={t('detail.plugin.remove')}
+            title={busy.removing ? t('detail.plugin.removing') : t('detail.plugin.remove')}
             data-testid={`plugin-remove-${plugin.name}`}
           >
             <Icon name="trash" />
-            {busy.removing ? t('detail.plugin.removing') : t('detail.plugin.remove')}
           </button>
         </div>
       </div>
 
-      {/* 检查结果：兼容有新版给升级按钮（上方），不兼容给警告，已最新给提示，失败给错误。 */}
-      {showsUpToDate(check) && (
-        <p className="meta plugin-check-result" data-testid={`plugin-uptodate-${plugin.name}`}>
-          {t('detail.plugin.uptodate')}
-        </p>
-      )}
+      {/* 检查结果：兼容有新版给升级按钮（操作行内），不兼容给警告，失败给错误；
+          「已是最新」内联在操作行最左，不在此另起一行。 */}
       {showsIncompatibleWarning(check) && check.result !== null && (
         <p className="meta err-text plugin-check-result" data-testid={`plugin-incompatible-${plugin.name}`}>
           {t('detail.plugin.incompatible', {
@@ -397,8 +478,8 @@ function PluginDetail(props: {
           </dd>
         </>
       )}
-      <dt>{t('detail.plugin.field.modified')}</dt>
-      <dd className="num">{modified ?? t('detail.plugin.modifiedUnknown')}</dd>
+      <dt>{t('detail.plugin.field.published')}</dt>
+      <dd className="num">{modified !== null ? fmtLogTime(modified) : t('detail.plugin.modifiedUnknown')}</dd>
       <dt>{t('detail.plugin.field.compat')}</dt>
       <dd className="num">
         dsh {plugin.dshPeer ?? '—'}

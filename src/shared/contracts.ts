@@ -719,6 +719,8 @@ export const PLUGIN_NAME_SCHEMA = z
 export interface PluginInfo {
   name: string
   version: string
+  /** 本地化标题（locale/<lang>.json 的 meta.title）；null 时渲染层回落包名。 */
+  title: string | null
   description: string | null
   author: string | null
   license: string | null

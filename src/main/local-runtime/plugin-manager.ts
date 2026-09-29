@@ -16,7 +16,7 @@ import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
 import type { RuntimeInstaller } from './runtime-installer'
 import type { PathProbe } from './runtime-source'
-import { githubUrlFrom, npmUrlFrom, satisfiesDshPeer } from './peer-compatibility'
+import { evaluateDshPeers, githubUrlFrom, npmUrlFrom } from './peer-compatibility'
 
 /** 插件命令执行超时：pnpm 安装可能较慢，给足余量（与安装器同量级）。 */
 const PLUGIN_COMMAND_TIMEOUT_MS = 10 * 60_000
@@ -25,6 +25,8 @@ const PLUGIN_COMMAND_TIMEOUT_MS = 10 * 60_000
 export interface PluginInfo {
   name: string
   version: string
+  /** 本地化标题（locale/<lang>.json 的 meta.title）；无则 null，渲染层回落包名。 */
+  title: string | null
   description: string | null
   author: string | null
   license: string | null
@@ -44,6 +46,9 @@ export interface PluginInfo {
   /** 安装来源：npm registry / github / 本地 file / 未知。 */
   installSource: 'npm' | 'github' | 'file' | 'unknown'
 }
+
+/** 界面语言：与 app 的 Language 一致（system 已解析为 zh|en）。 */
+export type PluginLocale = 'zh' | 'en'
 
 /** 检查升级结果（latest 及其 dsh peer 兼容判定）。 */
 export interface PluginUpdateCheck {
@@ -104,6 +109,8 @@ export interface PluginManagerOptions {
   readManifest?: (dir: string) => PluginManifest | null
   /** icon 文件读取为 base64（注入便于测试）；缺省读磁盘。 */
   readIcon?: (path: string) => string | null
+  /** locale JSON 读取（注入便于测试）；缺省读磁盘并解析。 */
+  readLocale?: (path: string) => { meta?: { title?: string; description?: string } } | null
   /** 真实 node 解析（注入便于测试）；缺省按脚本同目录探测。 */
   resolveNode?: (scriptPath: string) => string | null
   /** Electron 自带 Node 兜底调用（缺省 execPath + ELECTRON_RUN_AS_NODE=1）。 */
@@ -111,7 +118,7 @@ export interface PluginManagerOptions {
 }
 
 export interface PluginManager {
-  list(instance: LocalInstance): Promise<PluginInfo[]>
+  list(instance: LocalInstance, locale?: PluginLocale): Promise<PluginInfo[]>
   check(instance: LocalInstance, name: string): Promise<PluginUpdateCheck>
   install(instance: LocalInstance, spec: string): Promise<PluginMutationResult>
   upgrade(instance: LocalInstance, name: string, version: string): Promise<PluginMutationResult>
@@ -131,6 +138,14 @@ function defaultReadManifest(dir: string): PluginManifest | null {
 function defaultReadIcon(path: string): string | null {
   try {
     return readFileSync(path).toString('base64')
+  } catch {
+    return null
+  }
+}
+
+function defaultReadLocale(path: string): { meta?: { title?: string; description?: string } } | null {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as { meta?: { title?: string; description?: string } }
   } catch {
     return null
   }
@@ -178,6 +193,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   }))
   const readManifest = options.readManifest ?? defaultReadManifest
   const readIcon = options.readIcon ?? defaultReadIcon
+  const readLocale = options.readLocale ?? defaultReadLocale
   const homeDir = options.homeDir ?? homedir
   const defaultProfile = options.profile ?? 'web'
   const resolveNode = options.resolveNode ?? defaultResolveNode
@@ -240,21 +256,33 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     return result
   }
 
-  /** 从安装路径读 package.json 装配 PluginInfo。 */
+  /**
+   * 从安装路径读 package.json 装配 PluginInfo。
+   * 优先用 profile 顶层 node_modules/<name>（pnpm 布局下 scoped 包的可靠位置），
+   * 回退 list --json 给出的 entry.path（可能指向 .pnpm 虚拟 store，scoped 包读不到）。
+   * locale：读 <dir>/locale/<lang>.json 的 meta，本地化标题与简介覆盖 package.json 的英文原值。
+   */
   function infoFromPath(
     name: string,
-    entry: { from?: string; version?: string; resolved?: string; path?: string }
+    entry: { from?: string; version?: string; resolved?: string; path?: string },
+    profileNodeModules: string,
+    locale: PluginLocale
   ): PluginInfo {
-    const manifest = (entry.path ? readManifest(entry.path) : null) ?? {}
+    const topLevelDir = join(profileNodeModules, ...name.split('/'))
+    const manifestDir = readManifest(topLevelDir) !== null ? topLevelDir : (entry.path ?? topLevelDir)
+    const manifest = readManifest(manifestDir) ?? {}
     const dsh = manifest.dsh ?? {}
     const iconBase64 =
-      entry.path && typeof manifest.icon === 'string'
-        ? readIcon(resolvePath(entry.path, manifest.icon))
-        : null
+      typeof manifest.icon === 'string' ? readIcon(resolvePath(manifestDir, manifest.icon)) : null
+    // locale/<lang>.json 的 meta：title 本地化插件名，description 本地化简介；缺失回落 package.json。
+    const localeMeta = readLocale(join(manifestDir, 'locale', `${locale}.json`))?.meta
+    const localizedTitle = localeMeta?.title?.trim() || null
+    const localizedDescription = localeMeta?.description?.trim() || manifest.description?.trim() || null
     return {
       name,
       version: entry.version ?? manifest.version ?? '—',
-      description: manifest.description?.trim() || null,
+      title: localizedTitle,
+      description: localizedDescription,
       author: authorName(manifest.author),
       license: manifest.license?.trim() || null,
       npmUrl: npmUrlFrom(name),
@@ -275,7 +303,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     return plugins.find((plugin) => plugin.name === name)?.hasHostSide ?? false
   }
 
-  async function list(instance: LocalInstance): Promise<PluginInfo[]> {
+  async function list(instance: LocalInstance, locale: PluginLocale = 'zh'): Promise<PluginInfo[]> {
     const result = await runPlugin(instance, ['list', '--json'])
     let parsed: unknown
     try {
@@ -285,8 +313,12 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     }
     const first = Array.isArray(parsed) ? (parsed[0] as ProfileListEntry | undefined) : undefined
     const deps = first?.dependencies ?? {}
+    // profile 顶层 node_modules：list --json 的 path 字段在 pnpm 布局下可能指向 .pnpm 虚拟 store，
+    // scoped 包（@scope/name）在其中的 <scope>/<name> 子目录不存在；顶层软链才是可靠读取位置。
+    const { home, profile } = homeAndProfile(instance)
+    const profileNodeModules = join(home, 'profiles', profile, 'node_modules')
     return Object.entries(deps)
-      .map(([name, entry]) => infoFromPath(name, entry))
+      .map(([name, entry]) => infoFromPath(name, entry, profileNodeModules, locale))
       .sort((a, b) => a.name.localeCompare(b.name))
   }
 
@@ -317,14 +349,19 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
         throw new Error('无法解析插件版本信息输出')
       }
       const latest = meta.version ?? current.version
-      const dshPeer = meta.peerDependencies?.[DSH_PEER] ?? null
+      const peers = meta.peerDependencies ?? {}
+      const dshPeer = peers[DSH_PEER] ?? null
       const dshVersion = instance.dshVersion ?? null
+      // 与 dsh 加载器同口径：主包与全部 @deepseek-ai/dsh-* 子包 peer 都要满足运行时版本，
+      // 任一不满足即不兼容（0.24.1 的子包锁 ^0.2.0-rc.1，实例 0.1.7-rc.2 会被拦）。
+      const incompatiblePeers = evaluateDshPeers(peers, dshVersion)
+      const compatible = Object.keys(incompatiblePeers).length === 0
       return {
         name,
         current: current.version,
         latest,
         hasUpdate: latest !== current.version,
-        compatible: satisfiesDshPeer(dshPeer, dshVersion),
+        compatible,
         dshPeer,
         dshVersion,
         modifiedAt: meta['time.modified'] ?? null
