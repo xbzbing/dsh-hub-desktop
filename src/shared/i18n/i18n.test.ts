@@ -35,6 +35,12 @@ describe('i18n 目录（双语）', () => {
     // 品牌名、明确保留的技术术语、以及无需翻译的示例值可同形。
     expect(identical.sort()).toEqual([
       'app.name',
+      'detail.plugin.field.github',
+      'detail.plugin.field.npm',
+      'detail.plugin.kind.hostClient',
+      'detail.plugin.kind.none',
+      'detail.plugin.source.github',
+      'detail.plugin.source.npm',
       'edit.profileLabel',
       'transport.ssh',
       'wizard.profileLabel',

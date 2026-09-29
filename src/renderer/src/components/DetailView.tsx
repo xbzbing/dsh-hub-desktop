@@ -15,6 +15,7 @@ import RuntimeCard from './detail/RuntimeCard'
 import ExternalTokenEditor from './detail/ExternalTokenEditor'
 import ExternalDshCard from './detail/ExternalDshCard'
 import ActivityLogBar from './detail/ActivityLogBar'
+import PluginsCard from './detail/PluginsCard'
 
 /** 实例详情。 */
 export default function DetailView(): ReactNode {
@@ -354,6 +355,9 @@ export default function DetailView(): ReactNode {
           />
         )}
       </div>
+
+      {/* 插件管理：仅本机实例，通过 dsh plugin --profile <p> 列出与增删该实例环境的插件。 */}
+      {record.transport === 'local' && <PluginsCard key={record.id} t={t} instanceId={record.id} />}
 
       <ActivityLogBar
         t={t}

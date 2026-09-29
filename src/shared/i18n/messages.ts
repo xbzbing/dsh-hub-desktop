@@ -362,6 +362,81 @@ export const MESSAGES = {
     zh: '系统默认 dsh 缺失或非 npm 全局安装，hub 无法代管升级',
     en: 'The system default dsh is missing or not npm-managed; hub cannot upgrade it'
   },
+  'detail.plugin.title': { zh: '插件管理', en: 'Plugins' },
+  'detail.plugin.install': { zh: '安装插件', en: 'Install plugin' },
+  'detail.plugin.refresh': { zh: '刷新', en: 'Refresh' },
+  'detail.plugin.empty': { zh: '该实例暂无已安装插件', en: 'No plugins installed for this instance' },
+  'detail.plugin.loadFailed': { zh: '加载插件列表失败：{msg}', en: 'Failed to load plugins: {msg}' },
+  'detail.plugin.loading': { zh: '正在加载插件…', en: 'Loading plugins…' },
+  'detail.plugin.checkUpdate': { zh: '检查升级', en: 'Check update' },
+  'detail.plugin.checking': { zh: '检查中…', en: 'Checking…' },
+  'detail.plugin.upgradeTo': { zh: '升级到 {version}', en: 'Upgrade to {version}' },
+  'detail.plugin.upgrading': { zh: '升级中…', en: 'Upgrading…' },
+  'detail.plugin.uptodate': { zh: '已是最新版本', en: 'Up to date' },
+  'detail.plugin.incompatible': {
+    zh: '新版 {latest} 要求 dsh {peer}，当前 {current} 不满足',
+    en: 'v{latest} requires dsh {peer}; current {current} does not satisfy it'
+  },
+  'detail.plugin.checkFailed': { zh: '检查失败：{msg}', en: 'Check failed: {msg}' },
+  'detail.plugin.remove': { zh: '卸载', en: 'Uninstall' },
+  'detail.plugin.removing': { zh: '卸载中…', en: 'Uninstalling…' },
+  'detail.plugin.removeFailed': { zh: '卸载失败：{msg}', en: 'Failed to uninstall: {msg}' },
+  'detail.plugin.installFailed': { zh: '安装失败：{msg}', en: 'Failed to install: {msg}' },
+  'detail.plugin.upgradeFailed': { zh: '升级失败：{msg}', en: 'Failed to upgrade: {msg}' },
+  'detail.plugin.removeConfirmTitle': { zh: '卸载插件', en: 'Uninstall plugin' },
+  'detail.plugin.removeConfirmBody': {
+    zh: '确认卸载「{name}」？卸载后该实例将不再加载此插件。',
+    en: 'Uninstall "{name}"? This instance will no longer load it.'
+  },
+  'detail.plugin.removeHostHint': {
+    zh: '该插件包含 host 端代码，卸载后可能需要重启实例才能完全生效。',
+    en: 'This plugin includes host-side code; a restart may be needed to fully take effect.'
+  },
+  'detail.plugin.restartTitle': { zh: '需要重启实例', en: 'Restart required' },
+  'detail.plugin.restartBody': {
+    zh: '「{name}」包含 host 端代码，需重启实例后生效。是否立即重启？',
+    en: '"{name}" includes host-side code and needs a restart to take effect. Restart now?'
+  },
+  'detail.plugin.restartNow': { zh: '立即重启', en: 'Restart now' },
+  'detail.plugin.restartLater': { zh: '稍后手动', en: 'Later' },
+  'detail.plugin.clientOnlyHint': {
+    zh: '已生效，刷新工作区页面即可看到变化。',
+    en: 'Done — refresh the workspace page to see the change.'
+  },
+  'detail.plugin.installTitle': { zh: '安装插件', en: 'Install plugin' },
+  'detail.plugin.installLabel': { zh: '插件标识', en: 'Plugin identifier' },
+  'detail.plugin.installPlaceholder': {
+    zh: 'npm 名 / name@version / github:owner/repo / file:路径',
+    en: 'npm name / name@version / github:owner/repo / file:path'
+  },
+  'detail.plugin.installHint': {
+    zh: '支持 npm 包名（可带 @版本）、GitHub 仓库、本地路径。',
+    en: 'Accepts an npm name (optionally @version), a GitHub repo, or a local path.'
+  },
+  'detail.plugin.installSubmit': { zh: '安装', en: 'Install' },
+  'detail.plugin.installing': { zh: '安装中…', en: 'Installing…' },
+  'detail.plugin.installed': { zh: '已安装', en: 'Installed' },
+  'detail.plugin.source.npm': { zh: 'npm', en: 'npm' },
+  'detail.plugin.source.github': { zh: 'GitHub', en: 'GitHub' },
+  'detail.plugin.source.file': { zh: '本地', en: 'local' },
+  'detail.plugin.source.unknown': { zh: '未知来源', en: 'unknown' },
+  'detail.plugin.field.description': { zh: '简介', en: 'Description' },
+  'detail.plugin.field.author': { zh: '作者', en: 'Author' },
+  'detail.plugin.field.license': { zh: '许可', en: 'License' },
+  'detail.plugin.field.github': { zh: 'GitHub', en: 'GitHub' },
+  'detail.plugin.field.npm': { zh: 'npm', en: 'npm' },
+  'detail.plugin.field.modified': { zh: '更新时间', en: 'Updated' },
+  'detail.plugin.field.compat': { zh: '兼容版本', en: 'Compatibility' },
+  'detail.plugin.field.deps': { zh: '第三方依赖', en: 'Dependencies' },
+  'detail.plugin.field.kind': { zh: '类型', en: 'Type' },
+  'detail.plugin.modifiedUnknown': { zh: '点检查升级获取', en: 'Run check to fetch' },
+  'detail.plugin.depsNone': { zh: '无', en: 'none' },
+  'detail.plugin.kind.hostClient': { zh: 'host + client', en: 'host + client' },
+  'detail.plugin.kind.clientOnly': { zh: '仅 client', en: 'client only' },
+  'detail.plugin.kind.hostOnly': { zh: '仅 host', en: 'host only' },
+  'detail.plugin.kind.none': { zh: '—', en: '—' },
+  'detail.plugin.openLinkFailed': { zh: '打开链接失败', en: 'Failed to open link' },
+
   'runtime.confirm.downloadTitle': {
     zh: '未找到可复用的 dsh 运行时',
     en: 'No reusable dsh runtime found'

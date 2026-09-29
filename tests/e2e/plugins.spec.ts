@@ -1,0 +1,178 @@
+import { _electron as electron, expect, test } from '@playwright/test'
+import { buildLaunchArgs } from './launch-args'
+import type { ElectronApplication, Page } from '@playwright/test'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+
+/**
+ * 实例详情「插件管理」端到端验证：
+ * - 列表渲染（图标 / 版本 / 来源）
+ * - 手风琴展开显示详情字段（作者 / 兼容版本 / 依赖 / 类型）
+ * - 检查升级两分支：兼容给升级按钮、不兼容给警告不给按钮
+ * - 卸载二次确认（含 host 半提示）
+ * - 安装后含 host 半弹重启提醒
+ *
+ * dsh 可执行入口用一个假 bin.js（响应 plugin list/view/add/remove）替身：
+ * 播种到 hub 隔离目录 `<DATA_DIR>/runtimes/dsh-<version>/node_modules/@deepseek-ai/dsh/lib/bin.js`，
+ * 实例固定该版本，plugin-manager 的 resolveDshEntry 即命中它；由 Electron-as-node 执行。
+ */
+
+const VERSION = '0.1.7-rc.2'
+const DATA_DIR = resolve(__dirname, '..', '..', 'hub-data', 'e2e-plugins')
+const ENTRY_DIR = join(DATA_DIR, 'runtimes', `dsh-${VERSION}`, 'node_modules', '@deepseek-ai', 'dsh', 'lib')
+
+let app: ElectronApplication
+let win: Page
+
+/**
+ * 假 dsh 入口：只认 `plugin --profile <p> <sub> ...`。
+ * - list --json：一个含 host+client 半的 npm 插件；
+ * - view ... --json：默认返回兼容的新版本；`DSH_E2E_PLUGIN_INCOMPAT=1` 时返回不兼容版本；
+ * - add / remove：打印并成功退出（同时把 add 的包写进一个 sentinel 便于断言可选）。
+ */
+const FAKE_BIN = `
+const args = process.argv.slice(2)
+const i = args.indexOf('plugin')
+if (i === -1) { process.exit(0) }
+const rest = args.slice(i + 1)
+// 跳过 --profile <name>
+let sub = rest
+const p = rest.indexOf('--profile')
+if (p !== -1) sub = rest.slice(0, p).concat(rest.slice(p + 2))
+const cmd = sub[0]
+if (cmd === 'list') {
+  process.stdout.write(JSON.stringify([{
+    name: 'dsh-profile-web',
+    dependencies: {
+      'demo-plugin': {
+        from: 'demo-plugin',
+        version: '1.0.0',
+        resolved: 'https://registry.npmjs.org/demo-plugin/-/demo-plugin-1.0.0.tgz',
+        path: ${JSON.stringify(join(DATA_DIR, 'fake-plugin'))}
+      }
+    }
+  }]))
+  process.exit(0)
+}
+if (cmd === 'view') {
+  const incompat = process.env.DSH_E2E_PLUGIN_INCOMPAT === '1'
+  process.stdout.write(JSON.stringify({
+    version: '1.1.0',
+    peerDependencies: { '@deepseek-ai/dsh': incompat ? '>=0.2.0' : '>=0.1.7-rc.2' },
+    'time.modified': '2026-09-28T11:16:59.586Z'
+  }))
+  process.exit(0)
+}
+if (cmd === 'add' || cmd === 'remove') { process.stdout.write('ok'); process.exit(0) }
+process.exit(0)
+`
+
+const FAKE_PLUGIN_MANIFEST = {
+  name: 'demo-plugin',
+  version: '1.0.0',
+  description: '示例插件',
+  author: 'demo-author',
+  license: 'MIT',
+  repository: { type: 'git', url: 'git+https://github.com/demo/demo-plugin.git' },
+  dependencies: { 'left-pad': '^1.0.0' },
+  peerDependencies: { '@deepseek-ai/dsh': '>=0.1.7-rc.2' },
+  engines: { node: '>=20' },
+  dsh: { bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web' } }
+}
+
+test.beforeAll(async () => {
+  await rm(DATA_DIR, { recursive: true, force: true })
+  await mkdir(ENTRY_DIR, { recursive: true })
+  await writeFile(join(ENTRY_DIR, 'bin.js'), FAKE_BIN, 'utf8')
+  const pluginDir = join(DATA_DIR, 'fake-plugin')
+  await mkdir(pluginDir, { recursive: true })
+  await writeFile(join(pluginDir, 'package.json'), JSON.stringify(FAKE_PLUGIN_MANIFEST), 'utf8')
+
+  app = await electron.launch({
+    args: buildLaunchArgs(),
+    env: { ...process.env, DSH_HUB_DATA_DIR: DATA_DIR }
+  })
+  win = await app.firstWindow()
+
+  // 播种一个固定该版本的本机实例（resolveDshEntry 命中隔离目录里的假 bin.js）。
+  const created = await win.evaluate(
+    async (version) =>
+      window.dshHub.instances.create({
+        transport: 'local',
+        name: '插件测试实例',
+        authMode: 'none',
+        dshVersion: version
+      }),
+    VERSION
+  )
+  expect(created.ok).toBe(true)
+  await win.reload()
+  await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 15_000 })
+})
+
+test.afterAll(async () => {
+  await app.close()
+  await rm(DATA_DIR, { recursive: true, force: true })
+})
+
+/** 打开该实例详情（本机未运行 → openFromSidebar 不直接进工作区，用 detail 按钮直达）。 */
+async function openDetail(): Promise<void> {
+  const detailBtn = win.locator('[data-testid^="detail-"]').first()
+  await detailBtn.click()
+  await expect(win.getByTestId('view-detail')).toBeVisible()
+  await expect(win.getByTestId('plugins-card')).toBeVisible()
+}
+
+test('列表渲染 + 手风琴详情 + 检查升级（兼容给升级按钮）', async () => {
+  test.setTimeout(90_000)
+  await openDetail()
+
+  // 列表出现该插件行。
+  const row = win.getByTestId('plugin-row-demo-plugin')
+  await expect(row).toBeVisible({ timeout: 15_000 })
+  await expect(row).toContainText('demo-plugin')
+  await expect(row).toContainText('1.0.0')
+
+  // 手风琴展开显示详情字段。
+  await win.getByTestId('plugin-expand-demo-plugin').click()
+  const detail = win.getByTestId('plugin-detail-demo-plugin')
+  await expect(detail).toBeVisible()
+  await expect(detail).toContainText('demo-author')
+  await expect(detail).toContainText('left-pad')
+  await expect(detail).toContainText('>=0.1.7-rc.2')
+
+  // 检查升级：兼容 → 出现「升级到 1.1.0」按钮。
+  await win.getByTestId('plugin-check-demo-plugin').click()
+  await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toBeVisible({ timeout: 15_000 })
+  await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toContainText('1.1.0')
+})
+
+test('卸载二次确认：含 host 半时提示重启', async () => {
+  await win.getByTestId('plugin-remove-demo-plugin').click()
+  await expect(win.getByTestId('plugin-remove-confirm')).toBeVisible()
+  // demo-plugin 含 host 半（dsh.bundle.patch）→ 确认框内出现重启提示。
+  await expect(win.getByTestId('plugin-remove-host-hint')).toBeVisible()
+  // 收尾：关闭确认框，避免影响后续用例。
+  await win.keyboard.press('Escape')
+  await expect(win.getByTestId('plugin-remove-confirm')).toBeHidden()
+})
+
+test('检查升级（不兼容）：给警告不给升级按钮', async () => {
+  test.setTimeout(90_000)
+  // 关掉再以不兼容开关重启应用，让假 bin.js 的 view 返回高版本 peer。
+  await app.close()
+  app = await electron.launch({
+    args: buildLaunchArgs(),
+    env: { ...process.env, DSH_HUB_DATA_DIR: DATA_DIR, DSH_E2E_PLUGIN_INCOMPAT: '1' }
+  })
+  win = await app.firstWindow()
+  await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 15_000 })
+  await openDetail()
+
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible({ timeout: 15_000 })
+  await win.getByTestId('plugin-check-demo-plugin').click()
+  // 不兼容：出现警告，且不出现升级按钮。
+  await expect(win.getByTestId('plugin-incompatible-demo-plugin')).toBeVisible({ timeout: 15_000 })
+  await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toHaveCount(0)
+})
+

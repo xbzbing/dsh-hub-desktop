@@ -908,6 +908,10 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/shared/contracts.ts', ".max(128, '配置档案最长 128 字符')"),
   debt('src/shared/contracts.ts', ".regex(PROFILE_PATTERN, '配置档案只能是相对路径，且不能以 - 开头')"),
   debt('src/shared/contracts.ts', "const DSH_VERSION_SCHEMA = z.string().trim().max(64).regex(DSH_VERSION_PATTERN, '版本号含非法字符')"),
+  debt('src/shared/contracts.ts', ".min(1, '插件标识不能为空')"),
+  debt('src/shared/contracts.ts', ".max(512, '插件标识过长')"),
+  debt('src/shared/contracts.ts', "}, '插件标识形态非法（仅支持 npm 名 / name@version / github: / file:）')"),
+  debt('src/shared/contracts.ts', ".regex(/^(@[a-z0-9][\\w.-]*\\/)?[a-z0-9][\\w.-]*$/i, '插件名形态非法')"),
   debt('src/shared/contracts.ts', ".refine((value) => !value.split('/').includes('..'), '配置档案不能包含 ..')"),
   debt('src/shared/settings.ts', ".refine((value) => value === '' || isAllowedNpmRegistry(value), '镜像地址必须是 https URL')"),
 
@@ -918,6 +922,18 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/version-handlers.ts', "if (!deps.installer) throw new InstanceStoreError('internal', 'dsh 版本管理能力不可用')"),
   debt('src/main/ipc/version-handlers.ts', "throw new InstanceStoreError('invalid-input', '该实例不支持升级')"),
   debt('src/main/local-runtime/runtime-installer.ts', "onProgress?.({ phase: 'installing', version, detail: '校验安装结果', percent: 95 })"),
+
+  // —— 插件管理 IPC 信封 message（渲染层 toast 直接展示 result.message） ——
+  debt('src/main/ipc/plugin-handlers.ts', "const PLUGIN_VERSION_SCHEMA = z.string().trim().min(1).max(64).regex(DSH_VERSION_PATTERN, '版本号含非法字符')"),
+  debt('src/main/ipc/plugin-handlers.ts', "throw new InstanceStoreError('invalid-input', '仅本机实例支持插件管理')"),
+  debt('src/main/ipc/plugin-handlers.ts', "if (!deps.pluginManager) throw new InstanceStoreError('internal', '插件管理能力不可用')"),
+  debt('src/main/ipc/plugin-handlers.ts', "throw new InstanceStoreError('invalid-input', '链接必须是 npmjs.com 或 github.com 的 https 地址')"),
+  debt('src/main/ipc/plugin-handlers.ts', "if (!deps.openExternalUrl) throw new InstanceStoreError('internal', '打开外链不可用')"),
+  debt('src/main/local-runtime/plugin-manager.ts', "if (!current) throw new Error(`插件未安装：${name}`)"),
+  debt('src/main/local-runtime/plugin-manager.ts', "throw new Error(`dsh plugin ${args.join(' ')} 失败（exit ${result.code}）：${tail || '无 stderr'}`)"),
+  debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件列表输出')"),
+  debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件版本信息输出')"),
+  debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('未找到可用的 dsh：hub 隔离目录与 PATH 上都没有已安装的运行时')"),
 
   // Runtime status messages displayed by App.tsx and DetailView.
   debt('src/main/local-runtime/launch.ts', ": '分配端口并启动进程（端口区间不可用，改由 dsh 自动选择）'"),
