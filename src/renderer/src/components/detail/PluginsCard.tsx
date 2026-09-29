@@ -11,6 +11,7 @@ import {
   initialCheckState,
   pluginKindKey,
   pluginSourceKey,
+  pruneChecks,
   showsIncompatibleWarning,
   showsUpToDate,
   type PluginCheckState
@@ -68,20 +69,32 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null)
   const [checkingAll, setCheckingAll] = useState(false)
 
-  const load = useCallback(async (): Promise<void> => {
-    if (!BRIDGE) return
-    setLoading(true)
-    setLoadError(null)
-    const result = await BRIDGE.plugin.list(instanceId, language)
-    setLoading(false)
-    if (result.ok) {
-      setPlugins(result.value)
-      setChecks({})
-    } else {
-      setLoadError(result.message)
-      setPlugins([])
-    }
-  }, [instanceId, language])
+  /**
+   * 拉取插件列表。keepChecks=true 时保留已有检查结果（只按最新列表剪除已卸载插件的项），
+   * 用于安装/升级/卸载后刷新列表而不丢失其它插件的检查状态；缺省（初次加载 / 手动刷新）清空。
+   */
+  const load = useCallback(
+    async (options?: { keepChecks?: boolean }): Promise<void> => {
+      if (!BRIDGE) return
+      setLoading(true)
+      setLoadError(null)
+      const result = await BRIDGE.plugin.list(instanceId, language)
+      setLoading(false)
+      if (result.ok) {
+        setPlugins(result.value)
+        if (options?.keepChecks) {
+          const names = result.value.map((plugin) => plugin.name)
+          setChecks((prev) => pruneChecks(prev, names))
+        } else {
+          setChecks({})
+        }
+      } else {
+        setLoadError(result.message)
+        setPlugins([])
+      }
+    },
+    [instanceId, language]
+  )
 
   useEffect(() => {
     void load()
@@ -150,7 +163,13 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
       return
     }
     logActivity(t('detail.plugin.log.upgraded', { name, version }))
-    await load()
+    // 升级后该插件版本已变，自身旧检查结果失效——清掉它，其它插件的检查状态保留。
+    setChecks((prev) => {
+      const next = { ...prev }
+      delete next[name]
+      return next
+    })
+    await load({ keepChecks: true })
     afterMutation(name, result.value.hasHostSide)
   }
 
@@ -168,7 +187,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
       return
     }
     logActivity(t('detail.plugin.log.removed', { name }))
-    await load()
+    await load({ keepChecks: true })
     afterMutation(name, result.value.hasHostSide)
   }
 
@@ -183,7 +202,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     }
     logActivity(t('detail.plugin.log.installed', { spec }))
     setShowInstall(false)
-    await load()
+    await load({ keepChecks: true })
     afterMutation(spec, result.value.hasHostSide)
   }
 

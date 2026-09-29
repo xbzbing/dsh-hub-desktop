@@ -14,6 +14,22 @@ export interface PluginCheckState {
 
 export const initialCheckState: PluginCheckState = { status: 'idle', result: null, error: null }
 
+/**
+ * 按最新插件名集合剪除检查结果映射：安装/升级/卸载后刷新列表时保留仍在册插件的检查状态，
+ * 只丢弃已卸载插件的项。纯函数便于测试。
+ */
+export function pruneChecks(
+  checks: Record<string, PluginCheckState>,
+  presentNames: Iterable<string>
+): Record<string, PluginCheckState> {
+  const present = new Set(presentNames)
+  const next: Record<string, PluginCheckState> = {}
+  for (const [name, state] of Object.entries(checks)) {
+    if (present.has(name)) next[name] = state
+  }
+  return next
+}
+
 /** 是否展示「升级到 x」按钮：检查完成、有新版且兼容。 */
 export function canOfferUpgrade(check: PluginCheckState): boolean {
   return (

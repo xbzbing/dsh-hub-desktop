@@ -4,6 +4,7 @@ import {
   initialCheckState,
   pluginKindKey,
   pluginSourceKey,
+  pruneChecks,
   showsIncompatibleWarning,
   showsUpToDate,
   type PluginCheckState
@@ -82,5 +83,38 @@ describe('pluginSourceKey', () => {
     expect(pluginSourceKey('github')).toBe('detail.plugin.source.github')
     expect(pluginSourceKey('file')).toBe('detail.plugin.source.file')
     expect(pluginSourceKey('unknown')).toBe('detail.plugin.source.unknown')
+  })
+})
+
+describe('pruneChecks', () => {
+  const done: PluginCheckState = {
+    status: 'done',
+    result: {
+      name: 'a',
+      current: '1.0.0',
+      latest: '1.0.0',
+      hasUpdate: false,
+      compatible: true,
+      dshPeer: null,
+      dshVersion: null,
+      modifiedAt: null
+    },
+    error: null
+  }
+
+  it('保留仍在册插件的检查状态，剔除已卸载插件的项', () => {
+    const checks = { a: done, b: { ...done }, c: { ...done } }
+    const pruned = pruneChecks(checks, ['a', 'c'])
+    expect(Object.keys(pruned).sort()).toEqual(['a', 'c'])
+    expect(pruned.a).toBe(done)
+  })
+
+  it('空在册集合 → 全部剔除', () => {
+    expect(pruneChecks({ a: done }, [])).toEqual({})
+  })
+
+  it('新装插件不凭空产生检查项（只保留已有）', () => {
+    const pruned = pruneChecks({ a: done }, ['a', 'newly-installed'])
+    expect(Object.keys(pruned)).toEqual(['a'])
   })
 })
