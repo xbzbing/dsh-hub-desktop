@@ -229,7 +229,9 @@ export const spawnNpm = (
     const child = spawnImpl(npm.command, [...npm.prefixArgs, ...args], {
       env: options.env,
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32'
+      detached: process.platform !== 'win32',
+      // windowsHide：Windows 下不弹出控制台窗口（node.exe 属控制台子系统程序，默认会闪窗）。
+      windowsHide: true
     })
     let stdout = ''
     let stderr = ''

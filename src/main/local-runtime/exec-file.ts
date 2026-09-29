@@ -26,7 +26,11 @@ export function execFileResult(
   options: ExecFileOptions = {}
 ): Promise<CommandResult> {
   return new Promise<CommandResult>((resolve, reject) => {
-    execFile(command, args, options, (error, stdout, stderr) => {
+    // windowsHide：Windows 下被调起的控制台程序（node.exe、where.exe 等）默认会闪现控制台窗口，
+    // 统一隐藏；调用方显式传入 false 可覆盖（当前无此需求，仅作可测试性保留）。
+    const finalOptions: ExecFileOptions =
+      options.windowsHide === undefined ? { ...options, windowsHide: true } : options
+    execFile(command, args, finalOptions, (error, stdout, stderr) => {
       if (error) {
         const errCode = (error as NodeJS.ErrnoException).code
         if (typeof errCode === 'string') {

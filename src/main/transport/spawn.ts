@@ -24,7 +24,9 @@ export const detachedSpawn: SpawnLike = ({ command, args, env, cwd, detached }) 
     env,
     cwd,
     detached,
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // windowsHide：Windows 下不弹出控制台窗口（node.exe/ssh.exe 属控制台程序，默认会闪窗）。
+    windowsHide: true
   })
 
 /** killProcessGroup 的可注入依赖（默认真实实现）；测试借此在非 win32 宿主上覆盖 win32 分支。 */
