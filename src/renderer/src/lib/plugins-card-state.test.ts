@@ -5,11 +5,12 @@ import {
   pluginKindKey,
   pluginSourceKey,
   pruneChecks,
+  restoreChecks,
   showsIncompatibleWarning,
   showsUpToDate,
   type PluginCheckState
 } from './plugins-card-state'
-import type { PluginUpdateCheck } from '@shared/contracts'
+import type { PluginInfo, PluginUpdateCheck } from '@shared/contracts'
 
 function check(overrides: Partial<PluginUpdateCheck>): PluginUpdateCheck {
   return {
@@ -116,5 +117,77 @@ describe('pruneChecks', () => {
   it('新装插件不凭空产生检查项（只保留已有）', () => {
     const pruned = pruneChecks({ a: done }, ['a', 'newly-installed'])
     expect(Object.keys(pruned)).toEqual(['a'])
+  })
+})
+
+/** 最小插件信息（restoreChecks 只用 name 与已装 version）。 */
+function plugin(name: string, version: string): PluginInfo {
+  return {
+    name,
+    version,
+    title: null,
+    description: null,
+    author: null,
+    license: null,
+    npmUrl: null,
+    githubUrl: null,
+    iconDataUri: null,
+    dependencies: [],
+    dshPeer: null,
+    nodeEngine: null,
+    hasHostSide: true,
+    hasClientSide: false,
+    installSource: 'npm'
+  }
+}
+
+describe('restoreChecks（由持久化快照恢复标记）', () => {
+  it('无快照时全部未检查', () => {
+    expect(restoreChecks([plugin('a', '1.0.0')], null)).toEqual({})
+  })
+
+  it('快照 latest 高于已装版本 → 恢复为「可升级」', () => {
+    const restored = restoreChecks([plugin('a', '1.0.0')], {
+      lastCheckedAt: '2026-09-29T10:00:00.000Z',
+      updates: {
+        a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: '0.2.0-rc.1', modifiedAt: null }
+      },
+      checking: []
+    })
+    expect(restored.a?.status).toBe('done')
+    expect(restored.a?.result).toMatchObject({ current: '1.0.0', latest: '1.2.0', hasUpdate: true })
+  })
+
+  it('latest 等于已装版本（已升级过）→ 不显示标记', () => {
+    const restored = restoreChecks([plugin('a', '1.2.0')], {
+      lastCheckedAt: null,
+      updates: {
+        a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null }
+      },
+      checking: []
+    })
+    expect(restored.a).toBeUndefined()
+  })
+
+  it('在飞检查 → 恢复为「检查中…」，优先于持久化记录', () => {
+    const restored = restoreChecks([plugin('a', '1.0.0')], {
+      lastCheckedAt: null,
+      updates: {
+        a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null }
+      },
+      checking: ['a']
+    })
+    expect(restored.a).toEqual({ status: 'checking', result: null, error: null })
+  })
+
+  it('快照里有但列表已无的插件被忽略', () => {
+    const restored = restoreChecks([plugin('b', '1.0.0')], {
+      lastCheckedAt: null,
+      updates: {
+        a: { latest: '9.9.9', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null }
+      },
+      checking: []
+    })
+    expect(restored).toEqual({})
   })
 })

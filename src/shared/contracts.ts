@@ -681,6 +681,8 @@ export const PLUGIN_IPC = {
   list: 'plugin:list',
   /** 检查某插件的最新版本与 dsh peer 兼容性（联网 view）。 */
   check: 'plugin:check',
+  /** 读取持久化的检查状态（可升级标记 + 在飞检查），渲染层挂载时恢复。 */
+  checkState: 'plugin:checkState',
   /** 安装插件；spec 为 npm 名 / name@version / github: / file: 形态。 */
   install: 'plugin:install',
   /** 升级到指定版本（显式版本，非 latest）。 */
@@ -759,6 +761,27 @@ export interface PluginUpdateCheck {
 /** 插件改动结果：是否含 host 半（决定是否提醒重启）。 */
 export interface PluginMutationResult {
   hasHostSide: boolean
+}
+
+/** 单个插件持久化的检查结果（不含「当前版本」，由渲染层按已装版本现算是否有更新）。 */
+export interface PluginCheckRecord {
+  latest: string
+  compatible: boolean
+  dshPeer: string | null
+  dshVersion: string | null
+  modifiedAt: string | null
+}
+
+/**
+ * 插件检查状态快照：渲染层挂载时恢复「可升级标记」与「检查中…」。
+ * 检查在后台跑到结束（切换界面不中止），持久化让标记跨页面与跨重启保留。
+ */
+export interface PluginCheckSnapshot {
+  /** 上次完成检查的时刻（ISO）；null = 尚未检查过。 */
+  lastCheckedAt: string | null
+  updates: Record<string, PluginCheckRecord>
+  /** 正在检查中的插件名。 */
+  checking: string[]
 }
 
 

@@ -13,6 +13,7 @@ import {
   PLUGIN_SPEC_SCHEMA,
   type IpcResult,
   type LocalInstance,
+  type PluginCheckSnapshot,
   type PluginInfo,
   type PluginMutationResult,
   type PluginUpdateCheck
@@ -59,6 +60,14 @@ export function registerPluginHandlers(store: InstanceStore, deps: PluginHandler
       const pluginName = PLUGIN_NAME_SCHEMA.parse(name)
       if (!deps.pluginManager) throw new InstanceStoreError('internal', '插件管理能力不可用')
       return deps.pluginManager.check(instance, pluginName)
+    })
+  )
+
+  ipcMain.handle(PLUGIN_IPC.checkState, (_event, id: unknown): Promise<IpcResult<PluginCheckSnapshot>> =>
+    wrap(async () => {
+      const instance = await requireLocal(id)
+      if (!deps.pluginManager) throw new InstanceStoreError('internal', '插件管理能力不可用')
+      return deps.pluginManager.checkState(instance)
     })
   )
 

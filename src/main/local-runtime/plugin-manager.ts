@@ -10,7 +10,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { delimiter, dirname, join, resolve as resolvePath } from 'node:path'
 import { homedir } from 'node:os'
-import type { LocalInstance } from '@shared/contracts'
+import type { LocalInstance, PluginCheckRecord, PluginCheckSnapshot } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
 import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
@@ -22,6 +22,8 @@ import { InstanceStoreError } from '../registry/instance-store'
 import { mergeLoginPath, resolveLoginPathOnce } from './login-path'
 import { mergeShellEnv, resolveShellEnvOnce } from './shell-env'
 import { evaluateDshPeers, githubUrlFrom, npmUrlFrom } from './peer-compatibility'
+import { createPluginStateStore } from './plugin-state'
+import type { PluginStateStore } from './plugin-state'
 import { nodeModeExecutable } from '../node-mode'
 
 /** 插件命令执行超时：pnpm 安装可能较慢，给足余量（与安装器同量级）。 */
@@ -132,7 +134,12 @@ export interface PluginManagerOptions {
   shellEnv?: () => Promise<Map<string, string> | null>
   /** 登录环境 PATH 解析（登录 shell / Windows 注册表）；null=不可用时回退继承 PATH。缺省进程内缓存的真实解析。 */
   loginPath?: () => Promise<string | null>
+  /** 检查状态持久化（注入便于测试）；缺省写 `<dataRoot>/plugin-state/<id>.json`。 */
+  stateStore?: PluginStateStore
 }
+
+/** 渲染层挂载时恢复的检查状态：持久化的标记 + 当前在飞检查。 */
+export type { PluginCheckSnapshot }
 
 export interface PluginManager {
   list(instance: LocalInstance, locale?: PluginLocale): Promise<PluginInfo[]>
@@ -140,6 +147,8 @@ export interface PluginManager {
   install(instance: LocalInstance, spec: string): Promise<PluginMutationResult>
   upgrade(instance: LocalInstance, name: string, version: string): Promise<PluginMutationResult>
   remove(instance: LocalInstance, name: string): Promise<PluginMutationResult>
+  /** 读取该实例的持久化检查状态（含在飞检查），供渲染层挂载时恢复标记。 */
+  checkState(instance: LocalInstance): Promise<PluginCheckSnapshot>
 }
 
 const DSH_PEER = '@deepseek-ai/dsh'
@@ -220,6 +229,13 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   const inheritShellEnv = options.inheritShellEnv ?? ((): boolean => true)
   const shellEnv = options.shellEnv ?? resolveShellEnvOnce
   const loginPath = options.loginPath ?? resolveLoginPathOnce
+  const stateStore = options.stateStore ?? createPluginStateStore(options.dataRoot)
+
+  /**
+   * 在飞检查的插件名（实例 id → 名字集合）。检查在后台跑到结束（用户切走也不中止），
+   * 渲染层回来时据此重新显示「检查中…」。
+   */
+  const inFlightChecks = new Map<string, Set<string>>()
 
   /** 实例的 DSH_HOME 与 profile（与启动路径同一推导）。 */
   function homeAndProfile(instance: LocalInstance): { home: string; profile: string } {
@@ -227,6 +243,38 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       ? join(homeDir(), '.dsh')
       : join(options.dataRoot, 'homes', instance.id)
     return { home, profile: instance.profile ?? defaultProfile }
+  }
+
+  /** 标记某插件开始检查；返回结束标记函数（务必在 finally 调用）。 */
+  function markChecking(instanceId: string, name: string): () => void {
+    const set = inFlightChecks.get(instanceId) ?? new Set<string>()
+    set.add(name)
+    inFlightChecks.set(instanceId, set)
+    return () => {
+      set.delete(name)
+      if (set.size === 0) inFlightChecks.delete(instanceId)
+    }
+  }
+
+  /**
+   * 把一次检查结果并入持久化状态：有新版则记下候选信息，已是最新则删掉该项
+   * （标记「直到用户再次检查或升级才变」由此保证）。
+   */
+  async function persistCheck(
+    instanceId: string,
+    name: string,
+    record: PluginCheckRecord | null
+  ): Promise<void> {
+    const state = await stateStore.read(instanceId)
+    const updates = { ...state.updates }
+    if (record === null) delete updates[name]
+    else updates[name] = record
+    await stateStore
+      .write(instanceId, { lastCheckedAt: new Date().toISOString(), updates })
+      .catch((error: unknown) => {
+        // 状态落盘失败不影响本次检查结果：只是重启后看不到标记。
+        console.error('[plugin] 写入插件检查状态失败：', error)
+      })
   }
 
   /**
@@ -405,44 +453,57 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     },
 
     async check(instance, name): Promise<PluginUpdateCheck> {
-      const resolved = await resolveDshEntry(instance)
-      const plugins = await listPlugins(instance, 'zh', resolved)
-      const current = plugins.find((plugin) => plugin.name === name)
-      if (!current) throw new Error(`插件未安装：${name}`)
-      // view 联网取 latest 的版本、dsh peer 与发布时间。
-      const result = await runPlugin(
-        instance,
-        ['view', name, 'version', 'peerDependencies', 'time.modified', '--json'],
-        resolved
-      )
-      let meta: {
-        version?: string
-        peerDependencies?: Record<string, string>
-        'time.modified'?: string
-      }
+      const done = markChecking(instance.id, name)
       try {
-        meta = JSON.parse(result.stdout || '{}')
-      } catch {
-        throw new Error('无法解析插件版本信息输出')
+        const resolved = await resolveDshEntry(instance)
+        const plugins = await listPlugins(instance, 'zh', resolved)
+        const current = plugins.find((plugin) => plugin.name === name)
+        if (!current) throw new Error(`插件未安装：${name}`)
+        // view 联网取 latest 的版本、dsh peer 与发布时间。
+        const result = await runPlugin(
+          instance,
+          ['view', name, 'version', 'peerDependencies', 'time.modified', '--json'],
+          resolved
+        )
+        let meta: {
+          version?: string
+          peerDependencies?: Record<string, string>
+          'time.modified'?: string
+        }
+        try {
+          meta = JSON.parse(result.stdout || '{}')
+        } catch {
+          throw new Error('无法解析插件版本信息输出')
+        }
+        const latest = meta.version ?? current.version
+        const peers = meta.peerDependencies ?? {}
+        const dshPeer = peers[DSH_PEER] ?? null
+        // 按**实际执行命令的** dsh 版本判定，与安装闸同口径：注册表字段可能与真正运行的副本不一致。
+        const dshVersion = resolved.version
+        // 与 dsh 加载器同口径：主包与全部 @deepseek-ai/dsh-* 子包 peer 都要满足运行时版本，
+        // 任一不满足即不兼容（0.24.1 的子包锁 ^0.2.0-rc.1，实例 0.1.7-rc.2 会被拦）。
+        const incompatiblePeers = evaluateDshPeers(peers, dshVersion)
+        const compatible = Object.keys(incompatiblePeers).length === 0
+        const hasUpdate = latest !== current.version
+        const modifiedAt = meta['time.modified'] ?? null
+        // 落盘：有新版留下标记，已是最新清掉该项（标记只在再次检查或升级时变化）。
+        await persistCheck(
+          instance.id,
+          name,
+          hasUpdate ? { latest, compatible, dshPeer, dshVersion, modifiedAt } : null
+        )
+        return { name, current: current.version, latest, hasUpdate, compatible, dshPeer, dshVersion, modifiedAt }
+      } finally {
+        done()
       }
-      const latest = meta.version ?? current.version
-      const peers = meta.peerDependencies ?? {}
-      const dshPeer = peers[DSH_PEER] ?? null
-      // 按**实际执行命令的** dsh 版本判定，与安装闸同口径：注册表字段可能与真正运行的副本不一致。
-      const dshVersion = resolved.version
-      // 与 dsh 加载器同口径：主包与全部 @deepseek-ai/dsh-* 子包 peer 都要满足运行时版本，
-      // 任一不满足即不兼容（0.24.1 的子包锁 ^0.2.0-rc.1，实例 0.1.7-rc.2 会被拦）。
-      const incompatiblePeers = evaluateDshPeers(peers, dshVersion)
-      const compatible = Object.keys(incompatiblePeers).length === 0
+    },
+
+    async checkState(instance): Promise<PluginCheckSnapshot> {
+      const state = await stateStore.read(instance.id)
       return {
-        name,
-        current: current.version,
-        latest,
-        hasUpdate: latest !== current.version,
-        compatible,
-        dshPeer,
-        dshVersion,
-        modifiedAt: meta['time.modified'] ?? null
+        lastCheckedAt: state.lastCheckedAt,
+        updates: state.updates,
+        checking: [...(inFlightChecks.get(instance.id) ?? [])]
       }
     },
 
@@ -460,6 +521,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       const resolved = await resolveDshEntry(instance)
       const hadHostSide = await hostSideOf(instance, name, resolved)
       await runPlugin(instance, ['add', `${name}@${version}`], resolved)
+      // 升级完成即清掉该插件的可升级标记（标记只在再次检查或升级时变化）。
+      await persistCheck(instance.id, name, null)
       return { hasHostSide: hadHostSide || (await hostSideOf(instance, name, resolved)) }
     },
 
@@ -468,6 +531,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       // 卸载前先判 host 半（卸载后包已不在，读不到元数据）。
       const hasHostSide = await hostSideOf(instance, name, resolved)
       await runPlugin(instance, ['remove', name], resolved)
+      await persistCheck(instance.id, name, null)
       return { hasHostSide }
     }
   }

@@ -28,6 +28,7 @@ import type {
   LocalSpaceSnapshot,
   PluginInfo,
   PluginMutationResult,
+  PluginCheckSnapshot,
   PluginUpdateCheck,
   VaultPolicy,
   VaultStatusSnapshot,
@@ -148,6 +149,8 @@ export interface DshHubBridge {
     list: (id: string, locale?: 'zh' | 'en') => Promise<IpcResult<PluginInfo[]>>
     /** 检查某插件的最新版本与 dsh peer 兼容性。 */
     check: (id: string, name: string) => Promise<IpcResult<PluginUpdateCheck>>
+    /** 读取持久化的检查状态（可升级标记 + 在飞检查），挂载时恢复。 */
+    checkState: (id: string) => Promise<IpcResult<PluginCheckSnapshot>>
     /** 安装插件；spec 为 npm 名 / name@version / github: / file: 形态。 */
     install: (id: string, spec: string) => Promise<IpcResult<PluginMutationResult>>
     /** 升级到指定版本（显式版本，非 latest）。 */

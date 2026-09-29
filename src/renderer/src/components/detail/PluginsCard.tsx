@@ -13,6 +13,7 @@ import {
   pluginKindKey,
   pluginSourceKey,
   pruneChecks,
+  restoreChecks,
   showsIncompatibleWarning,
   showsUpToDate,
   type PluginCheckState
@@ -77,15 +78,19 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   const [checkingAll, setCheckingAll] = useState(false)
 
   /**
-   * 拉取插件列表。keepChecks=true 时保留已有检查结果（只按最新列表剪除已卸载插件的项），
-   * 用于安装/升级/卸载后刷新列表而不丢失其它插件的检查状态；缺省（初次加载 / 手动刷新）清空。
+   * 拉取插件列表与持久化的检查状态。keepChecks=true 时保留内存里的检查结果（只按最新列表
+   * 剪除已卸载插件的项），用于安装/升级/卸载后刷新；缺省（初次加载 / 手动刷新）用持久化状态
+   * 重建——用户切走再回来（或重启应用）仍能看到可升级标记与「检查中…」。
    */
   const load = useCallback(
     async (options?: { keepChecks?: boolean }): Promise<void> => {
       if (!BRIDGE) return
       setLoading(true)
       setLoadError(null)
-      const result = await BRIDGE.plugin.list(instanceId, language)
+      const [result, state] = await Promise.all([
+        BRIDGE.plugin.list(instanceId, language),
+        BRIDGE.plugin.checkState(instanceId)
+      ])
       setLoading(false)
       if (result.ok) {
         setPlugins(result.value)
@@ -93,8 +98,9 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
           const names = result.value.map((plugin) => plugin.name)
           setChecks((prev) => pruneChecks(prev, names))
         } else {
-          setChecks({})
+          setChecks(restoreChecks(result.value, state.ok ? state.value : null))
         }
+        if (state.ok) setLastCheckedAt(state.value.lastCheckedAt)
       } else {
         setLoadError(result.message)
         setPlugins([])
@@ -129,7 +135,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   /**
    * 一键批量检查所有插件更新：小并发（CHECK_CONCURRENCY）同时进行，避免串行过慢，
    * 也不至于同时拉起过多子进程；批量期间单行检查按钮锁定，保证同一时刻只有系统检查在跑。
-   * 用户切换界面时本函数继续执行到结束，不中止已发起的检查。
+   * 用户切换界面时本函数继续执行到结束（结果由主进程落盘，回来仍能看到标记）。
    */
   const runCheckAll = async (): Promise<void> => {
     if (!BRIDGE || plugins === null || checkingAll) return

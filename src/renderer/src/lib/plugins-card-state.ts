@@ -2,7 +2,7 @@
  * 插件卡片的纯展示派生（保持无副作用，便于测试）：升级按钮是否可见、检查结果文案分支、
  * host 半判定、类型标签选择。UI 组件只消费这里的判定结果，不内联条件逻辑。
  */
-import type { PluginInfo, PluginUpdateCheck } from '@shared/contracts'
+import type { PluginCheckSnapshot, PluginInfo, PluginUpdateCheck } from '@shared/contracts'
 import type { MessageKey } from '@shared/i18n/messages'
 
 /** 单个插件行的检查态：未检查 / 检查中 / 已出结果 / 检查失败。 */
@@ -26,6 +26,45 @@ export function pruneChecks(
   const next: Record<string, PluginCheckState> = {}
   for (const [name, state] of Object.entries(checks)) {
     if (present.has(name)) next[name] = state
+  }
+  return next
+}
+
+/**
+ * 由持久化快照与当前插件列表重建检查态（挂载时恢复标记）：
+ * - 快照里有记录的插件：latest 与当前已装版本不同才算「有更新」（升级过就不再显示标记）；
+ * - 快照里正在检查的插件：显示「检查中…」（后台仍在跑）；
+ * - 其余插件：保持未检查。
+ * 纯函数便于测试。
+ */
+export function restoreChecks(
+  plugins: readonly PluginInfo[],
+  snapshot: PluginCheckSnapshot | null
+): Record<string, PluginCheckState> {
+  const next: Record<string, PluginCheckState> = {}
+  if (snapshot === null) return next
+  const checking = new Set(snapshot.checking)
+  for (const plugin of plugins) {
+    if (checking.has(plugin.name)) {
+      next[plugin.name] = { status: 'checking', result: null, error: null }
+      continue
+    }
+    const record = snapshot.updates[plugin.name]
+    if (record === undefined || record.latest === plugin.version) continue
+    next[plugin.name] = {
+      status: 'done',
+      result: {
+        name: plugin.name,
+        current: plugin.version,
+        latest: record.latest,
+        hasUpdate: true,
+        compatible: record.compatible,
+        dshPeer: record.dshPeer,
+        dshVersion: record.dshVersion,
+        modifiedAt: record.modifiedAt
+      },
+      error: null
+    }
   }
   return next
 }

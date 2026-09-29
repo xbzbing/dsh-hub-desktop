@@ -112,6 +112,7 @@ let installerFake: {
 let pluginManagerFake: {
   list: ReturnType<typeof vi.fn>
   check: ReturnType<typeof vi.fn>
+  checkState: ReturnType<typeof vi.fn>
   install: ReturnType<typeof vi.fn>
   upgrade: ReturnType<typeof vi.fn>
   remove: ReturnType<typeof vi.fn>
@@ -245,6 +246,7 @@ beforeEach(async () => {
       dshVersion: null,
       modifiedAt: null
     })),
+    checkState: vi.fn(async () => ({ lastCheckedAt: null, updates: {}, checking: [] })),
     install: vi.fn(async () => ({ hasHostSide: false })),
     upgrade: vi.fn(async () => ({ hasHostSide: false })),
     remove: vi.fn(async () => ({ hasHostSide: false }))
@@ -333,6 +335,7 @@ describe('registerIpc', () => {
       'dsh-version:confirmReply',
       'plugin:list',
       'plugin:check',
+      'plugin:checkState',
       'plugin:install',
       'plugin:upgrade',
       'plugin:remove',
@@ -725,6 +728,26 @@ describe('registerIpc', () => {
     const result = (await invoke('plugin:list', created.value.id)) as { ok: boolean; code?: string }
     expect(result.ok).toBe(false)
     expect(result.code).toBe('invalid-input')
+  })
+
+  it('plugin:checkState：转发持久化检查状态（供挂载时恢复标记）', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    pluginManagerFake.checkState.mockResolvedValueOnce({
+      lastCheckedAt: '2026-09-29T10:00:00.000Z',
+      updates: { p: { latest: '2.0.0', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null } },
+      checking: []
+    })
+    const result = (await invoke('plugin:checkState', created.value.id)) as {
+      ok: boolean
+      value: { lastCheckedAt: string | null; updates: Record<string, unknown> }
+    }
+    expect(result.ok).toBe(true)
+    expect(result.value.lastCheckedAt).toBe('2026-09-29T10:00:00.000Z')
+    expect(Object.keys(result.value.updates)).toEqual(['p'])
   })
 
   it('plugin:upgrade：显式版本经校验后转发', async () => {
