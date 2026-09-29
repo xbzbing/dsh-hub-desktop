@@ -24,13 +24,13 @@ Since I don't have an Apple Developer Account, I can't distribute a signed app. 
 - **Credential Vault**: System keychain (safeStorage), opt-in only (unchecked by default); instant clear on uncheck/forget
 - **Audit Log**: Whitelist projection, credentials never stored
 - **SSH Security**: TOFU host fingerprint verification (trust on first use / reject on change), passwords passed via ephemeral memory channel
-- **Bilingual + Light/Dark Theme**: Full zh/en i18n (lint guardrails prevent omissions), OKLch brand tokens
+- **Plugin Management**: List installed plugins for the instance's environment in the detail page (icon / name / version / npm / GitHub / install source), with install, check-for-update, and uninstall. Update checks evaluate both the dsh main package and sub-package peers for compatibility, warning instead of upgrading when incompatible; plugins with host-side code prompt an instance restart after changes; metadata is localized to the UI language
 - **Tray / Notifications / Auto-start**: Configurable
 
 | | |
 |:---:|:---:|
-| ![Light Theme](docs/images/home-overview.png) | ![Dark Theme](docs/images/dark-theme.png) |
-| *Light Theme · Instance Overview* | *Dark Theme · Instance Overview* |
+| ![Light Theme](docs/images/home-overview.png) | ![Instance Detail](docs/images/instance-details.png) |
+| *Instance Overview* | *Instance Detail · Plugin Management* |
 | ![Instance Detail](docs/images/instance-show.png) | ![Collapsed Sidebar](docs/images/sidebar-collapsed.png) |
 | *Instance Detail Page* | *Collapsed Sidebar · Icon Mode* |
 

@@ -27,13 +27,15 @@
 - **凭据保险库**：系统钥匙串（safeStorage），显式勾选才落盘、默认不记住；取消勾选 / 忘记即时清除
 - **审计日志**：显式白名单投影，绝不落凭据
 - **SSH 安全**：TOFU 主机指纹确认（首次信任 / 变更一律拒绝），口令经内存通道瞬时传递
-- **双语 + 明暗主题**：zh / en 全量 i18n（走查护栏防遗漏），OKLch 品牌 token
+- **插件管理**：在实例详情列出该实例环境已装插件（图标 / 名称 / 版本 / npm / GitHub / 安装来源），
+  支持安装、检查升级、卸载；检查升级按 dsh 主包与子包 peer 判定兼容性，不兼容只提示不误升级；
+  含 host 端代码的插件改动后提醒重启实例；元信息按界面语言本地化
 - **托盘 / 通知 / 自启**：可配置
 
 | | |
 |:---:|:---:|
-| ![亮色主题](docs/images/home-overview.png) | ![暗色主题](docs/images/dark-theme.png) |
-| *亮色主题 · 实例总览* | *暗色主题 · 实例总览* |
+| ![亮色主题](docs/images/home-overview.png) | ![实例详情](docs/images/instance-details.png) |
+| *实例总览* | *实例详情 · 插件管理* |
 | ![实例详情](docs/images/instance-show.png) | ![收起侧边栏](docs/images/sidebar-collapsed.png) |
 | *实例详情页* | *侧边栏收起 · 图标模式* |
 
