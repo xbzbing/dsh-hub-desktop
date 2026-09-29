@@ -4,8 +4,14 @@ import { defineConfig } from '@playwright/test'
 // 界面与工作区文案断言不随宿主系统语言漂移;显式传入同名变量仍可覆盖。
 process.env['DSH_HUB_E2E_LOCALE'] ??= 'zh-CN'
 
+// E2E 必须自洽：main/preload 一律来自 out/，若 renderer 被 ELECTRON_RENDERER_URL 指到本机
+// 正在跑的 `pnpm dev` 开发服务器，就会「新 renderer + 旧 main」混用，得到与代码无关的失败。
+// 统一清掉该变量，让 renderer 也从 out/ 加载（globalSetup 已先构建一次）。
+delete process.env['ELECTRON_RENDERER_URL']
+
 export default defineConfig({
   testDir: 'tests/e2e',
+  globalSetup: './tests/e2e/global-setup.ts',
   timeout: 30_000,
   expect: { timeout: 10_000 },
   retries: 0,
