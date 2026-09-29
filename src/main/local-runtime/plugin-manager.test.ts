@@ -4,6 +4,9 @@ import type { PluginManagerOptions } from './plugin-manager'
 import type { LocalInstance } from '@shared/contracts'
 import type { CommandResult } from './exec-file'
 
+/** 路径分隔符归一化，使断言在 win32（反斜杠）与 POSIX 上一致。 */
+const toPosix = (path: string): string => path.replace(/\\/g, '/')
+
 const now = new Date().toISOString()
 
 function localInstance(overrides: Partial<LocalInstance> = {}): LocalInstance {
@@ -138,10 +141,11 @@ describe('createPluginManager.list', () => {
     const manager = createPluginManager({
       ...baseOptions(run),
       readLocale: (p) => {
-        if (p.endsWith('/locale/zh.json') && p.includes('git-panel')) {
+        const posix = toPosix(p)
+        if (posix.endsWith('/locale/zh.json') && posix.includes('git-panel')) {
           return { meta: { title: 'Git 面板', description: '中文简介' } }
         }
-        if (p.endsWith('/locale/en.json') && p.includes('git-panel')) {
+        if (posix.endsWith('/locale/en.json') && posix.includes('git-panel')) {
           return { meta: { title: 'Git Panel', description: 'English desc' } }
         }
         return null
@@ -170,9 +174,10 @@ describe('createPluginManager.list', () => {
       ...baseOptions(run),
       // 只有顶层 node_modules 路径能读到 manifest；list --json 的 .pnpm path 读不到（返回 null）。
       readManifest: (dir) => {
-        readDirs.push(dir)
-        if (dir.includes('/.pnpm/')) return null
-        if (dir.includes('git-panel')) return GIT_PANEL_MANIFEST
+        const posix = toPosix(dir)
+        readDirs.push(posix)
+        if (posix.includes('/.pnpm/')) return null
+        if (posix.includes('git-panel')) return GIT_PANEL_MANIFEST
         return null
       }
     })
