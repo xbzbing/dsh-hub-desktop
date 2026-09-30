@@ -7,5 +7,9 @@
 import { execFileSync } from 'node:child_process'
 
 export default function globalSetup(): void {
-  execFileSync('pnpm', ['exec', 'electron-vite', 'build'], { stdio: 'inherit' })
+  // Windows 上 pnpm 是 `pnpm.cmd` 垫片：execFileSync 不经 shell 无法直接执行它（ENOENT）。
+  execFileSync('pnpm', ['exec', 'electron-vite', 'build'], {
+    stdio: 'inherit',
+    shell: process.platform === 'win32'
+  })
 }
