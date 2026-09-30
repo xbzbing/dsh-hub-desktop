@@ -94,6 +94,12 @@ export interface InstanceSlice {
    * 每实例保留最近 200 行；未产生过活动的实例不在 map 中。
    */
   activityLog: Record<string, ActivityLine[]>
+  /**
+   * 已提示过「自动禁用不兼容插件」的实例（instanceId → 判定的 dsh 版本），仅本会话有效。
+   * 标记放在 store 而非插件卡组件里：并发加载与组件重挂载（切换实例、record 短暂缺失）
+   * 都不该让同一次自动禁用重复弹提示。
+   */
+  autoDisabledNotified: Record<string, string>
   load: () => Promise<void>
   refreshList: () => Promise<void>
   /** 按给定 ID 列表重排实例顺序（乐观更新 + IPC 持久化）。 */
@@ -111,6 +117,11 @@ export interface InstanceSlice {
   appendActivity: (instanceId: string, line: ActivityInput) => void
   /** 清空某实例的活动日志。 */
   clearActivity: (instanceId: string) => void
+  /**
+   * 领取「已自动禁用不兼容插件」提示的发送权：该实例在该 dsh 版本上首次调用返回 true，
+   * 其后返回 false。同步判定，因此并发的插件列表加载不会各自通过。
+   */
+  notifyAutoDisabledOnce: (instanceId: string, dshVersion: string) => boolean
 }
 
 /** 工作区导航、选中、向导与设置页开合。 */

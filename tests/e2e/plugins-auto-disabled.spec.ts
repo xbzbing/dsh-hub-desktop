@@ -151,6 +151,24 @@ test('自动禁用提示：卡片顶部提示不兼容插件，且该行标注�
   await expect(banner).toBeHidden()
 })
 
+test('自动禁用提示只弹一次：离开再回到实例详情不再重复提示', async () => {
+  test.setTimeout(90_000)
+  // 首条提示 5s 后自动关闭，先等它退场，避免把残留当成新提示。
+  await expect(win.getByTestId('toast')).toBeHidden({ timeout: 15_000 })
+
+  // 回总览再进详情：插件卡重挂载并重新拉取状态，但同一次自动禁用不该再弹提示。
+  await win.getByTestId('detail-overview-btn').click()
+  await expect(win.getByTestId('view-home')).toBeVisible()
+  await win.locator('[data-testid^="detail-"]').first().click()
+  await expect(win.getByTestId('view-detail')).toBeVisible()
+  // 列表已加载（提示与列表由同一批状态在同一帧渲染）后，在提示条存活期内定点判定：
+  // 提示条 5s 后自动关闭，这里只等 1s，若重复弹出必然被抓到 —— 不能用会一直重试到
+  // 提示自行消失才通过的 toHaveCount(0)，那会让本用例在回归时假绿。
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible({ timeout: 15_000 })
+  await win.waitForTimeout(1_000)
+  expect(await win.getByTestId('toast').count()).toBe(0)
+})
+
 test('手动启用不兼容插件：先授予 allow-version --accept-risk 豁免，插件启用并在信息栏留痕', async () => {
   test.setTimeout(90_000)
   // 承接上一条用例：实例详情已打开、插件卡可见、demo-plugin 处于禁用态。

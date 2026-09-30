@@ -984,3 +984,28 @@ describe('refreshList 错误态', () => {
     expect(useAppStore.getState().instances).toHaveLength(1)
   })
 })
+
+describe('自动禁用提示的发送权', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('同一实例同一 dsh 版本只发一次；并发调用也只有先到的一次通过', async () => {
+    const useAppStore = await freshStore()
+    const once = (): boolean => useAppStore.getState().notifyAutoDisabledOnce('inst-1', '0.2.0-rc.2')
+
+    // 两次「并发」领取（模拟 StrictMode 双调用挂载 effect 的两次加载）：只有第一次拿到发送权。
+    expect(once()).toBe(true)
+    expect(once()).toBe(false)
+    expect(useAppStore.getState().autoDisabledNotified).toEqual({ 'inst-1': '0.2.0-rc.2' })
+  })
+
+  it('dsh 版本再次变更或换实例都会重新提示', async () => {
+    const useAppStore = await freshStore()
+    expect(useAppStore.getState().notifyAutoDisabledOnce('inst-1', '0.2.0-rc.2')).toBe(true)
+    // 同一实例的新版本（下一次升级后又禁用了一批插件）要重新提示。
+    expect(useAppStore.getState().notifyAutoDisabledOnce('inst-1', '0.3.0')).toBe(true)
+    // 其它实例各自独立。
+    expect(useAppStore.getState().notifyAutoDisabledOnce('inst-2', '0.2.0-rc.2')).toBe(true)
+  })
+})

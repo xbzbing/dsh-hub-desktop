@@ -19,6 +19,7 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
   userDataPath: null,
   authPhases: {},
   activityLog: {},
+  autoDisabledNotified: {},
 
   load: async () => {
     // 先获取主进程快照(含系统区域设置),再用它解析「跟随系统」语言偏好。
@@ -110,6 +111,15 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
       delete activityLog[instanceId]
       return { activityLog }
     })
+  },
+
+  notifyAutoDisabledOnce: (instanceId, dshVersion) => {
+    // 先同步判定再登记：两次并发加载里只有先到的一次能拿到发送权。
+    if ((get().autoDisabledNotified[instanceId] ?? null) === dshVersion) return false
+    set((state) => ({
+      autoDisabledNotified: { ...state.autoDisabledNotified, [instanceId]: dshVersion }
+    }))
+    return true
   },
 
   applyStatus: (event) => {

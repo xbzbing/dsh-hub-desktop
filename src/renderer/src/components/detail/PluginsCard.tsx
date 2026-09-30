@@ -54,6 +54,8 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   const language = useAppStore((state) => state.language)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
   const appendActivity = useAppStore((state) => state.appendActivity)
+  /** 领取「已自动禁用」提示的发送权（每实例每个 dsh 版本只发一次）。 */
+  const notifyAutoDisabledOnce = useAppStore((state) => state.notifyAutoDisabledOnce)
   const workspaceConnected = useAppStore(
     (state) => state.workspaceConnected[instanceId] ?? false
   )
@@ -81,7 +83,6 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null)
   /** 上次运行时核对中被自动禁用的插件（界面提示用）；null = 无。 */
   const [autoDisabled, setAutoDisabled] = useState<PluginAutoDisabled[] | null>(null)
-  const [autoDisabledSeen, setAutoDisabledSeen] = useState(false)
   const [checkingAll, setCheckingAll] = useState(false)
 
   /**
@@ -111,10 +112,11 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
           setLastCheckedAt(state.value.lastCheckedAt)
           const disabled = state.value.autoDisabled
           setAutoDisabled(disabled.length > 0 ? disabled : null)
-          if (disabled.length > 0 && !autoDisabledSeen) {
-            setAutoDisabledSeen(true)
+          const dshVersion = disabled[0]?.dshVersion ?? ''
+          // 同一次自动禁用只提示一次：发送权记在 store 里（同步判定），
+          // 因此并发的两次加载（dev StrictMode 会双调用挂载 effect）与组件重挂载都不会重复弹。
+          if (disabled.length > 0 && notifyAutoDisabledOnce(instanceId, dshVersion)) {
             const list = disabled.map((item) => item.name).join(t('common.listSeparator'))
-            const dshVersion = disabled[0]?.dshVersion ?? ''
             logActivity(t('detail.plugin.log.autoDisabled', { dshVersion, list }))
             toast('err', t('detail.plugin.autoDisabledTitle'), t('detail.plugin.autoDisabledBody', {
               dshVersion,
@@ -127,7 +129,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
         setPlugins([])
       }
     },
-    [instanceId, language, autoDisabledSeen, logActivity, t, toast]
+    [instanceId, language, logActivity, t, toast, notifyAutoDisabledOnce]
   )
 
   useEffect(() => {
