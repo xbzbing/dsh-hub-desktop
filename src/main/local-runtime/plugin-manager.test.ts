@@ -251,7 +251,8 @@ describe('createPluginManager.list', () => {
     await manager.list(localInstance({ id: 'abc', profile: 'tui' }))
 
     expect(calls[0]!.args).toEqual(['/runtimes/dsh-0.1.7-rc.2/bin.js', 'plugin', '--profile', 'tui', 'list', '--json'])
-    expect(calls[0]!.env?.DSH_HOME).toBe('/data/homes/abc')
+    // 路径断言归一化分隔符：断言的是目录布局，Windows 上 join 产出反斜杠。
+    expect(toPosix(calls[0]!.env?.DSH_HOME ?? '')).toBe('/data/homes/abc')
   })
 
   it('公共空间实例：DSH_HOME 为 <home>/.dsh', async () => {
@@ -264,7 +265,7 @@ describe('createPluginManager.list', () => {
     })
     const manager = createPluginManager({ ...baseOptions(run), homeDir: () => '/Users/me' })
     await manager.list(localInstance({ useDefaultSpace: true }))
-    expect(calls[0]!.env?.DSH_HOME).toBe('/Users/me/.dsh')
+    expect(toPosix(calls[0]!.env?.DSH_HOME ?? '')).toBe('/Users/me/.dsh')
   })
 
   it('非零退出：抛脱敏后的错误', async () => {
@@ -302,7 +303,7 @@ describe('createPluginManager.list', () => {
     await manager.list(localInstance({ useDefaultSpace: true, launcher: 'duush', dshVersion: '0.1.7-rc.2' }))
     // 入口取 PATH 上的系统 dsh，而不是 hub 已装的 0.1.7-rc.2 副本。
     expect(calls[0]!.args[0]).toBe('/usr/local/bin/dsh')
-    expect(calls[0]!.env?.DSH_HOME).toBe('/Users/me/.dsh')
+    expect(toPosix(calls[0]!.env?.DSH_HOME ?? '')).toBe('/Users/me/.dsh')
   })
 })
 
