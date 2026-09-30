@@ -114,7 +114,11 @@ export function DshVersionPanel({ control }: { control: DshVersionControl | null
           >
             <span className="dsh-progress__bar" style={{ width: `${percent}%` }} />
           </div>
-          <p className="meta mt8">
+          {/* 详情行只占一行、超出省略：完整日志在实例底部信息栏，这里不必铺开。 */}
+          <p
+            className="meta mt8 version-progress-detail"
+            title={`${t(PHASE_KEYS[progress.phase])} · ${percent}%${progress.detail ? ` · ${progress.detail}` : ''}`}
+          >
             {t(PHASE_KEYS[progress.phase])} · {percent}%
             {progress.detail ? ` · ${progress.detail}` : ''}
           </p>
