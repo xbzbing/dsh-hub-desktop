@@ -1242,18 +1242,6 @@ h3,
   align-items: center;
   gap: 8px;
 }
-.dsh-progress {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--border, #e5e7eb);
-  overflow: hidden;
-}
-.dsh-progress__bar {
-  display: block;
-  height: 100%;
-  background: var(--accent, #2563eb);
-  transition: width 0.2s ease;
-}
 /* 升级进度详情（如「安装中 · 90% · 下载依赖 (896)：<包路径>」）：只占一行，超出省略；
    完整日志在实例底部信息栏，这里不铺开。悬停可经 title 看全文。 */
 .version-progress-detail {

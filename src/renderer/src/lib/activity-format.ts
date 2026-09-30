@@ -19,6 +19,6 @@ export function formatActivity(t: Translator, line: ActivityLine): string {
   const phaseText =
     event.phase === 'done'
       ? `${t(PHASE_KEYS.done)}${event.version ? ` v${event.version}` : ''}`
-      : `${t(PHASE_KEYS[event.phase])}${event.percent !== undefined ? ` ${Math.round(event.percent)}%` : ''}`
+      : `${t(PHASE_KEYS[event.phase])}${event.detail !== undefined && event.detail !== '' ? ` · ${event.detail}` : ''}`
   return `${time}  ${phaseText}${event.detail ? `  ${event.detail}` : ''}`
 }

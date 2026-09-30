@@ -660,9 +660,7 @@ export type DshVersionPhase = 'checking' | 'downloading' | 'installing' | 'done'
 export interface DshVersionProgressEvent {
   instanceId: string
   phase: DshVersionPhase
-  /** 0-100 整数百分比；下载依赖计数为估算值，未知阶段可缺省。 */
-  percent?: number
-  /** 当前阶段的补充说明（如 npm 下载的包路径）。 */
+  /** 当前阶段的补充说明（如 npm 下载的包路径与已下载包数）。 */
   detail?: string
   /** 目标版本；downloading 及之后的阶段携带。 */
   version?: string

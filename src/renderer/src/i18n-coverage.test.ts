@@ -921,7 +921,8 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/auth-handlers.ts', "throw new InstanceStoreError('invalid-input', '保险库中没有该实例的已存密码')"),
   debt('src/main/ipc/version-handlers.ts', "if (!deps.installer) throw new InstanceStoreError('internal', 'dsh 版本管理能力不可用')"),
   debt('src/main/ipc/version-handlers.ts', "throw new InstanceStoreError('invalid-input', '该实例不支持升级')"),
-  debt('src/main/local-runtime/runtime-installer.ts', "onProgress?.({ phase: 'installing', version, detail: '校验安装结果', percent: 95 })"),
+  debt('src/main/local-runtime/runtime-installer.ts', "onProgress?.({ phase: 'installing', version, detail: '校验安装结果' })"),
+  debt('src/main/local-runtime/runtime-installer.ts', "onProgress?.({ phase: 'installing', version, detail: '安装完成' })"),
 
   // —— 插件管理 IPC 信封 message（渲染层 toast 直接展示 result.message） ——
   debt('src/main/ipc/plugin-handlers.ts', "const PLUGIN_VERSION_SCHEMA = z.string().trim().min(1).max(64).regex(DSH_VERSION_PATTERN, '版本号含非法字符')"),
@@ -960,7 +961,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/transport/ssh-tunnel.ts', 'detail: `SSH 隧道断开（${attribution.message}）；${entry.backoffMs / 1000}s 后自动重连`'),
   debt('src/main/local-runtime/launch.ts', "detail: `启动超时（${Math.round(readyTimeoutMs / 1000)}s）：未解析到就绪 URL${entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''}`"),
   debt('src/main/local-runtime/runtime-installer.ts', 'detail: `安装 ${DSH_PACKAGE_NAME}@${version}`'),
-  debt('src/main/local-runtime/runtime-installer.ts', "const detail = `下载依赖 (${fetchCount})：${path}`"),
+  debt('src/main/local-runtime/runtime-installer.ts', "const detail = `下载依赖 (${downloadedPaths.size})：${info.path}`"),
   debt('src/main/local-runtime/local-runtime.ts', "detail: error instanceof Error ? `解析就绪地址失败：${error.message}` : '解析就绪地址失败'"),
   debt('src/main/local-runtime/local-runtime.ts', "failReady(new Error('就绪 URL 无法解析'))"),
   debt('src/main/local-runtime/local-runtime.ts', "failReady(new Error(`就绪 URL 主机非回环地址（${readyUrl.hostname}），已拒绝`))"),

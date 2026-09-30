@@ -297,15 +297,30 @@ export const spawnNpm = (
     })
   })
 
+/** npm 单条 http 日志的解析结果。 */
+export interface NpmFetchInfo {
+  /** 相对路径（去掉 registry 主机与查询串）：包名（元数据）或 `<...>/<file>.tgz`（包体）。 */
+  path: string
+  /** tarball = 真正的包体；packument = 仅元数据。 */
+  kind: 'tarball' | 'packument'
+}
+
 /**
- * 从 npm `--loglevel http` 的 stderr 行提取下载项相对路径。
- * 完成行形如 `npm http fetch GET 200 <url> <耗时>`；请求行与非 fetch 行返回 null。
+ * 解析 npm `--loglevel http` 的一行日志，只认「下载了某个包体/元数据」两类完成行：
+ * - 网络下载：`npm http fetch GET 200 <url> <耗时> (cache miss)`
+ * - 缓存命中：`npm http cache [<name>@]<url> <耗时> (cache hit)`
+ *
+ * 缓存命中同样计入——否则重复安装/修复时会因为「没走网络」而数不到已就绪的包。
+ * 包体判定用「URL 路径以 .tgz 结尾」而不是 `/-/`：镜像 registry（如 npmmirror）的
+ * tarball 路径形如 `/packages/<name>/<ver>/<file>.tgz`，并不含 `/-/`。
  */
-export function npmFetchPath(line: string): string | null {
-  const match = /^npm http fetch GET \d+ (\S+)/.exec(line)
-  const url = match?.[1]
-  if (!url) return null
-  return url.replace(/https?:\/\/[^/]+\//, '').split('?')[0] || null
+export function npmFetchInfo(line: string): NpmFetchInfo | null {
+  if (!/^npm http (?:fetch GET \d+|cache)\b/.test(line)) return null
+  const url = /(https?:\/\/\S+)/.exec(line)?.[1]
+  if (url === undefined) return null
+  const path = url.replace(/https?:\/\/[^/]+\//, '').split('?')[0] ?? ''
+  if (path === '') return null
+  return { path, kind: path.endsWith('.tgz') ? 'tarball' : 'packument' }
 }
 
 /** 取文本最后 max 行——npm 失败的结论性输出在日志末尾。 */
@@ -325,11 +340,10 @@ export interface InstalledRuntime {
 }
 
 export interface InstallProgress {
-  phase: 'resolving' | 'installing'
+  /** installing = 下载包体与收尾；不提供百分比——npm 没有可用的总量与进度。 */
+  phase: 'installing'
   version: string
   detail?: string
-  /** 0–100 整数百分比；未知阶段为 undefined。 */
-  percent?: number
 }
 
 export interface RuntimeInstallerOptions {
@@ -533,8 +547,11 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
   }
 
   /**
-   * 执行一次 `npm install`：带进度回调时逐行解析 fetch 日志驱动百分比，否则走 execFile 汇总
+   * 执行一次 `npm install`：带进度回调时逐行解析 npm 日志给出下载记录，否则走 execFile 汇总
    * （便于测试 mock）。非零退出抛错，只保留 stderr 尾部的结论性输出。
+   *
+   * 只报「已下载多少个包 + 当前包」：npm 不提供可用的总量与进度，任何百分比都是编造的，
+   * 所以这里不做百分比，界面只展示这条下载记录。
    */
   async function runNpmInstall(
     npm: NpmInvocation,
@@ -545,21 +562,21 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     const env = npmChildEnv(npm, { npm_config_cache: options.cacheDir })
     let result: CommandResult
     if (onProgress) {
-      // 进度分支：stderr 逐行解析 npm 的 fetch 完成日志驱动进度回调
-      let fetchCount = 0
+      // 进度分支：逐行解析 npm 日志，只统计**包体**下载（含缓存命中），给出下载记录。
+      const downloadedPaths = new Set<string>()
       let lastDetail = ''
       result = await runNpm(npm, installArgs, {
         env,
         signal: abortController.signal,
         onStderrLine: (line) => {
-          const path = npmFetchPath(line)
-          if (!path) return
-          fetchCount += 1
-          const detail = `下载依赖 (${fetchCount})：${path}`
+          const info = npmFetchInfo(line)
+          // 元数据请求不代表包已就绪；同名包体重复日志只算一次。
+          if (info === null || info.kind !== 'tarball' || downloadedPaths.has(info.path)) return
+          downloadedPaths.add(info.path)
+          const detail = `下载依赖 (${downloadedPaths.size})：${info.path}`
           if (detail !== lastDetail) {
             lastDetail = detail
-            // 百分比上限 90%，校验与收尾留给 95/100
-            onProgress({ phase: 'installing', version, detail, percent: Math.min(90, 10 + fetchCount * 3) })
+            onProgress({ phase: 'installing', version, detail })
           }
         }
       })
@@ -573,7 +590,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
         `安装 ${DSH_PACKAGE_NAME}@${version} 失败（exit ${result.code}）：${tailLines(result.stderr, 20) || '无 stderr'}`
       )
     }
-    onProgress?.({ phase: 'installing', version, detail: '校验安装结果', percent: 95 })
+    onProgress?.({ phase: 'installing', version, detail: '校验安装结果' })
   }
 
   return {
@@ -686,7 +703,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
         } catch {
           throw new Error(`全局升级完成但未找到 dsh 入口：${entry}`)
         }
-        onProgress?.({ phase: 'installing', version, percent: 100 })
+        onProgress?.({ phase: 'installing', version, detail: '安装完成' })
       })
     },
 
@@ -751,7 +768,7 @@ export function createRuntimeInstaller(options: RuntimeInstallerOptions): Runtim
     const entry = runtimeEntryFor(options.runtimesDir, version)
     await stat(entry)
     await rm(markerPath, { force: true })
-    onProgress?.({ phase: 'installing', version, percent: 100 })
+    onProgress?.({ phase: 'installing', version, detail: '安装完成' })
     const stats = await stat(dir)
     return { version, dir, entry, installedAt: stats.mtime.toISOString() }
   }

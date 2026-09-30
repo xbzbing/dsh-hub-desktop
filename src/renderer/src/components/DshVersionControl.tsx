@@ -38,7 +38,6 @@ export function DshVersionPanel({ control }: { control: DshVersionControl | null
     return null
   }
 
-  const percent = Math.max(0, Math.min(100, Math.round(progress?.percent ?? 0)))
   const foundText =
     versionCheck !== null
       ? t('detail.version.found', {
@@ -98,31 +97,22 @@ export function DshVersionPanel({ control }: { control: DshVersionControl | null
         </div>
       )}
 
-      {/* 升级中：进度条 + 阶段文字 + 百分比。 */}
+      {/*
+        升级中：只显示一行「阶段 · 下载记录」。npm 不提供可用的总量与进度，任何百分比都是编造的，
+        所以不画进度条；详情行单行省略，完整日志在实例底部信息栏。
+      */}
       {progress !== null &&
         (progress.phase === 'checking' ||
           progress.phase === 'downloading' ||
           progress.phase === 'installing') && (
-        <div className="mt8" data-testid="upgrade-progress">
-          <div
-            className="dsh-progress"
-            role="progressbar"
-            aria-valuenow={percent}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={t('detail.version.upgrade')}
-          >
-            <span className="dsh-progress__bar" style={{ width: `${percent}%` }} />
-          </div>
-          {/* 详情行只占一行、超出省略：完整日志在实例底部信息栏，这里不必铺开。 */}
-          <p
-            className="meta mt8 version-progress-detail"
-            title={`${t(PHASE_KEYS[progress.phase])} · ${percent}%${progress.detail ? ` · ${progress.detail}` : ''}`}
-          >
-            {t(PHASE_KEYS[progress.phase])} · {percent}%
-            {progress.detail ? ` · ${progress.detail}` : ''}
-          </p>
-        </div>
+        <p
+          className="meta mt8 version-progress-detail"
+          data-testid="upgrade-progress"
+          title={`${t(PHASE_KEYS[progress.phase])}${progress.detail ? ` · ${progress.detail}` : ''}`}
+        >
+          {t(PHASE_KEYS[progress.phase])}
+          {progress.detail ? ` · ${progress.detail}` : ''}
+        </p>
       )}
 
       {/* 完成：阶段文字 + 新版本号（版本行同时刷新）。 */}

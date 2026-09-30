@@ -411,20 +411,19 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       ): Promise<void> => {
         const wasRunning = this.statusOf(id)?.status === 'running'
         if (wasRunning) await this.stop(id)
-        emitUpgrade({ instanceId: id, phase: 'downloading', version, percent: 0, at: at() })
+        emitUpgrade({ instanceId: id, phase: 'downloading', version, at: at() })
         await install((progress) => {
           emitUpgrade({
             instanceId: id,
             phase: 'installing',
             version,
-            percent: progress.percent ?? 0,
             detail: progress.detail,
             at: at()
           })
         })
         await options.store.update(id, { dshVersion: version })
         if (wasRunning) await this.start({ ...instance, dshVersion: version })
-        emitUpgrade({ instanceId: id, phase: 'done', version, percent: 100, at: at() })
+        emitUpgrade({ instanceId: id, phase: 'done', version, at: at() })
       }
       try {
         // 升级对象经 dsh-source-policy 判定，与版本检查、启动路径共用同一判据：

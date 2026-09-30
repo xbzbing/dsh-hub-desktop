@@ -1970,12 +1970,12 @@ describe('upgradeInstance 升级编排', () => {
     installedAt: ISO
   })
 
-  it('停止态升级：只安装并回写版本，不触发 stop/start，末尾 done=100', async () => {
+  it('停止态升级：只安装并回写版本，不触发 stop/start，末尾 done', async () => {
     const store = { update: vi.fn(async () => localInstance()) }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       ensureInstalled: vi.fn(async (version: string, onProgress?: (progress: InstallProgress) => void) => {
-        onProgress?.({ phase: 'installing', version, percent: 42, detail: '下载依赖 (10)：pkg' })
+        onProgress?.({ phase: 'installing', version, detail: '下载依赖 (10)：pkg' })
         return installedRuntime(version)
       })
     })
@@ -1997,17 +1997,17 @@ describe('upgradeInstance 升级编排', () => {
     await manager.upgradeInstance(instance)
 
     expect(events.map((event) => event.phase)).toEqual(['checking', 'downloading', 'installing', 'done'])
-    expect(events.at(-1)).toMatchObject({ instanceId: instance.id, percent: 100, version: '0.1.6' })
+    expect(events.at(-1)).toMatchObject({ instanceId: instance.id, phase: 'done', version: '0.1.6' })
     // 每个事件都必须带可解析的 ISO 时间戳（弱断言「至少一个合法」曾让坏 at 溜过）。
     expect(events.every((event) => !Number.isNaN(Date.parse(event.at)))).toBe(true)
-    // checking 发生在解析版本之前，不携带百分比。
-    expect(events.find((event) => event.phase === 'checking')?.percent).toBeUndefined()
+    // checking 只表示「正在检查」，不携带下载详情。
+    expect(events.find((event) => event.phase === 'checking')?.detail).toBeUndefined()
     expect(installer.ensureInstalled).toHaveBeenCalledWith('0.1.6', expect.any(Function))
     expect(store.update).toHaveBeenCalledWith(instance.id, { dshVersion: '0.1.6' })
     expect(spawnImpl).not.toHaveBeenCalled()
   })
 
-  it('运行中升级：先 stop，装最新版，回写版本，再 start，末尾 done=100', async () => {
+  it('运行中升级：先 stop，装最新版，回写版本，再 start，末尾 done', async () => {
     const child = new EventEmitter() as unknown as FakeChild
     child.stdout = new PassThrough()
     child.stderr = new PassThrough()
@@ -2019,7 +2019,7 @@ describe('upgradeInstance 升级编排', () => {
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       ensureInstalled: vi.fn(async (version: string, onProgress?: (progress: InstallProgress) => void) => {
-        onProgress?.({ phase: 'installing', version, percent: 90, detail: '下载依赖 (30)：pkg' })
+        onProgress?.({ phase: 'installing', version, detail: '下载依赖 (30)：pkg' })
         return installedRuntime(version)
       })
     })
@@ -2049,7 +2049,7 @@ describe('upgradeInstance 升级编排', () => {
     await manager.upgradeInstance(instance)
 
     expect(events.map((event) => event.phase)).toEqual(['checking', 'downloading', 'installing', 'done'])
-    expect(events.at(-1)).toMatchObject({ percent: 100, version: '0.1.6' })
+    expect(events.at(-1)).toMatchObject({ phase: 'done', version: '0.1.6' })
     expect(stopSpy).toHaveBeenCalledWith(instance.id)
     expect(startSpy).toHaveBeenCalledWith(expect.objectContaining({ id: instance.id, dshVersion: '0.1.6' }))
     expect(store.update).toHaveBeenCalledWith(instance.id, { dshVersion: '0.1.6' })
@@ -2096,7 +2096,7 @@ describe('upgradeInstance 升级编排', () => {
       listInstalled,
       resolveLatestVersion: async () => '0.1.6',
       ensureInstalled: vi.fn(async (version: string, onProgress?: (progress: InstallProgress) => void) => {
-        onProgress?.({ phase: 'installing', version, percent: 42, detail: '下载依赖 (10)：pkg' })
+        onProgress?.({ phase: 'installing', version, detail: '下载依赖 (10)：pkg' })
         return installedRuntime(version)
       }),
       installGlobal: vi.fn(async () => {
@@ -2179,7 +2179,7 @@ describe('upgradeInstance 升级编排', () => {
       resolveGlobalPrefix: async (command) => (command === '/tmp/system/dsh' ? '/usr/local' : null),
       installGlobal: vi.fn(
         async (_prefix: string, version: string, onProgress?: (progress: InstallProgress) => void) => {
-          onProgress?.({ phase: 'installing', version, percent: 42, detail: '下载依赖 (10)：pkg' })
+          onProgress?.({ phase: 'installing', version, detail: '下载依赖 (10)：pkg' })
         }
       )
     })
@@ -2211,7 +2211,7 @@ describe('upgradeInstance 升级编排', () => {
     expect(installer.ensureInstalled).not.toHaveBeenCalled()
     expect(store.update).toHaveBeenCalledWith(instance.id, { dshVersion: '0.1.6' })
     expect(events.map((event) => event.phase)).toEqual(['checking', 'downloading', 'installing', 'done'])
-    expect(events.at(-1)).toMatchObject({ percent: 100, version: '0.1.6' })
+    expect(events.at(-1)).toMatchObject({ phase: 'done', version: '0.1.6' })
   })
 
   it('公共空间 dsh/duush：升级前在运行则停 → 全局升级 → 重启', async () => {
@@ -2379,7 +2379,7 @@ describe('upgradeInstance 升级编排', () => {
       resolveLatestVersion: async () => '0.1.6',
       ensureInstalled: vi.fn(
         async (version: string, onProgress?: (progress: InstallProgress) => void): Promise<InstalledRuntime> => {
-          onProgress?.({ phase: 'installing', version, percent: 42, detail: '下载依赖 (10)：pkg' })
+          onProgress?.({ phase: 'installing', version, detail: '下载依赖 (10)：pkg' })
           return {
             version,
             dir: `/tmp/runtimes/dsh-${version}`,
