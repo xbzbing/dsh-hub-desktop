@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { _electron as electron, expect, test } from '@playwright/test'
 import { buildLaunchArgs } from './launch-args'
+import { backToOverview } from './overview'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -643,6 +644,8 @@ test('认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + pill h
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
 
+    // 重载会恢复刷新前的视图：本用例从列表起步，先确保回到总览。
+    await backToOverview(win)
     await win.getByTestId('instances-table').getByText('OTP 网关实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
     // 新实例默认保存密码与会话，用户可显式取消。
@@ -713,6 +716,8 @@ test('认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + pill h
     await win.waitForTimeout(600)
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
+    // 重载会恢复刷新前的视图：本用例从列表起步，先确保回到总览。
+    await backToOverview(win)
     await win.getByTestId('instances-table').getByText('无 OTP 网关实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
     await win.getByTestId('login-btn').click()
@@ -800,6 +805,8 @@ test('从已连接的工作区重新登录成功后自动重开工作区', async
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
 
+    // 重载会恢复刷新前的视图：本用例从列表起步，先确保回到总览。
+    await backToOverview(win)
     await win.getByTestId('instances-table').getByText('重登自动重开实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
 
@@ -859,6 +866,8 @@ test('OTP 屏无已存密码时密码输入框持续可见且可提交', async (
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
 
+    // 重载会恢复刷新前的视图：本用例从列表起步，先确保回到总览。
+    await backToOverview(win)
     await win.getByTestId('instances-table').getByText('OTP 无密码实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
 
@@ -909,6 +918,8 @@ test('侧边栏拖拽排序 + 首页表格同步', async () => {
   }
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
+  // 重载会恢复刷新前的视图：本用例从列表起步，先确保回到总览。
+  await backToOverview(win)
 
   // 获取完整列表,确认新实例在末尾
   const listBefore = await win.evaluate(async () => {
@@ -930,6 +941,8 @@ test('侧边栏拖拽排序 + 首页表格同步', async () => {
   // 刷新页面验证持久化顺序
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
+  // 同上：表格断言要求在总览。
+  await backToOverview(win)
 
   // 侧边栏顺序验证:新实例部分 A → B → C
   const listAfter = await win.evaluate(async () => {

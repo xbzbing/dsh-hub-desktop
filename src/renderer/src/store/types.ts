@@ -160,6 +160,11 @@ export interface WorkspaceSlice {
   /** 打开向导并指定一个由主进程验证过的隔离空间。 */
   createWithExistingSpace: (id: string) => void
   setSettingsOpen: (open: boolean) => void
+  /**
+   * 启动时恢复上次视图（详情页选中的实例或设置页）；仅在刷新渲染层时有意义。
+   * 选中的实例已不存在时留在总览。
+   */
+  restoreView: () => Promise<void>
   setPendingOpen: (id: string) => void
 }
 

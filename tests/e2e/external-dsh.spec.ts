@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { _electron as electron, expect, test } from '@playwright/test'
 import { buildLaunchArgs } from './launch-args'
 import { closeAboutWithEscape, expectAboutClosed, openAboutViaMenu } from './about-menu'
+import { backToOverview } from './overview'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -92,6 +93,8 @@ test('远程网关登录重定向不把正常 ERR_FAILED 写入主进程错误�
 
     await win.reload()
     await expect(win.getByTestId('app-shell')).toBeVisible()
+    // 重载会恢复刷新前的视图：本用例从列表起步，先确保回到总览。
+    await backToOverview(win)
     await win.getByTestId('instances-table').getByText('远程登录重定向', { exact: true }).click()
     await expect(win.getByTestId('open-view-btn')).toBeEnabled()
     await win.getByTestId('open-view-btn').click()
@@ -144,6 +147,8 @@ test('HTTP 实例未启动也能直接打开视图', async () => {
   expect(created).not.toBeNull()
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
+  // 重载会恢复刷新前的视图：本用例从列表起步，先确保回到总览。
+  await backToOverview(win)
   await win.getByTestId('instances-table').getByText('免启动 http', { exact: true }).click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
 
@@ -230,6 +235,8 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   expect(created).not.toBeNull()
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
+  // 重载会恢复刷新前的视图：本用例从列表起步，先确保回到总览。
+  await backToOverview(win)
   await win.getByTestId('instances-table').getByText('接管本地实例', { exact: true }).click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
 

@@ -5,6 +5,7 @@ import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
 import { fmtLogTime } from '../../lib/format'
 import { runWithConcurrency } from '../../lib/concurrency'
+import { ackAutoDisabled, isAutoDisabledAcked } from '../../lib/auto-disabled-ack'
 import { Modal } from '../Modal'
 import { useAppStore } from '../../store'
 import {
@@ -111,11 +112,14 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
         if (state.ok) {
           setLastCheckedAt(state.value.lastCheckedAt)
           const disabled = state.value.autoDisabled
-          setAutoDisabled(disabled.length > 0 ? disabled : null)
           const dshVersion = disabled[0]?.dshVersion ?? ''
+          // 用户已确认过这一批（「知道了」记在 localStorage，刷新与应用重启后依然有效）时，
+          // 提示条与一次性提示都不再出现；dsh 版本再次变更会重新提示。
+          const acked = disabled.length > 0 && isAutoDisabledAcked(localStorage, instanceId, dshVersion)
+          setAutoDisabled(disabled.length > 0 && !acked ? disabled : null)
           // 同一次自动禁用只提示一次：发送权记在 store 里（同步判定），
           // 因此并发的两次加载（dev StrictMode 会双调用挂载 effect）与组件重挂载都不会重复弹。
-          if (disabled.length > 0 && notifyAutoDisabledOnce(instanceId, dshVersion)) {
+          if (disabled.length > 0 && !acked && notifyAutoDisabledOnce(instanceId, dshVersion)) {
             const list = disabled.map((item) => item.name).join(t('common.listSeparator'))
             logActivity(t('detail.plugin.log.autoDisabled', { dshVersion, list }))
             toast('err', t('detail.plugin.autoDisabledTitle'), t('detail.plugin.autoDisabledBody', {
@@ -135,6 +139,13 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   useEffect(() => {
     void load()
   }, [load])
+
+  /** 「知道了」：记下这一批的确认（刷新与应用重启后都不再提示），并立即收起提示条。 */
+  const dismissAutoDisabled = (): void => {
+    const dshVersion = autoDisabled?.[0]?.dshVersion ?? ''
+    if (dshVersion !== '') ackAutoDisabled(localStorage, instanceId, dshVersion)
+    setAutoDisabled(null)
+  }
 
   const rowBusy = (name: string): RowBusy =>
     busy[name] ?? { upgrading: false, removing: false, toggling: false }
@@ -361,7 +372,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
           </div>
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => setAutoDisabled(null)}
+            onClick={dismissAutoDisabled}
             data-testid="plugins-auto-disabled-dismiss"
           >
             {t('detail.plugin.autoDisabledDismiss')}

@@ -30,6 +30,8 @@ let themeAdds: number
 let themeRemoves: number
 let matchDark: boolean
 let storedTheme: string | null
+/** sessionStorage 的内存内容(刷新后恢复视图用)：installGlobals 每次清空，用例可预置。 */
+let sessionValues: Record<string, string>
 /** vault.status 的返回值；登录成功后就地刷新「凭证存储」依赖它 */
 let vaultResult: { ok: true; value: VaultStatusSnapshot } | { ok: false; message: string }
 
@@ -43,6 +45,7 @@ function installGlobals(): void {
   themeRemoves = 0
   matchDark = false
   storedTheme = null
+  sessionValues = {}
   vaultResult = {
     ok: true,
     value: { available: true, degraded: false, rememberedInstances: [], policies: {} }
@@ -65,6 +68,12 @@ function installGlobals(): void {
     getItem: (key: string) => (key === 'dshhub-theme' ? storedTheme : null),
     setItem: (key: string, value: string) => {
       if (key === 'dshhub-theme') storedTheme = value
+    }
+  })
+  vi.stubGlobal('sessionStorage', {
+    getItem: (key: string) => sessionValues[key] ?? null,
+    setItem: (key: string, value: string) => {
+      sessionValues[key] = value
     }
   })
   vi.stubGlobal('document', { documentElement: { dataset: {} as Record<string, string> } })
@@ -1007,5 +1016,122 @@ describe('自动禁用提示的发送权', () => {
     expect(useAppStore.getState().notifyAutoDisabledOnce('inst-1', '0.3.0')).toBe(true)
     // 其它实例各自独立。
     expect(useAppStore.getState().notifyAutoDisabledOnce('inst-2', '0.2.0-rc.2')).toBe(true)
+  })
+})
+
+describe('刷新后的视图恢复', () => {
+  const INSTANCE_ID = '11111111-1111-4111-8111-111111111111'
+
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /** 列表里有 INSTANCE_ID 这个实例，且 instances.get 能取回它的完整记录。 */
+  function stubInstanceBridge(): void {
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: {
+        ...window.dshHub,
+        instances: {
+          list: async () => ({
+            ok: true as const,
+            value: [
+              {
+                id: INSTANCE_ID,
+                name: '恢复实例',
+                transport: 'local' as const,
+                authMode: 'auto' as const,
+                address: '127.0.0.1:3080',
+                updatedAt: '2026-09-30T00:00:00.000Z'
+              }
+            ]
+          }),
+          get: async (id: string) => ({
+            ok: true as const,
+            value: {
+              id,
+              name: '恢复实例',
+              transport: 'local' as const,
+              authMode: 'auto' as const,
+              createdAt: '2026-09-30T00:00:00.000Z',
+              updatedAt: '2026-09-30T00:00:00.000Z',
+              dshVersion: '0.2.0-rc.2',
+              port: 3080,
+              profile: null,
+              launcher: null,
+              useDefaultSpace: false,
+              runCommand: null,
+              autoStart: false
+            }
+          })
+        }
+      }
+    })
+  }
+
+  it('刷新后回到详情页：先把记录取回来再切视图', async () => {
+    const useAppStore = await freshStore()
+    stubInstanceBridge()
+    sessionValues['dshhub-view'] = JSON.stringify({ selection: INSTANCE_ID, settingsOpen: false })
+
+    await useAppStore.getState().load()
+
+    const state = useAppStore.getState()
+    expect(state.loaded).toBe(true)
+    expect(state.selection).toBe(INSTANCE_ID)
+    // 记录已在切视图前就位：详情页不会先闪一帧「找不到该实例」占位。
+    expect(state.records[INSTANCE_ID]?.name).toBe('恢复实例')
+  })
+
+  it('选中的实例已不存在（被删除）→ 留在总览，不进空详情页', async () => {
+    const useAppStore = await freshStore()
+    stubInstanceBridge()
+    sessionValues['dshhub-view'] = JSON.stringify({
+      selection: '22222222-2222-4222-8222-222222222222',
+      settingsOpen: false
+    })
+
+    await useAppStore.getState().load()
+    expect(useAppStore.getState().loaded).toBe(true)
+    expect(useAppStore.getState().selection).toBeNull()
+  })
+
+  it('记录取不回来时同样留在总览', async () => {
+    const useAppStore = await freshStore()
+    stubInstanceBridge()
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: {
+        ...window.dshHub,
+        instances: { ...window.dshHub.instances, get: async () => ({ ok: false, code: 'not-found', message: '找不到' }) }
+      }
+    })
+    sessionValues['dshhub-view'] = JSON.stringify({ selection: INSTANCE_ID, settingsOpen: false })
+
+    await useAppStore.getState().load()
+    expect(useAppStore.getState().selection).toBeNull()
+  })
+
+  it('刷新后回到设置页', async () => {
+    const useAppStore = await freshStore()
+    stubInstanceBridge()
+    sessionValues['dshhub-view'] = JSON.stringify({ selection: null, settingsOpen: true })
+
+    await useAppStore.getState().load()
+    expect(useAppStore.getState().settingsOpen).toBe(true)
+  })
+
+  it('select 与设置页开合都会记下当前视图', async () => {
+    const useAppStore = await freshStore()
+    const stored = (): unknown => JSON.parse(sessionValues['dshhub-view']!)
+
+    useAppStore.getState().select(INSTANCE_ID)
+    expect(stored()).toEqual({ selection: INSTANCE_ID, settingsOpen: false })
+
+    useAppStore.getState().setSettingsOpen(true)
+    expect(stored()).toEqual({ selection: null, settingsOpen: true })
+
+    useAppStore.getState().select(null)
+    expect(stored()).toEqual({ selection: null, settingsOpen: false })
   })
 })

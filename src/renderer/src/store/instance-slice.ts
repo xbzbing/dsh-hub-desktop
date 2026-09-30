@@ -30,6 +30,9 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
     }
     await hydrateAndSubscribeTheme(get)
     await get().refreshList()
+    // 刷新渲染层（Cmd+R）后回到上次视图：记录先取回来再切视图，避免详情页闪出占位；
+    // 在 loaded 置位前完成，首帧就落在目标视图上。
+    await get().restoreView()
     set({ loaded: true })
   },
 

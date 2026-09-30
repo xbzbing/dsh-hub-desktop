@@ -10,6 +10,7 @@ import {
   toSettingsPatch,
   toWizardClosedPatch
 } from '../lib/workspace-navigation'
+import { readPersistedView, writePersistedView } from '../lib/view-persistence'
 
 /**
  * 工作区导航代守卫：换视图递增代号，过期 openView 响应据此自我作废；
@@ -43,6 +44,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
     // 挂起标记属于换 selection 前被遮挡的工作区；待打开标记同理——切走后
     // 不再等该实例启动完成，否则 running 事件会把界面强行拽回工作区。
     set(toDetailPatch(id))
+    writePersistedView(sessionStorage, { selection: id, settingsOpen: false })
   },
 
   openDetail: (id) => {
@@ -142,6 +144,23 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
     // 打开设置页即放弃当前选中,被遮挡工作区不再有可恢复的目标,挂起与待打开
     // 标记一并清除——否则实例启动完成会强制切回工作区、关掉设置页。
     set(toSettingsPatch(open))
+    // 关闭设置页时选中已在打开时清空，记下 null 即「回总览」。
+    writePersistedView(sessionStorage, { selection: open ? null : get().selection, settingsOpen: open })
+  },
+
+  /**
+   * 启动时恢复上次视图（刷新渲染层用；应用重启时 sessionStorage 已空，仍是总览）。
+   * 选中的实例已不存在（被删除）或记录取不回来时留在总览：宁可不恢复，也不进一个空详情页。
+   */
+  restoreView: async () => {
+    const view = readPersistedView(sessionStorage)
+    if (view.selection !== null && get().instances.some((instance) => instance.id === view.selection)) {
+      // 先取回记录再切视图：否则详情页会先渲染一帧「找不到该实例」占位。
+      const record = await get().ensureRecord(view.selection)
+      if (record !== null) get().select(view.selection)
+      return
+    }
+    if (view.selection === null && view.settingsOpen) get().setSettingsOpen(true)
   },
 
   setPendingOpen: (id) => set((state) => ({ pendingOpen: [...state.pendingOpen, id] }))
