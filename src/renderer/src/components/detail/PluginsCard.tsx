@@ -225,7 +225,8 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     afterMutation(name, result.value.application)
   }
 
-  /** 启用/禁用插件：改 profile 的加载清单，禁用后仍在列表可见（可升级/卸载/再启用）。 */
+  /** 启用/禁用插件：改 profile 的加载清单，禁用后仍在列表可见（可升级/卸载/再启用）。
+   *  启用不兼容插件时，主进程先授予 allow-version --accept-risk 豁免，这里把该操作写入信息栏。 */
   const runToggle = async (name: string, enabled: boolean): Promise<void> => {
     if (!BRIDGE) return
     setRowBusy(name, { toggling: true })
@@ -242,6 +243,16 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
       return
     }
     logActivity(t(enabled ? 'detail.plugin.log.enabled' : 'detail.plugin.log.disabled', { name }))
+    // 启用不兼容插件时主进程已授予精确版本豁免（用户接受风险）：信息栏留痕，并再次明示风险。
+    if (enabled && result.value.exemptionGranted !== null) {
+      const { pluginVersion, dshVersion } = result.value.exemptionGranted
+      logActivity(t('detail.plugin.log.exemptionGranted', { name, version: pluginVersion, dshVersion }))
+      toast(
+        'warn',
+        t('detail.plugin.exemptionGrantedTitle'),
+        t('detail.plugin.exemptionGrantedBody', { name, version: pluginVersion, dshVersion })
+      )
+    }
     await load({ keepChecks: true })
     afterMutation(name, result.value.application)
   }

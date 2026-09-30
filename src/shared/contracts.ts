@@ -785,6 +785,11 @@ export interface PluginEnableResult {
   enabled: boolean
   /** 与 dsh 的 ChangeResult.application 同口径（见 PluginMutationResult）。 */
   application: 'applied' | 'restart-required'
+  /**
+   * 启用时因插件与运行时 dsh 不兼容而授予的精确版本豁免（allow-version --accept-risk）：
+   * 该「插件@版本」被允许运行在 dshVersion 上；null = 未授予（兼容 / 本次为禁用）。
+   */
+  exemptionGranted: { pluginVersion: string; dshVersion: string } | null
 }
 
 /** 单个插件持久化的检查结果（不含「当前版本」，由渲染层按已装版本现算是否有更新）。 */

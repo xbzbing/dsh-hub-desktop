@@ -308,6 +308,33 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   }
 
   /**
+   * 启用前按「将执行命令的 dsh 版本」评估插件 peer 兼容性；不兼容时先授予精确版本豁免
+   * （`dsh plugin allow-version <name>@<version> --dsh-version <runtime> --accept-risk`），
+   * 否则 dsh 会在启动/热更新时拒绝加载该插件。
+   *
+   * 版本必须与实际执行命令的副本一致（resolveDshEntry）：dsh 的豁免闸按自身版本校验
+   * `--dsh-version`，不一致会被拒绝。授予失败抛错（调用方不改加载清单）；兼容返回 null。
+   */
+  async function grantEnableExemption(
+    instance: LocalInstance,
+    profileDir: string,
+    name: string,
+    pluginVersion: string,
+    resolved: { entry: string; version: string }
+  ): Promise<{ pluginVersion: string; dshVersion: string } | null> {
+    // 与 reconcileRuntime 同源：读 profile 顶层 node_modules 里插件自身的 manifest。
+    const manifest = readManifest(join(profileDir, 'node_modules', ...name.split('/')))
+    const peers = manifest?.peerDependencies ?? {}
+    if (Object.keys(evaluateDshPeers(peers, resolved.version)).length === 0) return null
+    await runPlugin(
+      instance,
+      ['allow-version', `${name}@${pluginVersion}`, '--dsh-version', resolved.version, '--accept-risk'],
+      resolved
+    )
+    return { pluginVersion, dshVersion: resolved.version }
+  }
+
+  /**
    * 把一次检查结果并入持久化状态：有新版则记下候选信息，已是最新则删掉该项
    * （标记「直到用户再次检查或升级才变」由此保证）。
    */
@@ -602,6 +629,12 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       if (target === undefined || !target.hasHostSide) {
         throw new InstanceStoreError('invalid-input', '该插件不含 host 半，无法单独禁用')
       }
+      // 启用前按「将执行命令的 dsh 版本」评估兼容性：与当前 dsh 不兼容的插件会在启动/热更新
+      // 时被 dsh 拒绝加载——先授予该精确版本的豁免（allow-version --accept-risk），再放进清单。
+      const exemption = enabled
+        ? await grantEnableExemption(instance, profileDir, name, target.version, resolved)
+        : null
+
       const state = await stateStore.read(instance.id)
       const bundleIndex = { ...state.bundleIndex }
       let insertAt: number | undefined
@@ -612,12 +645,16 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
         if (at >= 0) bundleIndex[name] = at
       }
       await bundleStore.setEnabled(profileDir, name, enabled, insertAt)
+      // 手动重新启用后不再是「待处理」的自动禁用项：状态与界面提示条同步清除该插件。
+      const autoDisabled = enabled
+        ? state.autoDisabled.filter((item) => item.name !== name)
+        : state.autoDisabled
       await stateStore
-        .write(instance.id, { ...state, bundleIndex })
+        .write(instance.id, { ...state, bundleIndex, autoDisabled })
         .catch((error: unknown) => console.error('[plugin] 写入插件检查状态失败：', error))
       // 启用/禁用走 dsh 的默认规则：有 HMR 即热生效，否则需重启。
       const hmr = await hmrAvailable(instance, profileDir, bundles)
-      return { name, enabled, application: defaultApplication(hmr) }
+      return { name, enabled, application: defaultApplication(hmr), exemptionGranted: exemption }
     },
 
     async reconcileRuntime(instance, runtimeVersion): Promise<RuntimeReconcileResult> {

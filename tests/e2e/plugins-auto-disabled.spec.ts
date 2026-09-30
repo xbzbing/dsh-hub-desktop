@@ -42,22 +42,26 @@ if (sub[0] === 'list') {
 process.exit(0)
 `
 
+/**
+ * 假插件的 manifest：声明与实例 dsh 版本不兼容的 dsh peer（>=0.2.0），
+ * 供「手动启用 → 授予 allow-version --accept-risk 豁免」链路判定。
+ * 同时落在 profile 顶层 node_modules（pnpm 布局的真实读取位置）。
+ */
+const FAKE_PLUGIN_MANIFEST = {
+  name: 'demo-plugin',
+  version: '1.0.0',
+  description: '示例插件',
+  peerDependencies: { '@deepseek-ai/dsh': '>=0.2.0' },
+  dsh: { bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web' } }
+}
+
 test.beforeAll(async () => {
   await rm(DATA_DIR, { recursive: true, force: true })
   await mkdir(ENTRY_DIR, { recursive: true })
   await writeFile(join(ENTRY_DIR, 'bin.js'), FAKE_BIN, 'utf8')
   const pluginDir = join(DATA_DIR, 'fake-plugin')
   await mkdir(pluginDir, { recursive: true })
-  await writeFile(
-    join(pluginDir, 'package.json'),
-    JSON.stringify({
-      name: 'demo-plugin',
-      version: '1.0.0',
-      description: '示例插件',
-      dsh: { bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web' } }
-    }),
-    'utf8'
-  )
+  await writeFile(join(pluginDir, 'package.json'), JSON.stringify(FAKE_PLUGIN_MANIFEST), 'utf8')
 
   app = await electron.launch({
     args: buildLaunchArgs(),
@@ -92,6 +96,14 @@ test.beforeAll(async () => {
       undefined,
       2
     )}\n`,
+    'utf8'
+  )
+  // profile 顶层 node_modules 里的插件 manifest：主进程按它判定兼容性（与 dsh 加载时同源）。
+  const installedPluginDir = join(profileDir, 'node_modules', 'demo-plugin')
+  await mkdir(installedPluginDir, { recursive: true })
+  await writeFile(
+    join(installedPluginDir, 'package.json'),
+    JSON.stringify(FAKE_PLUGIN_MANIFEST),
     'utf8'
   )
 
@@ -137,4 +149,24 @@ test('自动禁用提示：卡片顶部提示不兼容插件，且该行标注�
 
   await win.getByTestId('plugins-auto-disabled-dismiss').click()
   await expect(banner).toBeHidden()
+})
+
+test('手动启用不兼容插件：先授予 allow-version --accept-risk 豁免，插件启用并在信息栏留痕', async () => {
+  test.setTimeout(90_000)
+  // 承接上一条用例：实例详情已打开、插件卡可见、demo-plugin 处于禁用态。
+  const toggle = win.getByTestId('plugin-toggle-demo-plugin')
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await toggle.click()
+
+  // 启用成功：开关打开、不再显示「已禁用」标注。
+  await expect(toggle).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 })
+  await expect(win.getByTestId('plugin-disabled-demo-plugin')).toBeHidden()
+  // 手动启用后不再是「自动禁用待处理」项：提示条随之消失（状态里的 autoDisabled 已清）。
+  await expect(win.getByTestId('plugins-auto-disabled')).toBeHidden()
+
+  // 信息栏记录本次操作：豁免命令与「插件@版本」原样可查（中英文案都含这段 ASCII）。
+  await win.getByTestId('detail-logbar-more').click()
+  const lines = win.getByTestId('log-more-body')
+  await expect(lines).toContainText('allow-version --accept-risk', { timeout: 15_000 })
+  await expect(lines).toContainText('demo-plugin@1.0.0')
 })

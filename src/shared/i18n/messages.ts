@@ -496,6 +496,16 @@ export const MESSAGES = {
     zh: '{name} 已即时生效，无需重启',
     en: '{name} is already active; no restart needed'
   },
+  /** 启用不兼容插件时主进程先授予精确版本豁免（allow-version --accept-risk），信息栏留痕。 */
+  'detail.plugin.log.exemptionGranted': {
+    zh: '已授予 {name}@{version} 对 dsh {dshVersion} 的兼容豁免（allow-version --accept-risk）',
+    en: 'Granted compatibility exemption for {name}@{version} on dsh {dshVersion} (allow-version --accept-risk)'
+  },
+  'detail.plugin.exemptionGrantedTitle': { zh: '已授予兼容豁免', en: 'Compatibility exemption granted' },
+  'detail.plugin.exemptionGrantedBody': {
+    zh: '「{name}@{version}」与 dsh {dshVersion} 不兼容，已按你的操作授予豁免（接受风险）并启用；运行可能崩溃或丢失数据。',
+    en: '"{name}@{version}" is incompatible with dsh {dshVersion}; an exemption was granted at your action (risk accepted) and the plugin was enabled. It may crash or lose data.'
+  },
   'detail.plugin.upgradeBlocked': {
     zh: '{latest} 要求 dsh {peer}，当前 {current} 不满足，已阻止升级',
     en: 'v{latest} requires dsh {peer}; current {current} does not satisfy it — upgrade blocked'
