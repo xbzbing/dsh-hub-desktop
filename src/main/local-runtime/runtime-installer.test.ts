@@ -11,7 +11,7 @@ import {
   createRuntimeInstaller,
   globalPrefixFor,
   globalRuntimeEntry,
-  npmFetchPath,
+  npmFetchInfo,
   readInstallingMarker,
   resolveNpmInvocation,
   runtimeDirFor,
@@ -204,17 +204,28 @@ describe('createRuntimeInstaller', () => {
     expect(installed.map((item: InstalledRuntime) => item.version)).toEqual(['0.1.5-rc.1'])
   })
 
-  it('ensureInstalled 进度分支:stderr fetch 行驱动 onProgress(经 runNpm 注入覆盖生产路径)', async () => {
+  it('进度分支:只报下载记录（只数 .tgz 包体、含缓存命中、按个数去重），不给百分比', async () => {
     const version = '0.1.5-rc.1'
     const runtimesDir = tmpDir()
-    const run = vi.fn(async () => okRun('[]'))
+    const run = vi.fn(async (command: string, args: string[]) => {
+      void command
+      void args
+      return okRun('[]')
+    })
     const runNpm = vi.fn(async (
       _npm: NpmInvocation,
       _args: string[],
       opts: { onStderrLine?: (line: string) => void }
     ) => {
+      // 元数据请求不算下载
       opts.onStderrLine?.('npm http fetch GET 200 https://registry.npmjs.org/a 1ms (cache miss)')
       opts.onStderrLine?.('npm http fetch GET 200 https://registry.npmjs.org/b/-/b-1.0.0.tgz 2ms (cache miss)')
+      // 缓存命中的包体同样计入（重复安装/修复时不会漏数）
+      opts.onStderrLine?.(
+        'npm http cache c@https://registry.npmjs.org/c/-/c-1.0.0.tgz 0ms (cache hit)'
+      )
+      // 同一包体的重复日志只算一次
+      opts.onStderrLine?.('npm http fetch GET 200 https://registry.npmjs.org/b/-/b-1.0.0.tgz 1ms (cache miss)')
       opts.onStderrLine?.('added 2 packages')
       await fakeInstallArtifacts(runtimesDir, version)
       return okRun('')
@@ -227,14 +238,45 @@ describe('createRuntimeInstaller', () => {
       resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
     })
 
-    const details: Array<string | undefined> = []
-    await installer.ensureInstalled(version, (progress) => details.push(progress.detail))
+    const seen: Array<Record<string, unknown>> = []
+    await installer.ensureInstalled(version, (progress) => seen.push({ ...progress }))
+    const details = seen.map((item) => item.detail as string | undefined)
 
     expect(details[0]).toBe(`安装 @deepseek-ai/dsh@${version}`)
-    expect(details).toContain('下载依赖 (1)：a')
-    expect(details).toContain('下载依赖 (2)：b/-/b-1.0.0.tgz')
+    expect(details).toContain('下载依赖 (1)：b/-/b-1.0.0.tgz')
+    expect(details).toContain('下载依赖 (2)：c/-/c-1.0.0.tgz')
+    expect(details).toContain('校验安装结果')
+    expect(details.at(-1)).toBe('安装完成')
+    // 不再提供百分比（npm 没有可用的总量与进度）
+    expect(seen.every((item) => item.percent === undefined)).toBe(true)
     // 非 fetch 行不推进进度
     expect(details.filter((detail) => detail?.includes('added'))).toHaveLength(0)
+  })
+
+  it('进度分支不因解析失败而受影响：无需额外解析步骤', async () => {
+    const version = '0.1.5-rc.3'
+    const runtimesDir = tmpDir()
+    // run 只在无进度回调的汇总分支使用；带进度时完全不走它
+    const run = vi.fn(async (command: string, args: string[]) => {
+      void command
+      void args
+      return okRun('not json')
+    })
+    const runNpm = vi.fn(async (_npm: NpmInvocation, _args: string[], opts: { onStderrLine?: (line: string) => void }) => {
+      opts.onStderrLine?.('npm http fetch GET 200 https://registry.npmjs.org/b/-/b-1.0.0.tgz 1ms')
+      await fakeInstallArtifacts(runtimesDir, version)
+      return okRun('')
+    })
+    const installer = createRuntimeInstaller({
+      runtimesDir,
+      cacheDir: tmpDir(),
+      run,
+      runNpm,
+      resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] })
+    })
+
+    await installer.ensureInstalled(version, () => undefined)
+    expect(run).not.toHaveBeenCalled()
   })
 
   it('进度分支失败:错误消息只保留 stderr 尾部结论(http 日志不整段进入消息)', async () => {
@@ -268,16 +310,50 @@ describe('createRuntimeInstaller', () => {
   })
 })
 
-describe('npmFetchPath', () => {
-  it('完成行提取相对路径(状态码在 URL 之前)', () => {
-    expect(npmFetchPath('npm http fetch GET 200 https://registry.npmjs.org/is-odd 772ms (cache miss)')).toBe('is-odd')
-    expect(npmFetchPath('npm http fetch GET 200 https://registry.npmmirror.com/dsh 1ms')).toBe('dsh')
+describe('npmFetchInfo', () => {
+  it('网络下载：包体按 .tgz 判定，元数据按包名', () => {
+    expect(
+      npmFetchInfo('npm http fetch GET 200 https://registry.npmjs.org/is-odd 772ms (cache miss)')
+    ).toEqual({ path: 'is-odd', kind: 'packument' })
+    expect(
+      npmFetchInfo(
+        'npm http fetch GET 200 https://registry.npmjs.org/is-odd/-/is-odd-3.0.1.tgz 12ms (cache miss)'
+      )
+    ).toEqual({ path: 'is-odd/-/is-odd-3.0.1.tgz', kind: 'tarball' })
   })
 
-  it('请求行与非 fetch 行返回 null', () => {
-    expect(npmFetchPath('npm http fetch GET https://registry.npmjs.org/x')).toBeNull()
-    expect(npmFetchPath('npm http fetch POST 200 https://registry.npmjs.org/-/user 5ms')).toBeNull()
-    expect(npmFetchPath('added 2 packages in 4s')).toBeNull()
+  it('缓存命中同样计入（否则重复安装会数不到已就绪的包）', () => {
+    expect(
+      npmFetchInfo(
+        'npm http cache media-typer@https://registry.npmjs.org/media-typer/-/media-typer-1.1.1.tgz 0ms (cache hit)'
+      )
+    ).toEqual({ path: 'media-typer/-/media-typer-1.1.1.tgz', kind: 'tarball' })
+    expect(npmFetchInfo('npm http cache https://registry.npmjs.org/express 9ms (cache hit)')).toEqual({
+      path: 'express',
+      kind: 'packument'
+    })
+  })
+
+  it('镜像 registry 的包体路径不含 /-/，仍按 .tgz 认作包体', () => {
+    expect(
+      npmFetchInfo(
+        'npm http fetch GET 200 https://registry.npmmirror.com/packages/@deepseek-ai/dsh-client-ui-settings-account/0.2.0-rc.2/dsh-client-ui-settings-account-0.2.0-rc.2.tgz 30ms (cache miss)'
+      )
+    ).toEqual({
+      path: 'packages/@deepseek-ai/dsh-client-ui-settings-account/0.2.0-rc.2/dsh-client-ui-settings-account-0.2.0-rc.2.tgz',
+      kind: 'tarball'
+    })
+  })
+
+  it('查询串被剥掉（仍按包体判定）', () => {
+    expect(npmFetchInfo('npm http fetch GET 200 https://r.example.com/a/-/a-1.0.0.tgz?x=1 1ms')?.kind).toBe('tarball')
+  })
+
+  it('非下载完成行返回 null', () => {
+    expect(npmFetchInfo('npm http fetch GET https://registry.npmjs.org/x')).toBeNull()
+    expect(npmFetchInfo('npm http fetch POST 200 https://registry.npmjs.org/-/user 5ms')).toBeNull()
+    expect(npmFetchInfo('added 2 packages in 4s')).toBeNull()
+    expect(npmFetchInfo('npm http cache 5ms (cache hit)')).toBeNull()
   })
 })
 
@@ -716,18 +792,18 @@ describe('系统 dsh 的 npm 全局升级', () => {
       cacheDir: tmpDir(),
       resolveNpm: async () => ({ command: '/fake/npm', prefixArgs: [] }),
       runNpm: vi.fn(async (_npm, _args, options) => {
-        options.onStderrLine?.('npm http fetch GET 200 https://registry.npmjs.org/@deepseek-ai%2fdsh 12ms')
+        options.onStderrLine?.(
+          'npm http fetch GET 200 https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.1.6.tgz 12ms'
+        )
         return { code: 0, stdout: '', stderr: '' }
       })
     })
 
-    const progress: Array<{ percent?: number; detail?: string }> = []
-    await installer.installGlobal(prefix, '0.1.6', (item) =>
-      progress.push({ ...(item.percent === undefined ? {} : { percent: item.percent }), ...(item.detail === undefined ? {} : { detail: item.detail }) })
-    )
+    const details: Array<string | undefined> = []
+    await installer.installGlobal(prefix, '0.1.6', (item) => details.push(item.detail))
 
-    expect(progress.some((item) => item.detail?.startsWith('全局安装'))).toBe(true)
-    expect(progress.some((item) => item.detail?.startsWith('下载依赖'))).toBe(true)
-    expect(progress.at(-1)?.percent).toBe(100)
+    expect(details.some((detail) => detail?.startsWith('全局安装'))).toBe(true)
+    expect(details.some((detail) => detail?.startsWith('下载依赖'))).toBe(true)
+    expect(details.at(-1)).toBe('安装完成')
   })
 })

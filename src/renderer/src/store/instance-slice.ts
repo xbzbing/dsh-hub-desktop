@@ -87,7 +87,7 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
         last.source === 'version' &&
         line.source === 'version' &&
         last.event.phase === line.event.phase &&
-        last.event.percent === line.event.percent &&
+
         last.event.detail === line.event.detail &&
         last.event.error === line.event.error
       // 连续重复行去重：状态重播与同值进度事件不刷屏。
