@@ -312,20 +312,23 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
    * （`dsh plugin allow-version <name>@<version> --dsh-version <runtime> --accept-risk`），
    * 否则 dsh 会在启动/热更新时拒绝加载该插件。
    *
-   * 版本必须与实际执行命令的副本一致（resolveDshEntry）：dsh 的豁免闸按自身版本校验
-   * `--dsh-version`，不一致会被拒绝。授予失败抛错（调用方不改加载清单）；兼容返回 null。
+   * 两个版本都必须与 dsh 自己的判据一致：`--dsh-version` 取实际执行命令的副本
+   * （resolveDshEntry，dsh 按自身版本校验），插件版本取 manifest 的 `version`
+   * （dsh 加载时按 manifest 身份 `name@version` 匹配豁免；列表里的版本在 file:/link:
+   * 安装下可能是路径）。授予失败抛错（调用方不改加载清单）；兼容返回 null。
    */
   async function grantEnableExemption(
     instance: LocalInstance,
     profileDir: string,
     name: string,
-    pluginVersion: string,
+    listedVersion: string,
     resolved: { entry: string; version: string }
   ): Promise<{ pluginVersion: string; dshVersion: string } | null> {
     // 与 reconcileRuntime 同源：读 profile 顶层 node_modules 里插件自身的 manifest。
     const manifest = readManifest(join(profileDir, 'node_modules', ...name.split('/')))
     const peers = manifest?.peerDependencies ?? {}
     if (Object.keys(evaluateDshPeers(peers, resolved.version)).length === 0) return null
+    const pluginVersion = manifest?.version ?? listedVersion
     await runPlugin(
       instance,
       ['allow-version', `${name}@${pluginVersion}`, '--dsh-version', resolved.version, '--accept-risk'],

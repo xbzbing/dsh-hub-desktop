@@ -575,6 +575,41 @@ describe('createPluginManager.check', () => {
     })
   })
 
+  it('setEnabled(启用)：豁免键取 manifest 版本（列表版本可能与加载判据不一致）', async () => {
+    const calls: Array<{ args: string[] }> = []
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      calls.push({ args })
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const bundles = fakeBundles({
+      bundles: ['@deepseek-ai/dsh-base'],
+      dependencies: ['@xbzbing/dsh-git-panel']
+    })
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      stateStore: memoryStore(),
+      bundleStore: bundles.store,
+      // 列表说 1.1.0，manifest 说 1.1.1：dsh 加载时按 manifest 身份匹配豁免，须用后者。
+      readManifest: (dir) => {
+        if (toPosix(dir).includes('@xbzbing/dsh-git-panel')) {
+          return {
+            ...GIT_PANEL_MANIFEST,
+            version: '1.1.1',
+            peerDependencies: { '@deepseek-ai/dsh': '>=0.2.0' }
+          }
+        }
+        return null
+      }
+    })
+
+    const result = await manager.setEnabled(localInstance(), '@xbzbing/dsh-git-panel', true)
+    const allowVersion = calls.find((call) => call.args.includes('allow-version'))
+    expect(allowVersion!.args).toContain('@xbzbing/dsh-git-panel@1.1.1')
+    expect(result.exemptionGranted).toEqual({ pluginVersion: '1.1.1', dshVersion: '0.1.7-rc.2' })
+  })
+
   it('setEnabled(启用)：兼容插件不授予豁免，不执行 allow-version', async () => {
     const calls: Array<{ args: string[] }> = []
     const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
