@@ -37,8 +37,6 @@ describe('i18n 目录（双语）', () => {
       'app.name',
       'detail.plugin.field.github',
       'detail.plugin.field.npm',
-      'detail.plugin.kind.hostClient',
-      'detail.plugin.kind.none',
       'detail.plugin.source.github',
       'detail.plugin.source.npm',
       'edit.profileLabel',

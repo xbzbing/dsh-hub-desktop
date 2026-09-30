@@ -12,7 +12,6 @@ import {
   canOfferUpgrade,
   initialCheckState,
   pluginApplyNotice,
-  pluginKindKey,
   pluginSourceKey,
   pruneChecks,
   restoreChecks,
@@ -670,8 +669,6 @@ function PluginDetail(props: {
       </dd>
       <dt>{t('detail.plugin.field.deps')}</dt>
       <dd>{plugin.dependencies.length > 0 ? plugin.dependencies.join(', ') : t('detail.plugin.depsNone')}</dd>
-      <dt>{t('detail.plugin.field.kind')}</dt>
-      <dd>{t(pluginKindKey(plugin))}</dd>
     </dl>
   )
 }

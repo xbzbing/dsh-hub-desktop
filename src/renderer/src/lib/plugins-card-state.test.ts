@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   canOfferUpgrade,
   initialCheckState,
-  pluginKindKey,
   pluginSourceKey,
   pluginApplyNotice,
   pruneChecks,
@@ -61,21 +60,6 @@ describe('showsUpToDate', () => {
   })
   it('有新版 → false', () => {
     expect(showsUpToDate(done(check({ hasUpdate: true })))).toBe(false)
-  })
-})
-
-describe('pluginKindKey', () => {
-  it('host + client', () => {
-    expect(pluginKindKey({ hasHostSide: true, hasClientSide: true })).toBe('detail.plugin.kind.hostClient')
-  })
-  it('仅 client', () => {
-    expect(pluginKindKey({ hasHostSide: false, hasClientSide: true })).toBe('detail.plugin.kind.clientOnly')
-  })
-  it('仅 host', () => {
-    expect(pluginKindKey({ hasHostSide: true, hasClientSide: false })).toBe('detail.plugin.kind.hostOnly')
-  })
-  it('都无', () => {
-    expect(pluginKindKey({ hasHostSide: false, hasClientSide: false })).toBe('detail.plugin.kind.none')
   })
 })
 
