@@ -21,7 +21,7 @@ function check(overrides: Partial<PluginUpdateCheck>): PluginUpdateCheck {
     compatible: true,
     dshPeer: '>=0.1.7-rc.2',
     dshVersion: '0.1.7-rc.2',
-    modifiedAt: null,
+    publishedAt: null,
     ...overrides
   }
 }
@@ -83,7 +83,7 @@ describe('pruneChecks', () => {
       compatible: true,
       dshPeer: null,
       dshVersion: null,
-      modifiedAt: null
+      publishedAt: null
     },
     error: null
   }
@@ -123,7 +123,8 @@ function plugin(name: string, version: string): PluginInfo {
     hasHostSide: true,
     hasClientSide: false,
     installSource: 'npm',
-    enabled: true
+    enabled: true,
+    publishedAt: null
   }
 }
 
@@ -136,7 +137,7 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
     const restored = restoreChecks([plugin('a', '1.0.0')], {
       lastCheckedAt: '2026-09-29T10:00:00.000Z',
       updates: {
-        a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: '0.2.0-rc.1', modifiedAt: null }
+        a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: '0.2.0-rc.1' }
       },
       checking: [],
       autoDisabled: []
@@ -149,7 +150,7 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
     const restored = restoreChecks([plugin('a', '1.2.0')], {
       lastCheckedAt: null,
       updates: {
-        a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null }
+        a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: null }
       },
       checking: [],
       autoDisabled: []
@@ -161,7 +162,7 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
     const restored = restoreChecks([plugin('a', '1.0.0')], {
       lastCheckedAt: null,
       updates: {
-        a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null }
+        a: { latest: '1.2.0', compatible: true, dshPeer: null, dshVersion: null }
       },
       checking: ['a'],
       autoDisabled: []
@@ -173,7 +174,7 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
     const restored = restoreChecks([plugin('b', '1.0.0')], {
       lastCheckedAt: null,
       updates: {
-        a: { latest: '9.9.9', compatible: true, dshPeer: null, dshVersion: null, modifiedAt: null }
+        a: { latest: '9.9.9', compatible: true, dshPeer: null, dshVersion: null }
       },
       checking: [],
       autoDisabled: []

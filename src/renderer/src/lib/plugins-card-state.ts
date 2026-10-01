@@ -61,7 +61,8 @@ export function restoreChecks(
         compatible: record.compatible,
         dshPeer: record.dshPeer,
         dshVersion: record.dshVersion,
-        modifiedAt: record.modifiedAt
+        // 持久化的可升级标记不带发布时间：该字段由 PluginInfo.publishedAt（主进程按版本回填）提供。
+        publishedAt: null
       },
       error: null
     }

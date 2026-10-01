@@ -619,7 +619,8 @@ function PluginDetail(props: {
   onOpenLink: (url: string | null) => void
 }): ReactNode {
   const { t, plugin, check, onOpenLink } = props
-  const modified = check.result?.modifiedAt ?? null
+  // 发布时间取已装版本的快照：刚检查完用本次结果，否则用主进程持久化并回填到列表的那条。
+  const publishedAt = check.result?.publishedAt ?? plugin.publishedAt
   return (
     <dl className="kv plugin-detail" data-testid={`plugin-detail-${plugin.name}`}>
       {plugin.description && (
@@ -661,7 +662,7 @@ function PluginDetail(props: {
         </>
       )}
       <dt>{t('detail.plugin.field.published')}</dt>
-      <dd className="num">{modified !== null ? fmtLogTime(modified) : t('detail.plugin.modifiedUnknown')}</dd>
+      <dd className="num">{publishedAt !== null ? fmtLogTime(publishedAt) : t('detail.plugin.publishedUnknown')}</dd>
       <dt>{t('detail.plugin.field.compat')}</dt>
       <dd className="num">
         dsh {plugin.dshPeer ?? '—'}

@@ -746,6 +746,11 @@ export interface PluginInfo {
    * null = 该插件不由清单控制（无 host 半，随宿主 bundle 加载），无法单独禁用。
    */
   enabled: boolean | null
+  /**
+   * 已装版本的发布时间（ISO），来自检查时落盘的版本快照。
+   * null = 尚无该版本的快照（未检查过，或 registry 未收录该版本）。
+   */
+  publishedAt: string | null
 }
 
 /** 插件检查升级结果。 */
@@ -759,8 +764,11 @@ export interface PluginUpdateCheck {
   dshPeer: string | null
   /** 执行插件命令所用 dsh 的版本；null = 未知（无法判定兼容，一律置 compatible=false）。 */
   dshVersion: string | null
-  /** latest 发布时间（ISO）；null = registry 未返回。 */
-  modifiedAt: string | null
+  /**
+   * 已装版本（current）的发布时间（ISO），随检查结果一起返回。
+   * null = registry 未收录该版本（本地 file: / GitHub 安装等）。
+   */
+  publishedAt: string | null
 }
 
 /**
@@ -796,7 +804,6 @@ export interface PluginCheckRecord {
   compatible: boolean
   dshPeer: string | null
   dshVersion: string | null
-  modifiedAt: string | null
 }
 
 /**

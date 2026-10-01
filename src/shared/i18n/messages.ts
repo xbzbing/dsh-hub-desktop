@@ -461,7 +461,7 @@ export const MESSAGES = {
   'detail.plugin.field.published': { zh: '发布时间', en: 'Published' },
   'detail.plugin.field.compat': { zh: '兼容版本', en: 'Compatibility' },
   'detail.plugin.field.deps': { zh: '第三方依赖', en: 'Dependencies' },
-  'detail.plugin.modifiedUnknown': { zh: '点检查升级获取', en: 'Run check to fetch' },
+  'detail.plugin.publishedUnknown': { zh: '点检查升级获取', en: 'Run check to fetch' },
   'detail.plugin.depsNone': { zh: '无', en: 'none' },
   'detail.plugin.openLinkFailed': { zh: '打开链接失败', en: 'Failed to open link' },
   'detail.plugin.log.installing': { zh: '开始安装插件 {spec}', en: 'Installing plugin {spec}' },

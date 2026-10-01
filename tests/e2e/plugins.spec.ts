@@ -7,8 +7,9 @@ import { join, resolve } from 'node:path'
 /**
  * 实例详情「插件管理」端到端验证：
  * - 列表渲染（图标 / 版本 / 来源）
- * - 手风琴展开显示详情字段（作者 / 兼容版本 / 依赖）
+ * - 手风琴展开显示详情字段（作者 / 兼容版本 / 依赖 / 发布时间）
  * - 检查升级：兼容给升级按钮、不兼容给警告不给按钮；批量检查期间锁定单行按钮
+ * - 发布时间：取已装版本那一项并持久化，刷新后仍在
  * - 卸载二次确认（只说明后果）
  * - 禁用/启用：禁用后仍在列表可见并标注，可再次启用
  *
@@ -20,6 +21,20 @@ import { join, resolve } from 'node:path'
 const VERSION = '0.1.7-rc.2'
 const DATA_DIR = resolve(__dirname, '..', '..', 'hub-data', 'e2e-plugins')
 const ENTRY_DIR = join(DATA_DIR, 'runtimes', `dsh-${VERSION}`, 'node_modules', '@deepseek-ai', 'dsh', 'lib')
+
+/** 假插件已装版本与它在假 registry 里的发布时间（view 的 time 映射中已装版本那一项）。 */
+const INSTALLED_VERSION = '1.0.0'
+const INSTALLED_PUBLISHED_AT = '2026-09-20T02:30:00.000Z'
+
+/** 与渲染层 fmtLogTime 同口径（本地时区，YYYY-MM-DD HH:mm:ss）。 */
+function fmtLogTime(iso: string): string {
+  const date = new Date(iso)
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  )
+}
 
 let app: ElectronApplication
 let win: Page
@@ -46,7 +61,7 @@ if (cmd === 'list') {
     dependencies: {
       'demo-plugin': {
         from: 'demo-plugin',
-        version: '1.0.0',
+        version: ${JSON.stringify(INSTALLED_VERSION)},
         resolved: 'https://registry.npmjs.org/demo-plugin/-/demo-plugin-1.0.0.tgz',
         path: ${JSON.stringify(join(DATA_DIR, 'fake-plugin'))}
       }
@@ -62,7 +77,7 @@ if (cmd === 'view') {
   process.stdout.write(JSON.stringify({
     version: '1.1.0',
     peerDependencies: { '@deepseek-ai/dsh': incompat ? '>=0.2.0' : '>=0.1.7-rc.2' },
-    'time.modified': '2026-09-28T11:16:59.586Z'
+    time: { ${JSON.stringify(INSTALLED_VERSION)}: ${JSON.stringify(INSTALLED_PUBLISHED_AT)}, '1.1.0': '2026-09-28T11:16:59.586Z' }
   }))
   process.exit(0)
 }
@@ -149,6 +164,13 @@ async function openDetail(): Promise<void> {
   await expect(win.getByTestId('plugins-card')).toBeVisible()
 }
 
+/** 展开插件详情（已展开时不再点，避免收起）。 */
+async function expandDetail(): Promise<void> {
+  const detail = win.getByTestId('plugin-detail-demo-plugin')
+  if (!(await detail.isVisible())) await win.getByTestId('plugin-expand-demo-plugin').click()
+  await expect(detail).toBeVisible()
+}
+
 test('列表渲染 + 手风琴详情 + 检查升级（兼容给升级按钮）', async () => {
   test.setTimeout(90_000)
   await openDetail()
@@ -166,11 +188,32 @@ test('列表渲染 + 手风琴详情 + 检查升级（兼容给升级按钮）',
   await expect(detail).toContainText('demo-author')
   await expect(detail).toContainText('left-pad')
   await expect(detail).toContainText('>=0.1.7-rc.2')
+  // 尚未检查过：发布时间为占位文案。
+  await expect(detail).toContainText('点检查升级获取')
 
-  // 检查升级：兼容 → 出现「升级到 1.1.0」按钮。
+  // 检查升级：兼容 → 出现「升级到 1.1.0」按钮，发布时间同时取到已装版本那一条。
   await win.getByTestId('plugin-check-demo-plugin').click()
   await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toBeVisible({ timeout: 15_000 })
   await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toContainText('1.1.0')
+  await expect(detail).toContainText(fmtLogTime(INSTALLED_PUBLISHED_AT))
+})
+
+test('发布时间：已装版本的快照持久化，刷新后仍在', async () => {
+  test.setTimeout(90_000)
+  await openDetail()
+  await expandDetail()
+  const detail = win.getByTestId('plugin-detail-demo-plugin')
+  await expect(detail).toContainText(fmtLogTime(INSTALLED_PUBLISHED_AT))
+
+  // 刷新：列表由主进程用落盘快照回填，不再回到「点检查升级获取」。
+  await win.reload()
+  await expect(win.getByTestId('view-home').or(win.getByTestId('view-detail'))).toBeVisible({
+    timeout: 15_000
+  })
+  await openDetail()
+  await expandDetail()
+  await expect(detail).toContainText(fmtLogTime(INSTALLED_PUBLISHED_AT))
+  await expect(detail).not.toContainText('点检查升级获取')
 })
 
 test('卸载二次确认：确认框只说明后果，不再按 host 半预告重启', async () => {

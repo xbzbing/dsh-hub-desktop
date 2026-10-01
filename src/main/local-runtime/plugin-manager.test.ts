@@ -85,11 +85,24 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
+/** 完整的检查状态字面量（缺省为空状态），避免每处重复列全部字段。 */
+function stateWith(patch: Partial<PluginCheckState> = {}): PluginCheckState {
+  return {
+    lastCheckedAt: null,
+    updates: {},
+    published: {},
+    bundleIndex: {},
+    runtimeVersion: null,
+    autoDisabled: [],
+    ...patch
+  }
+}
+
 /** 内存版状态存储：验证检查结果落盘与读回。 */
 function memoryStore(): PluginStateStore {
   const files = new Map<string, PluginCheckState>()
   return {
-    read: async (instanceId) => files.get(instanceId) ?? { lastCheckedAt: null, updates: {}, bundleIndex: {}, runtimeVersion: null, autoDisabled: [] },
+    read: async (instanceId) => files.get(instanceId) ?? stateWith(),
     write: async (instanceId, state) => {
       files.set(instanceId, state)
     }
@@ -308,19 +321,23 @@ describe('createPluginManager.list', () => {
 })
 
 describe('createPluginManager.check', () => {
+  /** 假 registry 应答：latest 1.2.0，time 是「版本 → 发布时刻」映射。 */
+  const VIEW_JSON = JSON.stringify({
+    version: '1.2.0',
+    peerDependencies: { '@deepseek-ai/dsh': '>=0.1.7-rc.2' },
+    time: {
+      created: '2026-08-13T14:26:11.670Z',
+      '1.1.0': '2026-09-20T02:30:00.000Z',
+      '1.2.0': '2026-09-28T11:16:59.586Z',
+      modified: '2026-09-28T11:16:59.586Z'
+    }
+  })
+
   it('兼容判定：latest peer 满足实例 dsh 版本', async () => {
     const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
       void command
       if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
-      return {
-        code: 0,
-        stdout: JSON.stringify({
-          version: '1.2.0',
-          peerDependencies: { '@deepseek-ai/dsh': '>=0.1.7-rc.2' },
-          'time.modified': '2026-09-28T11:16:59.586Z'
-        }),
-        stderr: ''
-      }
+      return { code: 0, stdout: VIEW_JSON, stderr: '' }
     })
     const manager = createPluginManager(baseOptions(run))
     const check = await manager.check(localInstance(), '@xbzbing/dsh-git-panel')
@@ -328,7 +345,53 @@ describe('createPluginManager.check', () => {
     expect(check.latest).toBe('1.2.0')
     expect(check.hasUpdate).toBe(true)
     expect(check.compatible).toBe(true)
-    expect(check.modifiedAt).toBe('2026-09-28T11:16:59.586Z')
+    // 发布时间取「已装版本」那一项，不是 latest 的。
+    expect(check.publishedAt).toBe('2026-09-20T02:30:00.000Z')
+  })
+
+  it('命令拼装：view 取 version / peerDependencies / time（版本发布时间映射）', async () => {
+    const calls: string[][] = []
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      calls.push(args)
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: VIEW_JSON, stderr: '' }
+    })
+    const manager = createPluginManager(baseOptions(run))
+    await manager.check(localInstance({ profile: 'tui' }), '@xbzbing/dsh-git-panel')
+    expect(calls[1]).toEqual([
+      '/runtimes/dsh-0.1.7-rc.2/bin.js',
+      'plugin',
+      '--profile',
+      'tui',
+      'view',
+      '@xbzbing/dsh-git-panel',
+      'version',
+      'peerDependencies',
+      'time',
+      '--json'
+    ])
+  })
+
+  it('registry 未收录已装版本：publishedAt=null，不覆盖已有快照', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      // 已装 1.1.0 不在 time 里（本地 file: 安装 / 版本已下架）。
+      return { code: 0, stdout: JSON.stringify({ version: '1.2.0', time: { '1.2.0': 'x' } }), stderr: '' }
+    })
+    const stateStore = memoryStore()
+    await stateStore.write(
+      'inst-1',
+      stateWith({ published: { '@xbzbing/dsh-git-panel': { version: '1.1.0', at: '2026-09-20T02:30:00.000Z' } } })
+    )
+    const manager = createPluginManager({ ...baseOptions(run), stateStore })
+    const check = await manager.check(localInstance(), '@xbzbing/dsh-git-panel')
+    expect(check.publishedAt).toBeNull()
+    expect((await stateStore.read('inst-1')).published['@xbzbing/dsh-git-panel']).toEqual({
+      version: '1.1.0',
+      at: '2026-09-20T02:30:00.000Z'
+    })
   })
 
   it('不兼容：latest peer 要求高于实例 dsh 版本', async () => {
@@ -380,7 +443,7 @@ describe('createPluginManager.check', () => {
         stdout: JSON.stringify({
           version: '2.0.0',
           peerDependencies: { '@deepseek-ai/dsh': '>=0.1.7-rc.2' },
-          'time.modified': '2026-09-28T11:16:59.586Z'
+          time: { '1.1.0': '2026-09-20T02:30:00.000Z', '2.0.0': '2026-09-28T11:16:59.586Z' }
         }),
         stderr: ''
       }
@@ -394,66 +457,132 @@ describe('createPluginManager.check', () => {
       latest: '2.0.0',
       compatible: true,
       dshPeer: '>=0.1.7-rc.2',
-      dshVersion: '0.1.7-rc.2',
-      modifiedAt: '2026-09-28T11:16:59.586Z'
+      dshVersion: '0.1.7-rc.2'
     })
     expect(snapshot.lastCheckedAt).not.toBeNull()
     expect(snapshot.checking).toEqual([])
+    // 发布时间随列表回填到 PluginInfo（渲染层直接用，无需再落一份到检查标记里）。
+    const plugins = await manager.list(localInstance())
+    expect(plugins.find((plugin) => plugin.name === '@xbzbing/dsh-git-panel')?.publishedAt).toBe(
+      '2026-09-20T02:30:00.000Z'
+    )
   })
 
-  it('已是最新：不落标记（旧标记被清掉）', async () => {
+  it('已是最新：清掉可升级标记，但发布时间快照留下（同一版本发布时间恒定）', async () => {
     const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
       void command
       if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
       // 已装 1.1.0，registry latest 也是 1.1.0 → 无更新
-      return { code: 0, stdout: JSON.stringify({ version: '1.1.0', peerDependencies: {} }), stderr: '' }
-    })
-    const stateStore = memoryStore()
-    await stateStore.write('inst-1', {
-      lastCheckedAt: null,
-      bundleIndex: {},
-      runtimeVersion: null,
-      autoDisabled: [],
-      updates: {
-        '@xbzbing/dsh-git-panel': {
-          latest: '1.0.9',
-          compatible: true,
-          dshPeer: null,
-          dshVersion: null,
-          modifiedAt: null
-        }
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          version: '1.1.0',
+          peerDependencies: {},
+          time: { '1.1.0': '2026-09-20T02:30:00.000Z' }
+        }),
+        stderr: ''
       }
     })
+    const stateStore = memoryStore()
+    await stateStore.write(
+      'inst-1',
+      stateWith({
+        updates: {
+          '@xbzbing/dsh-git-panel': {
+            latest: '1.0.9',
+            compatible: true,
+            dshPeer: null,
+            dshVersion: null
+          }
+        }
+      })
+    )
     const manager = createPluginManager({ ...baseOptions(run), stateStore })
     await manager.check(localInstance(), '@xbzbing/dsh-git-panel')
     expect((await manager.checkState(localInstance())).updates).toEqual({})
+    expect((await stateStore.read('inst-1')).published['@xbzbing/dsh-git-panel']).toEqual({
+      version: '1.1.0',
+      at: '2026-09-20T02:30:00.000Z'
+    })
+    // 列表里该字段仍在（切走再回来 / 重启后都能显示）。
+    const plugins = await manager.list(localInstance())
+    expect(plugins.find((plugin) => plugin.name === '@xbzbing/dsh-git-panel')?.publishedAt).toBe(
+      '2026-09-20T02:30:00.000Z'
+    )
   })
 
-  it('升级后清掉该插件的可升级标记', async () => {
+  it('快照版本与已装版本不一致：不回填发布时间（升级后等下次检查）', async () => {
+    const run = vi.fn(async (): Promise<CommandResult> => ({ code: 0, stdout: LIST_JSON, stderr: '' }))
+    const stateStore = memoryStore()
+    await stateStore.write(
+      'inst-1',
+      stateWith({
+        published: {
+          // 快照是升级前的 1.0.9，已装版本已是 1.1.0。
+          '@xbzbing/dsh-git-panel': { version: '1.0.9', at: '2026-09-01T00:00:00.000Z' },
+          'dsh-free-search': { version: '0.4.39', at: '2026-09-10T00:00:00.000Z' }
+        }
+      })
+    )
+    const manager = createPluginManager({ ...baseOptions(run), stateStore })
+    const plugins = await manager.list(localInstance())
+    expect(plugins.find((plugin) => plugin.name === '@xbzbing/dsh-git-panel')?.publishedAt).toBeNull()
+    // 版本一致的插件照常显示。
+    expect(plugins.find((plugin) => plugin.name === 'dsh-free-search')?.publishedAt).toBe(
+      '2026-09-10T00:00:00.000Z'
+    )
+  })
+
+  it('升级后清掉该插件的可升级标记与发布时间快照', async () => {
     const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
       void command
       if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
       return { code: 0, stdout: '', stderr: '' }
     })
     const stateStore = memoryStore()
-    await stateStore.write('inst-1', {
-      lastCheckedAt: '2026-09-29T00:00:00.000Z',
-      bundleIndex: {},
-      runtimeVersion: null,
-      autoDisabled: [],
-      updates: {
-        '@xbzbing/dsh-git-panel': {
-          latest: '2.0.0',
-          compatible: true,
-          dshPeer: null,
-          dshVersion: null,
-          modifiedAt: null
-        }
-      }
-    })
+    await stateStore.write(
+      'inst-1',
+      stateWith({
+        lastCheckedAt: '2026-09-29T00:00:00.000Z',
+        updates: {
+          '@xbzbing/dsh-git-panel': {
+            latest: '2.0.0',
+            compatible: true,
+            dshPeer: null,
+            dshVersion: null
+          }
+        },
+        published: { '@xbzbing/dsh-git-panel': { version: '1.1.0', at: '2026-09-20T02:30:00.000Z' } }
+      })
+    )
     const manager = createPluginManager({ ...baseOptions(run), stateStore })
     await manager.upgrade(localInstance(), '@xbzbing/dsh-git-panel', '2.0.0')
     expect((await manager.checkState(localInstance())).updates).toEqual({})
+    expect((await stateStore.read('inst-1')).published).toEqual({})
+  })
+
+  it('卸载后清掉该插件的发布时间快照', async () => {
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const stateStore = memoryStore()
+    await stateStore.write(
+      'inst-1',
+      stateWith({
+        published: {
+          '@xbzbing/dsh-git-panel': { version: '1.1.0', at: '2026-09-20T02:30:00.000Z' },
+          'dsh-free-search': { version: '0.4.39', at: '2026-09-10T00:00:00.000Z' }
+        }
+      })
+    )
+    const manager = createPluginManager({ ...baseOptions(run), stateStore })
+    await manager.remove(localInstance(), '@xbzbing/dsh-git-panel')
+    // 只清被卸载的那一项。
+    expect((await stateStore.read('inst-1')).published).toEqual({
+      'dsh-free-search': { version: '0.4.39', at: '2026-09-10T00:00:00.000Z' }
+    })
   })
 
   it('检查进行中：checkState 报告在飞插件名（切走再回来显示检查中）', async () => {
@@ -517,13 +646,7 @@ describe('createPluginManager.check', () => {
       dependencies: ['@xbzbing/dsh-git-panel', 'dsh-free-search']
     })
     const stateStore = memoryStore()
-    await stateStore.write('inst-1', {
-      lastCheckedAt: null,
-      updates: {},
-      bundleIndex: { '@xbzbing/dsh-git-panel': 1 },
-      runtimeVersion: null,
-      autoDisabled: []
-    })
+    await stateStore.write('inst-1', stateWith({ bundleIndex: { '@xbzbing/dsh-git-panel': 1 } }))
     const manager = createPluginManager({ ...baseOptions(run), stateStore, bundleStore: bundles.store })
 
     await manager.setEnabled(localInstance(), '@xbzbing/dsh-git-panel', true)
@@ -678,13 +801,14 @@ describe('createPluginManager.check', () => {
       dependencies: ['@xbzbing/dsh-git-panel']
     })
     const stateStore = memoryStore()
-    await stateStore.write('inst-1', {
-      lastCheckedAt: null,
-      updates: {},
-      bundleIndex: { '@xbzbing/dsh-git-panel': 1 },
-      runtimeVersion: '0.1.7-rc.2',
-      autoDisabled: [{ name: '@xbzbing/dsh-git-panel', version: '1.1.0', dshVersion: '0.1.7-rc.2' }]
-    })
+    await stateStore.write(
+      'inst-1',
+      stateWith({
+        bundleIndex: { '@xbzbing/dsh-git-panel': 1 },
+        runtimeVersion: '0.1.7-rc.2',
+        autoDisabled: [{ name: '@xbzbing/dsh-git-panel', version: '1.1.0', dshVersion: '0.1.7-rc.2' }]
+      })
+    )
     const manager = createPluginManager({ ...baseOptions(run), stateStore, bundleStore: bundles.store })
 
     await manager.setEnabled(localInstance(), '@xbzbing/dsh-git-panel', true)
@@ -726,13 +850,7 @@ describe('createPluginManager.check', () => {
 
   it('reconcileRuntime：版本未变 → 无操作', async () => {
     const stateStore = memoryStore()
-    await stateStore.write('inst-1', {
-      lastCheckedAt: null,
-      updates: {},
-      bundleIndex: {},
-      runtimeVersion: '0.2.0-rc.1',
-      autoDisabled: []
-    })
+    await stateStore.write('inst-1', stateWith({ runtimeVersion: '0.2.0-rc.1' }))
     const bundles = fakeBundles({ bundles: ['a'], dependencies: ['a'] })
     const manager = createPluginManager({
       ...baseOptions(vi.fn()),

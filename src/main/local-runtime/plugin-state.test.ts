@@ -11,6 +11,16 @@ async function tempRoot(): Promise<string> {
   return dir
 }
 
+/** 空状态（读取失败 / 未写过时的期望值）。 */
+const EMPTY = {
+  lastCheckedAt: null,
+  updates: {},
+  published: {},
+  bundleIndex: {},
+  runtimeVersion: null,
+  autoDisabled: []
+}
+
 afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
@@ -18,10 +28,10 @@ afterEach(async () => {
 describe('createPluginStateStore', () => {
   it('未写过时返回空状态（lastCheckedAt=null，无更新项）', async () => {
     const store = createPluginStateStore(await tempRoot())
-    expect(await store.read('inst-1')).toEqual({ lastCheckedAt: null, updates: {}, bundleIndex: {}, runtimeVersion: null, autoDisabled: [] })
+    expect(await store.read('inst-1')).toEqual(EMPTY)
   })
 
-  it('写入后可读回（含插件检查摘要）', async () => {
+  it('写入后可读回（含插件检查摘要与发布时间快照）', async () => {
     const store = createPluginStateStore(await tempRoot())
     await store.write('inst-1', {
       lastCheckedAt: '2026-09-29T10:00:00.000Z',
@@ -33,16 +43,20 @@ describe('createPluginStateStore', () => {
           latest: '0.24.1',
           compatible: true,
           dshPeer: '^0.2.0-rc.1',
-          dshVersion: '0.2.0-rc.1',
-          modifiedAt: '2026-09-28T15:37:38.655Z'
+          dshVersion: '0.2.0-rc.1'
         }
-      }
+      },
+      published: { 'dsh-better-sidebar': { version: '0.24.1', at: '2026-09-28T15:37:38.360Z' } }
     })
     const state = await store.read('inst-1')
     expect(state.lastCheckedAt).toBe('2026-09-29T10:00:00.000Z')
     expect(state.updates['dsh-better-sidebar']?.latest).toBe('0.24.1')
     expect(state.updates['dsh-better-sidebar']?.compatible).toBe(true)
     expect(state.bundleIndex['dsh-better-sidebar']).toBe(7)
+    expect(state.published['dsh-better-sidebar']).toEqual({
+      version: '0.24.1',
+      at: '2026-09-28T15:37:38.360Z'
+    })
   })
 
   it('不同实例互不影响', async () => {
@@ -50,30 +64,51 @@ describe('createPluginStateStore', () => {
     await store.write('inst-1', {
       lastCheckedAt: 'a',
       updates: {},
+      published: {},
       bundleIndex: {},
       runtimeVersion: null,
       autoDisabled: []
     })
-    expect(await store.read('inst-2')).toEqual({ lastCheckedAt: null, updates: {}, bundleIndex: {}, runtimeVersion: null, autoDisabled: [] })
+    expect(await store.read('inst-2')).toEqual(EMPTY)
   })
 
   it('文件损坏或字段类型不对时按空状态处理，不抛错', async () => {
     const root = await tempRoot()
     const store = createPluginStateStore(root)
     // 非法 JSON
-    await store.write('broken', { lastCheckedAt: null, updates: {}, bundleIndex: {}, runtimeVersion: null, autoDisabled: [] })
+    await store.write('broken', {
+      lastCheckedAt: null,
+      updates: {},
+      published: {},
+      bundleIndex: {},
+      runtimeVersion: null,
+      autoDisabled: []
+    })
     await writeFile(join(root, 'plugin-state', 'broken.json'), '{not json', 'utf8')
-    expect(await store.read('broken')).toEqual({ lastCheckedAt: null, updates: {}, bundleIndex: {}, runtimeVersion: null, autoDisabled: [] })
+    expect(await store.read('broken')).toEqual(EMPTY)
 
-    // 脏字段：缺 latest 的项被丢弃，其余保留
+    // 脏字段：缺 latest 的更新项、缺 version/at 的发布时间快照被丢弃，其余保留
     await writeFile(
       join(root, 'plugin-state', 'dirty.json'),
-      JSON.stringify({ lastCheckedAt: 42, updates: { ok: { latest: '1.0.0' }, bad: { compatible: true } } }),
+      JSON.stringify({
+        lastCheckedAt: 42,
+        updates: { ok: { latest: '1.0.0' }, bad: { compatible: true } },
+        published: {
+          ok: { version: '1.0.0', at: '2026-09-28T15:37:38.360Z' },
+          noVersion: { at: '2026-09-28T15:37:38.360Z' },
+          noAt: { version: '1.0.0' },
+          emptyAt: { version: '1.0.0', at: '' },
+          wrongType: 'x'
+        }
+      }),
       'utf8'
     )
     const dirty = await store.read('dirty')
     expect(dirty.lastCheckedAt).toBeNull()
     expect(Object.keys(dirty.updates)).toEqual(['ok'])
     expect(dirty.updates.ok?.compatible).toBe(true)
+    expect(dirty.published).toEqual({
+      ok: { version: '1.0.0', at: '2026-09-28T15:37:38.360Z' }
+    })
   })
 })

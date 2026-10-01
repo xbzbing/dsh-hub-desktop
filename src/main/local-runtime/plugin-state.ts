@@ -5,6 +5,9 @@
  * 直到下次检查或升级才改写。状态只存检查得到的候选信息（latest/compatible/…），
  * 是否「有更新」由渲染层拿当前已装版本现算，版本变了标记自然消失。
  *
+ * 同时存放「已装版本发布时间」的版本快照：同一版本的发布时间发布后不再变化，取到一次即可
+ * 长期复用，下次检查再刷新（见 PluginPublishedSnapshot）。
+ *
  * 写入用「临时文件 + rename」原子替换，避免中断留下半截 JSON；读取失败一律当作无状态，
  * 绝不因状态文件损坏影响插件列表。
  */
@@ -24,11 +27,26 @@ export interface AutoDisabledPlugin {
   dshVersion: string
 }
 
+/**
+ * 某个插件版本的发布时间快照。
+ *
+ * 注册表里每个版本的发布时间是固定的（只有发新版才会新增条目），因此安装后取到一次
+ * 就可长期保留：带版本号保存，升级换版本后由下一次检查写入新版本的发布时间。
+ */
+export interface PluginPublishedSnapshot {
+  /** 该发布时间对应的插件版本。 */
+  version: string
+  /** 发布时间（ISO）。 */
+  at: string
+}
+
 export interface PluginCheckState {
   /** 上次完成检查的时刻（ISO）；null = 尚未检查过。 */
   lastCheckedAt: string | null
   /** 插件名 → 检查结果摘要（仅记录检查过的插件）。 */
   updates: Record<string, PluginCheckRecord>
+  /** 插件名 → 已装版本的发布时间快照。 */
+  published: Record<string, PluginPublishedSnapshot>
   /** 插件名 → 被禁用时在 `dsh.profile.bundles` 里的索引，重新启用时按它插回原位。 */
   bundleIndex: Record<string, number>
   /** 上次「运行时版本变更后核对插件兼容性」时记录的 dsh 版本；null = 尚未核对过。 */
@@ -46,9 +64,15 @@ export interface PluginStateStore {
 const EMPTY_STATE: PluginCheckState = {
   lastCheckedAt: null,
   updates: {},
+  published: {},
   bundleIndex: {},
   runtimeVersion: null,
   autoDisabled: []
+}
+
+/** 无状态：字段各自独立，避免调用方改动落回共享常量。 */
+function emptyState(): PluginCheckState {
+  return { ...EMPTY_STATE, updates: {}, published: {}, bundleIndex: {}, autoDisabled: [] }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -57,7 +81,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** 宽松解析：字段类型不对就丢弃该字段，不因单条脏数据丢掉整份状态。 */
 function parseState(raw: unknown): PluginCheckState {
-  if (!isRecord(raw)) return { ...EMPTY_STATE, updates: {}, bundleIndex: {}, autoDisabled: [] }
+  if (!isRecord(raw)) return emptyState()
   const lastCheckedAt = typeof raw.lastCheckedAt === 'string' ? raw.lastCheckedAt : null
   const updates: Record<string, PluginCheckRecord> = {}
   const source = isRecord(raw.updates) ? raw.updates : {}
@@ -68,9 +92,16 @@ function parseState(raw: unknown): PluginCheckState {
       latest: value.latest,
       compatible: value.compatible !== false,
       dshPeer: typeof value.dshPeer === 'string' ? value.dshPeer : null,
-      dshVersion: typeof value.dshVersion === 'string' ? value.dshVersion : null,
-      modifiedAt: typeof value.modifiedAt === 'string' ? value.modifiedAt : null
+      dshVersion: typeof value.dshVersion === 'string' ? value.dshVersion : null
     }
+  }
+  const published: Record<string, PluginPublishedSnapshot> = {}
+  const publishedSource = isRecord(raw.published) ? raw.published : {}
+  for (const [name, value] of Object.entries(publishedSource)) {
+    if (!isRecord(value)) continue
+    if (typeof value.version !== 'string' || value.version === '') continue
+    if (typeof value.at !== 'string' || value.at === '') continue
+    published[name] = { version: value.version, at: value.at }
   }
   const bundleIndex: Record<string, number> = {}
   const indexSource = isRecord(raw.bundleIndex) ? raw.bundleIndex : {}
@@ -90,7 +121,7 @@ function parseState(raw: unknown): PluginCheckState {
       })
     }
   }
-  return { lastCheckedAt, updates, bundleIndex, runtimeVersion, autoDisabled }
+  return { lastCheckedAt, updates, published, bundleIndex, runtimeVersion, autoDisabled }
 }
 
 export function createPluginStateStore(dataRoot: string): PluginStateStore {
@@ -102,7 +133,7 @@ export function createPluginStateStore(dataRoot: string): PluginStateStore {
       try {
         return parseState(JSON.parse(await readFile(fileFor(instanceId), 'utf8')))
       } catch {
-        return { ...EMPTY_STATE, updates: {}, bundleIndex: {}, autoDisabled: [] }
+        return emptyState()
       }
     },
 
