@@ -42,13 +42,11 @@ function localRecord(overrides: Partial<InstanceRecord> = {}): InstanceRecord {
 
 describe('instanceHomeDir', () => {
   it('隔离空间：<dataRoot>/homes/<id>', () => {
-    expect(instanceHomeDir({ dataRoot: '/data', openPath: async () => '' }, localRecord())).toBe(
-      join('/data', 'homes', ISO_ID)
-    )
+    expect(instanceHomeDir({ dataRoot: '/data' }, localRecord())).toBe(join('/data', 'homes', ISO_ID))
   })
 
   it('公共空间：<home>/.dsh（Windows 与其他平台一致，由 Node path 规则决定分隔符）', () => {
-    const ports = { dataRoot: '/data', homeDir: () => '/Users/admin', openPath: async () => '' }
+    const ports = { dataRoot: '/data', homeDir: () => '/Users/admin' }
     expect(instanceHomeDir(ports, localRecord({ useDefaultSpace: true }))).toBe(join('/Users/admin', '.dsh'))
   })
 })
