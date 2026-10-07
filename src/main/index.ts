@@ -33,6 +33,7 @@ import type { HubNativePorts } from './shell/native-ports'
 import { createStatusNotifier } from './shell/status-notifier'
 import { createDataDirOpener } from './shell/open-data-dir'
 import { createHomepageOpener } from './shell/open-homepage'
+import { openInstanceDir, openInstanceLogDir } from './shell/open-instance-dir'
 import { createGracefulQuit } from './shell/graceful-quit'
 import { openExternalSafely } from './window-host-policy'
 import type { Vault } from './vault/vault'
@@ -360,6 +361,10 @@ void app.whenReady().then(() => {
       record.transport === 'local' && !record.useDefaultSpace
         ? join(dataRoot, 'homes', record.id)
         : join(homedir(), '.dsh'),
+    openInstanceDir: (record) =>
+      openInstanceDir({ dataRoot, openPath: (path) => shell.openPath(path) }, record),
+    openInstanceLogDir: (record) =>
+      openInstanceLogDir({ dataRoot, openPath: (path) => shell.openPath(path) }, record),
     clearPartitionSession: async (instanceId) => {
       const record = await instanceStore.get(instanceId)
       // 否则「先停隧道再清 Cookie」会静默 no-op

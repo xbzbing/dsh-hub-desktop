@@ -317,6 +317,8 @@ describe('registerIpc', () => {
       'instances:update',
       'instances:delete',
       'instances:reorder',
+      'instances:openDirectory',
+      'instances:openLogDirectory',
       'instances:start',
       'instances:stop',
       'instances:restart',

@@ -102,6 +102,10 @@ export interface DshHubBridge {
     remove: (id: string, options?: { trashSpace?: boolean }) => Promise<IpcResult<{ removed: boolean }>>
     /** 按给定 ID 列表重排实例顺序；ID 必须与当前注册表完全一致。 */
     reorder: (orderedIds: string[]) => Promise<IpcResult<InstanceSummary[]>>
+    /** 在系统文件管理器中打开本机实例的数据目录；仅本机实例，路径由主进程解析。 */
+    openDirectory: (id: string) => Promise<IpcResult<{ opened: boolean }>>
+    /** 在系统文件管理器中打开本机实例的日志目录；仅本机实例，路径由主进程解析。 */
+    openLogDirectory: (id: string) => Promise<IpcResult<{ opened: boolean }>>
   }
   /** 本地实例运行时控制：start/stop 立即返回，进展经 onInstanceStatus 回推。 */
   runtime: {

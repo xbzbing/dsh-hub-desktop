@@ -109,6 +109,10 @@ export interface SpaceDeps {
   trashLocalSpace?: (instanceId: string) => Promise<void>
   /** 本机实例的数据目录（展示用，主进程按平台分隔符拼装）；缺省时 summary 不带 localHome。 */
   localHomePath?: (record: InstanceRecord) => string
+  /** 在系统文件管理器中打开本机实例的数据目录；调用方不能提供路径。 */
+  openInstanceDir?: (record: InstanceRecord) => Promise<void>
+  /** 在系统文件管理器中打开本机实例的日志目录；调用方不能提供路径。 */
+  openInstanceLogDir?: (record: InstanceRecord) => Promise<void>
 }
 
 /** dsh 版本通道依赖。 */

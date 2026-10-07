@@ -56,6 +56,10 @@ export interface InstanceHandlerDeps {
   listLocalSpaces?: () => Promise<Array<{ id: string; sizeBytes: number; modifiedAt: string }>>
   trashLocalSpace?: (instanceId: string) => Promise<void>
   localHomePath?: (record: InstanceRecord) => string
+  /** 在系统文件管理器中打开本机实例的数据目录（DSH_HOME）；主进程按实例解析路径。 */
+  openInstanceDir?: (record: InstanceRecord) => Promise<void>
+  /** 在系统文件管理器中打开本机实例的日志目录；主进程按实例解析路径。 */
+  openInstanceLogDir?: (record: InstanceRecord) => Promise<void>
   hideInstanceView?: () => void
 }
 
@@ -214,6 +218,32 @@ export function registerInstanceHandlers(
           toSummary(record, statusFor(record), deps.localHomePath?.(record), versionFor(record))
         )
       })
+  )
+
+  async function requireLocalRecord(id: unknown): Promise<InstanceRecord> {
+    const record = await requireInstance(store, parseId(id))
+    if (record.transport !== 'local') {
+      throw new InstanceStoreError('invalid-input', '仅本机实例有本地目录')
+    }
+    return record
+  }
+
+  ipcMain.handle(INSTANCE_IPC.openDirectory, (_event, id: unknown): Promise<IpcResult<{ opened: boolean }>> =>
+    wrap(async () => {
+      const record = await requireLocalRecord(id)
+      if (!deps.openInstanceDir) throw new InstanceStoreError('invalid-state', '打开实例目录不可用')
+      await deps.openInstanceDir(record)
+      return { opened: true }
+    })
+  )
+
+  ipcMain.handle(INSTANCE_IPC.openLogDirectory, (_event, id: unknown): Promise<IpcResult<{ opened: boolean }>> =>
+    wrap(async () => {
+      const record = await requireLocalRecord(id)
+      if (!deps.openInstanceLogDir) throw new InstanceStoreError('invalid-state', '打开日志目录不可用')
+      await deps.openInstanceLogDir(record)
+      return { opened: true }
+    })
   )
 
   ipcMain.handle(SSH_IPC.keyPreview, (_event, input: unknown) =>

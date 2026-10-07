@@ -11,20 +11,16 @@ export interface ActivityLogBarProps {
   setShowMore: (value: boolean) => void
   onCopy: () => void
   onClear: () => void
+  /** 打开本机实例的日志目录；仅本机实例提供，否则「更多」弹层不显示该按钮。 */
+  onOpenLogDir?: () => void
 }
 
 /** 详情页底部活动信息栏：单行展示最新一条，「更多」弹层看历史并可复制/清空。 */
 export default function ActivityLogBar(props: ActivityLogBarProps): ReactNode {
-  const { t, activity, showMore, setShowMore, onCopy, onClear } = props
+  const { t, activity, showMore, setShowMore, onCopy, onClear, onOpenLogDir } = props
   const logBodyRef = useRef<HTMLDivElement | null>(null)
   const logMoreRef = useRef<HTMLDivElement | null>(null)
   const latestLine = activity?.at(-1)
-
-  // 底部信息栏：新行到达后回到行首，保证时间与阶段可见（其余内容可横向滚动）。
-  useEffect(() => {
-    const element = logBodyRef.current
-    if (element) element.scrollLeft = 0
-  }, [activity])
 
   // 「更多」弹层：打开与新行到达时滚到最新。
   useEffect(() => {
@@ -55,6 +51,11 @@ export default function ActivityLogBar(props: ActivityLogBarProps): ReactNode {
           closeButtonInTabOrder={false}
           footer={
             <div className="right">
+              {onOpenLogDir && (
+                <button className="btn btn-secondary btn-sm" onClick={onOpenLogDir} data-testid="log-more-open-dir">
+                  {t('detail.log.openDir')}
+                </button>
+              )}
               {latestLine !== undefined && (
                 <>
                   <button className="btn btn-secondary btn-sm" onClick={onCopy} data-testid="log-more-copy">

@@ -60,7 +60,9 @@ const bridge: DshHubBridge = {
     create: (input) => ipcRenderer.invoke(INSTANCE_IPC.create, input),
     update: (id, patch) => ipcRenderer.invoke(INSTANCE_IPC.update, id, patch),
     remove: (id, options) => ipcRenderer.invoke(INSTANCE_IPC.delete, id, options ?? {}),
-    reorder: (orderedIds) => ipcRenderer.invoke(INSTANCE_IPC.reorder, orderedIds)
+    reorder: (orderedIds) => ipcRenderer.invoke(INSTANCE_IPC.reorder, orderedIds),
+    openDirectory: (id) => ipcRenderer.invoke(INSTANCE_IPC.openDirectory, id),
+    openLogDirectory: (id) => ipcRenderer.invoke(INSTANCE_IPC.openLogDirectory, id)
   },
   runtime: {
     start: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.start, id),

@@ -15,13 +15,15 @@ export interface ConnectionCardProps {
   onLogin: () => void
   onCopyAddress: () => void
   onOpenInBrowser: () => void
+  /** 打开本机实例的数据目录；仅本机实例提供，非本机为 undefined 时不显示按钮。 */
+  onOpenDirectory?: () => void
   onDisconnect: () => void
   onLogout: () => void
 }
 
-/** 连接方式卡：地址/端口/认证模式等事实文本，登录/复制地址/在浏览器中打开/断开/登出操作。 */
+/** 连接方式卡：地址/端口/认证模式等事实文本，登录/复制地址/在浏览器中打开/打开目录/断开/登出操作。 */
 export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
-  const { t, record, authPhase, canOpenInBrowser, onLogin, onCopyAddress, onOpenInBrowser, onDisconnect, onLogout } =
+  const { t, record, authPhase, canOpenInBrowser, onLogin, onCopyAddress, onOpenInBrowser, onOpenDirectory, onDisconnect, onLogout } =
     props
   return (
     <div className="card selectable">
@@ -96,6 +98,15 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
             onClick={onOpenInBrowser}
           >
             <Icon name="external" /> {t('detail.openInBrowser')}
+          </button>
+        )}
+        {onOpenDirectory && (
+          <button
+            className="btn btn-secondary btn-sm"
+            data-testid="open-instance-dir-btn"
+            onClick={onOpenDirectory}
+          >
+            <Icon name="folder" /> {t('detail.openDir')}
           </button>
         )}
         <button className="btn btn-secondary btn-sm" data-testid="disconnect-view-btn" onClick={onDisconnect}>

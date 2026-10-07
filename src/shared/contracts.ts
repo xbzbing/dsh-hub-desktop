@@ -571,7 +571,11 @@ export const INSTANCE_IPC = {
   update: 'instances:update',
   delete: 'instances:delete',
   /** 按给定 ID 列表重排实例顺序；ID 必须与当前注册表完全一致。 */
-  reorder: 'instances:reorder'
+  reorder: 'instances:reorder',
+  /** 在系统文件管理器中打开本机实例的数据目录（DSH_HOME）；路径由主进程按实例解析。 */
+  openDirectory: 'instances:openDirectory',
+  /** 在系统文件管理器中打开本机实例的日志目录；路径由主进程按实例解析。 */
+  openLogDirectory: 'instances:openLogDirectory'
 } as const
 
 /** 本地运行时控制通道：start/stop 立即返回，进展由 `instance:status` 事件回推。 */

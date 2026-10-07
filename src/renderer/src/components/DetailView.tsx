@@ -135,6 +135,18 @@ export default function DetailView(): ReactNode {
     if (result && !result.ok) toast('err', t('detail.openInBrowserFailed'), result.message)
   }
 
+  /** 在系统文件管理器中打开本机实例的数据目录（DSH_HOME）；路径由主进程解析。 */
+  const openInstanceDirectory = async (): Promise<void> => {
+    const result = await window.dshHub?.instances.openDirectory(record.id)
+    if (result && !result.ok) toast('err', t('detail.openDirFailed'), result.message)
+  }
+
+  /** 在系统文件管理器中打开本机实例的日志目录；路径由主进程解析。 */
+  const openInstanceLogDirectory = async (): Promise<void> => {
+    const result = await window.dshHub?.instances.openLogDirectory(record.id)
+    if (result && !result.ok) toast('err', t('detail.openLogDirFailed'), result.message)
+  }
+
   /** 复制全部日志（时间 + 阶段原文，逐行）。 */
   const copyActivity = async (): Promise<void> => {
     if (activity === undefined || activity.length === 0) return
@@ -308,6 +320,7 @@ export default function DetailView(): ReactNode {
           onLogin={openAuthPanel}
           onCopyAddress={() => void copyAddress()}
           onOpenInBrowser={() => void openInBrowser()}
+          onOpenDirectory={record.transport === 'local' ? () => void openInstanceDirectory() : undefined}
           onDisconnect={() => void disconnectWorkspace(record.id)}
           onLogout={() => void logout()}
         />
@@ -366,6 +379,7 @@ export default function DetailView(): ReactNode {
         setShowMore={setShowLogMore}
         onCopy={() => void copyActivity()}
         onClear={() => clearActivity(record.id)}
+        onOpenLogDir={record.transport === 'local' ? () => void openInstanceLogDirectory() : undefined}
       />
 
       <div className="detail-delete" data-testid="detail-delete-area">

@@ -1276,6 +1276,8 @@ h3,
 /* 「更多」按钮加边框，从单行日志里跳出来。 */
 .detail-logbar .btn-ghost {
   border: 1px solid var(--border);
+  /* 日志换行占多行时，按钮不被压缩、保持可点。 */
+  flex-shrink: 0;
 }
 .app-shell.rail .detail-logbar {
   left: 64px;
@@ -1283,15 +1285,16 @@ h3,
 .detail-logbar__body {
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  /* 超长内容自动换行，不出横向滚动条（信息栏随之向上增高）。 */
+  overflow: hidden;
 }
 .detail-logbar__line {
   margin: 0;
   font-size: 11.5px;
   line-height: 18px;
   color: var(--muted);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 /* 「更多」弹层：全量日志纵向滚动；覆盖 body 的 user-select:none 以支持选中复制。 */
 .detail-logmore {
