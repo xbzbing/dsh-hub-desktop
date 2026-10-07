@@ -379,7 +379,11 @@ export function createLauncher(deps: LauncherDeps): Launcher {
     const child = spawnImpl({
       ...invocation,
       cwd: home,
-      detached: true
+      // POSIX：detached 使子进程自成进程组，便于 process.kill(-pid) 整树回收。
+      // Windows：detached 会给控制台子进程（node.exe）分配一个全新控制台，windowsHide
+      // 挡不住这个新控制台 → 启动时弹出黑色命令行窗；且 Windows 的树回收走 taskkill /T
+      // 不依赖进程组，故 Windows 一律非 detached（与 runtime-installer 的 npm spawn 一致）。
+      detached: process.platform !== 'win32'
     })
 
     const entry: Entry = {

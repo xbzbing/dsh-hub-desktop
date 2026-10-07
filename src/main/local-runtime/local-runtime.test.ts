@@ -142,7 +142,8 @@ describe('createLocalRuntime', () => {
       expect(invocation.args).toContain('--expose-internals')
       expect(invocation.env['DSH_HOME']).toContain('homes')
       expect(invocation.env['PNPM_SHIM_BYPASS']).toBe('1')
-      expect(invocation.detached).toBe(true)
+      // Windows 非 detached（避免新控制台弹窗）；其余平台 detached 以便进程组回收。
+      expect(invocation.detached).toBe(process.platform !== 'win32')
       return child as unknown as SpawnedProcess
     })
     const probe = vi.fn(async () => true)
