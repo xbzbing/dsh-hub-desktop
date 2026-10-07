@@ -84,6 +84,8 @@ export interface InstanceSlice {
   statuses: Record<string, InstanceStatusEvent>
   /** 主进程 userData 路径(app:info 快照;详情页展示实例数据目录用) */
   userDataPath: string | null
+  /** dsh 公共空间（默认 DSH_HOME）在本机的绝对路径（app:info 快照；向导展示用） */
+  defaultDshHome: string | null
   /**
    * 各实例的认证相位快照，用于控制详情页认证操作的可见性。
    * 未收到事件的实例不在 map 中。

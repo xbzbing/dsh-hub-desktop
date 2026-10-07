@@ -4,6 +4,7 @@ import { LAUNCHERS } from '@shared/local-launch'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
 import type { DshVersionCatalog } from '@shared/contracts'
+import { useAppStore } from '../../store'
 import type { ExternalWorkspace, WizardForm } from './types'
 
 /** 将注册表值映射到下拉选项：'' 为跟随系统，预设 URL 为对应选项，其余为自定义。 */
@@ -43,6 +44,9 @@ export default function LocalConfig(props: LocalConfigProps): ReactNode {
   const { t, form, set, setForm, external, versions, persistRegistry } = props
   const { workspace: externalWorkspace, useExisting: useExistingExternal, setUseExisting: setUseExistingExternal } =
     external
+  // 公共空间（默认 DSH_HOME）的本机绝对路径：Windows 为 C:\Users\<用户>\.dsh，
+  // 其它平台为 /Users|home/<用户>/.dsh。向导里直接展示解析后的真实路径，避免 ~/.dsh 歧义。
+  const defaultDshHome = useAppStore((state) => state.defaultDshHome)
   const { localLaunchers, versionOptions, catalog: versionCatalog, catalogError: versionCatalogError, setVersionTouched } =
     versions
   return (
@@ -168,6 +172,12 @@ export default function LocalConfig(props: LocalConfigProps): ReactNode {
                 <option value="isolated">{t('wizard.spaceIsolated')}</option>
                 <option value="shared">{t('wizard.spaceShared')}</option>
               </select>
+              {/* 选公共空间时显示解析后的真实路径（Windows 展开为 C:\Users\<用户>\.dsh）。 */}
+              {form.useDefaultSpace && defaultDshHome && (
+                <span className="hint num" data-testid="wizard-space-path">
+                  {t('wizard.spaceSharedPath', { path: defaultDshHome })}
+                </span>
+              )}
               <span className="hint">{t('wizard.spaceHint')}</span>
             </div>
             <div className="field" style={{ gridColumn: '1 / -1' }}>

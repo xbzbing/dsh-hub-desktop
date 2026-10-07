@@ -1,4 +1,6 @@
 import { app, ipcMain } from 'electron'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { z } from 'zod'
 import { IPC, type AppInfo, type PingResult } from '@shared/bridge'
 import type { IpcResult } from '@shared/contracts'
@@ -21,6 +23,8 @@ export function registerAppHandlers(
       node: process.versions.node,
       v8: process.versions.v8,
       userDataPath: app.getPath('userData'),
+      // dsh 的默认 DSH_HOME：全平台 join(homedir(), '.dsh')，与 dsh 自身一致。
+      defaultDshHome: join(homedir(), '.dsh'),
       locale: systemLocale()
     }))
   )

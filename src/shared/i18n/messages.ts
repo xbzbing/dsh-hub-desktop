@@ -262,6 +262,7 @@ export const MESSAGES = {
   'wizard.spaceLabel': { zh: '运行空间', en: 'Runtime space' },
   'wizard.spaceIsolated': { zh: '隔离实例', en: 'Isolated instance' },
   'wizard.spaceShared': { zh: '公共空间：~/.dsh', en: 'Shared space: ~/.dsh' },
+  'wizard.spaceSharedPath': { zh: '本机路径：{path}', en: 'Local path: {path}' },
   'wizard.spaceHint': { zh: '公共空间复用现有 dsh 的配置、插件与会话；同一时间请只运行一个实例。', en: 'The shared space reuses existing dsh config, plugins, and sessions; run only one instance at a time.' },
   'wizard.errProfile': { zh: 'Profile 不能包含 ..', en: 'Profile cannot contain ..' },
   'wizard.launcherLabel': { zh: '启动器', en: 'Launcher' },

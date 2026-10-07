@@ -17,6 +17,7 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
   records: {},
   statuses: {},
   userDataPath: null,
+  defaultDshHome: null,
   authPhases: {},
   activityLog: {},
   autoDisabledNotified: {},
@@ -26,7 +27,11 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
     const info = await window.dshHub?.getInfo()
     if (info?.ok) {
       document.documentElement.dataset.platform = info.value.platform
-      set({ userDataPath: info.value.userDataPath, systemLocale: info.value.locale })
+      set({
+        userDataPath: info.value.userDataPath,
+        defaultDshHome: info.value.defaultDshHome,
+        systemLocale: info.value.locale
+      })
     }
     await hydrateAndSubscribeTheme(get)
     await get().refreshList()
