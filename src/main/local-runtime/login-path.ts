@@ -76,15 +76,28 @@ export function mergeLoginPath(
   return dirs.join(separator)
 }
 
+/**
+ * 可失效的进程内缓存解析器：`()` 取值（首次解析后缓存，失败也缓存为 null），
+ * `.invalidate()` 清掉缓存令下次取值重新解析。用于「用户装了新工具后无需重启 app
+ * 即可让下次启动的实例解析到新 PATH」。
+ */
+export interface CachedResolver<T> {
+  (): Promise<T>
+  /** 清空缓存，下次调用重新解析。 */
+  invalidate(): void
+}
+
 /** 进程内缓存的解析器：解析有启动开销，结果只在应用生命周期内有意义；失败同样缓存为 null。 */
-export function createLoginPathResolver(
-  probe: () => Promise<string | null>
-): () => Promise<string | null> {
+export function createLoginPathResolver(probe: () => Promise<string | null>): CachedResolver<string | null> {
   let cached: Promise<string | null> | null = null
-  return () => {
+  const resolver = (): Promise<string | null> => {
     cached ??= probe().catch(() => null)
     return cached
   }
+  resolver.invalidate = (): void => {
+    cached = null
+  }
+  return resolver
 }
 
 /** 缺省解析器（真实登录 shell / 注册表）；进程内只解析一次。 */

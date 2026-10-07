@@ -185,6 +185,29 @@ export const MESSAGES = {
     zh: '本机实例继承登录 shell（含 .zshrc/.bashrc）的环境变量，与终端一致；关闭时仅继承 PATH',
     en: 'Local instances inherit environment variables from your login shell (including .zshrc/.bashrc), matching your terminal; when off, only PATH is inherited'
   },
+  'settings.refreshEnv': { zh: '重新检测环境变量', en: 'Re-detect environment' },
+  'settings.refreshEnvHint': {
+    zh: '装了新工具（如 git/node）后点此重新检测 PATH，重启实例即可生效，无需重启应用',
+    en: 'After installing new tools (e.g. git/node), click to re-detect PATH; restart instances to apply, no app restart needed'
+  },
+  'settings.refreshEnvDone': {
+    zh: '环境已重新检测，重启实例后生效',
+    en: 'Environment re-detected; takes effect after restarting instances'
+  },
+  'settings.refreshEnvFailed': { zh: '重新检测环境失败', en: 'Failed to re-detect environment' },
+  'settings.refreshEnvRestartTitle': { zh: '重启实例以应用新环境', en: 'Restart instances to apply' },
+  'settings.refreshEnvRestartBody': {
+    zh: '已重新检测环境。检测到 {count} 个正在运行的本机实例，是否立即重启以应用新环境？重启会短暂中断正在使用的工作区。',
+    en: 'Environment re-detected. {count} local instance(s) are running. Restart them now to apply the new environment? Restarting briefly interrupts the workspaces in use.'
+  },
+  'settings.refreshEnvRestartConfirm': { zh: '立即重启', en: 'Restart now' },
+  'settings.refreshEnvRestartLater': { zh: '稍后手动', en: 'Later' },
+  'settings.refreshEnvRestarted': {
+    zh: '已重启 {count} 个实例以应用新环境',
+    en: 'Restarted {count} instance(s) to apply the new environment'
+  },
+  'settings.refreshEnvRestartFailed': { zh: '重启部分实例失败', en: 'Failed to restart some instances' },
+
   'settings.dataDir': { zh: '数据目录', en: 'Data directory' },
   // 数据目录提供「打开」控件。
   'settings.openDataDir': { zh: '打开', en: 'Open' },

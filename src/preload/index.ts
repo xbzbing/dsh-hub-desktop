@@ -144,7 +144,10 @@ const bridge: DshHubBridge = {
     update: (patch) =>
       ipcRenderer.invoke(SETTINGS_IPC.update, patch) as Promise<IpcResult<Settings>>,
     // 打开数据目录:白名单里**不带任何参数**(路径由主进程解析),渲染层传不了路径
-    openDataDir: () => ipcRenderer.invoke(SETTINGS_IPC.openDataDir) as Promise<IpcResult<null>>
+    openDataDir: () => ipcRenderer.invoke(SETTINGS_IPC.openDataDir) as Promise<IpcResult<null>>,
+    // 重新检测本机环境:同样**不带参数**;返回正在运行、可重启的本机实例 id
+    refreshEnvironment: () =>
+      ipcRenderer.invoke(SETTINGS_IPC.refreshEnvironment) as Promise<IpcResult<string[]>>
   },
   // 只暴露状态和管理操作，不提供读取凭据的通道；凭据仅在主进程内使用。
   vault: {

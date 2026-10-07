@@ -127,9 +127,11 @@ export function registerRuntimeHandlers(
         throw new InstanceStoreError('invalid-state', '外部接管的 dsh 进程归用户所有，不能由 hub 重启')
       }
       // 先完全停止（等待进程退出并发出 stopped），再按当前注册表配置重新拉起。
+      // 重启前刷新登录环境缓存：用户新装的工具（如 git）无需重启 app，重启实例即可解析到。
       // 重启可能分配新端口/新 browser-auth URL：启动耗时较长，不 await，
       // 进展与失败都经状态事件回推，渲染层据 running 事件重开工作区。
       await deps.runtime.stop(instanceId)
+      await deps.runtime.refreshEnv().catch(() => undefined)
       void deps.runtime.start(instance)
       return null
     })

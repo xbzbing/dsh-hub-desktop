@@ -471,7 +471,12 @@ export const SETTINGS_IPC = {
   get: 'settings:get',
   update: 'settings:update',
   /** 应用数据目录由主进程自行解析；通道不接受参数。 */
-  openDataDir: 'settings:openDataDir'
+  openDataDir: 'settings:openDataDir',
+  /**
+   * 重新检测本机环境（登录 PATH / shell 环境）并失效缓存；无参数。
+   * 返回当前正在运行、可由 hub 重启的本机实例 id，供渲染层决定是否提示重启生效。
+   */
+  refreshEnvironment: 'settings:refreshEnvironment'
 } as const
 
 export type AuthPhase =

@@ -117,7 +117,7 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
   const settingsKeys = await win.evaluate(() =>
     window.dshHub?.settings ? Object.keys(window.dshHub.settings).sort() : null
   )
-  expect(settingsKeys).toEqual(['get', 'openDataDir', 'update'])
+  expect(settingsKeys).toEqual(['get', 'openDataDir', 'refreshEnvironment', 'update'])
 })
 
 test('空数据目录展示空态(真实注册表后端)', async () => {

@@ -24,6 +24,9 @@ export default function SettingsView(): ReactNode {
   const [vault, setVault] = useState<VaultStatusSnapshot | null>(null)
   const [spaces, setSpaces] = useState<LocalSpaceSnapshot[]>([])
   const [trashTarget, setTrashTarget] = useState<LocalSpaceSnapshot | null>(null)
+  /** 重新检测环境后、正在运行且可重启的本机实例 id；非 null 时弹出重启确认框。 */
+  const [restartPrompt, setRestartPrompt] = useState<string[] | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     void BRIDGE?.vault.status().then((result) => {
@@ -93,6 +96,39 @@ export default function SettingsView(): ReactNode {
   /** 打开应用内「关于」叠加窗口；Windows/Linux 无菜单栏，设置页承担此入口。 */
   const openAbout = (): void => {
     void BRIDGE?.openAbout()
+  }
+
+  /**
+   * 重新检测本机环境（PATH / 登录 shell）：失效主进程缓存并重解析。
+   * 若有正在运行、可重启的本机实例，弹出确认框由用户决定是否立即重启生效。
+   */
+  const refreshEnv = (): void => {
+    if (refreshing) return
+    setRefreshing(true)
+    void BRIDGE?.settings
+      .refreshEnvironment()
+      .then((result) => {
+        if (!result) return
+        if (!result.ok) {
+          toast('err', t('settings.refreshEnvFailed'), result.message)
+          return
+        }
+        if (result.value.length > 0) setRestartPrompt(result.value)
+        else toast('ok', t('settings.refreshEnvDone'))
+      })
+      .finally(() => setRefreshing(false))
+  }
+
+  /** 用户确认后重启运行中的本机实例，使新环境立即生效。 */
+  const restartForEnv = (): void => {
+    const ids = restartPrompt ?? []
+    setRestartPrompt(null)
+    if (ids.length === 0) return
+    void Promise.all(ids.map((id) => BRIDGE?.runtime.restart(id))).then((results) => {
+      const failed = results.some((result) => result && !result.ok)
+      if (failed) toast('err', t('settings.refreshEnvRestartFailed'))
+      else toast('ok', t('settings.refreshEnvRestarted', { count: ids.length }))
+    })
   }
 
   return (
@@ -176,6 +212,22 @@ export default function SettingsView(): ReactNode {
               </span>
             </span>
           </label>
+          <div className="row mt12" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <span style={{ flex: 1 }}>
+              <span>{t('settings.refreshEnv')}</span>
+              <span className="meta" style={{ display: 'block', marginTop: 2 }}>
+                {t('settings.refreshEnvHint')}
+              </span>
+            </span>
+            <button
+              className="btn btn-secondary btn-sm"
+              data-testid="settings-refresh-env"
+              disabled={refreshing}
+              onClick={refreshEnv}
+            >
+              <Icon name="refresh" /> {t('settings.refreshEnv')}
+            </button>
+          </div>
           <label className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
             <span style={{ flex: 1 }}>
               <span>{t('settings.workspaceCache')}</span>
@@ -345,6 +397,27 @@ export default function SettingsView(): ReactNode {
         >
           <p className="meta">{t('spaces.trashConfirm')}</p>
           <p className="meta num mt12" style={{ overflowWrap: 'anywhere' }}>{trashTarget.id}</p>
+        </Modal>
+      )}
+      {restartPrompt && restartPrompt.length > 0 && (
+        <Modal
+          title={t('settings.refreshEnvRestartTitle')}
+          closeLabel={t('common.close')}
+          closeButtonInTabOrder={false}
+          onClose={() => setRestartPrompt(null)}
+          testId="settings-confirm-restart-env"
+          footer={
+            <div className="right">
+              <button className="btn btn-secondary btn-sm" onClick={() => setRestartPrompt(null)}>
+                {t('settings.refreshEnvRestartLater')}
+              </button>
+              <button className="btn btn-primary btn-sm" data-testid="settings-restart-env-confirm" onClick={restartForEnv}>
+                {t('settings.refreshEnvRestartConfirm')}
+              </button>
+            </div>
+          }
+        >
+          <p className="meta">{t('settings.refreshEnvRestartBody', { count: restartPrompt.length })}</p>
         </Modal>
       )}
     </section>

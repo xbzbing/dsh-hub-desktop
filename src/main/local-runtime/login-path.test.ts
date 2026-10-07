@@ -126,4 +126,18 @@ describe('createLoginPathResolver（进程内缓存）', () => {
     expect(await resolve()).toBeNull()
     expect(probe).toHaveBeenCalledTimes(1)
   })
+
+  it('invalidate 后下次调用重新解析（装了新工具无需重启 app 即可生效）', async () => {
+    let value = '/old/bin'
+    const probe = vi.fn(async () => value)
+    const resolve = createLoginPathResolver(probe)
+    expect(await resolve()).toBe('/old/bin')
+    expect(await resolve()).toBe('/old/bin')
+    expect(probe).toHaveBeenCalledTimes(1)
+
+    value = '/old/bin:/new/git/bin'
+    resolve.invalidate()
+    expect(await resolve()).toBe('/old/bin:/new/git/bin')
+    expect(probe).toHaveBeenCalledTimes(2)
+  })
 })

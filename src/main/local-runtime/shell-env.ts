@@ -15,7 +15,7 @@ import { userInfo } from 'node:os'
 import { basename } from 'node:path'
 import { execFileResult } from './exec-file'
 import type { CommandRunner } from './exec-file'
-import { mergeLoginPath } from './login-path'
+import { mergeLoginPath, type CachedResolver } from './login-path'
 
 /** 仅这些 shell 支持 `-l -i -c` 与 POSIX `export` 语义；其它 shell（fish/nu）回退仅 PATH。 */
 const SUPPORTED_SHELLS = new Set(['zsh', 'bash'])
@@ -118,15 +118,20 @@ export function mergeShellEnv(
 
 /**
  * 进程内缓存的解析器：解析有启动开销，结果只在应用生命周期内有意义；失败同样缓存为 null。
+ * `.invalidate()` 清掉缓存令下次取值重新解析（用户装了新工具后无需重启 app 即可生效）。
  */
 export function createShellEnvResolver(
   probe: () => Promise<Map<string, string> | null>
-): () => Promise<Map<string, string> | null> {
+): CachedResolver<Map<string, string> | null> {
   let cached: Promise<Map<string, string> | null> | null = null
-  return () => {
+  const resolver = (): Promise<Map<string, string> | null> => {
     cached ??= probe().catch(() => null)
     return cached
   }
+  resolver.invalidate = (): void => {
+    cached = null
+  }
+  return resolver
 }
 
 /** 缺省解析器（真实登录 shell）；进程内只解析一次。 */

@@ -37,6 +37,7 @@ let runtimeFake: {
   start: ReturnType<typeof vi.fn>
   stop: ReturnType<typeof vi.fn>
   stopAll: ReturnType<typeof vi.fn>
+  refreshEnv: ReturnType<typeof vi.fn>
   adopt: ReturnType<typeof vi.fn>
   upgradeInstance: ReturnType<typeof vi.fn>
 }
@@ -155,6 +156,7 @@ beforeEach(async () => {
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
     stopAll: vi.fn(async () => undefined),
+    refreshEnv: vi.fn(async () => undefined),
     adopt: vi.fn(async () => undefined),
     upgradeInstance: vi.fn(async () => undefined)
   }
@@ -360,6 +362,7 @@ describe('registerIpc', () => {
       'vault:clear',
       'settings:get',
       'settings:openDataDir',
+      'settings:refreshEnvironment',
       'settings:update',
       'spaces:list',
       'spaces:trash'
@@ -415,6 +418,8 @@ describe('registerIpc', () => {
 
     expect(result).toEqual({ ok: true, value: null })
     expect(runtimeFake.stop).toHaveBeenCalledWith(created.value.id)
+    // 重启前刷新登录环境缓存：新装的工具重启实例即可解析到，无需重启 app
+    expect(runtimeFake.refreshEnv).toHaveBeenCalledOnce()
     expect(runtimeFake.start).toHaveBeenCalledTimes(1)
     const started = runtimeFake.start.mock.calls[0]?.[0] as { id: string }
     expect(started.id).toBe(created.value.id)
@@ -2691,6 +2696,26 @@ describe('registerIpc', () => {
     // 非法取值同样被拒
     const bad = (await invoke('settings:update', { theme: 'rainbow' })) as { ok: boolean }
     expect(bad.ok).toBe(false)
+  })
+
+  it('settings:refreshEnvironment 失效登录环境缓存并返回运行中、可重启的本机实例', async () => {
+    runtimeFake.runningIds.mockReturnValue(['a', 'b', 'ext'])
+    runtimeFake.statusOf.mockImplementation((id: string) =>
+      id === 'ext' ? { runtimeSource: 'external' } : { runtimeSource: 'hub' }
+    )
+
+    const result = (await invoke('settings:refreshEnvironment')) as { ok: boolean; value: string[] }
+
+    expect(result.ok).toBe(true)
+    // 外部接管的实例不可由 hub 重启，必须被排除
+    expect(result.value).toEqual(['a', 'b'])
+    expect(runtimeFake.refreshEnv).toHaveBeenCalledOnce()
+  })
+
+  it('settings:refreshEnvironment 拒绝多余参数', async () => {
+    const result = (await invoke('settings:refreshEnvironment', 'x')) as { ok: boolean; code?: string }
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('invalid-input')
   })
 })
 

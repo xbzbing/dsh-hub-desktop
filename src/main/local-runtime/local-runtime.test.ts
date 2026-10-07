@@ -126,6 +126,29 @@ function readyLine(port = 31234): string {
 }
 
 describe('createLocalRuntime', () => {
+  it('refreshEnv 失效并重解析登录环境缓存（装新工具后无需重启 app）', async () => {
+    const loginInvalidate = vi.fn()
+    const shellInvalidate = vi.fn()
+    const loginPath = Object.assign(vi.fn(async () => '/usr/bin'), { invalidate: loginInvalidate })
+    const shellEnv = Object.assign(vi.fn(async () => new Map<string, string>()), { invalidate: shellInvalidate })
+
+    const manager = createLocalRuntime({
+      store: storeStub,
+      installer: makeFakeInstaller(),
+      dataRoot: '/tmp/hub-data',
+      loginPath,
+      shellEnv
+    })
+
+    await manager.refreshEnv()
+
+    expect(loginInvalidate).toHaveBeenCalledOnce()
+    expect(shellInvalidate).toHaveBeenCalledOnce()
+    // 预热：失效后立刻重解析一次，使随后的启动不必等待解析
+    expect(loginPath).toHaveBeenCalledOnce()
+    expect(shellEnv).toHaveBeenCalledOnce()
+  })
+
   it('start → 就绪行 → 健康探测通过 → running(带 url/port/version)', async () => {
     const child = new EventEmitter() as unknown as FakeChild
     child.stdout = new PassThrough()

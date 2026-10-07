@@ -123,4 +123,15 @@ describe('createShellEnvResolver（进程内缓存）', () => {
     expect(await resolve()).toBeNull()
     expect(probe).toHaveBeenCalledTimes(1)
   })
+
+  it('invalidate 后下次调用重新解析', async () => {
+    const probe = vi.fn(async () => new Map([['A', '1']]))
+    const resolve = createShellEnvResolver(probe)
+    await resolve()
+    await resolve()
+    expect(probe).toHaveBeenCalledTimes(1)
+    resolve.invalidate()
+    await resolve()
+    expect(probe).toHaveBeenCalledTimes(2)
+  })
 })

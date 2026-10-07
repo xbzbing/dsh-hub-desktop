@@ -9,6 +9,11 @@ export interface SettingsHandlerDeps {
   settings: SettingsStore
   onSettingsChanged?: (settings: Settings, changedKeys: readonly (keyof Settings)[]) => void
   openDataDir?: () => Promise<void>
+  /**
+   * 重新检测本机环境（登录 PATH / shell 环境）并失效缓存；返回当前正在运行、
+   * 可由 hub 重启的本机实例 id，供渲染层决定是否提示重启生效。
+   */
+  refreshEnvironment?: () => Promise<string[]>
 }
 
 export function registerSettingsHandlers(
@@ -45,6 +50,17 @@ export function registerSettingsHandlers(
         if (!deps.openDataDir) throw new DataDirOpenError('internal', '打开数据目录不可用')
         await deps.openDataDir()
         return null
+      })
+  )
+
+  ipcMain.handle(
+    SETTINGS_IPC.refreshEnvironment,
+    (_event, ...args: unknown[]): Promise<IpcResult<string[]>> =>
+      wrap(async () => {
+        z.tuple([]).parse(args)
+        // 不可用时按「无运行中实例」处理：失效缓存是副作用，没有端口可返回也不报错。
+        if (!deps.refreshEnvironment) return []
+        return deps.refreshEnvironment()
       })
   )
 }

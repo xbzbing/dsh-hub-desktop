@@ -225,6 +225,12 @@ export interface DshHubBridge {
      * **没有参数**:目录由主进程自行解析,渲染层无法指定路径。
      */
     openDataDir: () => Promise<IpcResult<null>>
+    /**
+     * 重新检测本机环境（登录 PATH / shell 环境）并失效缓存。
+     * **没有参数**；返回当前正在运行、可由 hub 重启的本机实例 id，
+     * 渲染层据此提示用户是否重启这些实例以应用新环境。
+     */
+    refreshEnvironment: () => Promise<IpcResult<string[]>>
   }
   /** 凭据保险库：默认保存密码和会话；用户可显式取消。 */
   vault: {

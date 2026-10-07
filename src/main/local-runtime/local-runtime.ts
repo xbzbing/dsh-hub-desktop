@@ -70,14 +70,14 @@ export interface LocalRuntimeOptions extends LaunchOptions {
   resolveNode?: (scriptPath: string) => string | null
   /**
    * 登录环境 PATH 解析（登录 shell / Windows 注册表）；null=不可用时回退继承 PATH。
-   * 缺省用进程内缓存的真实解析；注入以便测试。
+   * 缺省用进程内缓存的真实解析；注入以便测试。可选 `.invalidate()` 供 refreshEnv 清缓存。
    */
-  loginPath?: () => Promise<string | null>
+  loginPath?: (() => Promise<string | null>) & { invalidate?: () => void }
   /**
    * 当前用户登录 shell 的完整环境解析（含 .zshrc/.bashrc 的 export）；null=不可用。
-   * 缺省用进程内缓存的真实解析；注入以便测试。
+   * 缺省用进程内缓存的真实解析；注入以便测试。可选 `.invalidate()` 供 refreshEnv 清缓存。
    */
-  shellEnv?: () => Promise<Map<string, string> | null>
+  shellEnv?: (() => Promise<Map<string, string> | null>) & { invalidate?: () => void }
   /**
    * 是否把登录 shell 完整环境合并进本机实例；false 时仅合并 PATH（回退旧行为）。
    * 缺省 true；由设置项 inheritShellEnv 决定，读取函数注入以便运行中改设置即时生效。
@@ -115,6 +115,12 @@ export interface LocalRuntimeManager {
   start(instance: LocalInstance): Promise<void>
   stop(id: string): Promise<void>
   stopAll(): Promise<void>
+  /**
+   * 失效并重新解析登录环境缓存（PATH / shell 环境），使下一次启动的实例解析到最新环境。
+   * 用于用户装了新工具（如 git）后无需重启 app：清缓存并预热，之后 (重)启实例即生效。
+   * 已在运行的实例进程环境不可变，须由调用方重启后才会用上新环境。
+   */
+  refreshEnv(): Promise<void>
   /**
    * 接管后 statusOf 返回 running + 外部 URL,「打开视图」直接可用;
    * stop() 只断开接管,**绝不终止**用户自己的进程。
@@ -490,6 +496,14 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
 
     runningIds() {
       return [...entries.keys()]
+    },
+
+    async refreshEnv() {
+      // 清掉进程内缓存的登录环境解析；下次启动的实例会重新解析到最新 PATH / shell 环境。
+      loginPath.invalidate?.()
+      shellEnv.invalidate?.()
+      // 预热：装了新工具后立刻重解析一次，使随后（手动或被重启触发）的启动不必等解析。
+      await Promise.allSettled([loginPath(), shellEnv()])
     },
 
     async start(instance) {

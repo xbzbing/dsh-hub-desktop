@@ -207,7 +207,14 @@ export function registerIpc(store: InstanceStore, deps: IpcDeps): AuthProbeContr
     {
       settings: deps.settings,
       onSettingsChanged: deps.onSettingsChanged,
-      openDataDir: deps.openDataDir
+      openDataDir: deps.openDataDir,
+      // 失效登录环境缓存并重解析，返回正在运行、可由 hub 重启的本机实例（外部接管的除外）。
+      refreshEnvironment: async () => {
+        await deps.runtime.refreshEnv()
+        return deps.runtime
+          .runningIds()
+          .filter((id) => deps.runtime.statusOf(id)?.runtimeSource !== 'external')
+      }
     },
     wrap
   )
