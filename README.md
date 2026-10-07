@@ -12,6 +12,10 @@
 
 由于没有苹果开发者账号，因此无法打包可信的 App，需要`clone`代码仓库并通过`pnpm dist:mac`来编译 App。
 
+## Code signing policy
+
+Windows 安装包的代码签名政策见 [CODE_SIGNING.md](CODE_SIGNING.md)。免费签名由 [SignPath.io](https://about.signpath.io) 提供，证书由 [SignPath Foundation](https://signpath.org) 签发。
+
 ## 功能特性
 
 - **实例统一管理**：注册表本地落盘（原子写 + 滚动备份 + 损坏自愈 + 版本迁移）；
