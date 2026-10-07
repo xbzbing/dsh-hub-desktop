@@ -371,7 +371,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
       installer: options.installer,
       pathProbe: options.pathProbe,
       confirmDownload: options.confirmDownload,
-      dataRoot: options.dataRoot
+      dataRoot: options.dataRoot,
+      pnpmBinDir: options.pnpmBinDir
     },
     portProbe,
     homeDir,

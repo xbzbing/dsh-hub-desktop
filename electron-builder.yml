@@ -36,6 +36,16 @@ extraResources:
       - '**/*'
       - '!**/{test,tests,docs,man,changelogs}/**'
       - '!**/*.md'
+  # 随包分发 JS 版 pnpm（10.x）：dsh 插件管理转发 pnpm，目标机未必装 pnpm，装了也可能是
+  # pnpm v12 的全局 shim（nvm 等环境下完整性校验失败）。由 `pnpm bundle:pnpm` 下载发布 tarball
+  # 到 build/pnpm-runtime/pnpm；主进程物化启动器并前置 PATH，令 dsh 用这份自带 pnpm。
+  # 嵌套一层目录避免 electron-builder 过滤复制源根部 node_modules（pnpm 的在 pnpm/dist/node_modules）。
+  - from: build/pnpm-runtime
+    to: pnpm-runtime
+    filter:
+      - '**/*'
+      - '!**/{test,tests,docs,man,changelogs}/**'
+      - '!**/*.md'
 mac:
   icon: build/icon.icns
   # 只保留应用实际支持的 Chromium 语言包，控制包体积。

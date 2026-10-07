@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPluginManager, profileHasHmr } from './plugin-manager'
 import type { PluginManagerOptions } from './plugin-manager'
@@ -293,6 +293,20 @@ describe('createPluginManager.list', () => {
     const manager = createPluginManager({ ...baseOptions(run), homeDir: () => '/Users/me' })
     await manager.list(localInstance({ useDefaultSpace: true }))
     expect(toPosix(calls[0]!.env?.DSH_HOME ?? '')).toBe('/Users/me/.dsh')
+  })
+
+  it('提供 pnpmBinDir 时前置到 PATH：dsh 命中随包分发的自带 pnpm', async () => {
+    const calls: Array<{ env?: NodeJS.ProcessEnv }> = []
+    const run = vi.fn(async (command: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => {
+      void command
+      void args
+      calls.push({ env: opts?.env })
+      return { code: 0, stdout: LIST_JSON, stderr: '' }
+    })
+    const manager = createPluginManager({ ...baseOptions(run), pnpmBinDir: '/opt/app/pnpm-bin' })
+    await manager.list(localInstance())
+    const segments = (calls[0]!.env?.PATH ?? '').split(delimiter)
+    expect(segments[0]).toBe('/opt/app/pnpm-bin')
   })
 
   it('非零退出：抛脱敏后的错误', async () => {

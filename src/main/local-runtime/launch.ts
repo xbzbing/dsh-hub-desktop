@@ -84,6 +84,8 @@ export interface LaunchOptions {
   pathProbe?: PathProbe
   /** 下载 dsh 前的用户确认口，返回 true 才继续下载；缺省视为拒绝。 */
   confirmDownload?: (version: string) => Promise<boolean>
+  /** 随包分发 pnpm 启动器所在目录；提供时前置到 dsh 子进程 PATH，令 dsh 用自带 pnpm。 */
+  pnpmBinDir?: string
 }
 
 /** createLauncher 的依赖：状态发布、共享状态、解析后的启动配置，以及管理器侧的进程监视/回收。 */
@@ -334,9 +336,13 @@ export function createLauncher(deps: LauncherDeps): Launcher {
     // 保证 dsh 自己 spawn 的子进程解析到同一个 node。
     const baseEnv = await resolveBaseEnv({ inherit: inheritShellEnv(), shellEnv, loginPath })
     const basePath = baseEnv.PATH ?? ''
+    // node 目录前置（dsh 自己 spawn 的子进程解析到同一个 node）；pnpm 启动器目录再前置一层，
+    // 使 dsh 内部 `execa('pnpm')` 命中随包分发的 pnpm，而非系统上可能损坏/缺失的 pnpm。
+    const nodeAndBase = runtimeNode !== null ? `${dirname(runtimeNode)}${delimiter}${basePath}` : basePath
+    const runtimePath = options.pnpmBinDir ? `${options.pnpmBinDir}${delimiter}${nodeAndBase}` : nodeAndBase
     const runtimeEnv: NodeJS.ProcessEnv = {
       ...baseEnv,
-      PATH: runtimeNode !== null ? `${dirname(runtimeNode)}${delimiter}${basePath}` : basePath,
+      PATH: runtimePath,
       DSH_HOME: home,
       // pnpm v12 的全局命令默认是「上下文感知 shim」（globalShims），dsh 转发 pnpm/node
       // 时该 shim 会做签名完整性校验并二次派发；在 nvm 等按需切换 node 的 Windows 环境下

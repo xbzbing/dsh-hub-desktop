@@ -129,6 +129,8 @@ export interface PluginManagerOptions {
   /** 数据根目录：隔离空间实例的 DSH_HOME 落在 `<dataRoot>/homes/<id>`。 */
   dataRoot: string
   pathProbe?: PathProbe
+  /** 随包分发 pnpm 启动器所在目录；提供时前置到插件命令 PATH，令 dsh 用自带 pnpm。 */
+  pnpmBinDir?: string
   /** 用户主目录来源；公共空间实例的 DSH_HOME 为 `<home>/.dsh`。缺省 os.homedir。 */
   homeDir?: () => string
   /** 默认 profile（实例未指定时）。缺省 'web'。 */
@@ -477,9 +479,12 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     const baseEnv = await resolveBaseEnv()
     const basePath = baseEnv.PATH ?? ''
     const nodePath = node !== null ? dirname(node) : null
+    // node 目录前置；pnpm 启动器目录再前置一层，使 `dsh plugin` 转发的 pnpm 命中随包分发的
+    // 自带 pnpm，而非系统上可能损坏/缺失的 pnpm。
+    const nodeAndBase = nodePath !== null ? `${nodePath}${delimiter}${basePath}` : basePath
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
-      PATH: nodePath !== null ? `${nodePath}${delimiter}${basePath}` : basePath,
+      PATH: options.pnpmBinDir ? `${options.pnpmBinDir}${delimiter}${nodeAndBase}` : nodeAndBase,
       DSH_HOME: home,
       // pnpm v12 全局命令默认走「上下文感知 shim」（globalShims）：转发 pnpm 时该 shim 会做
       // 签名完整性校验并二次派发，nvm 等按需切换 node 的 Windows 环境下校验失败

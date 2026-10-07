@@ -9,6 +9,7 @@ dist/
 out/
 # 打包前由 `pnpm bundle:npm` 解引用生成的自包含 npm 副本（extraResources 源）
 build/npm-runtime/
+build/pnpm-runtime/
 # 只忽略根目录的 release/(打包输出目录);必须锚定 —— 不锚定的 `release/`
 # 会连带忽略 `scripts/release/`,让 T14 的发布脚本静默进不了仓库。
 /release/

@@ -19,6 +19,7 @@ import { createPluginManager } from './local-runtime/plugin-manager'
 import type { PluginManager } from './local-runtime/plugin-manager'
 import { createPathProbe } from './local-runtime/runtime-source'
 import type { PathProbe } from './local-runtime/runtime-source'
+import { materializePnpmLauncher } from './shell/bundled-pnpm'
 import type { InstanceStore } from './registry/instance-store'
 import { isEmptyPatch, runtimeWritebackPatch } from './registry/runtime-writeback'
 import { createPromptBroker } from './ssh/prompt-broker'
@@ -72,6 +73,25 @@ function resolveBundledNpm(): BundledNpm | undefined {
 }
 
 /**
+ * 物化随包分发的 pnpm 启动器并返回其目录，供运行时与插件管理器前置到 dsh 子进程 PATH。
+ * 打包版 pnpm 在 `process.resourcesPath/pnpm-runtime/pnpm`；开发/E2E 在仓库
+ * `build/pnpm-runtime/pnpm`（由 `pnpm bundle:pnpm` 生成）。缺失时返回 undefined，
+ * dsh 退回系统 PATH 上的 pnpm（与捆绑前行为一致）。
+ */
+function resolveBundledPnpmBinDir(dataRoot: string): string | undefined {
+  const pnpmCliJs = app.isPackaged
+    ? join(process.resourcesPath, 'pnpm-runtime', 'pnpm', 'bin', 'pnpm.cjs')
+    : join(app.getAppPath(), 'build', 'pnpm-runtime', 'pnpm', 'bin', 'pnpm.cjs')
+  if (!existsSync(pnpmCliJs)) return undefined
+  try {
+    return materializePnpmLauncher({ binDir: join(dataRoot, 'pnpm-bin'), pnpmCliJs })
+  } catch {
+    // 物化失败（只读目录等）不致命：退回系统 pnpm。
+    return undefined
+  }
+}
+
+/**
  * 本地运行时、SSH 隧道、HTTP 端点与提示代理的初始化，以及状态事件接线。
  */
 export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeController {
@@ -109,10 +129,13 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
     return promptBroker.requestConfirm(payload)
   }
   const pathProbe = createPathProbe()
+  // 随包分发的 pnpm 启动器目录：令 dsh 的插件管理用自带 pnpm，不依赖系统 pnpm。
+  const pnpmBinDir = resolveBundledPnpmBinDir(deps.dataRoot)
   const pluginManager = createPluginManager({
     installer,
     dataRoot: deps.dataRoot,
     pathProbe,
+    pnpmBinDir,
     // 与本机实例启动同源的环境继承：打包后 GUI 从 Finder/Dock 启动只继承 launchd 最小 PATH，
     // 缺 pnpm/node 目录会让 dsh plugin 转发 pnpm 失败；运行中改设置即时生效。
     inheritShellEnv: () => deps.readSettings().inheritShellEnv
@@ -122,6 +145,7 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
     dataRoot: deps.dataRoot,
     store: deps.store,
     pathProbe,
+    pnpmBinDir,
     // 登录 shell 完整环境继承开关：运行中改设置即时生效（下次启动实例时读取）。
     inheritShellEnv: () => deps.readSettings().inheritShellEnv,
     confirmDownload: (version) =>
