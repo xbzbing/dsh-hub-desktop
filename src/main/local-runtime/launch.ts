@@ -337,7 +337,12 @@ export function createLauncher(deps: LauncherDeps): Launcher {
     const runtimeEnv: NodeJS.ProcessEnv = {
       ...baseEnv,
       PATH: runtimeNode !== null ? `${dirname(runtimeNode)}${delimiter}${basePath}` : basePath,
-      DSH_HOME: home
+      DSH_HOME: home,
+      // pnpm v12 的全局命令默认是「上下文感知 shim」（globalShims），dsh 转发 pnpm/node
+      // 时该 shim 会做签名完整性校验并二次派发；在 nvm 等按需切换 node 的 Windows 环境下
+      // 校验会失败（shim integrity check failed），二次派发还会弹出控制台窗口。dsh 把 pnpm/node
+      // 当普通工具直接调用，无需 shim 派发，统一设 PNPM_SHIM_BYPASS=1 绕过（无 shim 的环境下为无副作用的空操作）。
+      PNPM_SHIM_BYPASS: '1'
     }
     if (customLauncherName !== null) {
       // dush/duush wrapper 会把自己的隔离 patch 追加到 DUSH_PATCH_FILE；继承用户全局

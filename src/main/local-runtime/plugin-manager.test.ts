@@ -278,6 +278,8 @@ describe('createPluginManager.list', () => {
     expect(calls[0]!.args).toEqual(['/runtimes/dsh-0.1.7-rc.2/bin.js', 'plugin', '--profile', 'tui', 'list', '--json'])
     // 路径断言归一化分隔符：断言的是目录布局，Windows 上 join 产出反斜杠。
     expect(toPosix(calls[0]!.env?.DSH_HOME ?? '')).toBe('/data/homes/abc')
+    // pnpm v12 全局 shim 派发在 nvm+Windows 上会 shim integrity check failed，统一绕过。
+    expect(calls[0]!.env?.PNPM_SHIM_BYPASS).toBe('1')
   })
 
   it('公共空间实例：DSH_HOME 为 <home>/.dsh', async () => {

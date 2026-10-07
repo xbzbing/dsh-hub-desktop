@@ -480,7 +480,12 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
       PATH: nodePath !== null ? `${nodePath}${delimiter}${basePath}` : basePath,
-      DSH_HOME: home
+      DSH_HOME: home,
+      // pnpm v12 全局命令默认走「上下文感知 shim」（globalShims）：转发 pnpm 时该 shim 会做
+      // 签名完整性校验并二次派发，nvm 等按需切换 node 的 Windows 环境下校验失败
+      // （shim integrity check failed）。插件命令把 pnpm 当普通工具直接调用，设 PNPM_SHIM_BYPASS=1
+      // 绕过 shim 派发（与启动路径一致；无 shim 的环境下为无副作用的空操作）。
+      PNPM_SHIM_BYPASS: '1'
     }
     const invocation =
       node !== null

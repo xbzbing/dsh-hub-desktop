@@ -141,6 +141,7 @@ describe('createLocalRuntime', () => {
       expect(invocation.args).toContain('--no-open')
       expect(invocation.args).toContain('--expose-internals')
       expect(invocation.env['DSH_HOME']).toContain('homes')
+      expect(invocation.env['PNPM_SHIM_BYPASS']).toBe('1')
       expect(invocation.detached).toBe(true)
       return child as unknown as SpawnedProcess
     })
