@@ -934,7 +934,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/local-runtime/plugin-manager.ts', "`dsh plugin ${args.join(' ')} 失败（exit ${result.code}）：${tail || '无 stderr'}`"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件列表输出')"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件版本信息输出')"),
-  debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('未找到可用的 dsh：hub 隔离目录与 PATH 上都没有已安装的运行时')"),
+  debt('src/main/local-runtime/plugin-manager.ts', "throw new InstanceStoreError('invalid-state', '未找到可用的 dsh：hub 隔离目录与 PATH 上都没有已安装的运行时')"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new InstanceStoreError('not-found', `插件未安装：${name}`)"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new InstanceStoreError('invalid-input', '该插件不含 host 半，无法单独禁用')"),
   debt('src/main/local-runtime/profile-bundles.ts', "if (!isRecord(manifest)) throw new Error('profile package.json 结构异常，未做改动')"),

@@ -39,6 +39,26 @@ export function localSpacePath(dataRoot: string, id: string): string {
   return path
 }
 
+/**
+ * 把本机隔离空间移入系统废纸篓。目录不存在时直接放行：homes 目录在实例首次成功
+ * 启动时才创建，从未成功启动的实例删除时无物可移 —— Windows 的 shell.trashItem
+ * 对不存在的路径会抛「Failed to parse path」，不跳过会让删除永远失败。
+ * 目录存在而移入失败时如实上抛，调用方据此中止删除，避免记录已删而数据残留。
+ */
+export async function trashLocalSpaceDir(
+  dataRoot: string,
+  instanceId: string,
+  trashItem: (path: string) => Promise<void>
+): Promise<void> {
+  const path = localSpacePath(dataRoot, instanceId)
+  const exists = await stat(path).then(
+    () => true,
+    () => false
+  )
+  if (!exists) return
+  await trashItem(path)
+}
+
 async function directoryStats(path: string): Promise<{ sizeBytes: number; modifiedAt: Date }> {
   const info = await stat(path)
   let entries: Dirent<string>[]

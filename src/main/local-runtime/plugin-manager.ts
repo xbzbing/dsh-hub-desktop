@@ -444,7 +444,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     const newest = [...installed].sort((a, b) => compareDshVersions(a.version, b.version)).at(-1)
     if (newest !== undefined) return { entry: newest.entry, version: newest.version }
     if (pathRuntime !== null) return { entry: pathRuntime.command, version: pathRuntime.version }
-    throw new Error('未找到可用的 dsh：hub 隔离目录与 PATH 上都没有已安装的运行时')
+    throw new InstanceStoreError('invalid-state', '未找到可用的 dsh：hub 隔离目录与 PATH 上都没有已安装的运行时')
   }
 
   /**

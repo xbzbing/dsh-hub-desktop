@@ -10,7 +10,7 @@ import type { AuthProbeController } from './ipc/register'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import type { RuntimeInstaller } from './local-runtime/runtime-installer'
 import { createExternalDshScanner } from './local-runtime/external-dsh'
-import { listLocalSpaces, localSpacePath } from './local-runtime/local-spaces'
+import { listLocalSpaces, trashLocalSpaceDir } from './local-runtime/local-spaces'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
 import type { HttpEndpointManager } from './transport/http-endpoint'
 import { buildOpenViewPlan, classifyViewResponse } from './webview/open-view-plan'
@@ -355,7 +355,7 @@ void app.whenReady().then(() => {
     hideInstanceTooltip: () => workspaceTooltipHost.hide(),
     instanceViewUrl: (instanceId) => workspaceHost.loadedUrl(instanceId),
     listLocalSpaces: () => listLocalSpaces(dataRoot),
-    trashLocalSpace: (instanceId) => shell.trashItem(localSpacePath(dataRoot, instanceId)),
+    trashLocalSpace: (instanceId) => trashLocalSpaceDir(dataRoot, instanceId, (path) => shell.trashItem(path)),
     localHomePath: (record) =>
       record.transport === 'local' && !record.useDefaultSpace
         ? join(dataRoot, 'homes', record.id)

@@ -198,6 +198,18 @@ describe('createPluginManager.list', () => {
     expect(freeSearch.dependencies).toEqual(['some-dep'])
   })
 
+  it('hub 副本与 PATH 都没有运行时：以 invalid-state 报「未找到可用的 dsh」，不落成内部错误', async () => {
+    const run = vi.fn(async (): Promise<CommandResult> => ({ code: 0, stdout: '', stderr: '' }))
+    const installer = { ...fakeInstaller(), listInstalled: async () => [] }
+    const manager = createPluginManager({ ...baseOptions(run), installer })
+    await expect(manager.list(localInstance())).rejects.toMatchObject({
+      code: 'invalid-state',
+      message: expect.stringContaining('未找到可用的 dsh')
+    })
+    // 运行时都解析不到，插件命令不应被发起
+    expect(run).not.toHaveBeenCalled()
+  })
+
   it('locale：读 locale/<lang>.json 的 meta 本地化 title/description', async () => {
     const run = vi.fn(async (): Promise<CommandResult> => ({ code: 0, stdout: LIST_JSON, stderr: '' }))
     const manager = createPluginManager({
