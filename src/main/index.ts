@@ -34,7 +34,7 @@ import { createStatusNotifier } from './shell/status-notifier'
 import { createDataDirOpener } from './shell/open-data-dir'
 import { createHomepageOpener } from './shell/open-homepage'
 import { openInstanceDir, openInstanceLogDir } from './shell/open-instance-dir'
-import { prunePluginLogsForInstances } from './shell/prune-plugin-logs'
+import { consolidatePluginLogsForInstances } from './shell/prune-plugin-logs'
 import { createGracefulQuit } from './shell/graceful-quit'
 import { openExternalSafely } from './window-host-policy'
 import type { Vault } from './vault/vault'
@@ -239,18 +239,19 @@ void app.whenReady().then(() => {
     migrations: REGISTRY_MIGRATIONS
   })
 
-  // 启动时清理各本机实例 DSH_HOME 下堆积的 dsh 插件操作日志（operation-*），
-  // 默认保留最近 30 天；清理不阻塞启动，失败只记日志（见 prune-plugin-logs.ts）。
+  // 启动时归并各本机实例 DSH_HOME 下堆积的 dsh 插件操作日志（operation-*）：把已结束的
+  // 非空日志并入按天合并文件、删掉原目录，合并文件保留 30 天。不阻塞启动，失败只记日志
+  // （见 prune-plugin-logs.ts）。
   void instanceStore
     .list()
     .then((records) =>
-      prunePluginLogsForInstances({
+      consolidatePluginLogsForInstances({
         dataRoot,
         records,
-        options: { onError: (error) => console.error('[main] 清理插件操作日志条目失败：', error) }
+        options: { onError: (error) => console.error('[main] 归并插件操作日志条目失败：', error) }
       })
     )
-    .catch((error: unknown) => console.error('[main] 插件操作日志清理失败：', error))
+    .catch((error: unknown) => console.error('[main] 插件操作日志归并失败：', error))
   const vaultControl = createVaultControl(dataRoot)
   vault = vaultControl.vault
   const settings = createSettingsStore({ dir: dataRoot })

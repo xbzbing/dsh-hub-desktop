@@ -1,13 +1,13 @@
-import { mkdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { InstanceRecord } from '@shared/contracts'
 import {
   PLUGIN_LOG_MAX_AGE_DAYS,
-  managedDshHomes,
-  prunePluginLogsForInstances,
-  prunePluginOperationLogs
+  consolidatePluginLogsForInstances,
+  consolidatePluginOperationLogs,
+  managedDshHomes
 } from './prune-plugin-logs'
 
 const roots: string[] = []
@@ -24,70 +24,138 @@ afterEach(async () => {
 })
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const NOW = Date.UTC(2026, 9, 8, 0, 0, 0)
+const NOW = Date.UTC(2026, 9, 8, 12, 0, 0)
 const now = (): number => NOW
 
-/** 在某 profile 的 logs 目录下建一个 operation-* 目录并把 mtime 设成 ageDays 天前。 */
-async function makeOperation(home: string, profile: string, name: string, ageDays: number): Promise<string> {
-  const dir = join(home, 'profiles', profile, '.plugin-manager', 'logs', name)
+/** 与模块一致的本地日历日（避开时区脆弱）。 */
+function localDay(ms: number): string {
+  const date = new Date(ms)
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+function logsRoot(home: string, profile = 'web'): string {
+  return join(home, 'profiles', profile, '.plugin-manager', 'logs')
+}
+
+/** 建一个 operation-* 目录，写入 pnpm.log 内容，并把目录 mtime 设成 ageMs 毫秒前。 */
+async function makeOperation(
+  home: string,
+  name: string,
+  ageMs: number,
+  content = '',
+  profile = 'web'
+): Promise<string> {
+  const dir = join(logsRoot(home, profile), name)
   await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, 'pnpm.log'), '')
-  const when = new Date(NOW - ageDays * DAY_MS)
+  await writeFile(join(dir, 'pnpm.log'), content)
+  const when = new Date(NOW - ageMs)
   await utimes(dir, when, when)
   return dir
 }
 
-describe('prunePluginOperationLogs', () => {
-  it('删除早于保留期的 operation-* 目录，保留期内的保留', async () => {
+describe('consolidatePluginOperationLogs', () => {
+  it('非空日志归并进按天文件（按 mtime 日）、原目录删除', async () => {
     const home = await root()
-    const stale = await makeOperation(home, 'web', 'operation-stale', PLUGIN_LOG_MAX_AGE_DAYS + 1)
-    const fresh = await makeOperation(home, 'web', 'operation-fresh', 1)
-    // 恰好等于 cutoff（30 天）保留：mtime ≥ cutoff 不删
-    const edge = await makeOperation(home, 'web', 'operation-edge', PLUGIN_LOG_MAX_AGE_DAYS)
+    const dir = await makeOperation(home, 'operation-a', 1 * DAY_MS, 'pnpm ERR! boom')
 
-    const removed = await prunePluginOperationLogs(home, { now })
+    const summary = await consolidatePluginOperationLogs(home, { now })
 
-    expect(removed).toEqual([stale])
+    expect(summary.merged).toEqual([dir])
+    expect(summary.removed).toEqual([dir])
+    expect(existsSync(dir)).toBe(false)
+    const dayFile = join(logsRoot(home), `plugin-operations.${localDay(NOW - DAY_MS)}.log`)
+    const text = await readFile(dayFile, 'utf8')
+    expect(text).toContain('operation-a')
+    expect(text).toContain('pnpm ERR! boom')
+  })
+
+  it('空日志不写合并文件，目录直接删除', async () => {
+    const home = await root()
+    const dir = await makeOperation(home, 'operation-empty', 1 * DAY_MS, '')
+
+    const summary = await consolidatePluginOperationLogs(home, { now })
+
+    expect(summary.merged).toEqual([])
+    expect(summary.removed).toEqual([dir])
+    expect(existsSync(dir)).toBe(false)
+    // 没有任何按天合并文件被创建
+    expect(await readdir(logsRoot(home))).toEqual([])
+  })
+
+  it('沉降窗口内（太新）的目录跳过，不碰', async () => {
+    const home = await root()
+    const recent = await makeOperation(home, 'operation-recent', 60 * 1000, 'oops')
+
+    const summary = await consolidatePluginOperationLogs(home, { now })
+
+    expect(summary.merged).toEqual([])
+    expect(summary.removed).toEqual([])
+    expect(existsSync(recent)).toBe(true)
+  })
+
+  it('超保留期的目录直接删除，不归并（不产生按天文件）', async () => {
+    const home = await root()
+    const old = await makeOperation(home, 'operation-old', (PLUGIN_LOG_MAX_AGE_DAYS + 1) * DAY_MS, 'ancient error')
+
+    const summary = await consolidatePluginOperationLogs(home, { now })
+
+    expect(summary.merged).toEqual([])
+    expect(summary.removed).toEqual([old])
+    expect(existsSync(old)).toBe(false)
+    expect(await readdir(logsRoot(home))).toEqual([])
+  })
+
+  it('按天合并文件按保留期清理：旧的删、近的留', async () => {
+    const home = await root()
+    await mkdir(logsRoot(home), { recursive: true })
+    const stale = join(logsRoot(home), `plugin-operations.${localDay(NOW - (PLUGIN_LOG_MAX_AGE_DAYS + 1) * DAY_MS)}.log`)
+    const fresh = join(logsRoot(home), `plugin-operations.${localDay(NOW - 1 * DAY_MS)}.log`)
+    await writeFile(stale, 'old')
+    await writeFile(fresh, 'recent')
+
+    const summary = await consolidatePluginOperationLogs(home, { now })
+
+    expect(summary.prunedDayFiles).toEqual([stale])
     expect(existsSync(stale)).toBe(false)
     expect(existsSync(fresh)).toBe(true)
-    expect(existsSync(edge)).toBe(true)
   })
 
-  it('跨 profile 清理，且不触碰非 operation- 条目', async () => {
+  it('不触碰非 operation- 目录与非合并文件命名', async () => {
     const home = await root()
-    const staleWeb = await makeOperation(home, 'web', 'operation-a', 40)
-    const staleAcp = await makeOperation(home, 'acp', 'operation-b', 40)
-    // 非 operation- 前缀的目录与文件：即便很旧也不碰
-    const keepDir = join(home, 'profiles', 'web', '.plugin-manager', 'logs', 'keep-dir')
-    await mkdir(keepDir, { recursive: true })
-    await utimes(keepDir, new Date(NOW - 99 * DAY_MS), new Date(NOW - 99 * DAY_MS))
-    const keepFile = join(home, 'profiles', 'web', '.plugin-manager', 'logs', 'operation-note.txt')
-    await writeFile(keepFile, 'x')
-    await utimes(keepFile, new Date(NOW - 99 * DAY_MS), new Date(NOW - 99 * DAY_MS))
+    await mkdir(join(logsRoot(home), 'keep-dir'), { recursive: true })
+    await writeFile(join(logsRoot(home), 'notes.txt'), 'x')
+    await writeFile(join(logsRoot(home), 'operation-note.txt'), 'y')
 
-    const removed = await prunePluginOperationLogs(home, { now })
+    const summary = await consolidatePluginOperationLogs(home, { now })
 
-    expect(removed.sort()).toEqual([staleWeb, staleAcp].sort())
-    expect(existsSync(keepDir)).toBe(true)
-    expect(existsSync(keepFile)).toBe(true)
+    expect(summary).toEqual({ merged: [], removed: [], prunedDayFiles: [] })
+    expect(existsSync(join(logsRoot(home), 'keep-dir'))).toBe(true)
+    expect(existsSync(join(logsRoot(home), 'notes.txt'))).toBe(true)
+    expect(existsSync(join(logsRoot(home), 'operation-note.txt'))).toBe(true)
   })
 
-  it('profiles / logs 目录不存在时静默返回空', async () => {
+  it('profiles / logs 目录不存在时静默返回空摘要', async () => {
     const home = await root()
-    await expect(prunePluginOperationLogs(home, { now })).resolves.toEqual([])
-    // 不应误创建 profiles 目录
+    await expect(consolidatePluginOperationLogs(home, { now })).resolves.toEqual({
+      merged: [],
+      removed: [],
+      prunedDayFiles: []
+    })
     expect(existsSync(join(home, 'profiles'))).toBe(false)
   })
 
-  it('maxAgeDays 可覆盖默认保留期', async () => {
+  it('跨 profile 归并', async () => {
     const home = await root()
-    const d10 = await makeOperation(home, 'web', 'operation-d10', 10)
-    const d3 = await makeOperation(home, 'web', 'operation-d3', 3)
+    const web = await makeOperation(home, 'operation-w', 1 * DAY_MS, 'web err', 'web')
+    const acp = await makeOperation(home, 'operation-c', 1 * DAY_MS, 'acp err', 'acp')
 
-    const removed = await prunePluginOperationLogs(home, { now, maxAgeDays: 7 })
+    const summary = await consolidatePluginOperationLogs(home, { now })
 
-    expect(removed).toEqual([d10])
-    expect(existsSync(d3)).toBe(true)
+    expect(summary.merged.sort()).toEqual([web, acp].sort())
+    expect(existsSync(web)).toBe(false)
+    expect(existsSync(acp)).toBe(false)
   })
 })
 
@@ -129,43 +197,43 @@ describe('managedDshHomes', () => {
   })
 })
 
-describe('prunePluginLogsForInstances', () => {
-  it('清理所有本机实例 DSH_HOME 下的过期目录', async () => {
+describe('consolidatePluginLogsForInstances', () => {
+  it('归并所有本机实例 DSH_HOME 下的目录（隔离 + 公共空间）', async () => {
     const dataRoot = await root()
     const home = await root()
     const isoHome = join(dataRoot, 'homes', 'iso-1')
-    const staleIso = await makeOperation(isoHome, 'web', 'operation-iso', 40)
-    const staleDefault = await makeOperation(join(home, '.dsh'), 'web', 'operation-default', 40)
-    const freshDefault = await makeOperation(join(home, '.dsh'), 'web', 'operation-fresh', 1)
+    const iso = await makeOperation(isoHome, 'operation-iso', 1 * DAY_MS, 'iso err')
+    const def = await makeOperation(join(home, '.dsh'), 'operation-def', 1 * DAY_MS, 'def err')
+    const recent = await makeOperation(join(home, '.dsh'), 'operation-recent', 60 * 1000, 'skip')
 
-    const removed = await prunePluginLogsForInstances({
+    const summary = await consolidatePluginLogsForInstances({
       dataRoot,
       home,
       records: [localRecord({ id: 'iso-1' }), localRecord({ id: 'd', useDefaultSpace: true })],
       options: { now }
     })
 
-    expect(removed.sort()).toEqual([staleIso, staleDefault].sort())
-    expect(existsSync(staleIso)).toBe(false)
-    expect(existsSync(staleDefault)).toBe(false)
-    expect(existsSync(freshDefault)).toBe(true)
+    expect(summary.removed.sort()).toEqual([iso, def].sort())
+    expect(existsSync(iso)).toBe(false)
+    expect(existsSync(def)).toBe(false)
+    expect(existsSync(recent)).toBe(true)
   })
 
-  it('单条删除失败经 onError 上报后继续清理其余条目', async () => {
+  it('单条失败经 onError 上报后继续处理其余条目', async () => {
     const dataRoot = await root()
     const home = await root()
-    const stale = await makeOperation(join(home, '.dsh'), 'web', 'operation-x', 40)
-    await stat(stale)
+    const dir = await makeOperation(join(home, '.dsh'), 'operation-x', 1 * DAY_MS, 'err')
+    await stat(dir)
     const errors: unknown[] = []
 
-    const removed = await prunePluginLogsForInstances({
+    const summary = await consolidatePluginLogsForInstances({
       dataRoot,
       home,
       records: [localRecord({ useDefaultSpace: true })],
       options: { now, onError: (error) => errors.push(error) }
     })
 
-    expect(removed).toEqual([stale])
+    expect(summary.removed).toEqual([dir])
     expect(errors).toEqual([])
   })
 })
