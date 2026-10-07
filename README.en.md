@@ -12,6 +12,12 @@ A personal Electron desktop tool for managing multiple **dsh** (DeepSeek Harness
 
 Since I don't have an Apple Developer Account, I can't distribute a signed app. You'll need to `clone` the repo and build with `pnpm dist:mac`.
 
+## Code signing policy
+
+See [CODE_SIGNING.md](CODE_SIGNING.md) for the Windows installer code signing policy. Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+Privacy policy: [PRIVACY.md](PRIVACY.md) — this app collects no personal data, contains no telemetry, and only connects to endpoints you configure.
+
 ## Features
 
 - **Unified Instance Management**: Local registry with atomic writes, rolling backups, corruption recovery, and schema migration. Wizard-based creation → startup → detail page for start/stop/edit/open/delete

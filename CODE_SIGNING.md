@@ -23,11 +23,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 ## 隐私政策
 
-本程序（DSH Hub Desktop）是本地运行的桌面管理工具，不收集、不上传任何用户数据。
-
-- 应用仅在用户明确配置并主动操作时，才连接到**用户自己指定**的 dsh 实例（本机进程、SSH 隧道、远程 HTTP/HTTPS 端点）以及用户配置的 npm / 插件源；未经用户指定，不向任何其他联网系统传输信息。
-- 应用日志、注册表、配置与保险库数据全部保存在用户本机数据目录（`<userData>`），不对系统外发送；凭据类数据在落盘前一律经系统钥匙串 / DPAPI 加密。
-- 随附的第三方组件（Electron、Chromium、Node.js 及 npm 依赖）按各自开源许可使用，开源依赖清单见仓库锁文件。
+完整隐私政策见 [PRIVACY.md](PRIVACY.md)。要点：本应用不收集任何用户个人数据，无遥测、分析、崩溃上报与自动更新；网络连接仅发往用户明确配置的 dsh 实例、SSH 主机、npm 镜像等目标；应用数据（注册表、凭据、日志、会话 Cookie）全部保存在用户本机。
 
 ## 合规基线
 
