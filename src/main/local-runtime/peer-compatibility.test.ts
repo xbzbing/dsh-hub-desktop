@@ -43,12 +43,40 @@ describe('satisfiesDshPeer', () => {
     expect(satisfiesDshPeer('^1.2.0', '1.1.0')).toBe(false)
   })
 
+  it('caret 0.x 段数差异：^0 / ^0.0 / ^0.0.3 / ^0.x 上界各异（npm semver 语义）', () => {
+    // ^0 := >=0.0.0 <1.0.0（dsh 为 0.x 时声明 ^0 = 任意 0.x，不应被误拦）
+    expect(satisfiesDshPeer('^0', '0.1.9')).toBe(true)
+    expect(satisfiesDshPeer('^0', '0.0.1')).toBe(true)
+    expect(satisfiesDshPeer('^0', '1.0.0')).toBe(false)
+    // ^0.0 := >=0.0.0 <0.1.0
+    expect(satisfiesDshPeer('^0.0', '0.0.9')).toBe(true)
+    expect(satisfiesDshPeer('^0.0', '0.1.0')).toBe(false)
+    // ^0.0.3 := >=0.0.3 <0.0.4
+    expect(satisfiesDshPeer('^0.0.3', '0.0.3')).toBe(true)
+    expect(satisfiesDshPeer('^0.0.3', '0.0.4')).toBe(false)
+    // ^0.x := >=0.0.0 <1.0.0（通配 minor 覆盖任意 0.x）
+    expect(satisfiesDshPeer('^0.x', '0.2.0')).toBe(true)
+    expect(satisfiesDshPeer('^0.x', '1.0.0')).toBe(false)
+  })
+
   it('tilde ~ 范围', () => {
     expect(satisfiesDshPeer('~1.2.3', '1.2.9')).toBe(true)
     expect(satisfiesDshPeer('~1.2.3', '1.3.0')).toBe(false)
     expect(satisfiesDshPeer('~1.2', '1.2.5')).toBe(true)
     expect(satisfiesDshPeer('~1', '1.9.0')).toBe(true)
     expect(satisfiesDshPeer('~1', '2.0.0')).toBe(false)
+    // ~0.0.3 := >=0.0.3 <0.1.0（tilde 的 patch 不参与上界）
+    expect(satisfiesDshPeer('~0.0.3', '0.0.5')).toBe(true)
+    expect(satisfiesDshPeer('~0.0.3', '0.1.0')).toBe(false)
+    expect(satisfiesDshPeer('~0.0.3', '0.0.1')).toBe(false)
+    // ~0.2 := >=0.2.0 <0.3.0
+    expect(satisfiesDshPeer('~0.2', '0.2.9')).toBe(true)
+    expect(satisfiesDshPeer('~0.2', '0.3.0')).toBe(false)
+    // minor 通配退到 major 级：~1.x := >=1.0.0 <2.0.0、~0.x := >=0.0.0 <1.0.0
+    expect(satisfiesDshPeer('~1.x', '1.9.0')).toBe(true)
+    expect(satisfiesDshPeer('~1.x', '2.0.0')).toBe(false)
+    expect(satisfiesDshPeer('~0.x', '0.9.0')).toBe(true)
+    expect(satisfiesDshPeer('~0.x', '1.0.0')).toBe(false)
   })
 
   it('空格分隔的交集：两条件都要满足', () => {

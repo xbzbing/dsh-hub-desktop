@@ -16,6 +16,7 @@ import {
   pruneChecks,
   restoreChecks,
   showsIncompatibleWarning,
+  showsUnknownCompatibility,
   showsUpToDate,
   type PluginCheckState
 } from '../../lib/plugins-card-state'
@@ -473,6 +474,18 @@ function PluginRow(props: {
     onOpenLink
   } = props
   const disabled = plugin.enabled === false
+  // 不兼容/无法判定共用同一组参数：标题与正文复用一次计算，避免两处 t() 调用漂移。
+  const incompatibleText =
+    check.result === null
+      ? ''
+      : t(
+          showsUnknownCompatibility(check) ? 'detail.plugin.incompatibleUnknown' : 'detail.plugin.incompatible',
+          {
+            latest: check.result.latest,
+            peer: check.result.dshPeer ?? '—',
+            current: check.result.dshVersion ?? '—'
+          }
+        )
   return (
     <li
       className={disabled ? 'plugin-row plugin-row--disabled' : 'plugin-row'}
@@ -516,18 +529,10 @@ function PluginRow(props: {
           {showsIncompatibleWarning(check) && check.result !== null && (
             <span
               className="meta err-text plugin-status-inline"
-              title={t('detail.plugin.incompatible', {
-                latest: check.result.latest,
-                peer: check.result.dshPeer ?? '—',
-                current: check.result.dshVersion ?? '—'
-              })}
+              title={incompatibleText}
               data-testid={`plugin-incompatible-${plugin.name}`}
             >
-              {t('detail.plugin.incompatible', {
-                latest: check.result.latest,
-                peer: check.result.dshPeer ?? '—',
-                current: check.result.dshVersion ?? '—'
-              })}
+              {incompatibleText}
             </span>
           )}
           {check.status === 'error' && check.error !== null && (

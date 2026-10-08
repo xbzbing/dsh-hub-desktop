@@ -625,6 +625,32 @@ describe('store settings', () => {
     expect(hideView).toHaveBeenCalledTimes(2)
   })
 
+  it('openView 永不返回：超时兜底退出加载页并提示', async () => {
+    const useAppStore = await freshStore()
+    // 与 store 同一次 resetModules 后的模块实例（static import 会拿到旧图）
+    const { workspaceOpenInFlight } = await import('./store/workspace-slice')
+    const openView = vi.fn(() => new Promise<never>(() => undefined))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.getState().select('instance-1')
+    vi.useFakeTimers()
+    try {
+      void useAppStore.getState().openWorkspace('instance-1')
+      expect(useAppStore.getState().workspaceOpening).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      // 界面不停在「正在打开工作区…」：加载页退出 + 明确提示 + 在途标记清除
+      expect(useAppStore.getState().workspaceOpening).toBe(false)
+      const timeoutTitle = useAppStore.getState().t('detail.openViewTimeout')
+      expect(useAppStore.getState().toasts.some((item) => item.title === timeoutTitle)).toBe(true)
+      expect(workspaceOpenInFlight()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('运行中的本机实例从详情打开工作区时不重复启动', async () => {
     const useAppStore = await freshStore()
     const openView = vi.fn(async () => ({ ok: true as const, value: null }))

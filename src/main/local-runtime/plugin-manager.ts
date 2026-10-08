@@ -15,7 +15,9 @@ import type {
   PluginCheckRecord,
   PluginCheckSnapshot,
   PluginEnableResult,
-  PluginMutationResult
+  PluginInfo,
+  PluginMutationResult,
+  PluginUpdateCheck
 } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
 import { execFileResult } from './exec-file'
@@ -44,63 +46,8 @@ import { nodeModeExecutable } from '../node-mode'
 /** 插件命令执行超时：pnpm 安装可能较慢，给足余量（与安装器同量级）。 */
 const PLUGIN_COMMAND_TIMEOUT_MS = 10 * 60_000
 
-/** 解析出的插件信息（渲染层展示所需字段；图标以 data-uri 内联，渲染层不碰文件系统）。 */
-export interface PluginInfo {
-  name: string
-  version: string
-  /** 本地化标题（locale/<lang>.json 的 meta.title）；无则 null，渲染层回落包名。 */
-  title: string | null
-  description: string | null
-  author: string | null
-  license: string | null
-  npmUrl: string | null
-  githubUrl: string | null
-  iconDataUri: string | null
-  /** 第三方运行时依赖名（不含 peer）。 */
-  dependencies: string[]
-  /** `peerDependencies["@deepseek-ai/dsh"]` 范围；null = 未声明。 */
-  dshPeer: string | null
-  /** `engines.node` 范围；null = 未声明。 */
-  nodeEngine: string | null
-  /** 含 host 半（`dsh.bundle.patch`）：改动后需重启实例。 */
-  hasHostSide: boolean
-  /** 含 client 半（`dsh.client`）：改动后刷新页面即可。 */
-  hasClientSide: boolean
-  /** 安装来源：npm registry / github / 本地 file / 未知。 */
-  installSource: 'npm' | 'github' | 'file' | 'unknown'
-  /**
-   * 是否在 profile 的加载清单（`dsh.profile.bundles`）里。
-   * null = 该插件不由清单控制（无 host 半，随宿主 bundle 加载），无法单独禁用。
-   */
-  enabled: boolean | null
-  /**
-   * 已装版本的发布时间（ISO），来自检查时落盘的版本快照。
-   * null = 尚无该版本的快照（未检查过，或 registry 未收录该版本）。
-   */
-  publishedAt: string | null
-}
-
 /** 界面语言：与 app 的 Language 一致（system 已解析为 zh|en）。 */
 export type PluginLocale = 'zh' | 'en'
-
-/** 检查升级结果（latest 及其 dsh peer 兼容判定）。 */
-export interface PluginUpdateCheck {
-  name: string
-  current: string
-  latest: string
-  hasUpdate: boolean
-  /** latest 版本的 dsh peer 是否满足实例当前 dsh 版本。 */
-  compatible: boolean
-  /** latest 版本声明的 dsh peer 范围；null = 未声明。 */
-  dshPeer: string | null
-  /** 实例实际运行的 dsh 版本；null = 未知（无法判定兼容，一律置 compatible=false）。 */
-  dshVersion: string | null
-  /**
-   * 已装版本（current）的发布时间（ISO），随检查结果一起返回。
-   * null = registry 未收录该版本（本地 file: / GitHub 安装等）。
-   */
-  publishedAt: string | null
-}
 
 interface PluginManifest {
   name?: string
@@ -165,8 +112,8 @@ export interface PluginManagerOptions {
   bundleStore?: ProfileBundleStore
 }
 
-/** 渲染层挂载时恢复的检查状态：持久化的标记 + 当前在飞检查。 */
-export type { PluginCheckSnapshot, PluginEnableResult, PluginMutationResult }
+/** 插件信息与检查结果的单一定义在 @shared/contracts；此处再导出以保留既有导入路径。 */
+export type { PluginInfo, PluginUpdateCheck }
 
 export interface PluginManager {
   list(instance: LocalInstance, locale?: PluginLocale): Promise<PluginInfo[]>

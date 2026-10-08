@@ -430,7 +430,8 @@ export function createVault(options: VaultOptions): Vault {
 
     async clearAll() {
       load()
-      // 新实例默认保存；清除动作本身仍必须阻止现有实例在下一次登录时立刻重新写入。
+      // 把受影响实例的策略显式钉在「都不记住」：即便未来默认值变化，
+      // 已清除的实例也不会在下一次登录时立刻重新写入。
       const affectedIds = new Set([...items.keys(), ...policy.keys()])
       items.clear()
       policy.clear()

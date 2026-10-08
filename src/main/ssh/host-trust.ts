@@ -251,8 +251,6 @@ export function toFingerprints(keys: HostKeyEntry[]): HostKeyFingerprint[] {
   }))
 }
 
-export type HostTrustDecision = 'trust' | 'reject'
-
 /** 指纹确认请求（主进程 → UI；verdict=changed 时 UI 走红色警示变体）。
  *  通道载荷比它多一个 requestId,由 prompt broker 补齐。 */
 export type HostKeyPrompt = Omit<HostKeyPromptPayload, 'requestId'>
