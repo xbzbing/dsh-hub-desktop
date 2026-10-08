@@ -16,6 +16,7 @@ import {
   pruneChecks,
   restoreChecks,
   showsIncompatibleWarning,
+  showsUnknownCompatibility,
   showsUpToDate,
   type PluginCheckState
 } from '../../lib/plugins-card-state'
@@ -516,18 +517,28 @@ function PluginRow(props: {
           {showsIncompatibleWarning(check) && check.result !== null && (
             <span
               className="meta err-text plugin-status-inline"
-              title={t('detail.plugin.incompatible', {
-                latest: check.result.latest,
-                peer: check.result.dshPeer ?? '—',
-                current: check.result.dshVersion ?? '—'
-              })}
+              title={t(
+                showsUnknownCompatibility(check)
+                  ? 'detail.plugin.incompatibleUnknown'
+                  : 'detail.plugin.incompatible',
+                {
+                  latest: check.result.latest,
+                  peer: check.result.dshPeer ?? '—',
+                  current: check.result.dshVersion ?? '—'
+                }
+              )}
               data-testid={`plugin-incompatible-${plugin.name}`}
             >
-              {t('detail.plugin.incompatible', {
-                latest: check.result.latest,
-                peer: check.result.dshPeer ?? '—',
-                current: check.result.dshVersion ?? '—'
-              })}
+              {t(
+                showsUnknownCompatibility(check)
+                  ? 'detail.plugin.incompatibleUnknown'
+                  : 'detail.plugin.incompatible',
+                {
+                  latest: check.result.latest,
+                  peer: check.result.dshPeer ?? '—',
+                  current: check.result.dshVersion ?? '—'
+                }
+              )}
             </span>
           )}
           {check.status === 'error' && check.error !== null && (

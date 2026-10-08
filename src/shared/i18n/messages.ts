@@ -410,6 +410,10 @@ export const MESSAGES = {
     zh: '新版 {latest} 要求 dsh {peer}，当前 {current} 不满足',
     en: 'v{latest} requires dsh {peer}; current {current} does not satisfy it'
   },
+  'detail.plugin.incompatibleUnknown': {
+    zh: '新版 {latest} 要求 dsh {peer}，但当前 dsh 版本未知，无法判定兼容性',
+    en: 'v{latest} requires dsh {peer}; current dsh version is unknown, compatibility cannot be determined'
+  },
   'detail.plugin.checkFailed': { zh: '检查失败：{msg}', en: 'Check failed: {msg}' },
   'detail.plugin.remove': { zh: '卸载', en: 'Uninstall' },
   'detail.plugin.removing': { zh: '卸载中…', en: 'Uninstalling…' },

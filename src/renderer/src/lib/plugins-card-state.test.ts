@@ -7,6 +7,7 @@ import {
   pruneChecks,
   restoreChecks,
   showsIncompatibleWarning,
+  showsUnknownCompatibility,
   showsUpToDate,
   type PluginCheckState
 } from './plugins-card-state'
@@ -51,6 +52,26 @@ describe('showsIncompatibleWarning', () => {
   })
   it('兼容 → false', () => {
     expect(showsIncompatibleWarning(done(check({ hasUpdate: true, compatible: true })))).toBe(false)
+  })
+})
+
+describe('showsUnknownCompatibility', () => {
+  it('不兼容且 dsh 版本未知 → true（无法判定，非确认不兼容）', () => {
+    expect(
+      showsUnknownCompatibility(
+        done(check({ hasUpdate: true, compatible: false, dshVersion: null }))
+      )
+    ).toBe(true)
+  })
+  it('不兼容但 dsh 版本已知 → false', () => {
+    expect(
+      showsUnknownCompatibility(done(check({ hasUpdate: true, compatible: false })))
+    ).toBe(false)
+  })
+  it('兼容（即使版本未知）→ false', () => {
+    expect(
+      showsUnknownCompatibility(done(check({ hasUpdate: true, compatible: true, dshVersion: null })))
+    ).toBe(false)
   })
 })
 

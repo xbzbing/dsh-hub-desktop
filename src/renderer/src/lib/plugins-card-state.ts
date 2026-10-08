@@ -90,6 +90,18 @@ export function showsIncompatibleWarning(check: PluginCheckState): boolean {
   )
 }
 
+/**
+ * 是否「无法判定」而非「确定不兼容」：不兼容且有新版，但执行检查所用 dsh 版本未知。
+ * 主进程对未知版本一律 fail-closed（compatible=false），此处让 UI 区分两义，不谎报结论。
+ */
+export function showsUnknownCompatibility(check: PluginCheckState): boolean {
+  return (
+    showsIncompatibleWarning(check) &&
+    check.result !== null &&
+    check.result.dshVersion === null
+  )
+}
+
 /** 是否展示「已是最新」：检查完成且无新版。 */
 export function showsUpToDate(check: PluginCheckState): boolean {
   return check.status === 'done' && check.result !== null && !check.result.hasUpdate

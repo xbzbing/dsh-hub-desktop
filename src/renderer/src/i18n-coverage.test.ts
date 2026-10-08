@@ -888,6 +888,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt('src/main/ipc/runtime-handlers.ts', "throw new InstanceStoreError('invalid-input', '只有本机实例和远程实例支持在浏览器中打开')"),
   debt('src/main/ipc/runtime-handlers.ts', "throw new InstanceStoreError('internal', '在浏览器中打开不可用')"),
   debt('src/main/registry/instance-store.ts', "throw new InstanceStoreError('invalid-input', `字段 ${key} 不适用于 ${current.transport} 实例`)"),
+  debt('src/main/registry/instance-store.ts', "throw new InstanceStoreError('invalid-input', '排序列表包含重复实例 ID')"),
   debt('src/main/ipc/runtime-handlers.ts', "throw new InstanceStoreError('invalid-input', '只有本地实例才能接管本机 dsh web')"),
   debt('src/main/ipc/runtime-handlers.ts', "throw new InstanceStoreError('invalid-input', '只有本机实例支持重启')"),
   debt('src/main/ipc/runtime-handlers.ts', "throw new InstanceStoreError('invalid-state', '实例未在运行，无法重启')"),
