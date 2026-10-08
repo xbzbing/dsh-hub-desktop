@@ -28,18 +28,30 @@ function splitCore(version: string): { major: number; minor: number; patch: numb
 
 /** 把 `^x` / `~x` 展开为等价的 `>=lower <upper` 边界对。 */
 function caretTildeBounds(operator: '^' | '~', version: string): { lower: string; upper: string } {
-  const { major, minor } = splitCore(version)
+  const { major, minor, patch } = splitCore(version)
+  // 显式给出的版本段数与通配段（x/*）决定上界升到哪一段（npm semver 规则）。
+  const segments = version.split('-')[0]?.split('.') ?? []
+  const partCount = segments.length
+  const isWildcard = (part: string | undefined): boolean =>
+    part === 'x' || part === 'X' || part === '*'
   if (operator === '~') {
     // ~1.2.3 := >=1.2.3 <1.3.0；~1.2 := >=1.2.0 <1.3.0；~1 := >=1.0.0 <2.0.0
-    const hasMinor = version.split('-')[0]?.split('.').length ?? 0
-    const upper = hasMinor >= 2 ? `${major}.${minor + 1}.0` : `${major + 1}.0.0`
+    // patch 不参与上界：~0.0.3 := >=0.0.3 <0.1.0
+    const upper = partCount >= 2 ? `${major}.${minor + 1}.0` : `${major + 1}.0.0`
     return { lower: version, upper }
   }
-  // ^1.2.3 := >=1.2.3 <2.0.0；^0.2.3 := >=0.2.3 <0.3.0；^0.0.3 := >=0.0.3 <0.0.4
+  // ^1.2.3 := >=1.2.3 <2.0.0；^0.2.3 := >=0.2.3 <0.3.0；^0.0.3 := >=0.0.3 <0.0.4；
+  // ^0.0 / ^0.0.x := >=0.0.0 <0.1.0；^0 / ^0.x := >=0.0.0 <1.0.0
   let upper: string
-  if (major > 0) upper = `${major + 1}.0.0`
-  else if (minor > 0) upper = `0.${minor + 1}.0`
-  else upper = `0.0.${splitCore(version).patch + 1}`
+  if (major > 0) {
+    upper = `${major + 1}.0.0`
+  } else if (partCount >= 2 && !isWildcard(segments[1])) {
+    if (minor > 0) upper = `0.${minor + 1}.0`
+    else if (partCount >= 3 && !isWildcard(segments[2])) upper = `0.0.${patch + 1}`
+    else upper = '0.1.0'
+  } else {
+    upper = '1.0.0'
+  }
   return { lower: version, upper }
 }
 
