@@ -112,8 +112,6 @@ export interface PluginManagerOptions {
   bundleStore?: ProfileBundleStore
 }
 
-/** 渲染层挂载时恢复的检查状态：持久化的标记 + 当前在飞检查。 */
-export type { PluginCheckSnapshot, PluginEnableResult, PluginMutationResult }
 /** 插件信息与检查结果的单一定义在 @shared/contracts；此处再导出以保留既有导入路径。 */
 export type { PluginInfo, PluginUpdateCheck }
 

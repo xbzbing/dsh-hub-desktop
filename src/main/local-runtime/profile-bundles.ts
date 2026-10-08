@@ -9,7 +9,7 @@
  * （`wx` 创建 `<package.json>.lock`、内容为持有者 pid、持有者已退出可接管、
  * 超时放弃），避免与 `dsh plugin add/remove` 或 Web 端插件页并发写坏 profile。
  */
-import { open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 
@@ -160,14 +160,5 @@ export function createProfileBundleStore(): ProfileBundleStore {
         return bundles
       })
     }
-  }
-}
-
-/** profile package.json 是否存在（不存在时不建议直接改写）。 */
-export async function profileManifestExists(profileDir: string): Promise<boolean> {
-  try {
-    return (await stat(join(profileDir, 'package.json'))).isFile()
-  } catch {
-    return false
   }
 }

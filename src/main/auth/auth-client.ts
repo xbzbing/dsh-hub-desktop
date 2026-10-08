@@ -217,4 +217,3 @@ async function detectEndpoint(
   })
 }
 
-export type { AuthState }

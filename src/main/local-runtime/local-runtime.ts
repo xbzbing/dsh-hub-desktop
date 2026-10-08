@@ -32,8 +32,6 @@ import {
 import type { Entry } from './entry'
 import { createLauncher, type LaunchOptions } from './launch'
 
-export type { HealthProbe } // 保持既有导出；类型定义位于 transport/probe.ts。
-
 /** dsh 就绪输出：`dsh web: http://127.0.0.1:52300/?token=...` */
 const READY_PATTERN = /dsh\s+web:\s+(https?:\/\/\S+)/i
 

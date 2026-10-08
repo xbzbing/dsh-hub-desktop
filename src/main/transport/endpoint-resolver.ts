@@ -19,8 +19,6 @@ export function httpDirectEndpoint(instance: HttpInstance): string {
   return `${endpoint.baseUrl}/`
 }
 
-export type ResolvedEndpoint = ReturnType<typeof sshTunnelEndpoint>
-
 /**
  * 「实例 → 认证探测端点」。
  *

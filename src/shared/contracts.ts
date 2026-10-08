@@ -356,11 +356,6 @@ export interface HostKeyPromptPayload {
 
 export type HostKeyDecision = 'trust' | 'reject'
 
-export interface HostKeyReplyPayload {
-  requestId: string
-  decision: HostKeyDecision
-}
-
 /**
  * 「忘记该主机指纹」输入（渲染 → 主）。
  *
@@ -376,12 +371,6 @@ export interface AskpassPromptPayload {
   requestId: string
   instanceId: string
   prompt: string
-}
-
-export interface AskpassReplyPayload {
-  requestId: string
-  /** null = 用户取消 */
-  secret: string | null
 }
 
 // ===== HTTP 直连端点探测 =====

@@ -16,8 +16,6 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { PluginAutoDisabled, PluginCheckRecord } from '@shared/contracts'
 
-export type { PluginCheckRecord }
-
 /** 因与运行时 dsh 不兼容而被自动禁用的插件（单一定义在 @shared/contracts）。 */
 export type AutoDisabledPlugin = PluginAutoDisabled
 

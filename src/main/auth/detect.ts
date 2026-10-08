@@ -13,9 +13,7 @@
  * token 校验通过则 303 → `/` 并 Set-Cookie。
  */
 import type { EndpointScheme } from '@shared/endpoint'
-import type { DetectedAuthMode, GatewayEvidence, HttpAuthDetection } from '@shared/contracts'
-
-export type { DetectedAuthMode, GatewayEvidence }
+import type { HttpAuthDetection } from '@shared/contracts'
 
 /** 探测结论（IPC 共享类型,类型本体在 shared/contracts） */
 export type AuthDetection = HttpAuthDetection
