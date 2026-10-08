@@ -38,6 +38,7 @@ import type {
   PluginStateStore
 } from './plugin-state'
 import { createProfileBundleStore } from './profile-bundles'
+import { withBundledPnpmPath } from '../shell/bundled-pnpm'
 import { userLayerDisablesHmr } from './profile-hmr'
 import type { ProfileBundleStore } from './profile-bundles'
 import { nodeModeExecutable } from '../node-mode'
@@ -428,12 +429,13 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     const baseEnv = await resolveBaseEnv()
     const basePath = baseEnv.PATH ?? ''
     const nodePath = node !== null ? dirname(node) : null
-    // node 目录前置；pnpm 启动器目录再前置一层，使 `dsh plugin` 转发的 pnpm 命中随包分发的
-    // 自带 pnpm，而非系统上可能损坏/缺失的 pnpm。
+    // node 目录前置；随包 pnpm 启动器目录按平台并入：Windows 前置（系统 pnpm 全局 shim 已损坏，
+    // 自带 pnpm 必须胜出），其余平台后置兜底（系统 pnpm 与用户既有 profile 的 store 大版本匹配，
+    // 优先用它，避免 pnpm 10 操作 pnpm 12 建的 profile 触发 ERR_PNPM_UNEXPECTED_STORE）。
     const nodeAndBase = nodePath !== null ? `${nodePath}${delimiter}${basePath}` : basePath
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
-      PATH: options.pnpmBinDir ? `${options.pnpmBinDir}${delimiter}${nodeAndBase}` : nodeAndBase,
+      PATH: withBundledPnpmPath(nodeAndBase, options.pnpmBinDir),
       DSH_HOME: home,
       // pnpm v12 全局命令默认走「上下文感知 shim」（globalShims）：转发 pnpm 时该 shim 会做
       // 签名完整性校验并二次派发，nvm 等按需切换 node 的 Windows 环境下校验失败

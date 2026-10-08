@@ -295,7 +295,7 @@ describe('createPluginManager.list', () => {
     expect(toPosix(calls[0]!.env?.DSH_HOME ?? '')).toBe('/Users/me/.dsh')
   })
 
-  it('提供 pnpmBinDir 时前置到 PATH：dsh 命中随包分发的自带 pnpm', async () => {
+  it('提供 pnpmBinDir 时并入 PATH：Windows 前置、其余平台后置兜底', async () => {
     const calls: Array<{ env?: NodeJS.ProcessEnv }> = []
     const run = vi.fn(async (command: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => {
       void command
@@ -306,7 +306,8 @@ describe('createPluginManager.list', () => {
     const manager = createPluginManager({ ...baseOptions(run), pnpmBinDir: '/opt/app/pnpm-bin' })
     await manager.list(localInstance())
     const segments = (calls[0]!.env?.PATH ?? '').split(delimiter)
-    expect(segments[0]).toBe('/opt/app/pnpm-bin')
+    if (process.platform === 'win32') expect(segments[0]).toBe('/opt/app/pnpm-bin')
+    else expect(segments[segments.length - 1]).toBe('/opt/app/pnpm-bin')
   })
 
   it('非零退出：抛脱敏后的错误', async () => {
