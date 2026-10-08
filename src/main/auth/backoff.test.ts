@@ -13,7 +13,8 @@ describe('backoff（客户端纪律）', () => {
   })
 
   it('无 retryAfterSeconds → 至少 30s 下限', () => {
-    const backoff = createBackoff()
+    // 固定时钟:避免 record 与 state 之间真实时间流逝导致 remainingMs 掉到 29999。
+    const backoff = createBackoff({ now: () => 1_000_000 })
     backoff.recordRateLimited(null)
     expect(backoff.state().remainingMs).toBeGreaterThanOrEqual(30_000)
   })
