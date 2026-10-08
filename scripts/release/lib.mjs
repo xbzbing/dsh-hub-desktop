@@ -178,37 +178,59 @@ export function verifyUpdateMetadata({ metadata, appVersion, artifacts }) {
 }
 
 /**
- * 允许出现在公开 Release 的分发模式:只有 `source-only` ——
- * tag、发布说明与 GitHub 自动生成的源码归档,不上传任何二进制资产。
+ * 允许出现在公开 Release 的分发模式:
+ * - `source-only`：tag、发布说明与 GitHub 自动生成的源码归档,不上传任何二进制资产。
+ * - `windows-unsigned`：附带本地构建的未签名 Windows NSIS 安装包与其 SHA-256 校验清单
+ *   (SmartScreen 会提示未知发布者);mac 二进制在未签名未公证前仍不随发布分发。
  */
-export const DISTRIBUTION_MODES = ['source-only']
+export const DISTRIBUTION_MODES = ['source-only', 'windows-unsigned']
 
-/** 公开 Release 一律不得出现的资产形态(二进制安装包 / 自动更新元数据 / 差分中间产物) */
-const FORBIDDEN_ARTIFACT_PATTERNS = [
-  { pattern: /\.exe$/i, reason: '公开发布只提供源码,不发布二进制安装包' },
-  { pattern: /^sha256sums.*\.txt$/i, reason: '校验和清单服务于二进制分发,不随源码发布上传' },
+/** 任何模式都不得出现的资产形态(未签名 mac 二进制 / 自动更新元数据 / 差分中间产物) */
+const ALWAYS_FORBIDDEN = [
   { pattern: /\.(dmg|app)$/i, reason: 'macOS 二进制在未签名未公证前不得公开分发' },
-  { pattern: /\.zip$/i, reason: 'zip 归档不是本版本声明的分发形态' },
-  { pattern: /^latest(-.*)?\.ya?ml$/i, reason: '自动更新元数据不对未签名安装包提供' },
+  { pattern: /\.zip$/i, reason: 'zip 归档不是当前声明的分发形态' },
+  { pattern: /^latest(-.*)?\.ya?ml$/i, reason: '未签名安装包不随发布提供自动更新元数据' },
   { pattern: /\.blockmap$/i, reason: '差分包中间产物不属于分发给人的产物' }
 ]
 
+/** windows-unsigned 允许的资产:NSIS 安装包(`DSH-Hub-Setup-<版本>.exe`)与 SHA-256 校验清单 */
+const WINDOWS_INSTALLER = /^DSH-Hub-Setup-.*\.exe$/i
+const WINDOWS_UNSIGNED_ALLOWED = [WINDOWS_INSTALLER, /^SHA256SUMS\.txt$/i]
+
 /**
- * 校验「分发方式 ↔ 产物清单」是否自洽:source-only 一律无资产,
- * 声明任何资产(安装包、校验和清单、更新元数据)都拒绝。
+ * 校验「分发方式 ↔ 产物清单」是否自洽:
+ * - 任何模式都拒绝未签名 mac 二进制、自动更新元数据与差分中间产物;
+ * - `source-only` 一律无资产;
+ * - `windows-unsigned` 只接受 Windows 安装包与 `SHA256SUMS.txt`,且必须含安装包。
  */
 export function validateDistributionArtifacts(distribution, version, artifacts) {
+  if (!DISTRIBUTION_MODES.includes(distribution)) {
+    throw new UpdateMetadataError(`不支持的分发方式：${distribution}`)
+  }
   for (const artifact of artifacts) {
-    const forbidden = FORBIDDEN_ARTIFACT_PATTERNS.find((entry) => entry.pattern.test(artifact))
+    const forbidden = ALWAYS_FORBIDDEN.find((entry) => entry.pattern.test(artifact))
     if (forbidden) {
       throw new UpdateMetadataError(`发布说明不得声明资产 ${artifact}：${forbidden.reason}`)
     }
   }
-  if (distribution !== 'source-only') {
-    throw new UpdateMetadataError(`不支持的分发方式：${distribution}`)
+  if (distribution === 'source-only') {
+    if (artifacts.length > 0) {
+      throw new UpdateMetadataError('source-only 发布说明不得声明桌面安装包、更新元数据或校验和资产')
+    }
+    return
   }
-  if (artifacts.length > 0) {
-    throw new UpdateMetadataError('source-only 发布说明不得声明桌面安装包、更新元数据或校验和资产')
+  // windows-unsigned
+  for (const artifact of artifacts) {
+    if (!WINDOWS_UNSIGNED_ALLOWED.some((pattern) => pattern.test(artifact))) {
+      throw new UpdateMetadataError(
+        `windows-unsigned 发布说明只允许 Windows 安装包与 SHA256SUMS.txt，但声明了 ${artifact}`
+      )
+    }
+  }
+  if (!artifacts.some((artifact) => WINDOWS_INSTALLER.test(artifact))) {
+    throw new UpdateMetadataError(
+      'windows-unsigned 发布说明必须声明 Windows 安装包（DSH-Hub-Setup-<版本>.exe）'
+    )
   }
 }
 
@@ -216,7 +238,7 @@ export function validateDistributionArtifacts(distribution, version, artifacts) 
  * 从发布说明里抽出机器可校验的发布字段。
  * 只接受 `DISTRIBUTION_MODES` 中显式声明的模式,避免把未签名桌面包误当作官方资产。
  *
- * @returns {{version: string, date: string, distribution: 'source-only', artifacts: string[]}}
+ * @returns {{version: string, date: string, distribution: 'source-only'|'windows-unsigned', artifacts: string[]}}
  */
 export function parseReleaseNotes(markdown) {
   if (typeof markdown !== 'string' || markdown.trim() === '') {

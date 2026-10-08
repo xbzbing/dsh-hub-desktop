@@ -2,26 +2,30 @@
 
 ## 当前策略
 
-公开 Release 只支持 `source-only` 一种分发模式，由发布说明的「分发方式」小节显式声明：
+公开 Release 的分发模式由发布说明的「分发方式」小节显式声明，`scripts/release/lib.mjs` 的 `DISTRIBUTION_MODES` 校验：
 
 - `source-only`：只有 Git tag、Release Note 和 GitHub 自动生成的 `Source code (zip)` / `Source code (tar.gz)`。
+- `windows-unsigned`：在 `source-only` 基础上，附带本地构建的 **未签名** Windows NSIS 安装包（`DSH-Hub-Setup-<版本>.exe`）与其校验清单 `SHA256SUMS.txt`。
 
-公开 Release **不上传任何二进制资产**：`.exe` 安装包、`.app`、`.dmg`、`.zip` 归档、`SHA256SUMS.txt`、`latest-*.yml` 等一律不允许。仓库中不存在自动构建或上传二进制的发布流水线；`scripts/release/lib.mjs` 的 `DISTRIBUTION_MODES` 只接受 `source-only`，发布说明声明任何资产都会被 `pnpm test` 与 `pnpm release:check` 拒绝。
+无论哪种模式，公开 Release **都不上传** macOS 二进制（`.app`、`.dmg`、`.zip`）、自动更新元数据（`latest-*.yml`）与差分中间产物（`.blockmap`）；`scripts/release/lib.mjs` 做形态白名单校验，发布说明声明越界资产会被 `pnpm test` 与 `pnpm release:check` 拒绝。仓库中不存在自动构建或上传二进制的发布流水线。
 
-不发布二进制的原因：未签名、未公证的产物不可安全公开分发 —— macOS 会被 Gatekeeper、企业 MDM 或 EDR 拦截，Windows 会触发 SmartScreen「未知发布者」提示；本地打包成功不等价于可以安全公开分发。使用者从源码构建，构建路径因此始终可复核。
+关于未签名 Windows 安装包：产物未经代码签名，Windows 首次运行会触发 SmartScreen「未知发布者」提示（点「更多信息 → 仍要运行」可继续）。发布说明必须明示这一点并提供 `SHA256SUMS.txt` 供手工校验完整性。`.github/workflows/sign-windows.yml` 保留了经 SignPath 签名的流程，待 SignPath Foundation 申请通过后可切换到签名安装包。
+
+macOS 二进制在完成签名与公证前仍不公开分发（见下方门槛）。
 
 ## 本地构建
 
-以下命令保留，供开发、本机验证和受控测试使用：
+以下命令供开发、本机验证、受控测试与发布打包使用：
 
 ```bash
 pnpm dist
 pnpm dist:mac
 pnpm dist:mac:zip
 pnpm dist:win
+pnpm dist:win:local   # mac 上交叉构建 Windows 包
 ```
 
-所有命令带 `--publish never`。`pnpm dist:mac` 默认只生成未封装的 `.app` 目录；需要 zip 验证时使用 `pnpm dist:mac:zip`。这些本地构建产物不是官方发布物，不得作为 GitHub Release 资产。
+所有命令带 `--publish never`。`pnpm dist:mac` 默认只生成未封装的 `.app` 目录；需要 zip 验证时使用 `pnpm dist:mac:zip`。macOS 产物不是官方发布物，不得作为 GitHub Release 资产。
 
 ## 发布流程
 
@@ -31,28 +35,44 @@ pnpm dist:win
 CI=true pnpm release:check -- --pre
 ```
 
-演练通过后，人工打标签并推送：
+演练按发布说明声明的分发模式输出对应的人工收口步骤。
+
+**source-only**：
 
 ```bash
 git tag -a v<version> -m "DSH Hub <version>"
 git push origin v<version>
+gh release create v<version> --draft --title "DSH Hub <version>" --notes-file docs/releases/v<version>.md
 ```
 
-按演练输出的命令创建 Draft Release：
+最后确认 Draft Release 只保留发布说明与自动生成的源码归档（无任何资产），再 Publish。
+
+**windows-unsigned**：
 
 ```bash
+# 1) 构建未签名安装包并生成校验清单
+bash docs/local/build-win-local.sh          # 或在 Windows 上 pnpm dist:win
+mkdir -p dist/upload && cp dist/DSH-Hub-Setup-<version>.exe dist/upload/
+node scripts/release/checksums.mjs dist/upload
+
+# 2) 打标签并推送
+git tag -a v<version> -m "DSH Hub <version>"
+git push origin v<version>
+
+# 3) 建 Draft 并上传两个资产
 gh release create v<version> --draft \
   --title "DSH Hub <version>" \
-  --notes-file docs/releases/v<version>.md
+  --notes-file docs/releases/v<version>.md \
+  dist/upload/DSH-Hub-Setup-<version>.exe dist/upload/SHA256SUMS.txt
 ```
 
-最后确认 Draft Release 只保留发布说明与自动生成的源码归档（无任何资产），再点击 Publish release。任何命令都不得添加 `dist/` 参数。
+确认 Draft Release 只含安装包与 `SHA256SUMS.txt`（加源码归档），无 mac 产物、`latest-*.yml` 或 `.blockmap`，再 Publish。
 
 发布时优先使用网页上的 Publish 按钮：它会自动把 "Latest" 徽标移到新版本。若改用 API（`PATCH draft=false`）发布，GitHub **不会**自动迁移 Latest 徽标，必须同时带上 `make_latest="true"`，否则徽标会留在更早的版本上。
 
-## 恢复二进制发布的门槛
+## 恢复 macOS 二进制发布的门槛
 
-恢复任何平台的二进制资产进入公开 Release，必须经独立变更重新评估本策略。macOS 二进制还须满足以下全部条件：
+恢复 macOS 二进制资产进入公开 Release，必须经独立变更重新评估本策略，并满足以下全部条件：
 
 1. 有效的 Apple Developer Program 成员资格。
 2. Developer ID Application 证书及私钥仅安装在受控构建机或安全注入 CI Secret。
@@ -70,6 +90,8 @@ gh release create v<version> --draft \
 7. 已明确支持的架构，并对每种分发包完成测试。
 8. 安装包、`latest-*.yml` 和校验和通过字节一致性验证。
 
-Windows 安装包须先取得 OV/EV 代码签名证书完成签名并通过 SmartScreen 验证。
+满足条件后应同时恢复 mac 发布配置、签名/公证流水线、二进制 Release Note 契约和相关验证；在此之前不得预置 GitHub publish provider。
 
-满足条件后应同时恢复发布配置、签名/公证流水线、二进制 Release Note 契约和相关验证；在此之前不得预置 GitHub publish provider。
+## Windows 代码签名（可选升级）
+
+当前 Windows 安装包未签名，仅以 `SHA256SUMS.txt` 提供完整性校验。取得 OV/EV 代码签名证书或通过 SignPath Foundation（开源免费签名）申请后，可用 `.github/workflows/sign-windows.yml` 产出经 Authenticode 签名的安装包并通过 SmartScreen 验证，再将发布说明的 Windows 安装包替换为签名版本。

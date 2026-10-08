@@ -23,12 +23,18 @@ export interface ArtifactHash {
 export interface ReleaseNotes {
   version: string
   date: string
-  distribution: 'source-only'
+  distribution: 'source-only' | 'windows-unsigned'
   artifacts: string[]
 }
 
 export class UpdateMetadataError extends Error {}
 
+export const DISTRIBUTION_MODES: ReadonlyArray<'source-only' | 'windows-unsigned'>
+export function validateDistributionArtifacts(
+  distribution: string,
+  version: string,
+  artifacts: string[]
+): void
 export function normalizeArtifactUrl(url: string): string
 export function parseUpdateYaml(text: string): UpdateMetadata
 export function verifyUpdateMetadata(input: {

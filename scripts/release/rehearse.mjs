@@ -2,9 +2,10 @@
 /**
  * 发布演练。
  *
- * 公开发布只用 `source-only` 分发模式（见 `docs/release-policy.md`）：
- * 只发布 tag、发布说明与 GitHub 自动生成的源码归档，不上传任何二进制资产。
- * 脚本只做离线校验，推送 tag、创建/发布 Release 由人工完成。
+ * 公开发布的分发模式由发布说明的「分发方式」小节声明（见 `docs/release-policy.md`）：
+ * - `source-only`：只发布 tag、发布说明与 GitHub 自动生成的源码归档，不上传任何二进制资产。
+ * - `windows-unsigned`：附带本地构建的未签名 Windows 安装包与 `SHA256SUMS.txt`。
+ * 脚本只做离线校验，构建、推送 tag、创建/发布 Release 由人工完成。
  */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -76,8 +77,20 @@ if (notes) {
     assert(/^\d{4}-\d{2}-\d{2}$/.test(notes.date), `发布日期 "${notes.date}" 不是 YYYY-MM-DD`)
   })
   await check('发布说明的分发方式与资产清单自洽', () => {
-    assert(notes.distribution === 'source-only', `未知分发方式：${notes.distribution}`)
-    assert(notes.artifacts.length === 0, `source-only 发布说明声明了资产：${notes.artifacts.join(', ')}`)
+    assert(
+      notes.distribution === 'source-only' || notes.distribution === 'windows-unsigned',
+      `未知分发方式：${notes.distribution}`
+    )
+    if (notes.distribution === 'source-only') {
+      assert(notes.artifacts.length === 0, `source-only 发布说明声明了资产：${notes.artifacts.join(', ')}`)
+    } else {
+      // windows-unsigned：安装包名必须与当前版本一致（parseReleaseNotes 已校验形态白名单）
+      const installer = `DSH-Hub-Setup-${version}.exe`
+      assert(
+        notes.artifacts.includes(installer),
+        `windows-unsigned 发布说明须声明安装包 ${installer}，实际：${notes.artifacts.join(', ') || '（无）'}`
+      )
+    }
   })
   await check('发布说明不含占位符', () => {
     const found = findPlaceholders(readText(releaseNotesPath))
@@ -136,18 +149,35 @@ const skipped = results.filter((item) => item.status === 'SKIP')
 const passed = results.length - failed.length - skipped.length
 console.log(`\n=== 汇总：PASS ${passed} / SKIP ${skipped.length} / FAIL ${failed.length} ===`)
 
-console.log(`\n--- 人工收口步骤（source-only；脚本不代做）---`)
-console.log(`  1) git tag -a ${tag} -m "DSH Hub ${version}" && git push origin ${tag}`)
-console.log(`  2) gh release create ${tag} --draft \\`)
-console.log(`       --title "DSH Hub ${version}" \\`)
-console.log(`       --notes-file ${releaseNotesPath}`)
-console.log('  3) 在 GitHub 上确认 Draft Release 只保留 Release Note 与自动生成的源码归档，再点击 Publish release')
-console.log('\n  不上传任何二进制资产：.exe、.app、.dmg、.zip、SHA256SUMS.txt、latest-*.yml 一律不上传。')
-console.log('  本地打包仅用于开发、本机验证和受控测试；恢复二进制发行前须满足 docs/release-policy.md 的签名与公证条件。')
+const distribution = notes?.distribution ?? 'source-only'
+if (distribution === 'windows-unsigned') {
+  console.log(`\n--- 人工收口步骤（windows-unsigned；脚本不代做）---`)
+  console.log('  1) 构建未签名 Windows 安装包并生成校验清单：')
+  console.log('       bash docs/local/build-win-local.sh   # mac 交叉构建，或在 Windows 上 pnpm dist:win')
+  console.log(`       mkdir -p dist/upload && cp dist/DSH-Hub-Setup-${version}.exe dist/upload/`)
+  console.log('       node scripts/release/checksums.mjs dist/upload   # 生成 dist/upload/SHA256SUMS.txt')
+  console.log(`  2) git tag -a ${tag} -m "DSH Hub ${version}" && git push origin ${tag}`)
+  console.log(`  3) gh release create ${tag} --draft \\`)
+  console.log(`       --title "DSH Hub ${version}" \\`)
+  console.log(`       --notes-file ${releaseNotesPath} \\`)
+  console.log(`       dist/upload/DSH-Hub-Setup-${version}.exe dist/upload/SHA256SUMS.txt`)
+  console.log('  4) 在 GitHub 上确认 Draft Release 只含上述两个资产与源码归档，再点击 Publish release')
+  console.log('\n  只上传 Windows 安装包与 SHA256SUMS.txt：未签名安装包会触发 SmartScreen「未知发布者」提示；')
+  console.log('  不上传 mac 二进制、latest-*.yml 或 .blockmap（mac 二进制须先完成签名与公证，见 docs/release-policy.md）。')
+} else {
+  console.log(`\n--- 人工收口步骤（source-only；脚本不代做）---`)
+  console.log(`  1) git tag -a ${tag} -m "DSH Hub ${version}" && git push origin ${tag}`)
+  console.log(`  2) gh release create ${tag} --draft \\`)
+  console.log(`       --title "DSH Hub ${version}" \\`)
+  console.log(`       --notes-file ${releaseNotesPath}`)
+  console.log('  3) 在 GitHub 上确认 Draft Release 只保留 Release Note 与自动生成的源码归档，再点击 Publish release')
+  console.log('\n  不上传任何二进制资产：.exe、.app、.dmg、.zip、SHA256SUMS.txt、latest-*.yml 一律不上传。')
+  console.log('  本地打包仅用于开发、本机验证和受控测试；恢复 mac 二进制发行前须满足 docs/release-policy.md 的签名与公证条件。')
+}
 
 if (failed.length > 0) {
   console.log('\n发布演练失败：')
   for (const item of failed) console.log(`  · ${item.name}：${item.message}`)
   process.exit(1)
 }
-console.log('\n发布演练通过（source-only 离线校验部分全绿）。')
+console.log(`\n发布演练通过（${distribution} 离线校验部分全绿）。`)

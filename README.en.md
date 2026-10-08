@@ -117,19 +117,19 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # If p
 
 **Testing notes**: E2E cases use an isolated temp directory via `DSH_HUB_DATA_DIR`; instances and credentials are synthetic data constructed in the test environment. CI failure artifacts include only Playwright error contexts, traces, UI screenshots, and audit logs; the credential vault file (`vault/credentials.json`) is never uploaded, even though its contents are ciphertext. If a future test must pre-seed vault data, it must use mock data constructed in the test environment and document its construction here.
 
-Release commands fall into two categories: "local packaging & verification" and "source release." The current GitHub Release uses a `source-only` strategy — only source code, tags, and Release Notes are published. No `.app`, `.dmg`, `.zip`, `.exe`, auto-update metadata, or checksum files are uploaded. Users must prepare their own build environment and build from source.
+Release commands fall into two categories: "local packaging & verification" and "public Release." A public Release supports two distribution modes, declared in the release notes' "distribution" section: `source-only` (source code, tags, and Release Notes only) and `windows-unsigned` (additionally ships a locally built, unsigned Windows installer `DSH-Hub-Setup-<version>.exe` plus `SHA256SUMS.txt`). No mode uploads macOS binaries (`.app`, `.dmg`, `.zip`), auto-update metadata (`latest-*.yml`), or diff intermediates (`.blockmap`); `scripts/release/lib.mjs` enforces an artifact-shape allowlist. The unsigned Windows installer triggers a SmartScreen "unknown publisher" prompt on first run.
 
-Local packaging commands are retained, but the unsigned, notarized artifacts are only suitable for development, local verification, and controlled testing:
+Local packaging commands are retained; the unsigned, un-notarized macOS artifacts are only suitable for development, local verification, and controlled testing:
 
 ```bash
 pnpm dist:mac:zip      # macOS zip, for local verification
 pnpm dist:mac          # Generate unsigned macOS .app, for local verification
-pnpm dist:win          # Windows NSIS, for local verification
-pnpm release:checksums # Local byte checksum helper
-pnpm release:check     # Source-only release rehearsal, does not check dist/ artifacts
+pnpm dist:win          # Windows NSIS (on Windows)
+pnpm release:checksums # Generate SHA256SUMS.txt (uploaded with the installer for windows-unsigned)
+pnpm release:check     # Release rehearsal; validates distribution mode and artifact list
 ```
 
-Before an official source release, run `CI=true pnpm release:check -- --pre` and confirm the release notes include the `source-only` distribution mode. The release closure command creates only a tag and a draft Release without assets; see [`docs/release-policy.md`](docs/release-policy.md). Before resuming official binary distribution, Apple Developer ID signing, notarization, clean-machine verification, and auditable update metadata checksums are required.
+Before a public release, run `CI=true pnpm release:check -- --pre` and confirm the release notes' distribution mode and artifact list are self-consistent. The rehearsal prints mode-specific closure steps (`source-only` or `windows-unsigned`): create a draft Release, confirm the assets, then Publish; see [`docs/release-policy.md`](docs/release-policy.md). macOS binary distribution still requires Apple Developer ID signing, notarization, clean-machine verification, and auditable update metadata checksums.
 
 > In non-TTY environments, `pnpm <script>` requires `CI=true` (pnpm 11 dependency checks abort without a TTY).
 
