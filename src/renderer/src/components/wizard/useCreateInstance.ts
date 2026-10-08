@@ -46,6 +46,7 @@ export function useCreateInstance(args: UseCreateInstanceArgs): UseCreateInstanc
   const openWorkspace = useAppStore((state) => state.openWorkspace)
   const select = useAppStore((state) => state.select)
   const setPendingOpen = useAppStore((state) => state.setPendingOpen)
+  const setLoginGate = useAppStore((state) => state.setLoginGate)
   const toast = useAppStore((state) => state.toast)
 
   const validate = useCallback(
@@ -126,6 +127,9 @@ export function useCreateInstance(args: UseCreateInstanceArgs): UseCreateInstanc
     }
     // 启动成功后由状态事件打开工作区；失败或停止时移除待打开记录。
     setPendingOpen(result.value.id)
+    // 远程实例（http/ssh）运行后先探测认证：若使用 dsh-auth-gateway 需登录，则先弹登录框
+    // 引导登录、登录成功后再打开工作区，而不是直接打开工作区显示网关登录页。
+    if (transport !== 'local') setLoginGate(result.value.id)
     const started = await bridge.runtime.start(result.value.id)
     if (!started.ok) {
       toast('err', t('wizard.startFailed'), started.message)
@@ -148,6 +152,7 @@ export function useCreateInstance(args: UseCreateInstanceArgs): UseCreateInstanc
     openWorkspace,
     select,
     setPendingOpen,
+    setLoginGate,
     toast
   ])
 

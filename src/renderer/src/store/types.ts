@@ -148,6 +148,11 @@ export interface WorkspaceSlice {
   settingsOpen: boolean
   /** 向导创建后待自动打开的实例集合(多个实例并发启动时各自独立) */
   pendingOpen: string[]
+  /**
+   * 向导创建后待「先登录再打开工作区」的远程实例集合：这些实例运行后先探测认证，
+   * 若网关要求登录则弹出登录框而非直接打开工作区，登录成功（connected）后再打开。
+   */
+  loginGate: string[]
   setWorkspaceOpen: (open: boolean) => void
   select: (id: string | null) => void
   /** 取回记录并选中；列表页与设置页跳转详情共用。 */
@@ -168,6 +173,13 @@ export interface WorkspaceSlice {
    */
   restoreView: () => Promise<void>
   setPendingOpen: (id: string) => void
+  /** 登记一个远程实例：运行后先探测认证，网关需登录则先弹登录框，登录成功后再打开工作区。 */
+  setLoginGate: (id: string) => void
+  /**
+   * 远程实例运行后的「先登录再打开」判定：探测认证相位，需登录则弹登录框并保留 loginGate
+   * （待 connected 后由 App 的 auth:state 订阅打开工作区）；否则清除标记并直接打开工作区。
+   */
+  openWorkspaceOrLogin: (id: string) => Promise<void>
 }
 
 /** 组合后的完整 store 形状。 */

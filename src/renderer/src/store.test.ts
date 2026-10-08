@@ -566,6 +566,159 @@ describe('store settings', () => {
     await vi.waitFor(() => expect(openView).toHaveBeenCalledWith('ready-local'))
   })
 
+  it('网关远程实例运行后弹登录框、保留 loginGate，不直接打开工作区', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    const probe = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        phase: 'await-credentials' as const,
+        needsOnboarding: false,
+        otpEnabled: false,
+        lockedForMs: 0,
+        message: null,
+        lastErrorCode: null
+      }
+    }))
+    const dispatched: Array<{ type: string; detail: unknown }> = []
+    class FakeCustomEvent {
+      type: string
+      detail: unknown
+      constructor(type: string, init?: { detail?: unknown }) {
+        this.type = type
+        this.detail = init?.detail
+      }
+    }
+    vi.stubGlobal('CustomEvent', FakeCustomEvent)
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() }, auth: { probe } },
+      dispatchEvent: (event: { type: string; detail: unknown }) =>
+        dispatched.push({ type: event.type, detail: event.detail })
+    })
+    useAppStore.setState({
+      instances: [
+        {
+          id: 'gw-remote',
+          name: '网关远程实例',
+          transport: 'http',
+          authMode: 'auto',
+          address: 'gw.example.com',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      ]
+    })
+    useAppStore.getState().setPendingOpen('gw-remote')
+    useAppStore.getState().setLoginGate('gw-remote')
+    useAppStore.getState().applyStatus({
+      id: 'gw-remote',
+      status: 'running',
+      url: 'https://gw.example.com/',
+      at: '2026-09-18T00:00:01.000Z'
+    })
+
+    await vi.waitFor(() => expect(probe).toHaveBeenCalledWith('gw-remote'))
+    await vi.waitFor(() =>
+      expect(dispatched).toContainEqual({
+        type: 'dsh-hub:open-auth',
+        detail: { id: 'gw-remote', name: '网关远程实例' }
+      })
+    )
+    expect(openView).not.toHaveBeenCalled()
+    // 保留门：登录成功后由 App 的 auth:state 订阅打开工作区。
+    expect(useAppStore.getState().loginGate).toContain('gw-remote')
+    expect(useAppStore.getState().pendingOpen).not.toContain('gw-remote')
+  })
+
+  it('无网关远程实例运行后直接打开工作区并清除 loginGate', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    const probe = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        phase: 'connected' as const,
+        needsOnboarding: false,
+        otpEnabled: false,
+        lockedForMs: 0,
+        message: null,
+        lastErrorCode: null
+      }
+    }))
+    vi.stubGlobal(
+      'CustomEvent',
+      class {
+        constructor(
+          public type: string,
+          public init?: unknown
+        ) {}
+      }
+    )
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() }, auth: { probe } },
+      dispatchEvent: vi.fn()
+    })
+    useAppStore.setState({
+      instances: [
+        {
+          id: 'open-remote',
+          name: '无网关远程实例',
+          transport: 'http',
+          authMode: 'none',
+          address: 'open.example.com',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      ]
+    })
+    useAppStore.getState().setPendingOpen('open-remote')
+    useAppStore.getState().setLoginGate('open-remote')
+    useAppStore.getState().applyStatus({
+      id: 'open-remote',
+      status: 'running',
+      url: 'https://open.example.com/',
+      at: '2026-09-18T00:00:01.000Z'
+    })
+
+    await vi.waitFor(() => expect(openView).toHaveBeenCalledWith('open-remote'))
+    expect(probe).toHaveBeenCalledWith('open-remote')
+    expect(useAppStore.getState().loginGate).not.toContain('open-remote')
+  })
+
+  it('登录门实例启动失败时清除 loginGate、不探测认证', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    const probe = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() }, auth: { probe } },
+      dispatchEvent: vi.fn()
+    })
+    useAppStore.setState({
+      instances: [
+        {
+          id: 'fail-remote',
+          name: '失败远程实例',
+          transport: 'http',
+          authMode: 'auto',
+          address: 'fail.example.com',
+          updatedAt: '2026-09-18T00:00:00.000Z'
+        }
+      ]
+    })
+    useAppStore.getState().setPendingOpen('fail-remote')
+    useAppStore.getState().setLoginGate('fail-remote')
+    useAppStore.getState().applyStatus({
+      id: 'fail-remote',
+      status: 'error',
+      detail: '端点不可达',
+      at: '2026-09-18T00:00:01.000Z'
+    })
+
+    expect(useAppStore.getState().loginGate).not.toContain('fail-remote')
+    expect(openView).not.toHaveBeenCalled()
+    expect(probe).not.toHaveBeenCalled()
+  })
+
   it('离开工作区前使在途打开失效，迟到完成不能重新显示原生视图', async () => {
     const useAppStore = await freshStore()
     let resolveOpen!: (value: { ok: true; value: null }) => void

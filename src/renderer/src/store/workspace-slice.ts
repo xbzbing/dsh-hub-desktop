@@ -74,6 +74,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
   wizardExistingSpaceId: null,
   settingsOpen: false,
   pendingOpen: [],
+  loginGate: [],
 
   setWorkspaceOpen: (open) => set({ workspaceOpen: open, workspaceOpening: false }),
 
@@ -115,6 +116,22 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
       disarmOpeningTimeout(id, generation)
       navigation.clearInFlight(id, generation)
     }
+  },
+
+  openWorkspaceOrLogin: async (id) => {
+    const name = get().instances.find((item) => item.id === id)?.name ?? id.slice(0, 8)
+    // 远程实例运行后先探测认证：网关要求登录（await-credentials / needs-auth / await-otp）时
+    // 先弹登录框引导登录，保留 loginGate，待登录成功（connected）由 App 的 auth 订阅打开工作区；
+    // 其余相位（无网关 / 已连接 / 探测失败）直接打开工作区。
+    const result = await window.dshHub?.auth.probe(id)
+    const phase = result?.ok ? (result.value?.phase ?? null) : null
+    const needsLogin = phase === 'needs-auth' || phase === 'await-credentials' || phase === 'await-otp'
+    if (needsLogin) {
+      window.dispatchEvent(new CustomEvent('dsh-hub:open-auth', { detail: { id, name } }))
+      return
+    }
+    set((state) => ({ loginGate: state.loginGate.filter((item) => item !== id) }))
+    void get().openWorkspace(id)
   },
 
   disconnectWorkspace: async (id) => {
@@ -209,6 +226,8 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
     if (view.selection === null && view.settingsOpen) get().setSettingsOpen(true)
   },
 
-  setPendingOpen: (id) => set((state) => ({ pendingOpen: [...state.pendingOpen, id] }))
+  setPendingOpen: (id) => set((state) => ({ pendingOpen: [...state.pendingOpen, id] })),
+
+  setLoginGate: (id) => set((state) => ({ loginGate: [...state.loginGate, id] }))
   }
 }

@@ -66,6 +66,14 @@ export default function App() {
       const store = useAppStore.getState()
       const previousPhase = store.authPhases[event.instanceId]
       store.applyAuthPhase(event.instanceId, event.state.phase)
+      // 新建远程实例的「先登录再打开」门：登录成功（connected）后打开工作区并清除标记。
+      if (event.state.phase === 'connected' && store.loginGate.includes(event.instanceId)) {
+        useAppStore.setState((state) => ({
+          loginGate: state.loginGate.filter((id) => id !== event.instanceId)
+        }))
+        void store.openWorkspace(event.instanceId)
+        return
+      }
       if (
         shouldReopenWorkspace({
           phase: event.state.phase,

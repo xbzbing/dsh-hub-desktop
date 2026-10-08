@@ -132,6 +132,7 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
 
   applyStatus: (event) => {
     let shouldOpen: string | null = null
+    let shouldGate: string | null = null
     set((state) => {
       const removed = event.status === 'stopped'
       const statuses = { ...state.statuses }
@@ -151,24 +152,35 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
       }
       // 运行后自动打开工作区；失败或停止时移除待打开记录。
       let pendingOpen = state.pendingOpen
+      // 远程实例的「先登录再打开」门：运行后先探测认证决定弹登录框还是直接开工作区；
+      // 失败/停止时清除该标记。
+      let loginGate = state.loginGate
+      const gated = loginGate.includes(event.id)
       if (pendingOpen.includes(event.id)) {
         if (event.status === 'running') {
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
-          shouldOpen = event.id
+          if (gated) shouldGate = event.id
+          else shouldOpen = event.id
         } else if (event.status === 'error' || event.status === 'stopped') {
           pendingOpen = pendingOpen.filter((id) => id !== event.id)
         }
       }
+      if ((event.status === 'error' || event.status === 'stopped') && gated) {
+        loginGate = loginGate.filter((id) => id !== event.id)
+      }
       if (state.workspaceOpening && state.selection === event.id) {
         // 在途打开尚未返回时不重复触发:重复触发会先隐藏原生视图,而主进程会把
         // 两次打开按同实例合并,渲染层状态不再变化,内容区边界不会重新回传。
-        if (event.status === 'running' && workspaceOpenInFlight() !== event.id) shouldOpen = event.id
+        if (event.status === 'running' && workspaceOpenInFlight() !== event.id && !gated) {
+          shouldOpen = event.id
+        }
         if (event.status === 'error' || event.status === 'stopped') {
           return {
             instances,
             statuses,
             records,
             pendingOpen,
+            loginGate,
             workspaceOpening: false,
             workspaceConnected:
               event.status === 'stopped'
@@ -182,11 +194,13 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
         statuses,
         records,
         pendingOpen,
+        loginGate,
         workspaceConnected:
           event.status === 'stopped' ? { ...state.workspaceConnected, [event.id]: false } : state.workspaceConnected
       }
     })
-    if (shouldOpen !== null) void get().openWorkspace(shouldOpen)
+    if (shouldGate !== null) void get().openWorkspaceOrLogin(shouldGate)
+    else if (shouldOpen !== null) void get().openWorkspace(shouldOpen)
   },
 
   ensureRecord: async (id) => {
