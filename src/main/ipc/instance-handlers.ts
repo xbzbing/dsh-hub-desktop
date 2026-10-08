@@ -180,6 +180,8 @@ export function registerInstanceHandlers(
         // 详情页文案承诺「删除运行中的实例会先停止其进程」:先回收进程树再移除记录,
         // 否则 dsh/ssh 进程继续存活(独占端口与 DSH_HOME),窗口也无 stopped 事件可回收
         const record = await store.get(instanceId)
+        // 实例不存在：不做任何副作用就返回。否则会隐藏用户当前打开的工作区并按该 id 清理凭据。
+        if (record === null) return { removed: false }
         externalAccessUrls.delete(instanceId)
         // 停止传输层：进程/隧道/端点回收必须在移除记录前完成，失败要如实上报（不能留孤儿）。
         if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
