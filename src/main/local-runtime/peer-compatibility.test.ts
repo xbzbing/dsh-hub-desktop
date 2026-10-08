@@ -72,6 +72,11 @@ describe('satisfiesDshPeer', () => {
     // ~0.2 := >=0.2.0 <0.3.0
     expect(satisfiesDshPeer('~0.2', '0.2.9')).toBe(true)
     expect(satisfiesDshPeer('~0.2', '0.3.0')).toBe(false)
+    // minor 通配退到 major 级：~1.x := >=1.0.0 <2.0.0、~0.x := >=0.0.0 <1.0.0
+    expect(satisfiesDshPeer('~1.x', '1.9.0')).toBe(true)
+    expect(satisfiesDshPeer('~1.x', '2.0.0')).toBe(false)
+    expect(satisfiesDshPeer('~0.x', '0.9.0')).toBe(true)
+    expect(satisfiesDshPeer('~0.x', '1.0.0')).toBe(false)
   })
 
   it('空格分隔的交集：两条件都要满足', () => {

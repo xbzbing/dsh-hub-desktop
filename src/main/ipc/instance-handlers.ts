@@ -184,11 +184,11 @@ export function registerInstanceHandlers(
         if (record === null) return { removed: false }
         externalAccessUrls.delete(instanceId)
         // 停止传输层：进程/隧道/端点回收必须在移除记录前完成，失败要如实上报（不能留孤儿）。
-        if (record?.transport === 'ssh') await deps.tunnels.stop(instanceId)
-        else if (record?.transport === 'http') await deps.http.stop(instanceId)
-        else if (record?.transport === 'local') await deps.runtime.stop(instanceId)
+        if (record.transport === 'ssh') await deps.tunnels.stop(instanceId)
+        else if (record.transport === 'http') await deps.http.stop(instanceId)
+        else if (record.transport === 'local') await deps.runtime.stop(instanceId)
         // 移入废纸篓是用户显式请求：失败必须上报（避免界面显示已删而磁盘数据仍在）。
-        if (deleteOptions.trashSpace && record?.transport === 'local' && !record.useDefaultSpace) {
+        if (deleteOptions.trashSpace && record.transport === 'local' && !record.useDefaultSpace) {
           if (!deps.trashLocalSpace) throw new InstanceStoreError('invalid-state', '本机隔离空间管理不可用')
           await deps.trashLocalSpace(instanceId)
         }

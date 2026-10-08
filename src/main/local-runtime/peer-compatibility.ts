@@ -36,8 +36,9 @@ function caretTildeBounds(operator: '^' | '~', version: string): { lower: string
     part === 'x' || part === 'X' || part === '*'
   if (operator === '~') {
     // ~1.2.3 := >=1.2.3 <1.3.0；~1.2 := >=1.2.0 <1.3.0；~1 := >=1.0.0 <2.0.0
-    // patch 不参与上界：~0.0.3 := >=0.0.3 <0.1.0
-    const upper = partCount >= 2 ? `${major}.${minor + 1}.0` : `${major + 1}.0.0`
+    // patch 不参与上界：~0.0.3 := >=0.0.3 <0.1.0；minor 通配/缺省退到 major 级：~1.x := <2.0.0、~0.x := <1.0.0
+    const upper =
+      partCount >= 2 && !isWildcard(segments[1]) ? `${major}.${minor + 1}.0` : `${major + 1}.0.0`
     return { lower: version, upper }
   }
   // ^1.2.3 := >=1.2.3 <2.0.0；^0.2.3 := >=0.2.3 <0.3.0；^0.0.3 := >=0.0.3 <0.0.4；
