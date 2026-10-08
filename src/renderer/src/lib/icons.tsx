@@ -1,5 +1,5 @@
 /**
- * 线性图标集 —— 移植自 design/dsh-hub-desktop.html 的 ICON 表(同一套 24×24 线性规范)。
+ * 线性图标集 —— 统一的 24×24 线性规范。
  * 保持笔触一致:fill=none / stroke=currentColor / stroke-width=1.6 / 圆角端点。
  */
 import type { JSX } from 'react'

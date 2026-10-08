@@ -151,10 +151,9 @@ Before an official source release, run `CI=true pnpm release:check -- --pre` and
 
 ## Documentation
 
-- Product, design, and release strategy (committed):
-  `docs/PRD.md` · `docs/dsh-hub-desktop-design.md` ·
-  `docs/desktop-implementation-plan.md` · [`docs/release-policy.md`](docs/release-policy.md) ·
-  `design/dsh-hub-desktop.html` · `design/brand-spec.md`
+- Release strategy (committed): [`docs/release-policy.md`](docs/release-policy.md)
+- Archive: the first demo's design / requirements / implementation plan / UI demo / design tokens
+  have been moved to [`docs/archive/`](docs/archive/) (no longer authoritative; kept for historical reference)
 - Task tracking documents (dev task lists, review reports, delivery checklists, packaging/release rehearsals, security audit reports, etc.)
   are **local documents**, organized by milestone in `docs/local/ms-<N>/` (currently `ms-1`), excluded from git
   (one-time task tracking; see `.gitignore`)

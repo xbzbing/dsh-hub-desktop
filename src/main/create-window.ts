@@ -200,7 +200,7 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
       minHeight: 600,
       show: false,
       title: 'DSH Hub',
-      // brand-spec 深色 --bg（oklch(0.185 0.012 265) 的 sRGB 近似），避免加载期白闪
+      // 深色主题背景（oklch(0.185 0.012 265) 的 sRGB 近似），避免加载期白闪
       backgroundColor: '#101318',
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
       trafficLightPosition: { x: 14, y: 13 },

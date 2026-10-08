@@ -164,9 +164,9 @@ Electron 44 起二进制按需下载：`pnpm install` 之后 `node_modules/elect
 
 ## 文档
 
-- 产品、设计与发布策略（入库）：`docs/PRD.md` · `docs/dsh-hub-desktop-design.md` ·
-  `docs/desktop-implementation-plan.md` · [`docs/release-policy.md`](docs/release-policy.md) ·
-  `design/dsh-hub-desktop.html` · `design/brand-spec.md`
+- 发布策略（入库）：[`docs/release-policy.md`](docs/release-policy.md)
+- 历史存档：第一个 demo 阶段的设计 / 需求 / 实现计划 / UI demo / 设计 token 等文档已归档至
+  [`docs/archive/`](docs/archive/)（不再作为实现依据，仅供回溯）
 - 任务追踪类文档（开发任务清单、评审报告、交付清单、打包 / 发布演练 / 安全走查报告等）
   为**本地文档**，按里程碑放 `docs/local/ms-<N>/`（当前 `ms-1`），不进 git
   （一次性任务追踪，见 `.gitignore`）

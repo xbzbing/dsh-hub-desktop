@@ -6,11 +6,7 @@
 
 DSH Hub Desktop 是用于管理多个 dsh 实例的 Electron 桌面应用，支持本机 dsh、SSH 隧道和远程 HTTP/HTTPS 端点。认证使用 dsh-auth-gateway，支持密码、TOTP 和 HttpOnly Cookie 注入。
 
-- 需求：`docs/PRD.md`
-- 架构：`docs/dsh-hub-desktop-design.md`
-- 实现计划：`docs/desktop-implementation-plan.md`
-- UI 基线：`design/dsh-hub-desktop.html`
-- 设计 token：`design/brand-spec.md`
+当前权威信息以代码、本文件与 `README.md` 为准。第一个 demo 阶段的早期设计/需求/实现计划/UI demo/设计 token 等文档已归档至 `docs/archive/`（见其 README），**不再作为实现依据**，仅供回溯历史背景。
 
 ## 技术栈
 
@@ -37,7 +33,7 @@ scripts/release/ 发布检查和校验和脚本
 
 ## 开发规则
 
-1. UI 以 `design/dsh-hub-desktop.html` 为参考；有意偏离时在相关代码或文档中说明原因。
+1. UI 的真实基线是当前 renderer 实现（`src/renderer`）；`docs/archive/dsh-hub-desktop.html` 仅为早期 demo，不作为依据。
 2. `src/shared`、registry、transport、auth、vault 和 audit 不得 import Electron。
 3. 不新增运行时依赖；确有必要时先说明原因和影响。
 4. 修改后至少运行相关测试；提交前运行 `pnpm typecheck`、`pnpm lint`、`pnpm test`，并至少运行一次 E2E。

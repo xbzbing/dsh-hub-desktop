@@ -64,7 +64,6 @@ const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'] ?? null
  * 生产环境渲染器走自定义 `app://hub` 协议而不是 file://：
  * 1. file:// 下 CSP 的 `'self'` 语义不可用，script 会被误杀；
  * 2. app:// 提供稳定的 origin，未来 HttpOnly cookie 注入与存储作用域都有明确宿主。
- * 布局上对应设计稿 `design/dsh-hub-desktop.html` 中的 `.window`（真实窗口替换模拟窗口，见走查报告）。
  */
 const RENDERER_ORIGIN = 'app://hub'
 
