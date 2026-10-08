@@ -923,7 +923,10 @@ export interface InstanceStatusEvent {
 
 export type IpcErrorCode = 'invalid-input' | 'not-found' | 'invalid-state' | 'io-error' | 'internal'
 
-/** IPC 统一响应信封：错误码稳定，文案由渲染层按码表映射。 */
+/**
+ * IPC 统一响应信封：`code` 稳定可用于分支判断；`message` 是主进程文案，
+ * 渲染层直接展示原文——主进程文案就是用户可见文本的单一来源，渲染层不按码表二次翻译。
+ */
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; code: IpcErrorCode; message: string }
 
 // ===== 工具 =====
