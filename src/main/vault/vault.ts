@@ -4,8 +4,8 @@
  *
  *  | 存储项 | 默认 | 可选 |
  *  |---|---|---|
- *  | 网关密码 | 用户确认登录后默认保存 | 取消「记住密码」 |
- *  | 会话 Cookie `dsh_auth` | 默认保存 | 取消「复用会话」 |
+ *  | 网关密码 | 默认不保存(勾选「记住密码」才落盘) | 勾选「记住密码」 |
+ *  | 会话 Cookie `dsh_auth` | 默认不保存(勾选「复用会话」才落盘) | 勾选「复用会话」 |
  *  | TOTP 密钥 | **永不存储**(密钥在用户认证器里) | — |
  *
  * 硬性约定:
@@ -430,7 +430,8 @@ export function createVault(options: VaultOptions): Vault {
 
     async clearAll() {
       load()
-      // 新实例默认保存；清除动作本身仍必须阻止现有实例在下一次登录时立刻重新写入。
+      // 把受影响实例的策略显式钉在「都不记住」：即便未来默认值变化，
+      // 已清除的实例也不会在下一次登录时立刻重新写入。
       const affectedIds = new Set([...items.keys(), ...policy.keys()])
       items.clear()
       policy.clear()

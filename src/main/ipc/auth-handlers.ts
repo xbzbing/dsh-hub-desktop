@@ -39,6 +39,8 @@ export function registerAuthHandlers(deps: AuthHandlerDeps, wrap: IpcWrap): Auth
    * 失败(磁盘满/钥匙串不可用)绝不能把一次成功的登录变成错误。
    */
   async function rememberQuietly(instanceId: string, password: string): Promise<void> {
+    // 未勾选「记住密码」：不写入也不是错误（默认策略即不勾选）
+    if (!deps.vault.getPolicy(instanceId).rememberPassword) return
     try {
       await deps.vault.rememberPassword(instanceId, password)
     } catch (error) {

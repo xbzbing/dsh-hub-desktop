@@ -4,7 +4,8 @@
  */
 import type { VaultPolicy, VaultStatusSnapshot } from '@shared/contracts'
 
-export const NO_POLICY: VaultPolicy = { rememberPassword: true, rememberSession: true }
+/** 与主进程 DEFAULT_VAULT_POLICY 同口径：默认不保存，显式勾选才落盘。 */
+export const NO_POLICY: VaultPolicy = { rememberPassword: false, rememberSession: false }
 
 /** 快照尚未到达:此时**禁止**任何提交(否则会以兜底值覆盖真实策略) */
 export function policyReady(status: VaultStatusSnapshot | null): boolean {
