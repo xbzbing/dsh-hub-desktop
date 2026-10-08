@@ -1,12 +1,19 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { randomUUID } from 'node:crypto'
+import { chmod, mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { InstanceStatusEvent, SshInstance } from '@shared/contracts'
 import { parseKnownHosts } from '../ssh/host-trust'
-import { controlSlug, createSshTunnels, socketsDirFor, type SshTunnelManager } from './ssh-tunnel'
+import {
+  controlSlug,
+  createSshTunnels,
+  ensureSocketsDir,
+  socketsDirFor,
+  type SshTunnelManager
+} from './ssh-tunnel'
 import type { SpawnedProcess } from './spawn'
 
 // 进程组回收的平台机制（POSIX 负 pid / Windows taskkill）在 spawn.test.ts 单测；
@@ -548,9 +555,62 @@ describe.skipIf(process.platform === 'win32')("ControlPath 路径规则（unix s
     expect(long.length).toBeGreaterThan(66)
     const dir = socketsDirFor(long)
     expect(dir).not.toBe(`${long}/ssh`)
-    expect(dir.startsWith(tmpdir())).toBe(true)
+    const base =
+      process.env['XDG_RUNTIME_DIR'] !== undefined && process.env['XDG_RUNTIME_DIR'].trim() !== ''
+        ? process.env['XDG_RUNTIME_DIR']
+        : tmpdir()
+    expect(dir.startsWith(base)).toBe(true)
     // 最坏形态(12 字符 slug + ssh 追加大约 16 字符随机后缀)必须 < 104 字节
     expect(join(dir, 'ctl-000000000000').length + 17).toBeLessThan(104)
+  })
+})
+
+describe.skipIf(process.platform === 'win32')('ensureSocketsDir（socket 目录安全）', () => {
+  it('短 dataRoot → 创建 <root>/ssh 为 0700，与 socketsDirFor 同步', async () => {
+    const root = await mkdtemp('/tmp/hub-ensure-short-')
+    try {
+      const dir = await ensureSocketsDir(root)
+      expect(dir).toBe(join(root, 'ssh'))
+      expect(socketsDirFor(root)).toBe(dir)
+      expect((await stat(dir)).mode & 0o777).toBe(0o700)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('已存在但权限过宽 → 收敛回 0700（不换目录）', async () => {
+    const root = await mkdtemp('/tmp/hub-ensure-wide-')
+    try {
+      const dir = join(root, 'ssh')
+      await mkdir(dir, { recursive: true, mode: 0o755 })
+      await chmod(dir, 0o755)
+      const ensured = await ensureSocketsDir(root)
+      expect(ensured).toBe(dir)
+      expect((await stat(dir)).mode & 0o777).toBe(0o700)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('属主校验不过（他人预建）→ mkdtemp 随机目录，后续派生共用', async () => {
+    const root = await mkdtemp('/tmp/hub-ensure-owner-')
+    let fallbackDir: string | null = null
+    // 模拟「目录属主不是当前进程」：getuid 返回一个不可能匹配的值
+    const spy = vi.spyOn(process, 'getuid').mockReturnValue(999_999)
+    try {
+      const dir = await ensureSocketsDir(root)
+      fallbackDir = dir
+      expect(dir).not.toBe(join(root, 'ssh'))
+      // ControlPath 与 askpass 两处派生点经 socketsDirFor 拿到同一目录
+      expect(socketsDirFor(root)).toBe(dir)
+      expect((await stat(dir)).mode & 0o777).toBe(0o700)
+      // 缓存：再次 ensure 不换目录
+      expect(await ensureSocketsDir(root)).toBe(dir)
+    } finally {
+      spy.mockRestore()
+      if (fallbackDir !== null) await rm(fallbackDir, { recursive: true, force: true })
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 

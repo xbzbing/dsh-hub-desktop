@@ -90,7 +90,7 @@ export async function ensureAskpassScripts(
   nodeCommand: string,
   nodeArgs: string[]
 ): Promise<AskpassScripts> {
-  await mkdir(dir, { recursive: true })
+  await mkdir(dir, { recursive: true, mode: 0o700 })
   const helperPath = join(dir, ASKPASS_HELPER_NAME)
   const wrapperPath = join(dir, ASKPASS_WRAPPER_NAME)
   await writeFile(helperPath, ASKPASS_HELPER_SOURCE, { mode: 0o600 })
