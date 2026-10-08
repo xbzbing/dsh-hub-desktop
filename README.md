@@ -12,9 +12,9 @@
 
 由于没有苹果开发者账号，因此无法打包可信的 App，需要`clone`代码仓库并通过`pnpm dist:mac`来编译 App。
 
-## Code signing policy
+## 分发与隐私
 
-Windows 安装包的代码签名政策见 [CODE_SIGNING.md](CODE_SIGNING.md)。免费签名由 [SignPath.io](https://about.signpath.io) 提供，证书由 [SignPath Foundation](https://signpath.org) 签发。
+Windows 安装包当前**未经代码签名**，首次运行会出现 SmartScreen「未知发布者」提示（点「更多信息 → 仍要运行」继续）；可用 Release 附带的 `SHA256SUMS.txt` 校验完整性。macOS 不提供官方二进制，需从源码构建。
 
 隐私政策见 [PRIVACY.md](PRIVACY.md)：本应用不收集任何个人数据，无遥测上报，网络连接仅发往用户配置的目标。
 

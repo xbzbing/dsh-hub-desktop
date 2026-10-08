@@ -9,7 +9,7 @@
 
 无论哪种模式，公开 Release **都不上传** macOS 二进制（`.app`、`.dmg`、`.zip`）、自动更新元数据（`latest-*.yml`）与差分中间产物（`.blockmap`）；`scripts/release/lib.mjs` 做形态白名单校验，发布说明声明越界资产会被 `pnpm test` 与 `pnpm release:check` 拒绝。仓库中不存在自动构建或上传二进制的发布流水线。
 
-关于未签名 Windows 安装包：产物未经代码签名，Windows 首次运行会触发 SmartScreen「未知发布者」提示（点「更多信息 → 仍要运行」可继续）。发布说明必须明示这一点并提供 `SHA256SUMS.txt` 供手工校验完整性。`.github/workflows/sign-windows.yml` 保留了经 SignPath 签名的流程，待 SignPath Foundation 申请通过后可切换到签名安装包。
+关于未签名 Windows 安装包：产物未经代码签名，Windows 首次运行会触发 SmartScreen「未知发布者」提示（点「更多信息 → 仍要运行」可继续）。发布说明必须明示这一点并提供 `SHA256SUMS.txt` 供手工校验完整性。
 
 macOS 二进制在完成签名与公证前仍不公开分发（见下方门槛）。
 
@@ -94,4 +94,4 @@ gh release create v<version> --draft \
 
 ## Windows 代码签名（可选升级）
 
-当前 Windows 安装包未签名，仅以 `SHA256SUMS.txt` 提供完整性校验。取得 OV/EV 代码签名证书或通过 SignPath Foundation（开源免费签名）申请后，可用 `.github/workflows/sign-windows.yml` 产出经 Authenticode 签名的安装包并通过 SmartScreen 验证，再将发布说明的 Windows 安装包替换为签名版本。
+当前 Windows 安装包未签名，仅以 `SHA256SUMS.txt` 提供完整性校验。日后取得 OV/EV 代码签名证书后，可对安装包做 Authenticode 签名并通过 SmartScreen 验证，再将发布说明的 Windows 安装包替换为签名版本。

@@ -12,9 +12,9 @@ A personal Electron desktop tool for managing multiple **dsh** (DeepSeek Harness
 
 Since I don't have an Apple Developer Account, I can't distribute a signed app. You'll need to `clone` the repo and build with `pnpm dist:mac`.
 
-## Code signing policy
+## Distribution & privacy
 
-See [CODE_SIGNING.md](CODE_SIGNING.md) for the Windows installer code signing policy. Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+The Windows installer is currently **unsigned**, so Windows shows a SmartScreen "unknown publisher" prompt on first run (choose "More info → Run anyway"); verify integrity with the `SHA256SUMS.txt` attached to the Release. No official macOS binary is provided; build from source.
 
 Privacy policy: [PRIVACY.md](PRIVACY.md) — this app collects no personal data, contains no telemetry, and only connects to endpoints you configure.
 
