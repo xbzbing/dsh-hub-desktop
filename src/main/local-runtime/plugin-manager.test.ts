@@ -562,10 +562,72 @@ describe('createPluginManager.check', () => {
     )
   })
 
-  it('升级后清掉该插件的可升级标记与发布时间快照', async () => {
+  it('升级后清掉可升级标记，并同步写入新版本的发布时间快照（无需再次检查）', async () => {
+    const listV2 = JSON.stringify([
+      {
+        name: 'dsh-profile-web',
+        dependencies: {
+          '@xbzbing/dsh-git-panel': {
+            from: '@xbzbing/dsh-git-panel',
+            version: '2.0.0',
+            resolved: 'https://registry.npmjs.org/@xbzbing/dsh-git-panel/-/dsh-git-panel-2.0.0.tgz',
+            path: '/node_modules/@xbzbing/dsh-git-panel'
+          }
+        }
+      }
+    ])
+    let upgraded = false
+    const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+      void command
+      // add 之后已装版本切到 2.0.0：list 随之反映新版本。
+      if (args.includes('add')) {
+        upgraded = true
+        return { code: 0, stdout: '', stderr: '' }
+      }
+      if (args.includes('list')) {
+        return { code: 0, stdout: upgraded ? listV2 : LIST_JSON, stderr: '' }
+      }
+      if (args.includes('view')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            time: { '1.1.0': '2026-09-20T02:30:00.000Z', '2.0.0': '2026-10-05T08:00:00.000Z' }
+          }),
+          stderr: ''
+        }
+      }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const stateStore = memoryStore()
+    await stateStore.write(
+      'inst-1',
+      stateWith({
+        lastCheckedAt: '2026-09-29T00:00:00.000Z',
+        updates: {
+          '@xbzbing/dsh-git-panel': {
+            latest: '2.0.0',
+            compatible: true,
+            dshPeer: null,
+            dshVersion: null
+          }
+        },
+        published: { '@xbzbing/dsh-git-panel': { version: '1.1.0', at: '2026-09-20T02:30:00.000Z' } }
+      })
+    )
+    const manager = createPluginManager({ ...baseOptions(run), stateStore })
+    await manager.upgrade(localInstance(), '@xbzbing/dsh-git-panel', '2.0.0')
+    expect((await manager.checkState(localInstance())).updates).toEqual({})
+    // 快照换成新版本的发布时间：发布时间同步可见，不需用户再次检查。
+    expect((await stateStore.read('inst-1')).published).toEqual({
+      '@xbzbing/dsh-git-panel': { version: '2.0.0', at: '2026-10-05T08:00:00.000Z' }
+    })
+  })
+
+  it('升级后取不到新版本发布时间（如离线）：清掉旧版本的陈旧快照', async () => {
     const run = vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
       void command
       if (args.includes('list')) return { code: 0, stdout: LIST_JSON, stderr: '' }
+      // view 无输出（取不到发布时间）。
       return { code: 0, stdout: '', stderr: '' }
     })
     const stateStore = memoryStore()

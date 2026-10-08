@@ -344,6 +344,49 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   }
 
   /**
+   * 升级完成后同步该插件的检查痕迹：清掉可升级标记（已装版本已是目标版本），并把新版本的
+   * 发布时间落成快照，无需用户再次检查即可显示发布时间。取不到发布时间（如离线）时清掉
+   * 旧版本的陈旧快照，由下次检查补齐（不刷新「上次检查」时刻）。
+   */
+  async function syncCheckAfterUpgrade(
+    instance: LocalInstance,
+    name: string,
+    resolved: { entry: string; version: string }
+  ): Promise<void> {
+    const published = await resolveInstalledPublished(instance, name, resolved).catch(() => null)
+    const state = await stateStore.read(instance.id)
+    const updates = { ...state.updates }
+    delete updates[name]
+    const snapshots = { ...state.published }
+    if (published !== null) snapshots[name] = published
+    else delete snapshots[name]
+    await writeState(instance.id, { ...state, updates, published: snapshots })
+  }
+
+  /**
+   * 取该插件已装版本在注册表里的发布时间快照；读不到已装版本或 registry 未收录该版本时返回 null。
+   * 与 check 同口径：发布时间取 view 的 time 映射中「已装版本」那一项。
+   */
+  async function resolveInstalledPublished(
+    instance: LocalInstance,
+    name: string,
+    resolved: { entry: string; version: string }
+  ): Promise<PluginPublishedSnapshot | null> {
+    const plugins = await listPlugins(instance, 'zh', resolved)
+    const installed = plugins.find((plugin) => plugin.name === name)?.version
+    if (installed === undefined || installed === '—') return null
+    const result = await runPlugin(instance, ['view', name, 'time', '--json'], resolved)
+    let meta: { time?: Record<string, string> }
+    try {
+      meta = JSON.parse(result.stdout || '{}')
+    } catch {
+      return null
+    }
+    const at = meta.time?.[installed]
+    return typeof at === 'string' && at !== '' ? { version: installed, at } : null
+  }
+
+  /**
    * 运行中的 Host 是否有 HMR：先看 profile 与 home 两层 patch 是否显式关闭（用户自己写的配置，
    * 见 profile-hmr），否则按 profile 名 / web-app bundle 的启发式判断。
    */
@@ -732,8 +775,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       const resolved = await resolveDshEntry(instance)
       const hadHostSide = await hostSideOf(instance, name, resolved)
       await runPlugin(instance, ['add', `${name}@${version}`], resolved)
-      // 升级换了版本：可升级标记与旧版本的发布时间快照一并失效（下次检查重新取）。
-      await dropCheck(instance.id, name)
+      // 升级换了版本：清掉可升级标记，并同步落下新版本的发布时间快照（无需再次检查即可显示）。
+      await syncCheckAfterUpgrade(instance, name, resolved)
       // 升级必然替换已装包 → 与 dsh 同口径：即使有 HMR 也要重启才能换掉已加载的模块代。
       return {
         hasHostSide: hadHostSide || (await hostSideOf(instance, name, resolved)),
