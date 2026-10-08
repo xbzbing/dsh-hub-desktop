@@ -203,6 +203,36 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(await store.remove(created.id)).toBe(false)
   })
 
+  it('reorder 重排生效且落盘', async () => {
+    const a = await store.create(localInput({ name: '甲' }))
+    const b = await store.create(sshInput({ name: '乙' }))
+    const c = await store.create(httpInput({ name: '丙' }))
+    const reordered = await store.reorder([c.id, a.id, b.id])
+    expect(reordered.map((r) => r.name)).toEqual(['丙', '甲', '乙'])
+    // 落盘顺序与重排一致（重启后读回同样顺序）
+    expect((await readRegistryFile())?.instances.map((r: InstanceRecord) => r.name)).toEqual([
+      '丙',
+      '甲',
+      '乙'
+    ])
+  })
+
+  it('reorder 负路径：长度不符 / 未知 id / 重复 id 一律拒绝且不落盘', async () => {
+    const a = await store.create(localInput({ name: '甲' }))
+    const b = await store.create(sshInput({ name: '乙' }))
+
+    await expect(store.reorder([a.id])).rejects.toMatchObject({ code: 'invalid-input' })
+    await expect(store.reorder([a.id, b.id, randomUUID()])).rejects.toMatchObject({
+      code: 'invalid-input'
+    })
+    // 重复 id：[a,a] 长度与集合均通过旧校验，会让实例 b 从注册表静默消失（数据丢失）
+    await expect(store.reorder([a.id, a.id])).rejects.toMatchObject({ code: 'invalid-input' })
+
+    // 三次拒绝都不改动已落盘数据
+    const file = await readRegistryFile()
+    expect((file as { instances: InstanceRecord[] }).instances.map((r) => r.name)).toEqual(['甲', '乙'])
+  })
+
   it('update ssh host[:port]、http 端点同样归一化', async () => {
     const ssh = asSsh(await store.create(sshInput()))
     const updatedSsh = asSsh(await store.update(ssh.id, { host: 'new-server:2202' }))

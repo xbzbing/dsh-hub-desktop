@@ -449,6 +449,10 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
             throw new InstanceStoreError('invalid-input', `排序列表包含未知实例 ID：${id}`)
           }
         }
+        // 重复 id 会让 byId 映射出重复条目并覆盖未列出的实例（注册表数据丢失），必须拒绝。
+        if (new Set(orderedIds).size !== orderedIds.length) {
+          throw new InstanceStoreError('invalid-input', '排序列表包含重复实例 ID')
+        }
         const byId = new Map(current.map((r) => [r.id, r]))
         const reordered = orderedIds.map((id) => byId.get(id)!)
         await persist(reordered)
