@@ -341,6 +341,10 @@ export const MESSAGES = {
   'detail.copyFailed': { zh: '复制失败', en: 'Copy failed' },
   'detail.deleteFailed': { zh: '删除失败', en: 'Delete failed' },
   'detail.openViewFailed': { zh: '打开视图失败', en: 'Failed to open the view' },
+  'detail.openViewTimeout': {
+    zh: '打开工作区超时，已返回详情页',
+    en: 'Timed out opening the workspace; back to the detail view'
+  },
   'detail.startWorkspace': { zh: '启动并打开工作区', en: 'Start and open workspace' },
   'detail.startFailed': { zh: '启动失败', en: 'Failed to start' },
   'detail.overview': { zh: '总览', en: 'Overview' },

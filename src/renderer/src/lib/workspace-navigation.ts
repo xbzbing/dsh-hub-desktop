@@ -31,33 +31,39 @@ export interface WorkspaceNavState {
 /**
  * 导航代守卫：换视图前 `begin()` 递增，异步 openView 完成时用 `isCurrent(gen)`
  * 判断本次响应是否仍属于最新导航意图，过期响应只作废自己、绝不激活原生视图。
- * 同时持有「在途打开的实例」：`begin(id)` 记录，`inFlight()` 供状态事件判定
- * 「该实例的 openView 还没回来」，`clearInFlight(id)` 在完成时清除。
+ * 同时持有「在途打开的实例」：`begin(id)` 记录（含当时导航代），`inFlight()` 供状态事件判定
+ * 「该实例的 openView 还没回来」，`clearInFlight(id, generation)` 在完成时清除。
  */
 export interface NavigationGuard {
   /** 换视图：递增导航代并返回本次代号；传 inFlightId 记录正在打开的实例。 */
   begin: (inFlightId?: string) => number
   /** 本次代号是否仍是最新导航意图。 */
   isCurrent: (generation: number) => boolean
-  /** 正在等待 openView 返回的实例；无则 null。 */
+  /**
+   * 正在等待 openView 返回的实例；无则 null。
+   * 标记携带导航代：有了更新的导航代后旧标记视为不存在（读到 null），
+   * 否则残留标记会一直抑制状态事件对打开动作的重触发。
+   */
   inFlight: () => string | null
-  /** 清除在途标记；仅当仍是同一实例时清，避免覆盖后续导航记录的实例。 */
-  clearInFlight: (id: string) => void
+  /** 清除在途标记：id 与导航代都匹配才清——过期响应不能清掉新一次在途。 */
+  clearInFlight: (id: string, generation: number) => void
 }
 
 export function createNavigationGuard(): NavigationGuard {
   let generation = 0
-  let inFlightId: string | null = null
+  let inFlight: { id: string; generation: number } | null = null
   return {
     begin: (id) => {
       generation += 1
-      if (id !== undefined) inFlightId = id
+      if (id !== undefined) inFlight = { id, generation }
       return generation
     },
     isCurrent: (candidate) => candidate === generation,
-    inFlight: () => inFlightId,
-    clearInFlight: (id) => {
-      if (inFlightId === id) inFlightId = null
+    inFlight: () => (inFlight !== null && inFlight.generation === generation ? inFlight.id : null),
+    clearInFlight: (id, candidate) => {
+      if (inFlight !== null && inFlight.id === id && inFlight.generation === candidate) {
+        inFlight = null
+      }
     }
   }
 }

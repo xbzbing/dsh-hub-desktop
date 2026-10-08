@@ -18,12 +18,53 @@ import { readPersistedView, writePersistedView } from '../lib/view-persistence'
  */
 const navigation = createNavigationGuard()
 
+/**
+ * 加载中间页停留上限：openView 响应丢失、或依赖的 running 事件永不到达时，
+ * 超时回退到详情页并提示——界面绝不停在「正在打开工作区…」。
+ * 取值需小于 E2E 对打开流程的 20s 等待预算，又要给真实启动留足余量。
+ */
+const OPENING_TIMEOUT_MS = 10_000
+
 /** 供 instance slice 的 applyStatus 判定「在途打开」用（跨分片只读）。 */
 export function workspaceOpenInFlight(): string | null {
   return navigation.inFlight()
 }
 
-export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => ({
+export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => {
+  /** 本次加载超时兜底的定时器；携带 id+导航代，只归自己的尝试所有。 */
+  let opening:
+    | { id: string; generation: number; timer: ReturnType<typeof setTimeout> }
+    | null = null
+
+  /** 武装加载超时兜底（同一时刻只保留最新一次尝试的定时器）。 */
+  const armOpeningTimeout = (id: string, generation: number): void => {
+    disarmOpeningTimeout()
+    const timer = setTimeout(() => {
+      opening = null
+      if (
+        navigation.isCurrent(generation) &&
+        get().selection === id &&
+        get().workspaceOpening &&
+        !get().workspaceOpen
+      ) {
+        navigation.clearInFlight(id, generation)
+        set({ workspaceOpening: false })
+        get().toast('err', get().t('detail.openViewTimeout'))
+      }
+    }, OPENING_TIMEOUT_MS)
+    timer.unref?.()
+    opening = { id, generation, timer }
+  }
+
+  /** 拆除超时兜底；只拆属于本次尝试的（过期响应不能清掉新一次的定时器）。 */
+  const disarmOpeningTimeout = (id?: string, generation?: number): void => {
+    if (opening === null) return
+    if (id !== undefined && (opening.id !== id || opening.generation !== generation)) return
+    clearTimeout(opening.timer)
+    opening = null
+  }
+
+  return {
   selection: null,
   workspaceOpen: false,
   workspaceOpening: false,
@@ -60,6 +101,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
     try {
       void window.dshHub?.runtime?.hideView()
       set(toOpeningPatch(id))
+      armOpeningTimeout(id, generation)
       const result = await window.dshHub?.runtime.openView(id)
       // A later selection/open request owns the native view. Stale responses only stop themselves.
       if (!navigation.isCurrent(generation) || get().selection !== id) return
@@ -70,7 +112,8 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
       set({ workspaceOpening: false })
       if (result) get().toast('err', get().t('detail.openViewFailed'), result.message)
     } finally {
-      navigation.clearInFlight(id)
+      disarmOpeningTimeout(id, generation)
+      navigation.clearInFlight(id, generation)
     }
   },
 
@@ -94,9 +137,12 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
       return
     }
     if (status === 'starting') {
-      navigation.begin()
+      // 不调 openView（端口尚未就绪）：只进加载页等 running 事件重触发。
+      // 事件可能因状态陈旧永不抵达——超时兜底保证界面能退出加载页。
+      const generation = navigation.begin()
       void window.dshHub?.runtime?.hideView()
       set(toOpeningPatch(id))
+      armOpeningTimeout(id, generation)
       return
     }
     void get().openWorkspace(id)
@@ -164,4 +210,5 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
   },
 
   setPendingOpen: (id) => set((state) => ({ pendingOpen: [...state.pendingOpen, id] }))
-})
+  }
+}

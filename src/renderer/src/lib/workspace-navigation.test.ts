@@ -21,26 +21,33 @@ describe('createNavigationGuard', () => {
     expect(guard.isCurrent(second)).toBe(true)
   })
 
-  it('begin(id) 记录在途实例，clearInFlight 仅清同一实例', () => {
+  it('begin(id) 记录在途实例，clearInFlight 按 id+导航代只清自己的在途', () => {
     const guard = createNavigationGuard()
     expect(guard.inFlight()).toBeNull()
-    guard.begin('a')
+    const genA = guard.begin('a')
     expect(guard.inFlight()).toBe('a')
     // 后续导航切到别的实例：在途标记随之更新
-    guard.begin('b')
+    const genB = guard.begin('b')
     expect(guard.inFlight()).toBe('b')
-    // 过期完成回调用旧 id 清理，不能误清当前在途实例
-    guard.clearInFlight('a')
+    // 过期完成回调用旧 id+旧代清理，不能误清当前在途实例
+    guard.clearInFlight('a', genA)
     expect(guard.inFlight()).toBe('b')
-    guard.clearInFlight('b')
+    guard.clearInFlight('b', genB)
     expect(guard.inFlight()).toBeNull()
   })
 
-  it('begin() 不带 id 时不改变在途实例', () => {
+  it('换导航代后残留标记读作无在途（不抑制状态事件重触发）', () => {
     const guard = createNavigationGuard()
     guard.begin('a')
+    // 不带 id 的导航（侧栏 starting 分支 / 切详情）也递增代号：旧标记视为过期
     guard.begin()
-    expect(guard.inFlight()).toBe('a')
+    expect(guard.inFlight()).toBeNull()
+    // 过期代号的清理不影响之后新记录的在途
+    const genC = guard.begin('c')
+    guard.clearInFlight('c', genC - 1)
+    expect(guard.inFlight()).toBe('c')
+    guard.clearInFlight('c', genC)
+    expect(guard.inFlight()).toBeNull()
   })
 })
 
