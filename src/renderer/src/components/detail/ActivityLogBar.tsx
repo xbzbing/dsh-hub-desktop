@@ -22,6 +22,11 @@ export default function ActivityLogBar(props: ActivityLogBarProps): ReactNode {
   const logMoreRef = useRef<HTMLDivElement | null>(null)
   const latestLine = activity?.at(-1)
 
+  // 信息栏固定单行：最新一条若本身含多行（如带换行的错误），只取最后一个非空行；
+  // 过长再由 CSS 截断省略，不换行、不出滚动条。完整内容去「更多」弹层看。
+  const latestText = latestLine !== undefined ? formatActivity(t, latestLine) : t('detail.log.empty')
+  const singleLine = latestText.split('\n').map((line) => line.trimEnd()).filter((line) => line !== '').at(-1) ?? latestText
+
   // 「更多」弹层：打开与新行到达时滚到最新。
   useEffect(() => {
     const element = logMoreRef.current
@@ -32,8 +37,8 @@ export default function ActivityLogBar(props: ActivityLogBarProps): ReactNode {
     <>
       <div className="detail-logbar" data-testid="detail-logbar">
         <div className="detail-logbar__body" ref={logBodyRef} data-testid="detail-logbar-body">
-          <p className="detail-logbar__line num">
-            {latestLine !== undefined ? formatActivity(t, latestLine) : t('detail.log.empty')}
+          <p className="detail-logbar__line num" title={singleLine}>
+            {singleLine}
           </p>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={() => setShowMore(true)} data-testid="detail-logbar-more">
