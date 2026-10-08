@@ -72,7 +72,9 @@ async function waitForStatus(
   manager: SshTunnelManager,
   id: string,
   status: InstanceStatusEvent['status'],
-  timeoutMs = 3000
+  // CI 的 Windows runner 负载高时达到 running 偏慢（并发用例曾在 ~3s 擦边超时）；
+  // 放宽等待预算消除时序抖动，正常情况仍在到达目标状态时立即返回。
+  timeoutMs = 8000
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
