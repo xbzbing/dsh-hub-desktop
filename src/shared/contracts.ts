@@ -429,10 +429,10 @@ export const VAULT_IPC = {
   clear: 'vault:clear'
 } as const
 
-/** 单个实例的记住策略。默认不保存（显式勾选才落盘，README/设计文档的安全承诺）。 */
+/** 单个实例的记住策略。新实例默认保存密码和会话，用户可显式取消。 */
 export const DEFAULT_VAULT_POLICY = {
-  rememberPassword: false,
-  rememberSession: false
+  rememberPassword: true,
+  rememberSession: true
 } as const satisfies VaultPolicy
 
 export const VaultPolicySchema = z.object({

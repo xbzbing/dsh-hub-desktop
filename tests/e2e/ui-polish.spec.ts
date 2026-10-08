@@ -648,12 +648,9 @@ test('认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + pill h
     await backToOverview(win)
     await win.getByTestId('instances-table').getByText('OTP 网关实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
-    // 安全默认：新实例默认不保存，显式勾选才落盘（README/设计文档承诺）。
-    await expect(win.getByTestId('vault-remember-password')).not.toBeChecked()
-    await expect(win.getByTestId('vault-remember-session')).not.toBeChecked()
-    // 本用例随后验证「密码入保险库 → 已记住」链路：按新默认须显式勾选后登录。
-    await win.getByTestId('vault-remember-password').click()
+    // 新实例默认保存密码与会话，用户可显式取消。
     await expect(win.getByTestId('vault-remember-password')).toBeChecked()
+    await expect(win.getByTestId('vault-remember-session')).toBeChecked()
 
     // 未登录态 —— 按钮是「登录」且没有「登出」
     await expect(win.getByTestId('login-btn')).toBeVisible()
@@ -723,9 +720,6 @@ test('认证链路:按钮状态化 + 密码屏/OTP 屏 + 无 OTP 直连 + pill h
     await backToOverview(win)
     await win.getByTestId('instances-table').getByText('无 OTP 网关实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
-    // 与首段同理：安全默认下须显式勾选，密码才入保险库供随后「使用已存密码」复用。
-    await win.getByTestId('vault-remember-password').click()
-    await expect(win.getByTestId('vault-remember-password')).toBeChecked()
     await win.getByTestId('login-btn').click()
     await expect(win.getByTestId('auth-panel')).toBeVisible()
     await win.getByTestId('auth-password').fill('pw1234')
@@ -816,9 +810,7 @@ test('从已连接的工作区重新登录成功后自动重开工作区', async
     await win.getByTestId('instances-table').getByText('重登自动重开实例', { exact: true }).click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
 
-    // 首次登录 → connected。安全默认下密码须显式勾选才入保险库（供后续静默复登复用）。
-    await win.getByTestId('vault-remember-password').click()
-    await expect(win.getByTestId('vault-remember-password')).toBeChecked()
+    // 首次登录 → connected（密码入保险库供后续显式复用）
     await win.getByTestId('login-btn').click()
     await expect(win.getByTestId('auth-panel')).toBeVisible()
     await win.getByTestId('auth-password').fill('pw1234')

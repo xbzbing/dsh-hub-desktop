@@ -27,7 +27,7 @@ Privacy policy: [PRIVACY.md](PRIVACY.md) — this app collects no personal data,
   - `http/https`: Remote direct connection
 - **Integrated Authentication**: Gateway five-state detection (login page / OTP / onboarding / API 401 / no auth required). Auth panel with full state flow (password → 6-digit OTP / backup codes → lockout countdown). **Silent login with saved passwords** (after checking "Remember password", no re-entry needed on restart/session expiry — passwords never cross process boundaries)
 - **WebView Integration**: Partitioned cookie injection (inject before loadURL), 302/401 request interception, session expiry signal-driven re-authentication
-- **Credential Vault**: System keychain (safeStorage), opt-in only (unchecked by default); instant clear on uncheck/forget
+- **Credential Vault**: System keychain (safeStorage), remembered by default after login (uncheck to opt out); instant clear on uncheck/forget
 - **Audit Log**: Whitelist projection, credentials never stored
 - **SSH Security**: TOFU host fingerprint verification (trust on first use / reject on change), passwords passed via ephemeral memory channel
 - **Plugin Management**: List installed plugins for the instance's environment in the detail page (icon / name / version / npm / GitHub / install source), with install, check-for-update, and uninstall. Update checks evaluate both the dsh main package and sub-package peers for compatibility, warning instead of upgrading when incompatible; plugins with host-side code prompt an instance restart after changes; metadata is localized to the UI language
@@ -70,7 +70,7 @@ src/
 │  ├─ transport/    Local spawn / SSH tunnel / HTTP direct connection
 │  ├─ auth/         Gateway client + auth state machine + session restoration + silent login
 │  ├─ webview/      Partitioned cookie injection, request interception, view planning
-│  ├─ vault/        Credential vault (keychain, explicit opt-in)
+│  ├─ vault/        Credential vault (keychain, remembered by default)
 │  ├─ audit/        Audit log (whitelist projection)
 │  └─ shell/        Tray / native settings / notifications (injectable implementation)
 ├─ preload/         contextBridge whitelist, only exposes dshHub.*
@@ -143,7 +143,7 @@ Before an official source release, run `CI=true pnpm release:check -- --pre` and
 
 - Registry / audit / logs / documentation **never store** passwords, OTPs, cookies, or private keys;
   passwords and OTPs are only passed ephemerally via IPC parameters and reside in memory
-- Vault writes require **explicit user opt-in** (unchecked by default); degraded mode (keychain unavailable) never persists to disk
+- Vault writes: **remembered by default** after login (user can uncheck); degraded mode (keychain unavailable) never persists to disk
 - Audit records are constructed via whitelist projection (object spread prohibited), structurally preventing credential leaks
 - SSH host key TOFU: trust on first fingerprint confirmation, **reject on any fingerprint change**;
   recovery requires explicit forgetting of that host fingerprint
