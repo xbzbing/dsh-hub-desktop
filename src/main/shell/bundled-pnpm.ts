@@ -52,3 +52,27 @@ export function materializePnpmLauncher(spec: PnpmLauncherSpec): string {
   }
   return spec.binDir
 }
+
+/**
+ * 把随包 pnpm 启动器目录并入子进程 PATH。
+ *
+ * 平台差异（关键）：
+ * - Windows：系统 pnpm 多为损坏的全局 shim（nvm 下 `shim integrity check failed`），
+ *   自带 pnpm 必须**前置**胜出；
+ * - 其余平台：系统 pnpm 正常，且与用户既有 profile 的 store 大版本匹配（例如 pnpm 12 建的
+ *   profile 用自带的 pnpm 10 操作会 `ERR_PNPM_UNEXPECTED_STORE`），故自带 pnpm 仅作**后置**兜底，
+ *   系统 pnpm 优先。
+ *
+ * pnpmBinDir 为空时原样返回 basePath。
+ */
+export function withBundledPnpmPath(
+  basePath: string,
+  pnpmBinDir: string | undefined,
+  platform: NodeJS.Platform = process.platform
+): string {
+  if (!pnpmBinDir) return basePath
+  const delimiter = platform === 'win32' ? ';' : ':'
+  return platform === 'win32'
+    ? `${pnpmBinDir}${delimiter}${basePath}`
+    : `${basePath}${delimiter}${pnpmBinDir}`
+}

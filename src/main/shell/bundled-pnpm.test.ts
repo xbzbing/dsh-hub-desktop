@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { materializePnpmLauncher } from './bundled-pnpm'
+import { materializePnpmLauncher, withBundledPnpmPath } from './bundled-pnpm'
 
 const dirs: string[] = []
 function workDir(): string {
@@ -40,5 +40,23 @@ describe('materializePnpmLauncher', () => {
     materializePnpmLauncher({ binDir, pnpmCliJs: '/x/pnpm.cjs', nodeCommand: '/custom/node' })
     const launcher = process.platform === 'win32' ? join(binDir, 'pnpm.cmd') : join(binDir, 'pnpm')
     expect(readFileSync(launcher, 'utf8')).toContain('/custom/node')
+  })
+})
+
+describe('withBundledPnpmPath', () => {
+  it('Windows 前置自带 pnpm（系统全局 shim 已损坏，自带必须胜出）', () => {
+    expect(withBundledPnpmPath('C:\\node;C:\\sys', 'C:\\pnpm-bin', 'win32')).toBe(
+      'C:\\pnpm-bin;C:\\node;C:\\sys'
+    )
+  })
+
+  it('非 Windows 后置自带 pnpm（系统 pnpm 优先，自带仅兜底）', () => {
+    expect(withBundledPnpmPath('/node:/usr/bin', '/pnpm-bin', 'darwin')).toBe('/node:/usr/bin:/pnpm-bin')
+    expect(withBundledPnpmPath('/node:/usr/bin', '/pnpm-bin', 'linux')).toBe('/node:/usr/bin:/pnpm-bin')
+  })
+
+  it('pnpmBinDir 为空时原样返回 basePath', () => {
+    expect(withBundledPnpmPath('/node:/usr/bin', undefined, 'darwin')).toBe('/node:/usr/bin')
+    expect(withBundledPnpmPath('/node:/usr/bin', '', 'win32')).toBe('/node:/usr/bin')
   })
 })
