@@ -210,11 +210,8 @@ describe('createInstanceStore / 基础 CRUD', () => {
     const reordered = await store.reorder([c.id, a.id, b.id])
     expect(reordered.map((r) => r.name)).toEqual(['丙', '甲', '乙'])
     // 落盘顺序与重排一致（重启后读回同样顺序）
-    expect((await readRegistryFile())?.instances.map((r: InstanceRecord) => r.name)).toEqual([
-      '丙',
-      '甲',
-      '乙'
-    ])
+    const persisted = (await readRegistryFile()) as { instances: InstanceRecord[] }
+    expect(persisted.instances.map((r) => r.name)).toEqual(['丙', '甲', '乙'])
   })
 
   it('reorder 负路径：长度不符 / 未知 id / 重复 id 一律拒绝且不落盘', async () => {
