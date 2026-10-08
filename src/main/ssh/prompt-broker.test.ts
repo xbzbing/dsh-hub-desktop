@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { SSH_IPC } from '@shared/contracts'
 import { createPromptBroker } from './prompt-broker'
 
 function makeBroker() {
@@ -22,7 +23,7 @@ describe('prompt-broker（用户提示代理）', () => {
       fingerprints: [],
       previousFingerprints: []
     })
-    expect(sent[0]?.channel).toBe('ssh:hostKeyDecision')
+    expect(sent[0]?.channel).toBe(SSH_IPC.hostKeyDecision)
     const requestId = sent[0]?.payload.requestId ?? ''
     expect(broker.replyHostKey(requestId, 'trust')).toBe(true)
     await expect(promise).resolves.toBe('trust')
@@ -46,7 +47,7 @@ describe('prompt-broker（用户提示代理）', () => {
   it('口令:回答后 resolve 明文;取消返回 null', async () => {
     const { broker, sent } = makeBroker()
     const promise = broker.requestAskpass({ instanceId: 'i1', prompt: 'Enter passphrase:' })
-    expect(sent[0]?.channel).toBe('ssh:askpassRequest')
+    expect(sent[0]?.channel).toBe(SSH_IPC.askpassRequest)
     const requestId = sent[0]?.payload.requestId ?? ''
     expect(broker.replyAskpass(requestId, 's3cret')).toBe(true)
     await expect(promise).resolves.toBe('s3cret')

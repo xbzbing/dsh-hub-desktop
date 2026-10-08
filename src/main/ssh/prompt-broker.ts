@@ -10,7 +10,7 @@
  * 口令只在内存中流转：不写盘、不写日志、不进审计。
  */
 import { randomUUID } from 'node:crypto'
-import { DSH_VERSION_IPC } from '@shared/contracts'
+import { DSH_VERSION_IPC, SSH_IPC } from '@shared/contracts'
 import type {
   AskpassPromptPayload,
   HostKeyDecision,
@@ -75,7 +75,7 @@ export function createPromptBroker(options: PromptBrokerOptions): PromptBroker {
         }, hostKeyTimeoutMs)
         timer.unref?.()
         pendingHostKeys.set(requestId, { resolve, timer })
-        options.send('ssh:hostKeyDecision', { ...request, requestId })
+        options.send(SSH_IPC.hostKeyDecision, { ...request, requestId })
       })
     },
 
@@ -88,7 +88,7 @@ export function createPromptBroker(options: PromptBrokerOptions): PromptBroker {
         }, askpassTimeoutMs)
         timer.unref?.()
         pendingAskpass.set(requestId, { resolve, timer })
-        options.send('ssh:askpassRequest', { ...request, requestId })
+        options.send(SSH_IPC.askpassRequest, { ...request, requestId })
       })
     },
 
