@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 
 /**
  * 高风险 UI 状态迁移的端到端守卫：
- * 1. 删除确认框打开时经 ⌘/Ctrl+数字 切换实例 —— 确认框必须随详情整体重挂载消失，
+ * 1. 删除确认框打开时经 切换修饰键+数字 切换实例 —— 确认框必须随详情整体重挂载消失，
  *    否则「A 的确认框在 B 上生效」会造成错实例的破坏性删除；
  * 2. 设置页主题偏好跨重启持久化（hydrateSettings → settings.update 全链路）。
  * 实例固定用不可达的本机 http 端点并显式 start：状态进入 error 后侧栏点击走
@@ -77,9 +77,10 @@ test('删除确认框打开时切换实例：确认框随详情重挂载消失�
   await win.getByTestId('delete-btn').click()
   await expect(win.getByTestId('confirm-delete')).toBeVisible()
 
-  // ⌘/Ctrl+数字是窗口级监听，模态框开着也能切走。切换必须重挂载详情：
-  // 修复前确认框会留在 B 的详情上（错实例删除）；修复后随重挂载整体消失。
-  await win.keyboard.press('Control+2')
+  // 切换修饰键+数字是窗口级监听，模态框开着也能切走（macOS 为 ⌘，其余平台为 Alt）。
+  // 切换必须重挂载详情：修复前确认框会留在 B 的详情上（错实例删除）；修复后随重挂载整体消失。
+  const switchMod = process.platform === 'darwin' ? 'Meta' : 'Alt'
+  await win.keyboard.press(`${switchMod}+2`)
   await expect(win.getByTestId('confirm-delete')).toBeHidden()
   await expect(win.getByRole('heading', { name: '守卫实例二' })).toBeVisible()
 

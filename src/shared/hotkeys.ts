@@ -15,3 +15,17 @@ export function hotkeyDigitIndex(key: string, code: string): number | null {
   if (/^[1-9]$/.test(key)) return Number(key) - 1
   return null
 }
+
+/**
+ * 实例切换的修饰键按平台区分:macOS 用 ⌘(Meta),其余平台(Windows/Linux)用 Alt
+ * ——Windows 上 ⌘ 对应 Win 键不便使用,改用 Alt。主进程转发白名单与渲染层按键处理
+ * 共用本判定,两侧对「哪个修饰键触发切换」保持一致。
+ */
+export function switchModifierKey(platform: string): 'Meta' | 'Alt' {
+  return platform === 'darwin' ? 'Meta' : 'Alt'
+}
+
+/** 该瞬间的修饰键状态是否满足当前平台的「切换修饰键被按住」。 */
+export function hasSwitchModifier(platform: string, mods: { meta: boolean; alt: boolean }): boolean {
+  return platform === 'darwin' ? mods.meta : mods.alt
+}

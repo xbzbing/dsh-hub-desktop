@@ -5,6 +5,8 @@ import { Icon } from '../lib/icons'
 import logoUrl from '../../../../design/dsh-hub-logo.svg'
 import { STATUS_INFO, TYPE_INFO, toDisplayStatus } from '../lib/format'
 import { instanceSwitchIndex } from '../lib/hotkeys'
+import { rendererPlatform } from '../lib/platform'
+import { switchModifierKey } from '@shared/hotkeys'
 import { useAppStore } from '../store'
 
 /** 快捷键序号上限:⌘+1..9,超出上限的实例不参与切换。 */
@@ -127,7 +129,10 @@ export default function Sidebar(): ReactNode {
 
   useEffect(() => {
     const heldModifiers = new Set<string>()
-    const isSwitchModifier = (keyName: string): boolean => keyName === 'Meta' || keyName === 'Control'
+    // 切换修饰键按平台区分:macOS 为 Meta(⌘),其余平台(Windows/Linux)为 Alt。
+    // 每次按键实时读取平台(data-platform 在 app:info 到达后才写入,不能在挂载时快照)。
+    const isSwitchModifier = (keyName: string): boolean =>
+      keyName === switchModifierKey(rendererPlatform())
     let hintTimer: ReturnType<typeof setTimeout> | null = null
     let hintVisible = false
     /** 收起角标并取消未到期的显示计时(松开全部修饰键或窗口失焦时)。 */
@@ -185,7 +190,8 @@ export default function Sidebar(): ReactNode {
           key: event.key,
           code: event.code,
           metaKey: event.meta,
-          ctrlKey: event.ctrl
+          ctrlKey: event.ctrl,
+          altKey: event.alt
         })
       )
     })
@@ -423,7 +429,9 @@ function InstanceItem(props: {
       onFocus={(event) => props.onRailTooltip(event.currentTarget, props.item.name)}
       onBlur={props.onRailTooltipHide}
       aria-keyshortcuts={
-        props.hotkey !== undefined ? `Meta+${props.hotkey} Control+${props.hotkey}` : undefined
+        props.hotkey !== undefined
+          ? `${switchModifierKey(rendererPlatform())}+${props.hotkey}`
+          : undefined
       }
       data-testid={`inst-${props.item.id}`}
       title={props.rail ? props.item.name : props.item.address}

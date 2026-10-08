@@ -85,6 +85,9 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
 
 test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
   test.setTimeout(60_000)
+  // 切换修饰键随平台:macOS 为 ⌘(Meta),其余平台(Windows/Linux)为 Alt。
+  const switchMod = process.platform === 'darwin' ? 'Meta' : 'Alt'
+  const switchModLower = process.platform === 'darwin' ? 'meta' : 'alt'
   const listIds = async (): Promise<string[]> => {
     const listed = await win.evaluate(async () => {
       const r = await window.dshHub.instances.list()
@@ -147,8 +150,8 @@ test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
   // 不按修饰键时不显示序号
   await expect(badge1).toBeHidden()
 
-  // 按住 Control(与 ⌘ 同为切换修饰键):满 0.5 秒延迟窗口后序号才显示,松开即收起
-  await win.keyboard.down('Control')
+  // 按住切换修饰键:满 0.5 秒延迟窗口后序号才显示,松开即收起
+  await win.keyboard.down(switchMod)
   await expect(badge1).toBeHidden()
   await expect(badge1).toBeVisible()
   await expect(badge1).toHaveText('#1')
@@ -157,24 +160,24 @@ test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
   await expect(win.getByTestId(`inst-${demoId}`).getByTestId('hotkey-badge-3')).toHaveText('#3')
   // 序号只覆盖存在的行,不存在的 #4 不渲染
   await expect(win.getByTestId('hotkey-badge-4')).toHaveCount(0)
-  await win.keyboard.up('Control')
+  await win.keyboard.up(switchMod)
   await expect(badge1).toBeHidden()
 
   // 切换不等显示:角标还在延迟窗口内,数字键已切到首行实例
-  await win.keyboard.down('Control')
+  await win.keyboard.down(switchMod)
   await expect(badge1).toBeHidden()
   await win.keyboard.down('1')
   await win.keyboard.up('1')
   await expect(win.getByTestId(`inst-${aId}`)).toHaveAttribute('aria-current', 'true')
   // 切换完成时角标仍未显示 → 切换没有等这 0.5 秒
   await expect(badge1).toBeHidden()
-  await win.keyboard.up('Control')
+  await win.keyboard.up(switchMod)
   await expect.poll(reachedTerminal, { timeout: 20_000 }).toBe(true)
   await expectShowing('快捷键实例一')
   await backHome()
 
-  // Control+2 → 切换到第二行实例
-  await win.keyboard.press('Control+2')
+  // 切换修饰键+2 → 切换到第二行实例
+  await win.keyboard.press(`${switchMod}+2`)
   await expect.poll(reachedTerminal, { timeout: 20_000 }).toBe(true)
   await expectShowing('快捷键实例二')
 
@@ -213,17 +216,17 @@ test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
     }, events)
   }
 
-  // ⌘ 注入原生视图 → hub 渲染层收到转发,序号照常显示
-  await sendToWorkspace([{ type: 'keyDown', keyCode: 'Meta' }])
+  // 切换修饰键注入原生视图 → hub 渲染层收到转发,序号照常显示
+  await sendToWorkspace([{ type: 'keyDown', keyCode: switchMod }])
   await expect(badge1).toBeVisible()
 
-  // 视图内 ⌘+1 → 切回首行实例(转发链路:视图输入 → 白名单过滤 → 窗口事件)
-  await sendToWorkspace([{ type: 'keyDown', keyCode: '1', modifiers: ['meta'] }])
+  // 视图内 修饰键+1 → 切回首行实例(转发链路:视图输入 → 白名单过滤 → 窗口事件)
+  await sendToWorkspace([{ type: 'keyDown', keyCode: '1', modifiers: [switchModLower] }])
   await expect.poll(reachedTerminal, { timeout: 20_000 }).toBe(true)
   await expectShowing('快捷键实例一')
 
-  // 释放 ⌘ 从窗口侧注入(切换后焦点已离开原视图)→ 序号收起
-  await win.keyboard.up('Meta')
+  // 释放切换修饰键从窗口侧注入(切换后焦点已离开原视图)→ 序号收起
+  await win.keyboard.up(switchMod)
   await expect(badge1).toBeHidden()
 
   // 清理:回首页并删除本用例创建的实例,演示实例回到侧栏首位(后置用例的前置)

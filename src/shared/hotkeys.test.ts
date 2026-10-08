@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hotkeyDigitIndex } from './hotkeys'
+import { hasSwitchModifier, hotkeyDigitIndex, switchModifierKey } from './hotkeys'
 
 describe('hotkeyDigitIndex', () => {
   it('主键盘 Digit1-9 映射为 0-8', () => {
@@ -23,5 +23,24 @@ describe('hotkeyDigitIndex', () => {
     expect(hotkeyDigitIndex('n', 'KeyN')).toBeNull()
     expect(hotkeyDigitIndex('!', 'Digit1')).toBe(0)
     expect(hotkeyDigitIndex('', '')).toBeNull()
+  })
+})
+
+describe('switchModifierKey / hasSwitchModifier', () => {
+  it('macOS 用 Meta(⌘)，其余平台用 Alt', () => {
+    expect(switchModifierKey('darwin')).toBe('Meta')
+    expect(switchModifierKey('win32')).toBe('Alt')
+    expect(switchModifierKey('linux')).toBe('Alt')
+  })
+
+  it('macOS 只认 Meta 按住，Alt 不触发', () => {
+    expect(hasSwitchModifier('darwin', { meta: true, alt: false })).toBe(true)
+    expect(hasSwitchModifier('darwin', { meta: false, alt: true })).toBe(false)
+  })
+
+  it('Windows/Linux 只认 Alt 按住，Meta(Win 键) 不触发', () => {
+    expect(hasSwitchModifier('win32', { meta: false, alt: true })).toBe(true)
+    expect(hasSwitchModifier('win32', { meta: true, alt: false })).toBe(false)
+    expect(hasSwitchModifier('linux', { meta: false, alt: true })).toBe(true)
   })
 })

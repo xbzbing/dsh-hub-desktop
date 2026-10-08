@@ -112,7 +112,7 @@ export function createWorkspaceHost(
     // 工作区视图持有键盘焦点时,主窗口收不到按键;会话切换所需的白名单输入
     // (⌘/Ctrl 与其数字组合)在此转发给 hub 渲染层,其余输入原样交回页面。
     webContents.on('before-input-event', (_event, input) => {
-      const hotkey = toWorkspaceHotkey(input)
+      const hotkey = toWorkspaceHotkey(input, process.platform)
       if (hotkey) forwardHotkey(hotkey)
     })
     // dsh web 的复制按钮依赖 navigator.clipboard 写入；只放行剪贴板写入类权限，

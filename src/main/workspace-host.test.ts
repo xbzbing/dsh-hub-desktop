@@ -320,7 +320,7 @@ describe('createWorkspaceHost', () => {
     expect(fakeViews()[2]?.webContents.close).not.toHaveBeenCalled()
   })
 
-  it('白名单转发工作区的 ⌘/Ctrl 与其数字组合,其余输入不转发、不拦截', () => {
+  it('白名单转发工作区的切换修饰键与其数字组合,其余输入不转发、不拦截', () => {
     const forward = vi.fn()
     const hub = hubWindow()
     const host = createWorkspaceHost(() => hub as never, () => 'en-US', forward)
@@ -328,21 +328,36 @@ describe('createWorkspaceHost', () => {
     const beforeInput = fakeViews()[0]?.webContents.handlers.get('before-input-event')
     expect(beforeInput).toBeDefined()
 
-    const base = { isAutoRepeat: false, isComposing: false, shift: false, alt: false, location: 0, modifiers: [] }
+    const base = {
+      isAutoRepeat: false,
+      isComposing: false,
+      shift: false,
+      meta: false,
+      control: false,
+      alt: false,
+      location: 0,
+      modifiers: []
+    }
     const guard = { preventDefault: vi.fn() }
-    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'Meta', code: 'MetaLeft', meta: false, control: false })
-    beforeInput?.(guard, { ...base, type: 'keyDown', key: '2', code: 'Digit2', meta: true, control: false })
-    beforeInput?.(guard, { ...base, type: 'keyUp', key: 'Meta', code: 'MetaLeft', meta: false, control: false })
+    // 切换修饰键随宿主平台:macOS 为 ⌘(Meta),其余平台(Windows/Linux)为 Alt。
+    const isMac = process.platform === 'darwin'
+    const modKey = isMac ? 'Meta' : 'Alt'
+    const modCode = isMac ? 'MetaLeft' : 'AltLeft'
+    const modDown = isMac ? { meta: true } : { alt: true }
+
+    beforeInput?.(guard, { ...base, type: 'keyDown', key: modKey, code: modCode })
+    beforeInput?.(guard, { ...base, type: 'keyDown', key: '2', code: 'Digit2', ...modDown })
+    beforeInput?.(guard, { ...base, type: 'keyUp', key: modKey, code: modCode })
     expect(forward.mock.calls.map((call) => call[0])).toEqual([
-      { phase: 'down', key: 'Meta', code: 'MetaLeft', meta: false, ctrl: false },
-      { phase: 'down', key: '2', code: 'Digit2', meta: true, ctrl: false },
-      { phase: 'up', key: 'Meta', code: 'MetaLeft', meta: false, ctrl: false }
+      { phase: 'down', key: modKey, code: modCode, meta: false, ctrl: false, alt: false },
+      { phase: 'down', key: '2', code: 'Digit2', meta: isMac, ctrl: false, alt: !isMac },
+      { phase: 'up', key: modKey, code: modCode, meta: false, ctrl: false, alt: false }
     ])
 
     // 工作区页面自己的键盘输入既不转发,也绝不被 preventDefault 拦截。
-    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'a', code: 'KeyA', meta: false, control: false })
-    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'c', code: 'KeyC', meta: true, control: false })
-    beforeInput?.(guard, { ...base, type: 'char', key: '1', code: 'Digit1', meta: true, control: false })
+    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'a', code: 'KeyA' })
+    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'c', code: 'KeyC', ...modDown })
+    beforeInput?.(guard, { ...base, type: 'char', key: '1', code: 'Digit1', ...modDown })
     expect(forward).toHaveBeenCalledTimes(3)
     expect(guard.preventDefault).not.toHaveBeenCalled()
   })
