@@ -48,18 +48,36 @@ export function DshVersionPanel({ control }: { control: DshVersionControl | null
 
   return (
     <div className="dsh-version-control mt12" data-testid="version-manage">
-      {/* 可升级且检测到新版才给出升级主按钮；升级中全部禁用。 */}
-      {versionCheck?.canUpgrade === true && versionCheck.hasUpdate && (
+      {/*
+        可升级且检测到新版才给出升级主按钮；升级中按钮禁用，阶段文字（检查中 / 下载中 /
+        安装中）显示在按钮右侧，与按钮同一行。详情日志长短不一会让卡片忽长忽短，这里只显示
+        阶段，逐条下载/安装日志改到实例底部信息栏查看；npm 不提供可用的总量，不画进度条。
+      */}
+      {((versionCheck?.canUpgrade === true && versionCheck.hasUpdate) ||
+        (progress !== null &&
+          (progress.phase === 'checking' ||
+            progress.phase === 'downloading' ||
+            progress.phase === 'installing'))) && (
         <div className="dsh-version-control__row">
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => void control.runUpgrade()}
-            disabled={active}
-            data-testid="upgrade-btn"
-          >
-            <Icon name="refresh" />
-            {t('detail.version.upgrade')}
-          </button>
+          {versionCheck?.canUpgrade === true && versionCheck.hasUpdate && (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => void control.runUpgrade()}
+              disabled={active}
+              data-testid="upgrade-btn"
+            >
+              <Icon name="refresh" />
+              {t('detail.version.upgrade')}
+            </button>
+          )}
+          {progress !== null &&
+            (progress.phase === 'checking' ||
+              progress.phase === 'downloading' ||
+              progress.phase === 'installing') && (
+            <p className="meta" data-testid="upgrade-progress">
+              {t(PHASE_KEYS[progress.phase])}
+            </p>
+          )}
         </div>
       )}
 
@@ -95,20 +113,6 @@ export function DshVersionPanel({ control }: { control: DshVersionControl | null
             {t('detail.version.retry')}
           </button>
         </div>
-      )}
-
-      {/*
-        升级中：只显示阶段文字（检查中 / 下载中 / 安装中）。详情日志长短不一会让卡片忽长忽短，
-        这里不再展示，逐条下载/安装日志改到实例底部信息栏查看。npm 不提供可用的总量与进度，
-        任何百分比都是编造的，所以也不画进度条。
-      */}
-      {progress !== null &&
-        (progress.phase === 'checking' ||
-          progress.phase === 'downloading' ||
-          progress.phase === 'installing') && (
-        <p className="meta mt8" data-testid="upgrade-progress">
-          {t(PHASE_KEYS[progress.phase])}
-        </p>
       )}
 
       {/* 完成：阶段文字 + 新版本号（版本行同时刷新）。 */}
