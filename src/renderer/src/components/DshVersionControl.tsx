@@ -98,20 +98,16 @@ export function DshVersionPanel({ control }: { control: DshVersionControl | null
       )}
 
       {/*
-        升级中：只显示一行「阶段 · 下载记录」。npm 不提供可用的总量与进度，任何百分比都是编造的，
-        所以不画进度条；详情行单行省略，完整日志在实例底部信息栏。
+        升级中：只显示阶段文字（检查中 / 下载中 / 安装中）。详情日志长短不一会让卡片忽长忽短，
+        这里不再展示，逐条下载/安装日志改到实例底部信息栏查看。npm 不提供可用的总量与进度，
+        任何百分比都是编造的，所以也不画进度条。
       */}
       {progress !== null &&
         (progress.phase === 'checking' ||
           progress.phase === 'downloading' ||
           progress.phase === 'installing') && (
-        <p
-          className="meta mt8 version-progress-detail"
-          data-testid="upgrade-progress"
-          title={`${t(PHASE_KEYS[progress.phase])}${progress.detail ? ` · ${progress.detail}` : ''}`}
-        >
+        <p className="meta mt8" data-testid="upgrade-progress">
           {t(PHASE_KEYS[progress.phase])}
-          {progress.detail ? ` · ${progress.detail}` : ''}
         </p>
       )}
 

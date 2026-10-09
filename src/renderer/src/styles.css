@@ -1242,13 +1242,6 @@ h3,
   align-items: center;
   gap: 8px;
 }
-/* 升级进度详情（如「安装中 · 90% · 下载依赖 (896)：<包路径>」）：只占一行，超出省略；
-   完整日志在实例底部信息栏，这里不铺开。悬停可经 title 看全文。 */
-.version-progress-detail {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .dsh-version-control__reason {
   color: var(--muted, #6b7280);
   font-size: 12px;
