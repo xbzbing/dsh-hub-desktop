@@ -353,14 +353,7 @@ void app.whenReady().then(() => {
     getVault: () => vault,
     store: instanceStore,
     getTunnels: () => tunnels,
-    auditWrite,
-    // 远端重启导致会话失效后，重新登录（含已存密码静默登录）成功即刷新对应
-    // 工作区：注入新会话 Cookie 并导航回工作区 URL，否则视图停留在旧页面。
-    // 与「session-expired 信号 → 重探 → connected → reload」路径互补：那条路径
-    // 只覆盖无需重新登录（会话仍有效）的静默恢复，登录成功必须在这里显式触发。
-    onAuthenticated: (instanceId) => {
-      void workspaceHost.reloadSession(instanceId, auth?.sessionCookie(instanceId) ?? null)
-    }
+    auditWrite
   })
   auth = authController.auth
 
@@ -386,6 +379,9 @@ void app.whenReady().then(() => {
       openExternalSafely(url, (target) => shell.openExternal(target))
     },
     closeInstanceView: (instanceId) => workspaceHost.disconnect(instanceId),
+    // 重新登录成功后刷新工作区：注入最新会话 Cookie 并导航回工作区 URL，取代会话失效前的旧页面。
+    reloadInstanceView: (instanceId) =>
+      workspaceHost.reloadSession(instanceId, auth?.sessionCookie(instanceId) ?? null),
     setInstanceViewBounds: (bounds) => workspaceHost.setBounds(bounds),
     showInstanceTooltip: (tooltip) => workspaceTooltipHost.show(tooltip),
     hideInstanceTooltip: () => workspaceTooltipHost.hide(),

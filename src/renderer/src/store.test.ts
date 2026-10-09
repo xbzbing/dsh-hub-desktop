@@ -326,6 +326,43 @@ describe('store settings', () => {
     expect(toStatusInfo('running', useAppStore.getState().workspaceConnected.running).labelKey).toBe('state.connected')
   })
 
+  it('重新登录后重新打开工作区并刷新：先 openView 再 reloadView', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    const reloadView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, reloadView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({
+      selection: 'running',
+      statuses: { running: { id: 'running', status: 'running', at: '2026-09-18T00:00:00.000Z' } },
+      workspaceConnected: { running: true }
+    })
+
+    await useAppStore.getState().reopenWorkspaceRefreshed('running')
+
+    expect(openView).toHaveBeenCalledWith('running')
+    expect(reloadView).toHaveBeenCalledWith('running')
+    expect(useAppStore.getState().workspaceOpen).toBe(true)
+  })
+
+  it('重新打开工作区失败时不刷新（openView 失败则不 reloadView）', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: false as const, code: 'invalid-state', message: '未运行' }))
+    const reloadView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, reloadView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({ selection: 'running' })
+
+    await useAppStore.getState().reopenWorkspaceRefreshed('running')
+
+    expect(openView).toHaveBeenCalledWith('running')
+    expect(reloadView).not.toHaveBeenCalled()
+  })
+
   it('打开工作区成功时先显示加载状态，再保留 selection 并显示内嵌工作区', async () => {
     const useAppStore = await freshStore()
     let resolveOpen: ((value: { ok: true; value: null }) => void) | undefined

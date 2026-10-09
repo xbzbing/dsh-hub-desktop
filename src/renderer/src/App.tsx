@@ -71,7 +71,7 @@ export default function App() {
         useAppStore.setState((state) => ({
           loginGate: state.loginGate.filter((id) => id !== event.instanceId)
         }))
-        void store.openWorkspace(event.instanceId)
+        void store.reopenWorkspaceRefreshed(event.instanceId)
         return
       }
       if (
@@ -83,7 +83,7 @@ export default function App() {
           overlayBusy: store.wizardOpen || store.settingsOpen || store.workspaceOpening
         })
       ) {
-        void store.openWorkspace(event.instanceId)
+        void store.reopenWorkspaceRefreshed(event.instanceId)
       }
     })
     return () => {

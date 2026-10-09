@@ -77,6 +77,7 @@ let authFake: {
 }
 let clearPartitionSession: ReturnType<typeof vi.fn>
 let closeInstanceView: ReturnType<typeof vi.fn>
+let reloadInstanceView: ReturnType<typeof vi.fn>
 let showInstanceTooltip: ReturnType<typeof vi.fn>
 let hideInstanceTooltip: ReturnType<typeof vi.fn>
 let vaultFake: Record<string, ReturnType<typeof vi.fn>>
@@ -192,6 +193,7 @@ beforeEach(async () => {
   }
   clearPartitionSession = vi.fn(async () => undefined)
   closeInstanceView = vi.fn()
+  reloadInstanceView = vi.fn(async () => undefined)
   showInstanceTooltip = vi.fn(async () => undefined)
   hideInstanceTooltip = vi.fn()
   vaultFake = {
@@ -282,6 +284,7 @@ beforeEach(async () => {
     onSettingsChanged: onSettingsChanged as never,
     clearPartitionSession: clearPartitionSession as never,
     closeInstanceView: closeInstanceView as never,
+    reloadInstanceView: reloadInstanceView as never,
     showInstanceTooltip: showInstanceTooltip as never,
     hideInstanceTooltip: hideInstanceTooltip as never,
     instanceViewUrl: instanceViewUrlFake as never,
@@ -325,6 +328,7 @@ describe('registerIpc', () => {
       'instances:stop',
       'instances:restart',
       'instances:openView',
+      'instances:reloadView',
       'instances:openInBrowser',
       'instances:updateViewBounds',
       'instances:showTooltip',
@@ -407,6 +411,17 @@ describe('registerIpc', () => {
     expect(authFake.forget).not.toHaveBeenCalled()
     expect(vaultFake['forgetInstance']).not.toHaveBeenCalled()
     expect(vaultFake['forgetSession']).not.toHaveBeenCalled()
+  })
+
+  it('reloadView 刷新指定实例的内嵌工作区会话（重新登录后导航回工作区 URL）', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const result = (await invoke('instances:reloadView', created.value.id)) as { ok: boolean; value: null }
+
+    expect(result).toEqual({ ok: true, value: null })
+    expect(reloadInstanceView).toHaveBeenCalledWith(created.value.id)
+    expect(runtimeFake.stop).not.toHaveBeenCalled()
   })
 
   it('restart:运行中的 hub 托管实例先停止再按注册表记录重新拉起', async () => {

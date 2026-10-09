@@ -53,6 +53,11 @@ export interface RuntimeHandlerDeps {
   vault: Vault
   verifyExternalAccess?: (url: string) => Promise<boolean>
   openInstanceView: (instance: InstanceRecord, url: string) => Promise<void>
+  /**
+   * 刷新指定实例已缓存的内嵌工作区：注入最新会话 Cookie 并导航回工作区 URL。
+   * 重新登录成功后调用，取代会话失效前的旧页面；未缓存视图时为空操作。
+   */
+  reloadInstanceView?: (instanceId: string) => Promise<void>
   /** 在系统默认浏览器中打开 URL；主进程按协议白名单校验后交给 shell.openExternal。 */
   openExternalUrl?: (url: string) => Promise<void>
   hideInstanceView?: () => void
@@ -251,6 +256,15 @@ export function registerRuntimeHandlers(
       } finally {
         if (openViewTasks.get(instanceId) === task) openViewTasks.delete(instanceId)
       }
+      return null
+    })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.reloadView, (_event, id: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      const instanceId = parseId(id)
+      // 重新登录成功后刷新：注入最新会话 Cookie 并导航回工作区 URL。未缓存视图时为空操作。
+      await deps.reloadInstanceView?.(instanceId)
       return null
     })
   )

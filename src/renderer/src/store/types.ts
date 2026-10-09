@@ -159,6 +159,11 @@ export interface WorkspaceSlice {
   openDetail: (id: string) => void
   /** 选择实例后打开其工作区；失败时保留详情，提示用户原因。 */
   openWorkspace: (id: string) => Promise<void>
+  /**
+   * 重新登录成功后重新打开工作区并刷新：先打开（可能复用缓存视图），再强制注入最新
+   * 会话 Cookie 并导航回工作区 URL，确保显示已登录页面而非会话失效前的旧页面。
+   */
+  reopenWorkspaceRefreshed: (id: string) => Promise<void>
   /** 断开指定实例的内嵌工作区，不停止其运行时。 */
   disconnectWorkspace: (id: string) => Promise<void>
   /** 侧栏入口：处于错误状态的本机实例直接展示详情，避免必然失败的启动尝试。 */

@@ -118,6 +118,16 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (set, get) => 
     }
   },
 
+  reopenWorkspaceRefreshed: async (id) => {
+    // 重新登录成功后：先打开工作区（openView 可能复用会话失效前的缓存视图），
+    // 再强制刷新——主进程注入最新会话 Cookie 并导航回工作区 URL，否则视图停在旧页面。
+    await get().openWorkspace(id)
+    // 仅在确实打开到该实例的工作区时刷新，避免打开失败（如实例未运行）后仍去刷新。
+    if (get().selection === id && get().workspaceOpen) {
+      await window.dshHub?.runtime.reloadView(id)
+    }
+  },
+
   openWorkspaceOrLogin: async (id) => {
     const name = get().instances.find((item) => item.id === id)?.name ?? id.slice(0, 8)
     // 远程实例运行后先探测认证：网关要求登录（await-credentials / needs-auth / await-otp）时
