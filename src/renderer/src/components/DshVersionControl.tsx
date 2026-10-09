@@ -49,9 +49,9 @@ export function DshVersionPanel({ control }: { control: DshVersionControl | null
   return (
     <div className="dsh-version-control mt12" data-testid="version-manage">
       {/*
-        可升级且检测到新版才给出升级主按钮；升级中按钮禁用，阶段文字（检查中 / 下载中 /
-        安装中）显示在按钮右侧，与按钮同一行。详情日志长短不一会让卡片忽长忽短，这里只显示
-        阶段，逐条下载/安装日志改到实例底部信息栏查看；npm 不提供可用的总量，不画进度条。
+        可升级且检测到新版才给出升级主按钮；按钮右侧同一行显示状态文字：未升级时为「发现新版本」
+        检测结果，升级中为阶段文字（检查中 / 下载中 / 安装中）。详情日志长短不一会让卡片忽长忽短，
+        这里只显示阶段，逐条下载/安装日志改到实例底部信息栏查看；npm 不提供可用的总量，不画进度条。
       */}
       {((versionCheck?.canUpgrade === true && versionCheck.hasUpdate) ||
         (progress !== null &&
@@ -70,6 +70,14 @@ export function DshVersionPanel({ control }: { control: DshVersionControl | null
               {t('detail.version.upgrade')}
             </button>
           )}
+          {versionCheck?.canUpgrade === true &&
+            versionCheck.hasUpdate &&
+            checkError === null &&
+            !active && (
+            <p className="meta" data-testid="version-check-result">
+              {foundText}
+            </p>
+          )}
           {progress !== null &&
             (progress.phase === 'checking' ||
               progress.phase === 'downloading' ||
@@ -81,15 +89,14 @@ export function DshVersionPanel({ control }: { control: DshVersionControl | null
         </div>
       )}
 
-      {/* 检测结果：可升级给新版本或已是最新；不可升级给原因，有新版时一并展示。 */}
-      {versionCheck !== null && checkError === null && !active && (
+      {/* 检测结果（非可升级新版的其余情况）：已是最新，或不可升级给原因、有新版时一并展示。 */}
+      {versionCheck !== null &&
+        checkError === null &&
+        !active &&
+        !(versionCheck.canUpgrade && versionCheck.hasUpdate) && (
         <p className="meta" data-testid="version-check-result">
           {versionCheck.canUpgrade ? (
-            versionCheck.hasUpdate ? (
-              foundText
-            ) : (
-              t('detail.version.upToDate')
-            )
+            t('detail.version.upToDate')
           ) : (
             <>
               {versionCheck.hasUpdate && <>{foundText} · </>}
