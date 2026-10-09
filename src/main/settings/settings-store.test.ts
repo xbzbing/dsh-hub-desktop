@@ -36,7 +36,7 @@ describe('settings-store（偏好落盘）', () => {
     await store.update({ tray: true })
     const raw = JSON.parse(await readFile(store.filePath(), 'utf8')) as Record<string, unknown>
     expect(Object.keys(raw).sort()).toEqual(
-      ['autoStart', 'inheritShellEnv', 'language', 'notifications', 'npmRegistry', 'theme', 'tray', 'workspaceCacheSize'].sort()
+      ['autoStart', 'inheritShellEnv', 'language', 'notifications', 'npmRegistry', 'preventSleepWhenRunning', 'theme', 'tray', 'workspaceCacheSize'].sort()
     )
     expect(raw['tray']).toBe(true)
   })
@@ -90,6 +90,7 @@ describe('settings-store（偏好落盘）', () => {
       tray: true,
       autoStart: false,
       notifications: false,
+      preventSleepWhenRunning: false,
       workspaceCacheSize: 3,
       inheritShellEnv: true,
       npmRegistry: ''

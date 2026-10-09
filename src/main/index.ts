@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, session, shell, nativeTheme } from 'electron'
+import { app, BrowserWindow, protocol, session, shell, nativeTheme, powerSaveBlocker } from 'electron'
 import type { Tray } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -31,6 +31,8 @@ import { createNativeSettingsApplier } from './shell/native-settings'
 import { applyNativeThemeSource } from './shell/native-theme'
 import type { HubNativePorts } from './shell/native-ports'
 import { createStatusNotifier } from './shell/status-notifier'
+import { createSleepBlocker } from './shell/sleep-blocker'
+import type { SleepBlockerController } from './shell/sleep-blocker'
 import { createDataDirOpener } from './shell/open-data-dir'
 import { createHomepageOpener } from './shell/open-homepage'
 import { openInstanceDir, openInstanceLogDir } from './shell/open-instance-dir'
@@ -181,6 +183,8 @@ let promptBroker: PromptBroker | null = null
 let auth: AuthRegistry | null = null
 /** dsh 运行时安装器（退出前需中止在飞的 npm 安装，故提到模块级）。 */
 let installerRef: RuntimeInstaller | null = null
+/** 休眠阻止控制器（退出前需释放电源断言，故提到模块级）。 */
+let sleepBlocker: SleepBlockerController | null = null
 let quitting = false
 
 const gracefulQuit = createGracefulQuit({
@@ -190,6 +194,8 @@ const gracefulQuit = createGracefulQuit({
   cleanup: async () => {
     // 先中止在飞的 npm 安装子进程，避免应用退出后仍在后台下载/装包。
     installerRef?.dispose()
+    // 释放休眠阻止断言，避免进程退出后仍让系统保持唤醒。
+    sleepBlocker?.dispose()
     const recycling: Array<Promise<void>> = []
     if (runtime) {
       recycling.push(runtime.stopAll().catch((error: unknown) => console.error('[main] 停止实例失败：', error)))
@@ -256,6 +262,17 @@ void app.whenReady().then(() => {
   const settings = createSettingsStore({ dir: dataRoot })
   settingsRef = settings
 
+  // 休眠阻止：有本机实例运行且偏好开启时持有电源断言（只拦空闲休眠，不接管合盖/熄屏）。
+  sleepBlocker = createSleepBlocker({
+    port: {
+      start: (type) => powerSaveBlocker.start(type),
+      stop: (id) => powerSaveBlocker.stop(id),
+      isStarted: (id) => powerSaveBlocker.isStarted(id)
+    },
+    onError: (error) => console.error('[main] 休眠阻止断言操作失败：', error)
+  })
+  sleepBlocker.setEnabled(settings.read().preventSleepWhenRunning)
+
   const trayController = createTrayController({
     readSettings: () => settings.read(),
     runtimeStates: lastRuntimeState,
@@ -280,6 +297,9 @@ void app.whenReady().then(() => {
     }
     if (changedKeys.includes('theme')) {
       applyNativeThemeSource(current.theme, nativeTheme)
+    }
+    if (changedKeys.includes('preventSleepWhenRunning')) {
+      sleepBlocker?.setEnabled(current.preventSleepWhenRunning)
     }
   }
 
@@ -317,7 +337,8 @@ void app.whenReady().then(() => {
     auditWrite,
     notify: (event, previous) => notifier.notify(event, previous),
     refreshTrayStatus: () => trayController.refreshStatus(),
-    closeWorkspace: (instanceId) => workspaceHost.close(instanceId)
+    closeWorkspace: (instanceId) => workspaceHost.close(instanceId),
+    onLocalStatus: (event) => sleepBlocker?.onLocalStatus(event)
   })
   runtime = runtimeController.runtime
   tunnels = runtimeController.tunnels

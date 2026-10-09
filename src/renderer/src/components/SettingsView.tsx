@@ -201,6 +201,20 @@ export default function SettingsView(): ReactNode {
           <label className="row mt12" style={{ gap: 8, alignItems: 'flex-start' }}>
             <input
               type="checkbox"
+              data-testid="settings-prevent-sleep"
+              checked={settings.preventSleepWhenRunning}
+              onChange={(event) => apply({ preventSleepWhenRunning: event.target.checked })}
+            />
+            <span style={{ flex: 1 }}>
+              <span>{t('settings.preventSleepWhenRunning')}</span>
+              <span className="meta" style={{ display: 'block', marginTop: 2 }}>
+                {t('settings.preventSleepWhenRunningHint')}
+              </span>
+            </span>
+          </label>
+          <label className="row mt12" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <input
+              type="checkbox"
               data-testid="settings-inherit-shell-env"
               checked={settings.inheritShellEnv}
               onChange={(event) => apply({ inheritShellEnv: event.target.checked })}

@@ -175,6 +175,14 @@ export const MESSAGES = {
   'settings.tray': { zh: '关闭窗口时最小化到托盘', en: 'Minimize to tray when the window closes' },
   'settings.autoStart': { zh: '开机自启', en: 'Launch at login' },
   'settings.notifications': { zh: '实例状态通知', en: 'Instance status notifications' },
+  'settings.preventSleepWhenRunning': {
+    zh: '有本机实例运行时阻止系统休眠',
+    en: 'Prevent system sleep while a local instance is running'
+  },
+  'settings.preventSleepWhenRunningHint': {
+    zh: '本机实例运行期间阻止系统空闲休眠，长任务不被打断；合上笔记本盖子仍会休眠，也不影响熄屏/锁屏',
+    en: 'Keeps the system awake while a local instance runs so long tasks are not interrupted; closing the laptop lid still sleeps, and the display can still turn off'
+  },
   'settings.workspaceCache': { zh: '工作区缓存数量', en: 'Workspace cache size' },
   'settings.workspaceCacheHint': {
     zh: '保留最近使用的工作区；切换时可减少重新加载',

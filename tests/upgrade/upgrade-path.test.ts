@@ -249,12 +249,17 @@ describe('设置跨版本升级路径', () => {
       tray: true,
       autoStart: true,
       notifications: false,
+      preventSleepWhenRunning: false, // 夹具无此字段,回落默认
       workspaceCacheSize: 3, // 夹具无此字段,回落默认
       inheritShellEnv: true, // 夹具无此字段,回落默认
       npmRegistry: '' // 夹具无此字段,回落默认
     })
     for (const [key, value] of Object.entries(settings).filter(
-      ([key]) => key !== 'workspaceCacheSize' && key !== 'inheritShellEnv' && key !== 'npmRegistry'
+      ([key]) =>
+        key !== 'preventSleepWhenRunning' &&
+        key !== 'workspaceCacheSize' &&
+        key !== 'inheritShellEnv' &&
+        key !== 'npmRegistry'
     )) {
       expect(value, `字段 ${key} 恰好等于默认值,夹具失去检出能力`).not.toEqual(
         DEFAULT_SETTINGS[key as keyof typeof DEFAULT_SETTINGS]
@@ -305,6 +310,7 @@ describe('设置跨版本升级路径', () => {
       // 'neon' / 'yes' 不是合法取值 → 各自回落默认值,而不是整份重置
       theme: 'system',
       autoStart: false,
+      preventSleepWhenRunning: false, // 未来文件无此字段,回落默认
       workspaceCacheSize: 3, // 未来文件无此字段,回落默认
       inheritShellEnv: true, // 未来文件无此字段,回落默认
       npmRegistry: '' // 未来文件无此字段,回落默认

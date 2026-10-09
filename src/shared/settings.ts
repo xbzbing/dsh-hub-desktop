@@ -56,6 +56,8 @@ export const SettingsSchema = z.object({
   autoStart: z.boolean().default(false),
   /** 实例状态变化弹系统通知 */
   notifications: z.boolean().default(true),
+  /** 有本机实例运行时阻止系统空闲休眠（合盖仍休眠，不接管锁屏/熄屏） */
+  preventSleepWhenRunning: z.boolean().default(false),
   /** 内嵌工作区 WebContentsView 的 LRU 缓存上限(默认 3,防内存膨胀)。 */
   workspaceCacheSize: z.number().int().min(1).max(10).default(3),
   /** 本机实例继承用户登录 shell 的完整环境（含 .zshrc/.bashrc）；关闭时仅继承 PATH。 */
@@ -106,6 +108,7 @@ export function normalizeSettings(value: unknown): Settings {
     tray: pick('tray'),
     autoStart: pick('autoStart'),
     notifications: pick('notifications'),
+    preventSleepWhenRunning: pick('preventSleepWhenRunning'),
     workspaceCacheSize: pick('workspaceCacheSize'),
     inheritShellEnv: pick('inheritShellEnv'),
     npmRegistry: pick('npmRegistry')

@@ -13,6 +13,7 @@ const DEFAULTS: Settings = {
   tray: false,
   autoStart: false,
   notifications: true,
+  preventSleepWhenRunning: false,
   workspaceCacheSize: 3,
   inheritShellEnv: true,
   npmRegistry: ''

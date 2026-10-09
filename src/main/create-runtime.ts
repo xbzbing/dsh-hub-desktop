@@ -45,6 +45,8 @@ export interface RuntimeControllerDeps {
   refreshTrayStatus: () => void
   /** 实例停止后回收其工作区视图 */
   closeWorkspace: (instanceId: string) => void
+  /** 本机实例状态推进（仅 local）；供休眠阻止按运行中的本机实例决定是否持有电源断言 */
+  onLocalStatus?: (event: InstanceStatusEvent) => void
 }
 
 export interface RuntimeController {
@@ -215,6 +217,8 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
     if (event.status === 'stopped') deps.closeWorkspace(event.id)
   }
   runtime.onStatus(handleStatusEvent)
+  // 休眠阻止只认本机实例：local runtime 的事件仅覆盖 local 传输，ssh/http 不触发。
+  if (deps.onLocalStatus) runtime.onStatus(deps.onLocalStatus)
   tunnels.onStatus(handleStatusEvent)
   httpEndpoints.onStatus(handleStatusEvent)
   // dsh 升级进度 → 广播到所有窗口（独立通道，不占用实例状态事件）。

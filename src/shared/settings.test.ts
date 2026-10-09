@@ -9,6 +9,7 @@ describe('settings（非敏感偏好）', () => {
       tray: false,
       autoStart: false,
       notifications: true,
+      preventSleepWhenRunning: false,
       workspaceCacheSize: 3,
       inheritShellEnv: true,
       npmRegistry: ''
@@ -35,6 +36,7 @@ describe('settings（非敏感偏好）', () => {
       tray: true,
       autoStart: true,
       notifications: false,
+      preventSleepWhenRunning: true,
       workspaceCacheSize: 7,
       inheritShellEnv: false,
       npmRegistry: 'https://registry.npmmirror.com'
@@ -57,6 +59,7 @@ describe('settings（非敏感偏好）', () => {
       tray: false, // 回落默认
       autoStart: true, // 保留
       notifications: false, // 保留
+      preventSleepWhenRunning: false, // 缺失回落默认
       workspaceCacheSize: 3, // 缺失回落默认
       inheritShellEnv: true, // 缺失回落默认
       npmRegistry: '' // 缺失回落默认
