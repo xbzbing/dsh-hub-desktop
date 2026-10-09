@@ -184,20 +184,24 @@ export function createWorkspaceHost(
   /**
    * 把键盘焦点交给工作区。
    *
-   * 只聚焦子视图，绝不调用 `win.focus()`：工作区是在用户已点击本应用的窗口后打开的，
-   * 此时宿主窗口已是 key window。反过来在布局/激活过程中抢窗口焦点会打断 macOS 的
-   * 应用激活，表现为「窗口点不到前台、输入落到下一层」。
+   * 只聚焦子视图，绝不调用 `win.focus()`：抢窗口焦点会打断 macOS 的应用激活，
+   * 表现为「窗口点不到前台、输入落到下一层」。
+   *
+   * 仅当宿主窗口当前已聚焦时才聚焦子视图：应用处于后台时，`webContents.focus()`
+   * 同样会把整个应用顶到前台、抢占其它应用（如如流）的焦点。后台事件（实例 running
+   * 后自动打开、会话重探、窗口 focus 竞态）触发的聚焦据此跳过；待用户重新点回窗口，
+   * `win.on('focus')` → `focusActive` 会补上视图焦点。
    */
   function focusEntry(entry: Entry, source: string): void {
-    // 排查间歇性窗口抢焦点：记录本次聚焦的来源、宿主窗口在聚焦前是否已聚焦、
-    // 应用当前是否为前台。若窗口在非聚焦状态下经此路径变为前台，日志会给出触发来源。
     const win = getHubWindow()
-    const winFocused = win !== null && !win.isDestroyed() ? win.isFocused() : null
+    const winFocused = win !== null && !win.isDestroyed() ? win.isFocused() : false
+    // 保留主要节点日志以便回归监测：抢焦点复发时会出现 winFocused=false 却 action=focus。
     focusDebug(
       `[workspace-host] focusEntry source=${source} winFocused=${String(winFocused)} appFocused=${String(
         BrowserWindow.getFocusedWindow() !== null
-      )}`
+      )} action=${winFocused ? 'focus' : 'skip-bg'}`
     )
+    if (!winFocused) return
     // 等本次布局提交完成后再转移键盘焦点，避免与窗口激活过程互相覆盖。
     setImmediate(() => {
       if (entry.view.webContents.isDestroyed()) return
@@ -217,15 +221,15 @@ export function createWorkspaceHost(
     activeId = null
     // 隐藏不会让 macOS 撤下该视图的键盘焦点;不交还的话按键继续落到不可见的
     // 工作区,宿主渲染层(浮层 Escape、Tab 圈闭)收不到任何输入。
+    // 仅在窗口已聚焦时交还：应用在后台时 webContents.focus() 会把窗口顶到前台抢焦点。
     const win = getHubWindow()
-    // 排查间歇性窗口抢焦点：实例停止/断开会经此把焦点交还宿主 webContents，
-    // 若此时应用在后台，webContents.focus() 可能把窗口顶到前台。
+    const winFocused = win !== null && !win.isDestroyed() ? win.isFocused() : false
     focusDebug(
-      `[workspace-host] hide->webContents.focus winFocused=${String(
-        win !== null && !win.isDestroyed() ? win.isFocused() : null
-      )} appFocused=${String(BrowserWindow.getFocusedWindow() !== null)}`
+      `[workspace-host] hide->webContents.focus winFocused=${String(winFocused)} appFocused=${String(
+        BrowserWindow.getFocusedWindow() !== null
+      )} action=${winFocused ? 'focus' : 'skip-bg'}`
     )
-    if (win && !win.isDestroyed()) win.webContents.focus()
+    if (winFocused && win) win.webContents.focus()
   }
 
   function disconnect(instanceId: string): void {

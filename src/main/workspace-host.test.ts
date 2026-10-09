@@ -71,10 +71,10 @@ function fakeViews(): TestView[] {
   return (WebContentsView as unknown as { instances: TestView[] }).instances
 }
 
-function hubWindow() {
+function hubWindow(focused = true) {
   return {
     isDestroyed: vi.fn(() => false),
-    isFocused: vi.fn(() => true),
+    isFocused: vi.fn(() => focused),
     // 暴露 focus 以便断言工作区路径**从不**抢宿主窗口焦点。
     focus: vi.fn(),
     // hide() 交还键盘焦点的目标(webContents 级,不激活窗口)。
@@ -425,5 +425,45 @@ describe('createWorkspaceHost', () => {
         resolve()
       })
     )
+  })
+
+  it('应用在后台(窗口未聚焦)时 setBounds 变可见不抢焦点', () => {
+    const hub = hubWindow(false)
+    const host = createWorkspaceHost(() => hub as never)
+    host.prepare('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'http://127.0.0.1:3084/')
+    const view = fakeViews()[0]!
+    host.setBounds({ x: 64, y: 92, width: 1116, height: 688 })
+    // 边界仍施加（视图照常可见），但不得调用 webContents.focus() 把后台应用顶到前台。
+    expect(view.setBounds).toHaveBeenCalledWith({ x: 64, y: 92, width: 1116, height: 688 })
+    expect(view.setVisible).toHaveBeenCalledWith(true)
+    return new Promise<void>((resolve) =>
+      setImmediate(() => {
+        expect(view.webContents.focus).not.toHaveBeenCalled()
+        resolve()
+      })
+    )
+  })
+
+  it('应用在后台(窗口未聚焦)时 focusActive 不抢焦点', () => {
+    const hub = hubWindow(false)
+    const host = createWorkspaceHost(() => hub as never)
+    host.prepare('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'http://127.0.0.1:3085/')
+    const view = fakeViews()[0]!
+    host.focusActive()
+    return new Promise<void>((resolve) =>
+      setImmediate(() => {
+        expect(view.webContents.focus).not.toHaveBeenCalled()
+        resolve()
+      })
+    )
+  })
+
+  it('应用在后台(窗口未聚焦)时 hide 不把焦点交还宿主(避免顶到前台)', () => {
+    const hub = hubWindow(false)
+    const host = createWorkspaceHost(() => hub as never)
+    host.prepare('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'http://127.0.0.1:3086/')
+    host.hide()
+    expect(hub.webContents.focus).not.toHaveBeenCalled()
+    expect(hub.focus).not.toHaveBeenCalled()
   })
 })
