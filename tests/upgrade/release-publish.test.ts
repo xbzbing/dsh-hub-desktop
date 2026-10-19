@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   decideDraft,
@@ -146,7 +146,7 @@ describe('verifyLocalAssets：本地资产校验', () => {
       'SHA256SUMS.txt': `${sha256(body)}  ${installer}\n`
     })
     const files = await verifyLocalAssets({ root, version, distribution: 'windows-unsigned' })
-    expect(files.map((file) => file.split('/').pop())).toEqual([installer, 'SHA256SUMS.txt'])
+    expect(files.map((file) => basename(file))).toEqual([installer, 'SHA256SUMS.txt'])
   })
 })
 
