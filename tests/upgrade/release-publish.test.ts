@@ -40,6 +40,11 @@ describe('release:publish 脚本注册', () => {
   it('publish.mjs 入库', () => {
     expect(existsSync(join(ROOT, 'scripts', 'release', 'publish.mjs'))).toBe(true)
   })
+
+  it('publish.mjs 不以 hashbang 开头（CRLF 检出 + vite SSR 变换会把 #! 挤到文件中部）', () => {
+    const source = readFileSync(join(ROOT, 'scripts', 'release', 'publish.mjs'), 'utf8')
+    expect(source.startsWith('#!')).toBe(false)
+  })
 })
 
 describe('expectedAssets：分发方式 → 精确资产集合', () => {

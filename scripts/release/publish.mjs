@@ -1,4 +1,5 @@
-#!/usr/bin/env node
+// 不写 hashbang：本文件被单测静态导入，而 CRLF 检出（Windows 无 .gitattributes）下
+// vite SSR 变换会把 #! 挤到文件中部，模块求值报 SyntaxError；脚本经 node/pnpm 显式调用即可。
 /**
  * 半自动发布：推 tag → 建/更新 Draft → 上传资产 → 白名单核验 →（`--publish`）发布。
  *
