@@ -14,6 +14,84 @@ import {
 } from './plugin-manager.testkit'
 
 describe('createPluginManager mutations', () => {
+  it('upgrade（HMR）：先移除旧版本再 add name@version，返回 host 半', async () => {
+    const run = fakeRun()
+    const manager = createPluginManager(baseOptions(run))
+    const result = await manager.upgrade(localInstance(), '@xbzbing/dsh-git-panel', '1.2.0')
+    expect(result.hasHostSide).toBe(true)
+    const mutations = run.mock.calls
+      .map(([, args]) => args)
+      .filter((args) => args.includes('add') || args.includes('remove'))
+    // 与 dsh 官方 updateBundle 同口径：HMR 下先停止并移除旧版本，再安装新版本。
+    expect(mutations.map((args) => (args.includes('remove') ? 'remove' : 'add'))).toEqual([
+      'remove',
+      'add'
+    ])
+    expect(mutations[0]).toContain('@xbzbing/dsh-git-panel')
+    expect(mutations[1]).toContain('@xbzbing/dsh-git-panel@1.2.0')
+  })
+
+  it('upgrade（HMR）：新版本安装失败 → 装回旧版本后报错', async () => {
+    const run = fakeRun((args) => {
+      if (args.includes('add') && args.includes('@xbzbing/dsh-git-panel@1.2.0')) {
+        return { code: 1, stdout: '', stderr: 'ERR_PNPM_FETCH_500 boom' }
+      }
+      return okResult()
+    })
+    const manager = createPluginManager(baseOptions(run))
+    await expect(
+      manager.upgrade(localInstance(), '@xbzbing/dsh-git-panel', '1.2.0')
+    ).rejects.toThrow(/已恢复旧版本 1\.1\.0/)
+    // 回滚 = 用旧版本再 add 一次（与 updateBundle 的 restore 同口径）。
+    const addCalls = run.mock.calls.map(([, args]) => args).filter((args) => args.includes('add'))
+    expect(addCalls[addCalls.length - 1]).toContain('@xbzbing/dsh-git-panel@1.1.0')
+  })
+
+  it('upgrade（HMR）：新版本安装失败且旧版本恢复也失败 → 报错说明插件可能已不在 profile', async () => {
+    const run = fakeRun((args) => {
+      if (args.includes('add')) return { code: 1, stdout: '', stderr: 'registry down' }
+      return okResult()
+    })
+    const manager = createPluginManager(baseOptions(run))
+    await expect(
+      manager.upgrade(localInstance(), '@xbzbing/dsh-git-panel', '1.2.0')
+    ).rejects.toThrow(/恢复失败，插件可能已不在 profile 中/)
+  })
+
+  it('upgrade（HMR）：升级前已禁用的插件，升级后仍为禁用（重新移出加载清单）', async () => {
+    const run = fakeRun()
+    const bundles = fakeBundles({
+      // 依赖在、加载清单外 = 已禁用。
+      bundles: ['@deepseek-ai/dsh-base'],
+      dependencies: ['@xbzbing/dsh-git-panel']
+    })
+    const manager = createPluginManager({ ...baseOptions(run), bundleStore: bundles.store })
+    const result = await manager.upgrade(localInstance(), '@xbzbing/dsh-git-panel', '1.2.0')
+    expect(result.application).toBe('applied')
+    expect(bundles.calls).toEqual([{ name: '@xbzbing/dsh-git-panel', enabled: false }])
+    expect(bundles.current.bundles).toEqual(['@deepseek-ai/dsh-base'])
+    expect(bundles.current.dependencies).toEqual(['@xbzbing/dsh-git-panel'])
+  })
+
+  it('upgrade（HMR）：列表读不出已装版本 → 不尝试移除，退回覆盖安装', async () => {
+    // demo-plugin 没有可读的 manifest：列表里版本落到 '—'，也就无从移除与回滚。
+    const run = fakeRun(
+      '',
+      JSON.stringify([
+        {
+          name: 'dsh-profile-web',
+          dependencies: { 'demo-plugin': { from: 'demo-plugin' } }
+        }
+      ])
+    )
+    const manager = createPluginManager(baseOptions(run))
+    const result = await manager.upgrade(localInstance(), 'demo-plugin', '1.2.0')
+    expect(result.application).toBe('applied')
+    expect(run.mock.calls.some(([, args]) => args.includes('remove'))).toBe(false)
+    const addCall = run.mock.calls.find(([, args]) => args.includes('add'))!
+    expect(addCall[1]).toContain('demo-plugin@1.2.0')
+  })
+
   it('upgrade：显式版本 add name@version，返回 host 半', async () => {
     const run = fakeRun()
     const manager = createPluginManager(baseOptions(run))

@@ -597,7 +597,11 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
   await win.getByTestId('upgrade-confirm-submit').click()
   await expect(dialog).toBeHidden({ timeout: 60_000 })
   const mutations = await readMutations()
-  expect(mutations.length).toBe(before + 1)
+  // 与 dsh 官方 updateBundle 同口径（web profile 有 HMR）：先停止并移除旧版本，再安装新版本。
+  expect(mutations.length).toBe(before + 2)
+  expect(mutations.at(-2)?.cmd).toBe('remove')
+  expect(mutations.at(-2)?.args).toEqual(['demo-plugin'])
+  expect(mutations.at(-1)?.cmd).toBe('add')
   expect(mutations.at(-1)?.args[0]).toBe(`demo-plugin@${LATEST_VERSION}`)
   expect(mutations.at(-1)?.args).toContain('--registry')
   expect(mutations.at(-1)?.args).toContain('https://registry.npmjs.org')

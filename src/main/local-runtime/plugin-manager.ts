@@ -146,6 +146,10 @@ export interface PluginManager {
   /**
    * 升级到指定版本：默认与 check 同源（同一默认档位，随设置），`options.registry` 可在升级确认
    * 对话框改选安装源（选定后解析与安装同源）。
+   *
+   * 生效口径与 dsh 官方 `updateBundle`（Web 插件页的 Update）一致：有 HMR 时先停止并移除旧版本
+   * 再安装新版本（新版本按全新装载热生效），目标版本装不上时把旧版本装回去；无 HMR 时新版本
+   * 装在旧版本之上，报告需重启。升级不改变启用状态：升级前被禁用的插件装回后重新禁用。
    */
   upgrade(
     instance: LocalInstance,
@@ -639,19 +643,73 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       const { home, profile } = homeAndProfile(instance)
       const profileDir = join(home, 'profiles', profile)
       const resolved = await resolveDshEntry(instance)
-      const hadHostSide = await hostSideOf(instance, name, resolved)
-      // 升级默认与 check 同源（同一默认档位，随设置）；用户可在升级确认对话框改选安装源。
-      await runPlugin(instance, ['add', `${name}@${version}`], resolved, registry)
+      const before = await bundleStore.read(profileDir)
+      const current = (await listPlugins(instance, 'zh', resolved)).find(
+        (plugin) => plugin.name === name
+      )
+      const hadHostSide = current?.hasHostSide ?? false
+      const previousVersion =
+        current !== undefined && current.version !== '—' ? current.version : null
+      // 升级前的启用状态：有 host 半时由加载清单判定（依赖在、清单外 = 已禁用）。
+      const wasEnabled =
+        !hadHostSide || before === null || !before.dependencies.includes(name)
+          ? true
+          : before.bundles.includes(name)
+      // 与 dsh 官方 updateBundle 同口径：有 HMR 才走「先移除再安装」；无 HMR 直接覆盖安装、报告重启。
+      const hmr = await hmrAvailable(instance, profileDir, before?.bundles ?? null)
+
+      /** 安装失败后把移除的旧版本装回去（同安装源）；恢复也失败时抛出明确后果。 */
+      const restorePrevious = async (installError: unknown): Promise<never> => {
+        const reason = installError instanceof Error ? installError.message : String(installError)
+        if (previousVersion === null) {
+          throw new InstanceStoreError(
+            'invalid-state',
+            `升级 ${name} 到 ${version} 失败，且旧版本未知无法恢复：${reason}`
+          )
+        }
+        try {
+          await runPlugin(instance, ['add', `${name}@${previousVersion}`], resolved, registry)
+        } catch (restoreError) {
+          const restoreReason =
+            restoreError instanceof Error ? restoreError.message : String(restoreError)
+          throw new InstanceStoreError(
+            'invalid-state',
+            `升级 ${name} 到 ${version} 失败，且旧版本 ${previousVersion} 恢复失败，插件可能已不在 profile 中。安装失败：${reason}；恢复失败：${restoreReason}`
+          )
+        }
+        throw new InstanceStoreError(
+          'invalid-state',
+          `升级 ${name} 到 ${version} 失败，已恢复旧版本 ${previousVersion}：${reason}`
+        )
+      }
+
+      if (hmr && previousVersion !== null) {
+        // 先停止并移除旧版本，再安装新版本：新版本按全新装载热生效，无需重启。
+        await runPlugin(instance, ['remove', name], resolved)
+        try {
+          await runPlugin(instance, ['add', `${name}@${version}`], resolved, registry)
+        } catch (error) {
+          await restorePrevious(error)
+        }
+      } else {
+        // 无 HMR，或列表读不出已装版本（无从移除与回滚）：直接覆盖安装；
+        // 无 HMR 时重启后生效（与 dsh 官方无 HMR 分支一致）。
+        await runPlugin(instance, ['add', `${name}@${version}`], resolved, registry)
+      }
+
+      // 移除会把包移出加载清单，重装默认启用：升级前已禁用（有 host 半）的插件要恢复为禁用。
+      const installed = (await listPlugins(instance, 'zh', resolved)).find(
+        (plugin) => plugin.name === name
+      )
+      if (!wasEnabled && installed?.hasHostSide) {
+        await applyEnabled(instance, profileDir, name, false, { resolved })
+      }
       // 升级换了版本：清掉可升级标记，并同步落下新版本的发布时间快照（无需再次检查即可显示）。
       // 取不到发布时间（如离线）时返回 null，由 writer 清掉旧版本的陈旧快照，下次检查补齐。
       const published = await resolveInstalledPublished(instance, name, resolved).catch(() => null)
       await checkStateWriter.syncCheckAfterUpgrade(instance.id, name, published)
-      // 与 dsh 同口径：升级（替换已装包）同样热生效——dsh-hmr 按磁盘身份换模块代，
-      // 只看 HMR 是否可用，不因换版本而无条件要求重启。
-      const after = await bundleStore.read(profileDir)
-      const hmr = await hmrAvailable(instance, profileDir, after?.bundles ?? null)
       return {
-        hasHostSide: hadHostSide || (await hostSideOf(instance, name, resolved)),
+        hasHostSide: hadHostSide || (installed?.hasHostSide ?? false),
         application: defaultApplication(hmr)
       }
     },

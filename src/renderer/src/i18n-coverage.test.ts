@@ -411,6 +411,18 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
     '`无法检查更新：插件 ${name} 未发布到 npm registry（本地安装的包不在 registry 中）`'
   ),
   debt(
+    'src/main/local-runtime/plugin-manager.ts',
+    '`升级 ${name} 到 ${version} 失败，且旧版本未知无法恢复：${reason}`'
+  ),
+  debt(
+    'src/main/local-runtime/plugin-manager.ts',
+    '`升级 ${name} 到 ${version} 失败，且旧版本 ${previousVersion} 恢复失败，插件可能已不在 profile 中。安装失败：${reason}；恢复失败：${restoreReason}`'
+  ),
+  debt(
+    'src/main/local-runtime/plugin-manager.ts',
+    '`升级 ${name} 到 ${version} 失败，已恢复旧版本 ${previousVersion}：${reason}`'
+  ),
+  debt(
     'src/main/local-runtime/profile-bundles.ts',
     "if (!isRecord(manifest)) throw new Error('profile package.json 结构异常，未做改动')"
   ),
