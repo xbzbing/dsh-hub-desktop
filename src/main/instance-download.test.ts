@@ -31,6 +31,7 @@ import type { InstanceDownloadOptions } from './instance-download'
 interface FakeItem {
   getFilename: ReturnType<typeof vi.fn>
   setSavePath: ReturnType<typeof vi.fn>
+  setSaveDialogOptions: ReturnType<typeof vi.fn>
   once: ReturnType<typeof vi.fn>
 }
 
@@ -55,6 +56,7 @@ function fakeItem(filename: string): FakeItem & { fireDone: (state: string) => v
   return {
     getFilename: vi.fn(() => filename),
     setSavePath: vi.fn(),
+    setSaveDialogOptions: vi.fn(),
     once: vi.fn((event: string, listener: (stateEvent: unknown, state: string) => void) => {
       if (event === 'done') doneListener = listener
     }),
@@ -127,7 +129,7 @@ describe('installInstanceDownloadPolicy（受控放行）', () => {
 
   function install(overrides: InstanceDownloadOptions = {}): FakeSession {
     const session = fakeSession()
-    installOn(session, { downloadsDir: () => dir, ...overrides })
+    installOn(session, { downloadsDir: () => dir, language: () => 'zh', ...overrides })
     return session
   }
 
@@ -144,26 +146,34 @@ describe('installInstanceDownloadPolicy（受控放行）', () => {
     expect(session.on.mock.calls.filter((entry) => entry[0] === 'will-download')).toHaveLength(1)
   })
 
-  it('默认目录可用：savePath = 下载目录 + 清洗后的文件名，且不拦截事件', () => {
+  it('默认目录可用：保存对话框预填「下载目录 + 清洗后的文件名」，不静默落盘', () => {
     const session = install()
     const listener = willDownloadListener(session)
     const event = { preventDefault: vi.fn() }
     const item = fakeItem('../../evil name.json')
     listener(event, item)
     expect(event.preventDefault).not.toHaveBeenCalled()
-    expect(item.setSavePath).toHaveBeenCalledWith(join(dir, 'evil name.json'))
+    // 落点由用户确认：不调用 setSavePath（那会跳过对话框），只给对话框预填默认路径。
+    expect(item.setSavePath).not.toHaveBeenCalled()
+    expect(item.setSaveDialogOptions).toHaveBeenCalledWith({
+      title: '保存下载的文件',
+      buttonLabel: '保存',
+      defaultPath: join(dir, 'evil name.json')
+    })
   })
 
-  it('重名文件自动改名不覆盖', () => {
+  it('重名文件默认路径自动加序号，不预填成覆盖', () => {
     writeFileSync(join(dir, 'export.json'), 'old')
     const session = install()
     const listener = willDownloadListener(session)
     const item = fakeItem('export.json')
     listener({ preventDefault: vi.fn() }, item)
-    expect(item.setSavePath).toHaveBeenCalledWith(join(dir, 'export (1).json'))
+    expect(item.setSaveDialogOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultPath: join(dir, 'export (1).json') })
+    )
   })
 
-  it('默认目录不可用：不设 savePath（Electron 走原生保存对话框），下载不被取消', () => {
+  it('默认目录不可用：对话框照常打开，只是不预填路径', () => {
     const session = install({ downloadsDir: () => '' })
     const listener = willDownloadListener(session)
     const event = { preventDefault: vi.fn() }
@@ -171,9 +181,13 @@ describe('installInstanceDownloadPolicy（受控放行）', () => {
     listener(event, item)
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(item.setSavePath).not.toHaveBeenCalled()
+    expect(item.setSaveDialogOptions).toHaveBeenCalledWith({
+      title: '保存下载的文件',
+      buttonLabel: '保存'
+    })
   })
 
-  it('目录创建失败（路径被文件占用）同样回落保存对话框', () => {
+  it('目录创建失败（路径被文件占用）同样只开对话框', () => {
     // 下载目录落在一个普通文件之下 → mkdirSync 必失败 → 判为不可用
     writeFileSync(join(dir, 'occupied'), 'x')
     const session = install({ downloadsDir: () => join(dir, 'occupied', 'downloads') })
@@ -181,6 +195,22 @@ describe('installInstanceDownloadPolicy（受控放行）', () => {
     const item = fakeItem('export.json')
     listener({ preventDefault: vi.fn() }, item)
     expect(item.setSavePath).not.toHaveBeenCalled()
+    expect(item.setSaveDialogOptions.mock.calls[0]?.[0]).not.toHaveProperty('defaultPath')
+  })
+
+  it('设置对话框失败不影响下载（不取消事件、不抛错）', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const session = install()
+    const listener = willDownloadListener(session)
+    const event = { preventDefault: vi.fn() }
+    const item = fakeItem('x.json')
+    item.setSaveDialogOptions.mockImplementation(() => {
+      throw new Error('dialog backend down')
+    })
+    expect(() => listener(event, item)).not.toThrow()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 
   it('下载中断 → 发一次系统通知，标题走 i18n 目录', () => {

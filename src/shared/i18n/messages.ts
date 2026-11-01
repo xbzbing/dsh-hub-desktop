@@ -1133,6 +1133,8 @@ export const MESSAGES = {
   'tray.status': { zh: '{count} 个实例运行中', en: '{count} running' },
 
   // —— 实例分区下载 ——
+  'download.save.title': { zh: '保存下载的文件', en: 'Save downloaded file' },
+  'download.save.button': { zh: '保存', en: 'Save' },
   'download.interrupted.title': { zh: '下载中断', en: 'Download interrupted' },
   'download.interrupted.body': {
     zh: '{name} 未能保存完成，连接可能已断开。',

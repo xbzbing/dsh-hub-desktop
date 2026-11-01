@@ -162,8 +162,8 @@ describe('createWorkspaceHost', () => {
       'will-download',
       expect.any(Function)
     )
-    // 下载策略是受控放行而非拦截：不取消事件，savePath 由主进程指向系统下载目录
-    //（文件名经清洗；目录不可用时留空回落原生保存对话框）。行为锚点见 instance-download.test.ts。
+    // 下载策略是受控放行而非拦截：不取消事件，保存对话框由主进程预填默认路径
+    //（系统下载目录 + 清洗后的文件名；目录不可用时只开对话框）。行为锚点见 instance-download.test.ts。
     const willDownload = created?.webContents.session.on.mock.calls.find(
       (call) => (call as unknown[])[0] === 'will-download'
     )?.[1] as (
@@ -171,6 +171,7 @@ describe('createWorkspaceHost', () => {
       item: {
         getFilename: () => string
         setSavePath: ReturnType<typeof vi.fn>
+        setSaveDialogOptions: ReturnType<typeof vi.fn>
         once: ReturnType<typeof vi.fn>
       }
     ) => void
@@ -179,15 +180,20 @@ describe('createWorkspaceHost', () => {
     const downloadItem = {
       getFilename: () => `../../${exportName}`,
       setSavePath: vi.fn(),
+      setSaveDialogOptions: vi.fn(),
       once: vi.fn()
     }
     willDownload(downloadEvent, downloadItem)
     expect(downloadEvent.preventDefault).not.toHaveBeenCalled()
-    const savedPath = downloadItem.setSavePath.mock.calls[0]?.[0] as string
-    // 落盘路径 = 主进程给的下载目录 + 清洗后的文件名（不带路径成分）。
-    // 目录按 path 归一后比较：Windows 的 join 会把「/tmp」写成「\tmp」，硬编码前缀会误报。
-    expect(dirname(savedPath)).toBe(join(tmpdir()))
-    expect(basename(savedPath)).toBe(exportName)
+    // 落点由用户在对话框里确认：只预填默认路径，不直接写 savePath。
+    expect(downloadItem.setSavePath).not.toHaveBeenCalled()
+    const dialogOptions = downloadItem.setSaveDialogOptions.mock.calls[0]?.[0] as {
+      defaultPath?: string
+    }
+    // 默认路径 = 主进程给的下载目录 + 清洗后的文件名（不带路径成分）。
+    // 按 path 归一比较：Windows 的 join 会把「/tmp」写成「\tmp」，硬编码前缀会误报。
+    expect(dirname(dialogOptions.defaultPath ?? '')).toBe(join(tmpdir()))
+    expect(basename(dialogOptions.defaultPath ?? '')).toBe(exportName)
 
     for (const eventName of ['will-navigate', 'will-redirect']) {
       const navigate = created?.webContents.handlers.get(eventName)
