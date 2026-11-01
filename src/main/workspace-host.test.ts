@@ -1,4 +1,5 @@
-import { sep } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => {
@@ -36,7 +37,7 @@ vi.mock('electron', () => {
   return {
     WebContentsView: FakeWebContentsView,
     BrowserWindow: { getFocusedWindow: vi.fn(() => null) },
-    app: { getPath: vi.fn(() => '/tmp') },
+    app: { getPath: vi.fn(() => tmpdir()) },
     Notification: class {
       static isSupported(): boolean {
         return false
@@ -183,9 +184,10 @@ describe('createWorkspaceHost', () => {
     willDownload(downloadEvent, downloadItem)
     expect(downloadEvent.preventDefault).not.toHaveBeenCalled()
     const savedPath = downloadItem.setSavePath.mock.calls[0]?.[0] as string
-    // 落盘路径 = 主进程给的下载目录 + 清洗后的文件名（不带路径成分）
-    expect(savedPath.startsWith(`/tmp${sep}`)).toBe(true)
-    expect(savedPath.endsWith(`/${exportName}`) || savedPath.endsWith(`\\${exportName}`)).toBe(true)
+    // 落盘路径 = 主进程给的下载目录 + 清洗后的文件名（不带路径成分）。
+    // 目录按 path 归一后比较：Windows 的 join 会把「/tmp」写成「\tmp」，硬编码前缀会误报。
+    expect(dirname(savedPath)).toBe(join(tmpdir()))
+    expect(basename(savedPath)).toBe(exportName)
 
     for (const eventName of ['will-navigate', 'will-redirect']) {
       const navigate = created?.webContents.handlers.get(eventName)
