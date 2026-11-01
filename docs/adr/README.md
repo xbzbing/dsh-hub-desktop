@@ -23,3 +23,4 @@
 | [0011](./0011-external-dsh-detection-by-process-tree.md) | 外部 dsh 探测按进程树排除 Hub 托管实例 | 已采纳 |
 | [0012](./0012-stop-semantics-process-tree-drain.md) | 停止语义按「整棵进程树排空」判定 | 已采纳 |
 | [0013](./0013-plugin-upgrade-remove-then-install.md) | 插件升级先停止并移除、再安装（与 dsh 官方 `updateBundle` 一致） | 已采纳 |
+| [0014](./0014-instance-download-controlled-path.md) | 实例分区下载受控放行（主进程定路径 + 文件名清洗 + 对话框兜底） | 已采纳 |

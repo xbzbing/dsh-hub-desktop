@@ -2,6 +2,7 @@ import { BrowserWindow, shell, WebContentsView } from 'electron'
 import type { WorkspaceHotkeyEvent, WorkspaceViewBounds } from '@shared/contracts'
 import { redactUrl } from '@shared/redact'
 import { focusDebug } from './shell/focus-debug'
+import { installInstanceDownloadPolicy } from './instance-download'
 import { installInstancePermissionPolicy } from './instance-permission'
 import { prepareInstanceView } from './webview/cookie-import'
 import { buildOpenViewPlan, type SessionCookie } from './webview/open-view-plan'
@@ -140,7 +141,11 @@ export function createWorkspaceHost(
     // 权限策略与独立实例窗口共用 instance-permission.ts：放行剪贴板写入与纯音频
     // 采集（语音输入），其余一律拒绝；分离窗口复用同一分区 session，两处必须一致。
     installInstancePermissionPolicy(webContents.session)
-    webContents.session.on('will-download', (event) => event.preventDefault())
+    // 下载接管与独立实例窗口共用 instance-download.ts：落盘路径由主进程决定
+    // （系统下载目录 + 清洗后的文件名），目录不可用时回落原生保存对话框。
+    installInstanceDownloadPolicy(webContents.session, {
+      language: () => (workspaceLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en')
+    })
   }
 
   function prepare(instanceId: string, url: string): WorkspaceView {

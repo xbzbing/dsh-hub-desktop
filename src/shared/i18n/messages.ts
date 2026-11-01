@@ -1132,6 +1132,13 @@ export const MESSAGES = {
   'tray.quit': { zh: '退出 DSH Hub', en: 'Quit DSH Hub' },
   'tray.status': { zh: '{count} 个实例运行中', en: '{count} running' },
 
+  // —— 实例分区下载 ——
+  'download.interrupted.title': { zh: '下载中断', en: 'Download interrupted' },
+  'download.interrupted.body': {
+    zh: '{name} 未能保存完成，连接可能已断开。',
+    en: '{name} did not save completely; the connection may have dropped.'
+  },
+
   // —— 关于 ——
   'about.title': { zh: '关于 DSH Hub', en: 'About DSH Hub' },
   'about.open': { zh: '关于', en: 'About' },

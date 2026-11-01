@@ -3,6 +3,7 @@
  * 隔离存储，禁用 nodeIntegration、开启 contextIsolation/sandbox、拦截外跳（弹窗 + 顶层导航）。
  */
 import { BrowserWindow } from 'electron'
+import { installInstanceDownloadPolicy } from './instance-download'
 import { installInstancePermissionPolicy } from './instance-permission'
 import { isAllowedInstanceNavigation } from './window-host-policy'
 
@@ -61,6 +62,8 @@ export function openInstanceWindow(options: OpenInstanceViewOptions): BrowserWin
   // 权限策略与工作区视图共用 instance-permission.ts：放行剪贴板写入与纯音频采集
   // （语音输入），通知/地理位置/摄像头等其余权限一律拒绝；两者共享分区 session，必须一致。
   installInstancePermissionPolicy(win.webContents.session)
+  // 下载接管与工作区视图共用 instance-download.ts；共享分区 session，同分区只装一次。
+  installInstanceDownloadPolicy(win.webContents.session)
   win.on('closed', () => windows.delete(options.instanceId))
   windows.set(options.instanceId, win)
 

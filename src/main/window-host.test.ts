@@ -6,7 +6,11 @@ vi.mock('electron', () => {
   class FakeWebContents {
     handlers = new Map<string, (...args: unknown[]) => unknown>()
     setWindowOpenHandler = vi.fn()
-    session = { setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn() }
+    session = {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+      on: vi.fn()
+    }
     on = vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
       this.handlers.set(event, listener)
       return this
@@ -31,7 +35,16 @@ vi.mock('electron', () => {
       FakeBrowserWindow.instances.push(this)
     }
   }
-  return { BrowserWindow: FakeBrowserWindow }
+  return {
+    BrowserWindow: FakeBrowserWindow,
+    app: { getPath: vi.fn(() => '/tmp') },
+    Notification: class {
+      static isSupported(): boolean {
+        return false
+      }
+      show(): void {}
+    }
+  }
 })
 
 import { BrowserWindow } from 'electron'
