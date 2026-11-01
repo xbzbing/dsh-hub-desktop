@@ -140,11 +140,12 @@ export function PluginRow(props: {
               </span>
             </HoverTip>
           )}
-          {/* 启用/禁用开关：开=已加载。纯 client 插件不由清单控制，开关置灰并说明原因。 */}
+          {/* 启用/禁用开关：开=已加载。纯 client 插件不由清单控制，开关置灰并说明原因。
+              升级放到后台后本行仍可点击，升级期间一并锁住改 profile 的操作，避免与升级并发写同一份清单。 */}
           <Switch
             checked={!disabled}
             onChange={(next) => onToggleEnabled(next)}
-            disabled={plugin.enabled === null || busy.toggling}
+            disabled={plugin.enabled === null || busy.toggling || busy.upgrading}
             title={
               plugin.enabled === null
                 ? t('detail.plugin.cannotDisable')
@@ -188,9 +189,15 @@ export function PluginRow(props: {
           <button
             className="btn btn-danger btn-sm btn-icon plugin-remove-btn"
             onClick={onRemove}
-            disabled={busy.removing}
+            disabled={busy.removing || busy.upgrading}
             aria-label={t('detail.plugin.remove')}
-            title={busy.removing ? t('detail.plugin.removing') : t('detail.plugin.remove')}
+            title={
+              busy.upgrading
+                ? t('detail.plugin.upgrading')
+                : busy.removing
+                  ? t('detail.plugin.removing')
+                  : t('detail.plugin.remove')
+            }
             data-testid={`plugin-remove-${plugin.name}`}
           >
             <Icon name="trash" />

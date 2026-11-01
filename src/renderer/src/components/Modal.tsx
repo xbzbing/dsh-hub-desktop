@@ -37,6 +37,8 @@ export function Modal(props: {
   closeLabel?: string
   /** 对话框已有 Escape 关闭语义时，可把右上角关闭按钮移出 Tab 顺序。 */
   closeButtonInTabOrder?: boolean
+  /** 进行中的操作不可取消时隐藏右上角关闭按钮：此时唯一的出口由 footer 显式给出。 */
+  hideClose?: boolean
 }): ReactNode {
   const dialogRef = useRef<HTMLDivElement>(null)
   // Escape 触发时读取最新 onClose:监听注册一次,避免闭包持有过期回调。
@@ -113,14 +115,16 @@ export function Modal(props: {
             <h2>{props.title}</h2>
             {props.sub && <p className="sub">{props.sub}</p>}
           </div>
-          <button
-            className="x-btn"
-            aria-label={props.closeLabel ?? 'Close'}
-            tabIndex={props.closeButtonInTabOrder === false ? -1 : undefined}
-            onClick={props.onClose}
-          >
-            ✕
-          </button>
+          {!props.hideClose && (
+            <button
+              className="x-btn"
+              aria-label={props.closeLabel ?? 'Close'}
+              tabIndex={props.closeButtonInTabOrder === false ? -1 : undefined}
+              onClick={props.onClose}
+            >
+              ✕
+            </button>
+          )}
         </div>
         <div className="modal-body">{props.children}</div>
         {props.footer && <div className="modal-foot">{props.footer}</div>}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
   PluginAutoDisabled,
@@ -12,6 +12,7 @@ import { Icon } from '../../lib/icons'
 import { fmtLogTime } from '../../lib/format'
 import { runWithConcurrency } from '../../lib/concurrency'
 import { ackAutoDisabled, isAutoDisabledAcked } from '../../lib/auto-disabled-ack'
+import { pendingPluginUpgrade, trackPluginUpgrade } from '../../lib/plugin-upgrade-tracker'
 import { useAppStore } from '../../store'
 import {
   classifyCheckOutcome,
@@ -40,6 +41,9 @@ const BRIDGE = window.dshHub
  * 串行太慢、无上限并发会同时拉起过多子进程与请求，取一个折中的小并发。
  */
 const CHECK_CONCURRENCY = 4
+
+/** 行内操作全空闲的状态；未登记的插件行按它渲染。 */
+const IDLE_ROW_BUSY: RowBusy = { upgrading: false, removing: false, toggling: false }
 
 /** 升级二次确认目标：点行内「升级到 x」后先确认再执行。 */
 interface UpgradeTarget {
@@ -157,10 +161,41 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     setAutoDisabled(null)
   }
 
-  const rowBusy = (name: string): RowBusy =>
-    busy[name] ?? { upgrading: false, removing: false, toggling: false }
+  const rowBusy = (name: string): RowBusy => busy[name] ?? IDLE_ROW_BUSY
   const setRowBusy = (name: string, patch: Partial<RowBusy>): void =>
-    setBusy((prev) => ({ ...prev, [name]: { ...rowBusy(name), ...patch } }))
+    setBusy((prev) => ({ ...prev, [name]: { ...(prev[name] ?? IDLE_ROW_BUSY), ...patch } }))
+
+  /**
+   * 接管「放到后台」的升级：确认框收起后升级仍由发起它的插件卡执行，用户切走再回来时
+   * 本卡是新的挂载，行内「升级中」与结束后的刷新都要按登记表补上。
+   */
+  const adoptedUpgrades = useRef(new Map<string, Promise<unknown>>())
+  useEffect(() => {
+    if (plugins === null) return
+    for (const plugin of plugins) {
+      const task = pendingPluginUpgrade(instanceId, plugin.name)
+      if (task === null) {
+        adoptedUpgrades.current.delete(plugin.name)
+        continue
+      }
+      // 同一次升级只接管一次；结束回调按登记的任务比对，旧任务不覆盖后来发起的新任务。
+      if (adoptedUpgrades.current.get(plugin.name) === task) continue
+      adoptedUpgrades.current.set(plugin.name, task)
+      setRowBusy(plugin.name, { upgrading: true })
+      void task.finally(() => {
+        if (adoptedUpgrades.current.get(plugin.name) !== task) return
+        adoptedUpgrades.current.delete(plugin.name)
+        setRowBusy(plugin.name, { upgrading: false })
+        // 与 performUpgrade 的收尾同口径：升级后旧版本的可升级标记失效，先清掉再刷新。
+        setChecks((prev) => {
+          const next = { ...prev }
+          delete next[plugin.name]
+          return next
+        })
+        void load({ keepChecks: true })
+      })
+    }
+  }, [plugins, instanceId, load])
 
   const checkOf = (name: string): PluginCheckState => checks[name] ?? initialCheckState
 
@@ -315,7 +350,12 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     if (!BRIDGE) return { ok: false }
     setRowBusy(name, { upgrading: true })
     logActivity(t('detail.plugin.log.upgrading', { name, version }))
-    const result = await BRIDGE.plugin.upgrade(instanceId, name, version, { registry })
+    // 登记在飞升级：确认框可「放到后台」，本卡卸载后重新挂载时据此认出这行仍在升级。
+    const result = await trackPluginUpgrade(
+      instanceId,
+      name,
+      BRIDGE.plugin.upgrade(instanceId, name, version, { registry })
+    )
     setRowBusy(name, { upgrading: false })
     if (!result.ok) {
       logActivity(t('detail.plugin.log.upgradeFailed', { name, msg: result.message }))

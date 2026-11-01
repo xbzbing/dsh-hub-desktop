@@ -125,6 +125,10 @@ if (cmd === 'view') {
   process.exit(0)
 }
 if (cmd === 'add' || cmd === 'remove') {
+  // 可选延迟：用于验证「升级开始后不可取消、可放到后台」的可观察窗口；日志在延迟后写，
+  // 读到记录即代表这次改动已完成。
+  const delay = Number(process.env.DSH_E2E_PLUGIN_MUTATION_DELAY_MS || '0')
+  if (delay > 0) { const until = Date.now() + delay; while (Date.now() < until) {} }
   const log = process.env.DSH_E2E_PLUGIN_ADD_LOG
   if (log) {
     try { fs.appendFileSync(log, JSON.stringify({ cmd: cmd, args: sub.slice(1) }) + '\\n') } catch (error) {}
@@ -605,6 +609,70 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
   expect(mutations.at(-1)?.args[0]).toBe(`demo-plugin@${LATEST_VERSION}`)
   expect(mutations.at(-1)?.args).toContain('--registry')
   expect(mutations.at(-1)?.args).toContain('https://registry.npmjs.org')
+})
+
+test('升级开始后不可取消：只能放到后台，切走再回来仍显示升级中', async () => {
+  test.setTimeout(120_000)
+  // 让假 dsh 的 add/remove 慢下来，制造可观察的升级窗口（remove + add 各 3 秒）。
+  await app.close()
+  app = await electron.launch({
+    args: buildLaunchArgs(),
+    env: e2eEnv(DATA_DIR, { DSH_E2E_PLUGIN_MUTATION_DELAY_MS: '3000' })
+  })
+  win = await app.firstWindow()
+  await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 15_000 })
+  await openDetail()
+
+  const upgrade = win.getByTestId('plugin-upgrade-demo-plugin')
+  if (!(await upgrade.isVisible())) {
+    await win.getByTestId('plugin-check-demo-plugin').click()
+  }
+  await expect(upgrade).toBeVisible({ timeout: 20_000 })
+  const before = (await readMutations()).length
+
+  await upgrade.click()
+  const dialog = win.getByTestId('upgrade-confirm-dialog')
+  await expect(dialog).toBeVisible()
+  await win.getByTestId('upgrade-confirm-submit').click()
+
+  // 开始后不可取消：取消按钮收起、右上角关闭按钮隐藏，Escape 也关不掉。
+  await expect(win.getByTestId('upgrade-confirm-cancel')).toHaveCount(0)
+  await expect(dialog.locator('.x-btn')).toHaveCount(0)
+  const background = win.getByTestId('upgrade-confirm-background')
+  await expect(background).toBeVisible()
+  await win.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+
+  // 放到后台：确认框收起，升级继续；行内保持「升级中…」，本行改 profile 的操作被锁。
+  await background.click()
+  await expect(dialog).toBeHidden()
+  await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toContainText('升级中', {
+    timeout: 5_000
+  })
+  await expect(win.getByTestId('plugin-remove-demo-plugin')).toBeDisabled()
+
+  // 回总览再进详情：插件卡重新挂载后仍按登记表认出这行在升级。
+  await win.getByTestId('brand').click()
+  await expect(win.getByTestId('view-home')).toBeVisible()
+  await openDetail()
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible({ timeout: 15_000 })
+  await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toContainText('升级中', {
+    timeout: 5_000
+  })
+
+  // 后台升级按 remove → add 完成；列表刷新后升级标记消失，信息栏留有升级记录。
+  await expect
+    .poll(async () => (await readMutations()).length, { timeout: 30_000 })
+    .toBe(before + 2)
+  const mutations = await readMutations()
+  expect(mutations.at(-2)?.cmd).toBe('remove')
+  expect(mutations.at(-1)?.cmd).toBe('add')
+  expect(mutations.at(-1)?.args[0]).toBe(`demo-plugin@${LATEST_VERSION}`)
+  await expect(win.getByTestId('plugin-upgrade-demo-plugin')).toHaveCount(0, { timeout: 15_000 })
+  await win.getByTestId('detail-logbar-more').click()
+  await expect(win.getByTestId('log-more-body')).toContainText(`已升级到 ${LATEST_VERSION}`)
+  await win.keyboard.press('Escape')
+  await expect(win.getByTestId('log-more')).toBeHidden()
 })
 
 test('安装源默认档跟随应用镜像设置：设为 npmjs 后对话框默认 npmjs', async () => {

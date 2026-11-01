@@ -696,6 +696,11 @@ export const MESSAGES = {
     zh: '升级会先停止并移除旧版本，再安装新版本；依赖该插件的功能会短暂中断',
     en: 'Upgrading stops and removes the old version before installing the new one; features that depend on the plugin are briefly interrupted'
   },
+  'detail.plugin.upgradeRunningNote': {
+    zh: '升级进行中，不可取消；可放到后台，完成后会提示结果',
+    en: 'Upgrade in progress and cannot be cancelled; send it to the background and you will be notified when it finishes'
+  },
+  'detail.plugin.upgradeBackground': { zh: '放到后台', en: 'Send to background' },
   'detail.plugin.upgradeFailedInline': { zh: '升级失败：{msg}', en: 'Failed to upgrade: {msg}' },
   // —— 更新内容（确认区懒加载）——
   'detail.plugin.releaseNotesTitle': { zh: '更新内容', en: "What's new" },

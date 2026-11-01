@@ -24,6 +24,8 @@ export interface UpgradeOutcome {
  * 解析与升级必须同源，选定的档位回传给执行方。
  * 只确认目标版本与风险，不改启用态（没有「安装后启用」勾选）；
  * 真正的执行与收尾由调用方负责，失败时对话框保持打开并就地报错。
+ * 开始执行后不可取消（右上角关闭按钮隐藏，Escape 与背景点击都不生效），只能「放到后台」收起确认框：
+ * 升级继续在插件行执行，行内保持「升级中…」，完成或失败由调用方写入信息栏并弹提示。
  */
 export default function UpgradeConfirmDialog(props: {
   t: Translator
@@ -100,8 +102,13 @@ export default function UpgradeConfirmDialog(props: {
   }
 
   const close = (): void => {
-    // 升级执行中不可关闭：结果与收尾都要落到界面上。
+    // 升级执行中不可取消：Escape 与背景点击都不关闭，唯一的出口是「放到后台」。
     if (!upgrading) onClose()
+  }
+
+  /** 放到后台：只收起确认框，升级继续在插件行执行；结果由调用方留痕并提示。 */
+  const background = (): void => {
+    if (upgrading) onClose()
   }
 
   const submitDisabled =
@@ -114,18 +121,32 @@ export default function UpgradeConfirmDialog(props: {
       closeLabel={closeLabel}
       className="modal-plugin"
       testId="upgrade-confirm-dialog"
+      hideClose={upgrading}
       footer={
         <>
-          <span className="meta">{t('detail.plugin.upgradeInterruptNote')}</span>
+          <span className="meta">
+            {upgrading
+              ? t('detail.plugin.upgradeRunningNote')
+              : t('detail.plugin.upgradeInterruptNote')}
+          </span>
           <span className="right">
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={close}
-              disabled={upgrading}
-              data-testid="upgrade-confirm-cancel"
-            >
-              {t('common.cancel')}
-            </button>
+            {upgrading ? (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={background}
+                data-testid="upgrade-confirm-background"
+              >
+                {t('detail.plugin.upgradeBackground')}
+              </button>
+            ) : (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={close}
+                data-testid="upgrade-confirm-cancel"
+              >
+                {t('common.cancel')}
+              </button>
+            )}
             <button
               className="btn btn-primary btn-sm"
               onClick={() => void upgrade()}
