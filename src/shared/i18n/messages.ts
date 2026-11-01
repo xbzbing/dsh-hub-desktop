@@ -693,8 +693,8 @@ export const MESSAGES = {
     en: 'Upgrading does not change the enabled state: a disabled plugin stays disabled.'
   },
   'detail.plugin.upgradeInterruptNote': {
-    zh: '升级会短暂中断正在使用的工作区',
-    en: 'Upgrading briefly interrupts the workspaces in use'
+    zh: '升级会先停止并移除旧版本，再安装新版本；依赖该插件的功能会短暂中断',
+    en: 'Upgrading stops and removes the old version before installing the new one; features that depend on the plugin are briefly interrupted'
   },
   'detail.plugin.upgradeFailedInline': { zh: '升级失败：{msg}', en: 'Failed to upgrade: {msg}' },
   // —— 更新内容（确认区懒加载）——
