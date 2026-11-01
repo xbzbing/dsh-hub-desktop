@@ -3,7 +3,7 @@
 > 本文是发布的**操作口径**：策略与门槛见 [release-policy.md](./release-policy.md)，
 > 机器校验见 `pnpm release:check`（离线演练，输出本文对应的收口步骤）；发布执行见 §4 的 `pnpm release:publish`。
 > 每次发布按本文逐步执行；流程变化须回写本文，不留口头版本。
-> 最近一次完整走通：v0.1.7（2026-11-01）。
+> 最近一次完整走通：v0.1.8（2026-11-02）。
 
 ## 0. 前置
 
@@ -41,7 +41,7 @@ node scripts/release/checksums.mjs dist/upload       # 生成 dist/upload/SHA256
 shasum -a 256 dist/DSH-Hub-Setup-<version>.exe       # 与 SHA256SUMS.txt 第一列比对
 ```
 
-产物量级参考：v0.1.7 的 exe 为 120,592,029 字节。载荷与 v0.1.6 基本相同（解包 345 MB、resources 一致），多出的约 9 MB 来自 electron-builder 26.18 的 NSIS 归档压缩率（同一载荷手工 7z -mx=9 为 96 MB）；`compression` 选项不影响该归档，出现更大偏离时先比载荷再比压缩。
+产物量级参考：v0.1.8 的 exe 为 120,593,361 字节。载荷与 v0.1.7 基本相同（v0.1.7 为 120,592,029 字节，差 1.3 KB），多出的约 9 MB 相对更早版本来自 electron-builder 26.18 的 NSIS 归档压缩率（同一载荷手工 7z -mx=9 为 96 MB）；`compression` 选项不影响该归档，出现更大偏离时先比载荷再比压缩。
 
 ## 4. 半自动发布（推 tag → Draft → 资产核验）
 
