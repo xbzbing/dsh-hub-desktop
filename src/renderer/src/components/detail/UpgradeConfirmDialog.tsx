@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PluginInstallPlan, PluginRegistryOption } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
@@ -52,6 +52,8 @@ export default function UpgradeConfirmDialog(props: {
   const [resolveError, setResolveError] = useState<string | null>(null)
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
   const [riskAccepted, setRiskAccepted] = useState(false)
+  /** 本确认框是否已「放到后台」：收起即失效，升级结束后的收尾据此不再碰对话框状态。 */
+  const backgroundedRef = useRef(false)
 
   useEffect(() => {
     const bridge = BRIDGE
@@ -93,6 +95,11 @@ export default function UpgradeConfirmDialog(props: {
     setUpgrading(true)
     setUpgradeError(null)
     const result = await onConfirm(registry)
+    // 已「放到后台」：本确认框只对当前插件生效这一次，收起即失效，收尾不再执行。
+    // 否则这里的 onClose() 作用的是用户此刻打开的另一个插件的确认框 —— 上一次
+    // 后台升级每完成一次就关掉一个新打开的确认框，表现为「点谁的升级都被放到后台」。
+    // 结果（留痕与提示）由 performUpgrade 负责，不因收起而丢失。
+    if (backgroundedRef.current) return
     setUpgrading(false)
     if (!result.ok) {
       setUpgradeError(result.message ?? '')
@@ -108,7 +115,9 @@ export default function UpgradeConfirmDialog(props: {
 
   /** 放到后台：只收起确认框，升级继续在插件行执行；结果由调用方留痕并提示。 */
   const background = (): void => {
-    if (upgrading) onClose()
+    if (!upgrading) return
+    backgroundedRef.current = true
+    onClose()
   }
 
   const submitDisabled =

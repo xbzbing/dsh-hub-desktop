@@ -13,6 +13,7 @@ import { join } from 'node:path'
  * - 发布时间：取已装版本那一项并持久化，刷新后仍在
  * - 卸载二次确认（只说明后果）
  * - 禁用/启用：禁用后仍在列表可见并标注，可再次启用
+ * - 升级开始后不可取消、可放到后台；「放到后台」只对当前插件生效一次
  *
  * dsh 可执行入口用一个假 bin.js（响应 plugin list/view/add/remove）替身：
  * 播种到 hub 隔离目录 `<DATA_DIR>/runtimes/dsh-<version>/node_modules/@deepseek-ai/dsh/lib/bin.js`，
@@ -79,7 +80,8 @@ let instanceId = ''
 
 /**
  * 假 dsh 入口：只认 `plugin --profile <p> <sub> ...`。
- * - list --json：一个含 host+client 半的 npm 插件；
+ * - list --json：一个含 host+client 半的 npm 插件（DSH_E2E_PLUGIN_SECOND=1 时再加一个，
+ *   用于验证「放到后台」只对当前插件生效）；
  * - view ... --json：版本信息（versions 故意乱序且 dist-tag 滞后，用于验证解析不取末位、
  *   也不盲信 dist-tag）；`DSH_E2E_PLUGIN_INCOMPAT=1` 时返回不兼容 peer；
  * - add / remove：追加到 DSH_E2E_PLUGIN_ADD_LOG（若有），供断言实际下发的 spec 与 --registry。
@@ -96,17 +98,23 @@ const p = rest.indexOf('--profile')
 if (p !== -1) sub = rest.slice(0, p).concat(rest.slice(p + 2))
 const cmd = sub[0]
 if (cmd === 'list') {
-  process.stdout.write(JSON.stringify([{
-    name: 'dsh-profile-web',
-    dependencies: {
-      'demo-plugin': {
-        from: 'demo-plugin',
-        version: ${JSON.stringify(INSTALLED_VERSION)},
-        resolved: 'https://registry.npmjs.org/demo-plugin/-/demo-plugin-1.0.0.tgz',
-        path: ${JSON.stringify(join(DATA_DIR, 'fake-plugin'))}
-      }
+  const deps = {
+    'demo-plugin': {
+      from: 'demo-plugin',
+      version: ${JSON.stringify(INSTALLED_VERSION)},
+      resolved: 'https://registry.npmjs.org/demo-plugin/-/demo-plugin-1.0.0.tgz',
+      path: ${JSON.stringify(join(DATA_DIR, 'fake-plugin'))}
     }
-  }]))
+  }
+  if (process.env.DSH_E2E_PLUGIN_SECOND === '1') {
+    deps['other-plugin'] = {
+      from: 'other-plugin',
+      version: ${JSON.stringify(INSTALLED_VERSION)},
+      resolved: 'https://registry.npmjs.org/other-plugin/-/other-plugin-1.0.0.tgz',
+      path: ${JSON.stringify(join(DATA_DIR, 'fake-plugin-2'))}
+    }
+  }
+  process.stdout.write(JSON.stringify([{ name: 'dsh-profile-web', dependencies: deps }]))
   process.exit(0)
 }
 if (cmd === 'view') {
@@ -159,6 +167,11 @@ test.beforeAll(async () => {
   const pluginDir = join(DATA_DIR, 'fake-plugin')
   await mkdir(pluginDir, { recursive: true })
   await writeFile(join(pluginDir, 'package.json'), JSON.stringify(FAKE_PLUGIN_MANIFEST), 'utf8')
+  // 第二个插件的假包清单：与 demo-plugin 同构，仅名称/作者不同（配合 DSH_E2E_PLUGIN_SECOND）。
+  const otherManifest = { ...FAKE_PLUGIN_MANIFEST, name: 'other-plugin', author: 'other-author' }
+  const otherDir = join(DATA_DIR, 'fake-plugin-2')
+  await mkdir(otherDir, { recursive: true })
+  await writeFile(join(otherDir, 'package.json'), JSON.stringify(otherManifest), 'utf8')
   // 假 dsh 的 add/remove 插桩：插件安装与升级的断言都读它。
   process.env.DSH_E2E_PLUGIN_ADD_LOG = MUTATION_LOG
 
@@ -191,8 +204,8 @@ test.beforeAll(async () => {
       {
         name: 'dsh-profile-web',
         private: true,
-        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'demo-plugin'] } },
-        dependencies: { 'demo-plugin': '1.0.0' }
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'demo-plugin', 'other-plugin'] } },
+        dependencies: { 'demo-plugin': '1.0.0', 'other-plugin': '1.0.0' }
       },
       undefined,
       2
@@ -715,4 +728,57 @@ test('安装源默认档跟随应用镜像设置：设为 npmjs 后对话框默�
   await expect(win.getByTestId('view-home').or(win.getByTestId('view-detail'))).toBeVisible({
     timeout: 15_000
   })
+})
+
+test('放到后台只对当前插件生效：上一个后台升级完成时不关掉新打开的确认框', async () => {
+  test.setTimeout(120_000)
+  // 两个插件 + 慢速变更：制造「后台升级尚未完成时又打开另一个插件确认框」的窗口。
+  await app.close()
+  app = await electron.launch({
+    args: buildLaunchArgs(),
+    env: e2eEnv(DATA_DIR, {
+      DSH_E2E_PLUGIN_MUTATION_DELAY_MS: '3000',
+      DSH_E2E_PLUGIN_SECOND: '1'
+    })
+  })
+  win = await app.firstWindow()
+  await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 15_000 })
+  await openDetail()
+
+  for (const name of ['demo-plugin', 'other-plugin']) {
+    await expect(win.getByTestId(`plugin-row-${name}`)).toBeVisible({ timeout: 15_000 })
+    const upgrade = win.getByTestId(`plugin-upgrade-${name}`)
+    if (!(await upgrade.isVisible())) {
+      await win.getByTestId(`plugin-check-${name}`).click()
+    }
+    await expect(upgrade).toBeVisible({ timeout: 20_000 })
+  }
+  const before = (await readMutations()).length
+
+  // demo-plugin 开始升级后放到后台：确认框收起，升级继续（remove + add 各 3 秒）。
+  await win.getByTestId('plugin-upgrade-demo-plugin').click()
+  const dialog = win.getByTestId('upgrade-confirm-dialog')
+  await expect(dialog).toBeVisible()
+  await win.getByTestId('upgrade-confirm-submit').click()
+  await win.getByTestId('upgrade-confirm-background').click()
+  await expect(dialog).toBeHidden()
+
+  // 后台升级未完成时打开另一个插件的确认框：显示的是后者。
+  await win.getByTestId('plugin-upgrade-other-plugin').click()
+  await expect(dialog).toBeVisible()
+  await expect(win.getByTestId('install-confirm-name')).toHaveText('other-plugin')
+
+  // 等 demo-plugin 的后台升级跑完（变更日志凑满 remove + add），再留出收尾窗口：
+  // 收尾不得作用到此刻打开的确认框上（修复前会把它关掉，表现为「点谁的升级都被放到后台」）。
+  await expect
+    .poll(async () => (await readMutations()).length, { timeout: 30_000 })
+    .toBe(before + 2)
+  await win.waitForTimeout(1_500)
+  await expect(dialog).toBeVisible()
+  await expect(win.getByTestId('install-confirm-name')).toHaveText('other-plugin')
+
+  // 收起确认框：没有为第二个插件下发任何变更。
+  await win.getByTestId('upgrade-confirm-cancel').click()
+  await expect(dialog).toBeHidden()
+  expect((await readMutations()).length).toBe(before + 2)
 })
