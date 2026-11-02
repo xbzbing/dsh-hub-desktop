@@ -45,6 +45,8 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
       'getInfo',
       'http',
       'instances',
+      'onFindRequest',
+      'onFindResult',
       'onInstanceStatus',
       'onVersionProgress',
       'onWorkspaceHotkey',
@@ -67,6 +69,7 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
     'adoptExternal',
     'checkDshVersion',
     'disconnectView',
+    'findInPage',
     'hideTooltip',
     'hideView',
     'listDshVersions',
@@ -82,6 +85,7 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
     'showTooltip',
     'start',
     'stop',
+    'stopFindInPage',
     'updateViewBounds',
     'upgradeDshVersion'
   ])
