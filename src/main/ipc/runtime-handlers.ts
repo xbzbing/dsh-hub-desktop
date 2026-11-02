@@ -7,6 +7,9 @@ import { z } from 'zod'
 import { LAUNCHERS } from '@shared/local-launch'
 import {
   INSTANCE_RUNTIME_IPC,
+  WORKSPACE_FIND_IPC,
+  WorkspaceFindInputSchema,
+  WorkspaceFindStopSchema,
   WorkspaceTooltipSchema,
   WorkspaceViewBoundsSchema,
   type AuthStateSnapshot,
@@ -17,6 +20,8 @@ import {
   type LocalInstance,
   type LocalLauncherSnapshot,
   type SshInstance,
+  type WorkspaceFindInput,
+  type WorkspaceFindStopOptions,
   type WorkspaceViewBounds
 } from '@shared/contracts'
 import { httpDirectEndpoint } from '../transport/endpoint-resolver'
@@ -63,6 +68,8 @@ export interface RuntimeHandlerDeps {
   hideInstanceView?: () => void
   closeInstanceView?: (instanceId: string) => void
   setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => void
+  findInInstanceView?: (input: WorkspaceFindInput) => void
+  stopFindInInstanceView?: (options: WorkspaceFindStopOptions) => void
   showInstanceTooltip?: (tooltip: { text: string; x: number; y: number }) => Promise<void>
   hideInstanceTooltip?: () => void
   instanceViewUrl?: (instanceId: string) => string | null
@@ -443,6 +450,22 @@ export function registerRuntimeHandlers(
         deps.setInstanceViewBounds?.(parsed)
         return null
       })
+  )
+
+  ipcMain.handle(WORKSPACE_FIND_IPC.find, (_event, input: unknown): Promise<IpcResult<null>> =>
+    wrap(() => {
+      const parsed = WorkspaceFindInputSchema.parse(input)
+      deps.findInInstanceView?.(parsed)
+      return null
+    })
+  )
+
+  ipcMain.handle(WORKSPACE_FIND_IPC.stop, (_event, options: unknown): Promise<IpcResult<null>> =>
+    wrap(() => {
+      const parsed = WorkspaceFindStopSchema.parse(options ?? {})
+      deps.stopFindInInstanceView?.(parsed)
+      return null
+    })
   )
 
   ipcMain.handle(

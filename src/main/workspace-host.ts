@@ -1,5 +1,11 @@
 import { BrowserWindow, shell, WebContentsView } from 'electron'
-import type { WorkspaceHotkeyEvent, WorkspaceViewBounds } from '@shared/contracts'
+import type {
+  WorkspaceFindInput,
+  WorkspaceFindRequest,
+  WorkspaceFindResult,
+  WorkspaceHotkeyEvent,
+  WorkspaceViewBounds
+} from '@shared/contracts'
 import { redactUrl } from '@shared/redact'
 import { focusDebug } from './shell/focus-debug'
 import { installInstanceDownloadPolicy } from './instance-download'
@@ -7,7 +13,7 @@ import { installInstancePermissionPolicy } from './instance-permission'
 import { prepareInstanceView } from './webview/cookie-import'
 import { buildOpenViewPlan, type SessionCookie } from './webview/open-view-plan'
 import { isAllowedInstanceNavigation, openExternalSafely } from './window-host-policy'
-import { toWorkspaceHotkey } from './workspace-hotkey'
+import { isFindShortcut, toWorkspaceHotkey } from './workspace-hotkey'
 
 export interface WorkspaceView {
   loadURL(url: string): Promise<void>
@@ -16,6 +22,11 @@ export interface WorkspaceView {
     getURL(): string
     isDestroyed(): boolean
     reload(): void
+    findInPage(
+      text: string,
+      options?: { forward?: boolean; findNext?: boolean; matchCase?: boolean }
+    ): number
+    stopFindInPage(action: 'clearSelection' | 'keepSelection' | 'activateSelection'): void
     on(
       event: 'will-redirect',
       listener: (_event: { preventDefault(): void }, url: string) => void
@@ -58,6 +69,10 @@ export interface WorkspaceHost {
   closeAll(): void
   /** 将键盘焦点交还当前可见的工作区视图。由窗口重新激活时调用。 */
   focusActive(): void
+  /** 在当前活动工作区内查找；调用方不能指定实例或 WebContents。 */
+  findInPage(input: WorkspaceFindInput): void
+  /** 停止活动工作区的页内查找并清除高亮。 */
+  stopFind(): void
 }
 
 /**
@@ -67,12 +82,18 @@ export interface WorkspaceHost {
 export function createWorkspaceHost(
   getHubWindow: () => BrowserWindow | null,
   workspaceLocale: () => string = () => 'en-US',
-  forwardHotkey: (event: WorkspaceHotkeyEvent) => void = () => undefined
+  forwardHotkey: (event: WorkspaceHotkeyEvent) => void = () => undefined,
+  forwardFindResult: (result: WorkspaceFindResult) => void = () => undefined,
+  forwardFindRequest: (request: WorkspaceFindRequest) => void = () => undefined
 ): WorkspaceHost {
   const entries = new Map<string, Entry>()
   let activeId: string | null = null
   let cacheLimit = 3
   let useSequence = 0
+  /** 当前 findInPage 的请求号；用于丢弃旧查询迟到的 found-in-page 结果。 */
+  let findRequestId: number | null = null
+  /** 面板是否处于查找态；查询被清空后仍为 true，使工作区持焦时的 Escape 仍能关面板。 */
+  let findSessionActive = false
 
   function touch(entry: Entry): void {
     useSequence += 1
@@ -87,6 +108,40 @@ export function createWorkspaceHost(
       if (!oldest) return
       close(oldest.instanceId)
     }
+  }
+
+  /** 清除某视图的查找高亮；无论视图是否仍存活都先结束查找会话。 */
+  function stopFindIn(entry: Entry | undefined): void {
+    findRequestId = null
+    findSessionActive = false
+    if (!entry || entry.view.webContents.isDestroyed()) return
+    entry.view.webContents.stopFindInPage('clearSelection')
+  }
+
+  function findInPage(input: WorkspaceFindInput): void {
+    if (activeId === null) return
+    const entry = entries.get(activeId)
+    if (!entry || entry.view.webContents.isDestroyed()) return
+    findSessionActive = true
+    if (input.query === '') {
+      // 清空查询只撤销高亮，查找条仍开着；会话标记保留，工作区持焦时的 Escape 仍可关闭。
+      findRequestId = null
+      entry.view.webContents.stopFindInPage('clearSelection')
+      return
+    }
+    findRequestId = entry.view.webContents.findInPage(input.query, {
+      forward: input.forward,
+      findNext: input.findNext
+    })
+  }
+
+  function stopFind(): void {
+    if (activeId === null) {
+      findRequestId = null
+      findSessionActive = false
+      return
+    }
+    stopFindIn(entries.get(activeId))
   }
 
   function configureLocale(webContents: WebContentsView['webContents']): void {
@@ -123,9 +178,32 @@ export function createWorkspaceHost(
     })
     // 工作区视图持有键盘焦点时,主窗口收不到按键;会话切换所需的白名单输入
     // (⌘/Ctrl 与其数字组合)在此转发给 hub 渲染层,其余输入原样交回页面。
-    webContents.on('before-input-event', (_event, input) => {
+    // 页内查找的开关同理:菜单快捷键未必落到这里,但视图持焦时的 Escape 只能在此截获。
+    webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown' && input.key === 'Escape' && findSessionActive) {
+        event.preventDefault()
+        stopFind()
+        forwardFindRequest({ action: 'close' })
+        return
+      }
+      if (isFindShortcut(input, process.platform)) {
+        event.preventDefault()
+        forwardFindRequest({ action: 'open' })
+        return
+      }
       const hotkey = toWorkspaceHotkey(input, process.platform)
       if (hotkey) forwardHotkey(hotkey)
+    })
+    // 只转发当前活动视图、当前请求号的结果；快速输入时旧查询的迟到结果直接丢弃。
+    webContents.on('found-in-page', (_event, result) => {
+      if (entry.instanceId !== activeId) return
+      if (findRequestId === null || result.requestId !== findRequestId) return
+      forwardFindResult({
+        requestId: result.requestId,
+        activeMatchOrdinal: result.activeMatchOrdinal,
+        matches: result.matches,
+        finalUpdate: result.finalUpdate
+      })
     })
     // 排查前台抢焦点（vector B）：工作区 guest（dsh web / 插件）自身调用 focus()/
     // window.focus() 会让该 WebContentsView 获焦并把宿主窗口顶到前台。记录视图获焦，
@@ -158,6 +236,8 @@ export function createWorkspaceHost(
         BrowserWindow.getFocusedWindow() !== null
       )}`
     )
+    // 换实例或重新准备同一工作区都会重建可见内容，旧页面的查找会话不再有效。
+    if (activeId !== null) stopFindIn(entries.get(activeId))
     let entry = entries.get(instanceId)
     if (!entry) {
       entry = {
@@ -245,6 +325,8 @@ export function createWorkspaceHost(
     if (activeId === null) return
     const entry = entries.get(activeId)
     if (entry) {
+      // 隐藏后查找高亮不可见；同时作废请求号，避免迟到结果推给已关闭的面板。
+      stopFindIn(entry)
       // Renderer reload 会丢失 workspaceOpen；同时清零旧边界，避免原生视图覆盖恢复后的展开侧栏。
       entry.view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
       entry.view.setVisible(false)
@@ -271,6 +353,7 @@ export function createWorkspaceHost(
   function close(instanceId: string): void {
     const entry = entries.get(instanceId)
     if (!entry) return
+    if (entry.instanceId === activeId) stopFindIn(entry)
     const win = getHubWindow()
     if (win && !win.isDestroyed()) win.contentView.removeChildView(entry.view)
     entry.view.webContents.close()
@@ -377,6 +460,8 @@ export function createWorkspaceHost(
     disconnect,
     close,
     closeAll,
-    focusActive
+    focusActive,
+    findInPage,
+    stopFind
   }
 }

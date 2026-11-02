@@ -1152,6 +1152,80 @@ h3,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 页内查找条：位于原生工作区视图边界之外的顶栏，输入与计数不会被页面盖住。 */
+.find-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 2px 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  -webkit-app-region: no-drag;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.find-bar:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.find-icon {
+  color: var(--muted);
+}
+.find-bar input {
+  width: 170px;
+  height: 26px;
+  padding: 0 4px 0 7px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 12px;
+}
+.find-bar input::placeholder {
+  color: var(--muted);
+}
+.find-bar input:focus-visible {
+  outline: none;
+}
+.find-count {
+  min-width: 42px;
+  padding: 0 3px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.find-step {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 1px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.find-step:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--fg);
+}
+.find-step:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.find-close {
+  margin-left: 2px;
+}
+/* 查找条打开时给右侧让位，窄窗口下优先保留输入框而不是地址副标题。 */
+.topbar:has(.find-bar) .tb-sub {
+  display: none;
+}
 .workspace-back {
   display: inline-flex;
   align-items: center;

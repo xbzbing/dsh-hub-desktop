@@ -18,10 +18,19 @@ let handlers: RegisterHarness['handlers']
 let invoke: RegisterHarness['invoke']
 let showInstanceTooltip: RegisterHarness['showInstanceTooltip']
 let hideInstanceTooltip: RegisterHarness['hideInstanceTooltip']
+let findInInstanceView: RegisterHarness['findInInstanceView']
+let stopFindInInstanceView: RegisterHarness['stopFindInInstanceView']
 
 beforeEach(async () => {
   harness = await setupRegister()
-  ;({ handlers, invoke, showInstanceTooltip, hideInstanceTooltip } = harness)
+  ;({
+    handlers,
+    invoke,
+    showInstanceTooltip,
+    hideInstanceTooltip,
+    findInInstanceView,
+    stopFindInInstanceView
+  } = harness)
 })
 
 afterEach(async () => {
@@ -52,6 +61,8 @@ describe('registerIpc', () => {
       'instances:reloadView',
       'instances:openInBrowser',
       'instances:updateViewBounds',
+      'workspace:find',
+      'workspace:stopFind',
       'instances:showTooltip',
       'instances:hideTooltip',
       'instances:hideView',
@@ -122,6 +133,35 @@ describe('registerIpc', () => {
 
     expect(result).toMatchObject({ ok: false, code: 'invalid-input' })
     expect(showInstanceTooltip).not.toHaveBeenCalled()
+  })
+
+  it('把页内查找交给活动工作区，并校验查询与停止选项', async () => {
+    const found = (await invoke('workspace:find', {
+      query: 'needle',
+      forward: true,
+      findNext: false
+    })) as { ok: boolean; value: null }
+    expect(found).toEqual({ ok: true, value: null })
+    expect(findInInstanceView).toHaveBeenCalledWith({
+      query: 'needle',
+      forward: true,
+      findNext: false
+    })
+
+    const stopped = (await invoke('workspace:stopFind', { focusView: true })) as {
+      ok: boolean
+      value: null
+    }
+    expect(stopped).toEqual({ ok: true, value: null })
+    expect(stopFindInInstanceView).toHaveBeenCalledWith({ focusView: true })
+
+    const tooLong = (await invoke('workspace:find', {
+      query: 'x'.repeat(201),
+      forward: true,
+      findNext: false
+    })) as { ok: boolean; code?: string }
+    expect(tooLong).toMatchObject({ ok: false, code: 'invalid-input' })
+    expect(findInInstanceView).toHaveBeenCalledTimes(1)
   })
 
   it('app:info 返回版本快照', async () => {

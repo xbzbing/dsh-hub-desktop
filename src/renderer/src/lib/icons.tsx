@@ -37,6 +37,8 @@ export type IconName =
   | 'refresh'
   | 'collapse'
   | 'expand'
+  | 'chevron-up'
+  | 'chevron-down'
   | 'wifi'
   | 'dots'
   | 'sync'
@@ -223,6 +225,8 @@ const ICONS: Record<IconName, JSX.Element> = {
       <path d="M5.5 5.5v13" />
     </>
   ),
+  'chevron-up': <path d="M6 14.5L12 8.5l6 6" />,
+  'chevron-down': <path d="M6 9.5l6 6 6-6" />,
   wifi: (
     <>
       <path d="M4.5 10.2a11 11 0 0 1 15 0" />

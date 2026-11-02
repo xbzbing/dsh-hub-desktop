@@ -12,7 +12,12 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { registerRendererAssets } from './renderer-assets'
 import type { InstanceRuntimeStatus } from '@shared/contracts'
-import { AUTH_IPC, WORKSPACE_HOTKEY_EVENT } from '@shared/contracts'
+import {
+  AUTH_IPC,
+  WORKSPACE_FIND_REQUEST_EVENT,
+  WORKSPACE_FIND_RESULT_EVENT,
+  WORKSPACE_HOTKEY_EVENT
+} from '@shared/contracts'
 import { registerIpc } from './ipc/register'
 import type { AuthProbeController } from './ipc/register'
 import type { LocalRuntimeManager } from './local-runtime/local-runtime'
@@ -125,6 +130,17 @@ void mainLog
 const e2eHidden = process.env.DSH_HUB_E2E_HIDDEN === '1'
 if (e2eHidden && process.platform === 'darwin') app.dock?.hide()
 
+/**
+ * 菜单快捷键与工作区 ⌘/Ctrl+F 共用的入口：先把键盘焦点从 WebContentsView 交还 Hub，
+ * 渲染层的查找输入框才能收到按键；随后请求渲染层打开查找条。
+ */
+function requestWorkspaceFind(): void {
+  const hubWindow = windowController.getHubWindow()
+  if (!hubWindow || hubWindow.isDestroyed()) return
+  hubWindow.webContents.focus()
+  hubWindow.webContents.send(WORKSPACE_FIND_REQUEST_EVENT, { action: 'open' })
+}
+
 const windowController = createWindowController({
   isDev,
   rendererDevUrl,
@@ -134,6 +150,7 @@ const windowController = createWindowController({
   readSettings: () => settingsRef?.read() ?? null,
   trayExists: () => nativePorts?.trayExists() === true,
   isQuitting: () => quitting,
+  requestFind: requestWorkspaceFind,
   getWorkspaceHost: () => workspaceHost,
   getWorkspaceTooltipHost: () => workspaceTooltipHost
 })
@@ -145,6 +162,19 @@ const workspaceHost = createWorkspaceHost(
     const hubWindow = windowController.getHubWindow()
     if (hubWindow && !hubWindow.isDestroyed())
       hubWindow.webContents.send(WORKSPACE_HOTKEY_EVENT, event)
+  },
+  // 页内查找结果与开关请求都只发给 Hub 渲染层；工作区本身没有 preload 消费者。
+  (result) => {
+    const hubWindow = windowController.getHubWindow()
+    if (hubWindow && !hubWindow.isDestroyed())
+      hubWindow.webContents.send(WORKSPACE_FIND_RESULT_EVENT, result)
+  },
+  (request) => {
+    const hubWindow = windowController.getHubWindow()
+    if (!hubWindow || hubWindow.isDestroyed()) return
+    // 工作区视图持焦时由 before-input-event 触发：先把焦点交还 Hub，输入框才能收键。
+    if (request.action === 'open') hubWindow.webContents.focus()
+    hubWindow.webContents.send(WORKSPACE_FIND_REQUEST_EVENT, request)
   }
 )
 const workspaceTooltipHost = createWorkspaceTooltipHost(
@@ -423,6 +453,11 @@ void app.whenReady().then(() => {
     reloadInstanceView: (instanceId) =>
       workspaceHost.reloadSession(instanceId, auth?.sessionCookie(instanceId) ?? null),
     setInstanceViewBounds: (bounds) => workspaceHost.setBounds(bounds),
+    findInInstanceView: (input) => workspaceHost.findInPage(input),
+    stopFindInInstanceView: ({ focusView }) => {
+      workspaceHost.stopFind()
+      if (focusView) workspaceHost.focusActive()
+    },
     showInstanceTooltip: (tooltip) => workspaceTooltipHost.show(tooltip),
     hideInstanceTooltip: () => workspaceTooltipHost.hide(),
     instanceViewUrl: (instanceId) => workspaceHost.loadedUrl(instanceId),

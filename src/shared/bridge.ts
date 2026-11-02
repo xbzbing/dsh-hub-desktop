@@ -44,6 +44,10 @@ import type {
   SshHostKeyForgetInput,
   SshKeyPreviewInput,
   SshKeyPreviewResult,
+  WorkspaceFindInput,
+  WorkspaceFindRequest,
+  WorkspaceFindResult,
+  WorkspaceFindStopOptions,
   WorkspaceHotkeyEvent,
   WorkspaceTooltip,
   WorkspaceViewBounds
@@ -182,6 +186,10 @@ export interface DshHubBridge {
      */
     openInBrowser: (id: string) => Promise<IpcResult<null>>
     updateViewBounds: (bounds: WorkspaceViewBounds) => Promise<IpcResult<null>>
+    /** 在当前活动工作区内查找；搜索范围由主进程确定为活动 WebContents。 */
+    findInPage: (input: WorkspaceFindInput) => Promise<IpcResult<null>>
+    /** 停止当前工作区的页内查找并清除高亮；可顺便把键盘焦点交还工作区。 */
+    stopFindInPage: (options?: WorkspaceFindStopOptions) => Promise<IpcResult<null>>
     /** 显示位于原生工作区视图之上的只读名称提示。 */
     showTooltip: (tooltip: WorkspaceTooltip) => Promise<IpcResult<null>>
     hideTooltip: () => Promise<IpcResult<null>>
@@ -260,6 +268,10 @@ export interface DshHubBridge {
   onVersionProgress: (listener: (event: DshVersionProgressEvent) => void) => () => void
   /** 订阅工作区白名单快捷键转发(⌘/Ctrl 与其数字组合);返回取消订阅函数。 */
   onWorkspaceHotkey: (listener: (event: WorkspaceHotkeyEvent) => void) => () => void
+  /** 订阅页内查找面板的开关请求（菜单快捷键 / 工作区 Escape）。 */
+  onFindRequest: (listener: (request: WorkspaceFindRequest) => void) => () => void
+  /** 订阅页内查找结果（当前匹配序号与总数）。 */
+  onFindResult: (listener: (result: WorkspaceFindResult) => void) => () => void
   /** SSH 传输辅助：密钥预览、主机指纹确认和口令输入。 */
   ssh: {
     /** 只读密钥预览（ssh -G + ssh-add -L）；不含私钥内容 */

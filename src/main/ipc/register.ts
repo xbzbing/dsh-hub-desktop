@@ -5,7 +5,13 @@
 import { ipcMain } from 'electron'
 import { z } from 'zod'
 import { IPC, type AppUpdateCheck } from '@shared/bridge'
-import type { InstanceRecord, IpcResult, WorkspaceViewBounds } from '@shared/contracts'
+import type {
+  InstanceRecord,
+  IpcResult,
+  WorkspaceFindInput,
+  WorkspaceFindStopOptions,
+  WorkspaceViewBounds
+} from '@shared/contracts'
 import type { Settings } from '@shared/settings'
 import { HomepageOpenError } from '../shell/open-homepage'
 import { InstanceStoreError } from '../registry/instance-store'
@@ -68,6 +74,10 @@ export interface InstanceViewDeps {
   closeInstanceView?: (instanceId: string) => void
   /** 主进程应用经校验的内容区边界。 */
   setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => void
+  /** 在活动工作区内查找；查询长度与选项由 schema 限制。 */
+  findInInstanceView?: (input: WorkspaceFindInput) => void
+  /** 停止活动工作区的查找；focusView 决定是否把键盘焦点交还工作区。 */
+  stopFindInInstanceView?: (options: WorkspaceFindStopOptions) => void
   /** 工作区原生视图之上的只读提示；文本与坐标由 schema 限制。 */
   showInstanceTooltip?: (tooltip: { text: string; x: number; y: number }) => Promise<void>
   hideInstanceTooltip?: () => void

@@ -10,6 +10,7 @@ import SshDialogs from './components/SshDialogs'
 import RuntimeConfirmDialogs from './components/RuntimeConfirmDialogs'
 import AuthPanel from './components/AuthPanel'
 import SettingsView from './components/SettingsView'
+import WorkspaceFind from './components/WorkspaceFind'
 import { compactWorkspaceAddress, STATUS_INFO, toDisplayStatus } from './lib/format'
 import { shouldReopenWorkspace } from './lib/auth-panel-state'
 import { Icon } from './lib/icons'
@@ -169,6 +170,7 @@ export default function App() {
         </div>
         {workspaceOpen && (
           <div className="tb-right">
+            <WorkspaceFind />
             <button
               className="workspace-back"
               onClick={() => {

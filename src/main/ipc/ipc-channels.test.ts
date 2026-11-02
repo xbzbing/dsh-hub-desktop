@@ -15,6 +15,9 @@ import {
   SPACE_IPC,
   SSH_IPC,
   VAULT_IPC,
+  WORKSPACE_FIND_IPC,
+  WORKSPACE_FIND_REQUEST_EVENT,
+  WORKSPACE_FIND_RESULT_EVENT,
   WORKSPACE_HOTKEY_EVENT
 } from '@shared/contracts'
 
@@ -41,6 +44,7 @@ const INVOKE_CONSTANTS: Record<string, Record<string, string>> = {
   SPACE_IPC,
   INSTANCE_IPC,
   INSTANCE_RUNTIME_IPC,
+  WORKSPACE_FIND_IPC,
   DSH_VERSION_IPC,
   PLUGIN_IPC
 }
@@ -55,7 +59,9 @@ const EVENT_CONSTANTS: Record<string, Record<string, string> | string> = {
   DSH_VERSION_IPC: { confirmRequest: DSH_VERSION_IPC.confirmRequest },
   INSTANCE_STATUS_EVENT,
   DSH_VERSION_PROGRESS_EVENT,
-  WORKSPACE_HOTKEY_EVENT
+  WORKSPACE_HOTKEY_EVENT,
+  WORKSPACE_FIND_REQUEST_EVENT,
+  WORKSPACE_FIND_RESULT_EVENT
 }
 
 const ROOT = process.cwd()
@@ -149,7 +155,7 @@ describe('IPC 通道四面对账（contracts ↔ 注册 ↔ preload invoke ↔ p
     expect([...invoke].filter((channel) => event.has(channel))).toEqual([])
     // 契约成员必须非空，防扫描退化成空集对空集「假绿」。
     expect(invoke.size).toBeGreaterThan(50)
-    expect(event.size).toBe(8)
+    expect(event.size).toBe(10)
   })
 
   it('主进程注册的 handle 通道 = 契约 invoke 集合（不多注册、不漏注册）', () => {

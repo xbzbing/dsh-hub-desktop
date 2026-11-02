@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { DSH_VERSION_IPC, DSH_VERSION_PROGRESS_EVENT, WORKSPACE_HOTKEY_EVENT } from './contracts'
+import {
+  DSH_VERSION_IPC,
+  DSH_VERSION_PROGRESS_EVENT,
+  WORKSPACE_FIND_IPC,
+  WORKSPACE_FIND_REQUEST_EVENT,
+  WORKSPACE_FIND_RESULT_EVENT,
+  WORKSPACE_HOTKEY_EVENT
+} from './contracts'
 
 /**
  * 运行时可断言的契约:通道常量(拼错/改名会让注册表测试与桥接白名单一起红)。
@@ -30,5 +37,20 @@ describe('dsh 版本管理契约', () => {
 describe('工作区快捷键契约', () => {
   it('白名单转发事件名是唯一的既定值', () => {
     expect(WORKSPACE_HOTKEY_EVENT).toBe('dsh:workspace-hotkey')
+  })
+})
+
+describe('页内查找契约', () => {
+  it('查找/停止通道与推送事件名是唯一的既定值', () => {
+    expect(WORKSPACE_FIND_IPC.find).toBe('workspace:find')
+    expect(WORKSPACE_FIND_IPC.stop).toBe('workspace:stopFind')
+    expect(WORKSPACE_FIND_REQUEST_EVENT).toBe('dsh:workspace-find-request')
+    expect(WORKSPACE_FIND_RESULT_EVENT).toBe('dsh:workspace-find-result')
+    const names = [
+      ...Object.values(WORKSPACE_FIND_IPC),
+      WORKSPACE_FIND_REQUEST_EVENT,
+      WORKSPACE_FIND_RESULT_EVENT
+    ]
+    expect(new Set(names).size).toBe(names.length)
   })
 })

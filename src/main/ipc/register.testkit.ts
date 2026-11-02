@@ -151,6 +151,8 @@ export interface RegisterHarness {
   reloadInstanceView: MockFn
   showInstanceTooltip: MockFn
   hideInstanceTooltip: MockFn
+  findInInstanceView: MockFn
+  stopFindInInstanceView: MockFn
   /** 传给 registerIpc 的依赖集合（用例可 `{...ipcDeps, X: undefined}` 重新注册） */
   ipcDeps: Parameters<typeof registerIpc>[1]
 }
@@ -253,6 +255,8 @@ export async function setupRegister(
   const reloadInstanceView = vi.fn(async () => undefined)
   const showInstanceTooltip = vi.fn(async () => undefined)
   const hideInstanceTooltip = vi.fn()
+  const findInInstanceView = vi.fn()
+  const stopFindInInstanceView = vi.fn()
 
   const vaultFake: Record<string, MockFn> = {
     status: vi.fn(() => ({ available: true, degraded: false, instanceCount: 0 })),
@@ -375,6 +379,8 @@ export async function setupRegister(
     reloadInstanceView: reloadInstanceView as never,
     showInstanceTooltip: showInstanceTooltip as never,
     hideInstanceTooltip: hideInstanceTooltip as never,
+    findInInstanceView: findInInstanceView as never,
+    stopFindInInstanceView: stopFindInInstanceView as never,
     instanceViewUrl: instanceViewUrlFake as never,
     promptBroker: promptBrokerFake as never,
     openInstanceView: openInstanceView as never,
@@ -420,6 +426,8 @@ export async function setupRegister(
     reloadInstanceView,
     showInstanceTooltip,
     hideInstanceTooltip,
+    findInInstanceView,
+    stopFindInInstanceView,
     ipcDeps
   }
 }

@@ -27,6 +27,8 @@ export interface WindowControllerDeps {
   trayExists: () => boolean
   /** 退出进行中时放行窗口关闭 */
   isQuitting: () => boolean
+  /** 打开当前工作区的页内查找（菜单 ⌘/Ctrl+F 与快捷键共用）。 */
+  requestFind: () => void
   getWorkspaceHost: () => WorkspaceHost
   getWorkspaceTooltipHost: () => WorkspaceTooltipHost
 }
@@ -150,12 +152,34 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
       label: tr('about.title'),
       click: () => openAboutPanel()
     }
+    // 标准 Edit 菜单没有「查找」角色，这里按平台重建同样的编辑项，再追加页内查找。
+    const editSubmenu: MenuItemConstructorOptions[] = [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' }
+    ]
+    if (process.platform === 'darwin') editSubmenu.push({ role: 'pasteAndMatchStyle' })
+    editSubmenu.push(
+      { role: 'delete' },
+      { role: 'selectAll' },
+      { type: 'separator' },
+      {
+        id: 'workspace-find',
+        label: tr('menu.find'),
+        accelerator: 'CmdOrCtrl+F',
+        click: () => deps.requestFind()
+      }
+    )
+    const editMenu: MenuItemConstructorOptions = { label: tr('menu.edit'), submenu: editSubmenu }
     if (process.platform !== 'darwin') {
       // 保留 accelerator（复制/粘贴/重载等）但不显示菜单栏；关于入口移到设置页。
       // 「关于」项仍留在（不可见的）应用菜单里：用户不经菜单进入，但保留标准位置，
       // 也让程序化触发（Menu.getApplicationMenu().click()，E2E 用）命中同一入口。
       const template: MenuItemConstructorOptions[] = [
-        { role: 'editMenu' },
+        editMenu,
         { role: 'viewMenu' },
         { role: 'windowMenu' },
         { role: 'help', submenu: [about] }
@@ -185,7 +209,7 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
           { role: 'quit' }
         ]
       },
-      { role: 'editMenu' },
+      editMenu,
       { role: 'viewMenu' },
       { role: 'windowMenu' }
     ]

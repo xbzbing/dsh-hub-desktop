@@ -17,6 +17,9 @@ import {
   DSH_VERSION_IPC,
   DSH_VERSION_PROGRESS_EVENT,
   PLUGIN_IPC,
+  WORKSPACE_FIND_IPC,
+  WORKSPACE_FIND_REQUEST_EVENT,
+  WORKSPACE_FIND_RESULT_EVENT,
   WORKSPACE_HOTKEY_EVENT,
   SETTINGS_IPC,
   SSH_IPC,
@@ -33,6 +36,8 @@ import {
   type SshKeyPreviewResult,
   type VaultPolicy,
   type VaultStatusSnapshot,
+  type WorkspaceFindInput,
+  type WorkspaceFindStopOptions,
   type WorkspaceTooltip
 } from '@shared/contracts'
 
@@ -85,6 +90,9 @@ const bridge: DshHubBridge = {
     reloadView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.reloadView, id),
     openInBrowser: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openInBrowser, id),
     updateViewBounds: (bounds) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.updateViewBounds, bounds),
+    findInPage: (input: WorkspaceFindInput) => ipcRenderer.invoke(WORKSPACE_FIND_IPC.find, input),
+    stopFindInPage: (options?: WorkspaceFindStopOptions) =>
+      ipcRenderer.invoke(WORKSPACE_FIND_IPC.stop, options ?? {}),
     showTooltip: (tooltip: WorkspaceTooltip) =>
       ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.showTooltip, tooltip),
     hideTooltip: () => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.hideTooltip),
@@ -134,6 +142,8 @@ const bridge: DshHubBridge = {
   onInstanceStatus: (listener) => subscribe(INSTANCE_STATUS_EVENT, listener),
   onVersionProgress: (listener) => subscribe(DSH_VERSION_PROGRESS_EVENT, listener),
   onWorkspaceHotkey: (listener) => subscribe(WORKSPACE_HOTKEY_EVENT, listener),
+  onFindRequest: (listener) => subscribe(WORKSPACE_FIND_REQUEST_EVENT, listener),
+  onFindResult: (listener) => subscribe(WORKSPACE_FIND_RESULT_EVENT, listener),
   ssh: {
     keyPreview: (input: SshKeyPreviewInput) =>
       ipcRenderer.invoke(SSH_IPC.keyPreview, input) as Promise<IpcResult<SshKeyPreviewResult>>,

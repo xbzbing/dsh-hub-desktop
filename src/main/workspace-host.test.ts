@@ -12,6 +12,8 @@ vi.mock('electron', () => {
     getUserAgent = vi.fn(() => 'DSH Hub Test Agent')
     setUserAgent = vi.fn()
     reload = vi.fn()
+    findInPage = vi.fn(() => 0)
+    stopFindInPage = vi.fn()
     setWindowOpenHandler = vi.fn()
     session = {
       setUserAgent: vi.fn(),
@@ -61,6 +63,8 @@ interface TestView {
     getUserAgent: ReturnType<typeof vi.fn>
     setUserAgent: ReturnType<typeof vi.fn>
     reload: ReturnType<typeof vi.fn>
+    findInPage: ReturnType<typeof vi.fn>
+    stopFindInPage: ReturnType<typeof vi.fn>
     setWindowOpenHandler: ReturnType<typeof vi.fn>
     session: {
       setUserAgent: ReturnType<typeof vi.fn>
@@ -445,6 +449,72 @@ describe('createWorkspaceHost', () => {
     beforeInput?.(guard, { ...base, type: 'char', key: '1', code: 'Digit1', ...modDown })
     expect(forward).toHaveBeenCalledTimes(3)
     expect(guard.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('把查找发给活动工作区、过滤旧请求结果，并在隐藏时清除高亮', () => {
+    const results: Array<{ requestId: number; matches: number }> = []
+    const requests: Array<{ action: string }> = []
+    const hub = hubWindow()
+    const host = createWorkspaceHost(
+      () => hub as never,
+      () => 'en-US',
+      undefined,
+      (result) => results.push(result),
+      (request) => requests.push(request)
+    )
+    host.prepare('33333333-3333-4333-8333-333333333333', 'https://gw.example.com/')
+    const wc = fakeViews()[0]!.webContents
+    wc.findInPage.mockReturnValueOnce(7).mockReturnValueOnce(8).mockReturnValue(9)
+
+    host.findInPage({ query: 'needle', forward: true, findNext: false })
+    expect(wc.findInPage).toHaveBeenLastCalledWith('needle', { forward: true, findNext: false })
+    const found = wc.handlers.get('found-in-page')
+    found?.({}, { requestId: 7, activeMatchOrdinal: 1, matches: 2, finalUpdate: false })
+    expect(results.at(-1)).toEqual({
+      requestId: 7,
+      activeMatchOrdinal: 1,
+      matches: 2,
+      finalUpdate: false
+    })
+
+    // 旧查询的迟到结果不能覆盖新查询。
+    host.findInPage({ query: 'needle', forward: true, findNext: true })
+    found?.({}, { requestId: 7, activeMatchOrdinal: 2, matches: 2, finalUpdate: true })
+    expect(results).toHaveLength(1)
+    found?.({}, { requestId: 8, activeMatchOrdinal: 2, matches: 2, finalUpdate: true })
+    expect(results.at(-1)?.requestId).toBe(8)
+
+    host.stopFind()
+    expect(wc.stopFindInPage).toHaveBeenCalledWith('clearSelection')
+    host.findInPage({ query: '', forward: true, findNext: false })
+    expect(wc.stopFindInPage).toHaveBeenCalledTimes(2)
+
+    // 工作区持焦时 Escape 由主进程截获：停止高亮并请求渲染层收起面板。
+    host.findInPage({ query: 'again', forward: true, findNext: false })
+    const beforeInput = wc.handlers.get('before-input-event')
+    const guard = { preventDefault: vi.fn() }
+    beforeInput?.(guard, { type: 'keyDown', key: 'Escape', isComposing: false })
+    expect(guard.preventDefault).toHaveBeenCalledOnce()
+    expect(requests.at(-1)).toEqual({ action: 'close' })
+    expect(wc.stopFindInPage).toHaveBeenCalledTimes(3)
+
+    // ⌘/Ctrl+F 打开查找，同样先拦截页面默认行为。
+    const isMac = process.platform === 'darwin'
+    beforeInput?.(guard, {
+      type: 'keyDown',
+      key: 'f',
+      isComposing: false,
+      meta: isMac,
+      control: !isMac,
+      alt: false
+    })
+    expect(requests.at(-1)).toEqual({ action: 'open' })
+
+    // hide 会清除高亮；隐藏后查找不再落到旧视图。
+    host.hide()
+    expect(wc.stopFindInPage).toHaveBeenCalledTimes(4)
+    host.findInPage({ query: 'after-hide', forward: true, findNext: false })
+    expect(wc.findInPage).toHaveBeenCalledTimes(3)
   })
 
   it('disconnect destroys only the selected guest view so reopening creates a fresh one', () => {

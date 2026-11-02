@@ -481,6 +481,49 @@ export const WorkspaceTooltipSchema = z
 
 export type WorkspaceTooltip = z.infer<typeof WorkspaceTooltipSchema>
 
+/** 页内查找通道：只作用于当前活动工作区，不接受实例 ID 或任意 WebContents。 */
+export const WORKSPACE_FIND_IPC = {
+  find: 'workspace:find',
+  stop: 'workspace:stopFind'
+} as const
+
+/** 主进程 → 渲染进程的页内查找结果（来自 WebContents.findInPage 的 found-in-page）。 */
+export const WORKSPACE_FIND_RESULT_EVENT = 'dsh:workspace-find-result'
+
+/** 主进程 → 渲染进程的查找面板开关请求（菜单、快捷键与工作区 Escape）。 */
+export const WORKSPACE_FIND_REQUEST_EVENT = 'dsh:workspace-find-request'
+
+export const WorkspaceFindInputSchema = z
+  .object({
+    query: z.string().max(200),
+    forward: z.boolean(),
+    findNext: z.boolean()
+  })
+  .strict()
+
+export type WorkspaceFindInput = z.infer<typeof WorkspaceFindInputSchema>
+
+export const WorkspaceFindStopSchema = z
+  .object({
+    /** 关闭面板时把键盘焦点交还工作区；清空输入导致的停止不抢焦点。 */
+    focusView: z.boolean().optional()
+  })
+  .strict()
+
+export type WorkspaceFindStopOptions = z.infer<typeof WorkspaceFindStopSchema>
+
+export const WorkspaceFindRequestSchema = z.object({ action: z.enum(['open', 'close']) }).strict()
+
+export type WorkspaceFindRequest = z.infer<typeof WorkspaceFindRequestSchema>
+
+export interface WorkspaceFindResult {
+  requestId: number
+  /** 当前聚焦匹配的序号，从 1 开始；无匹配时为 0。 */
+  activeMatchOrdinal: number
+  matches: number
+  finalUpdate: boolean
+}
+
 /**
  * 原生工作区转发给 hub 渲染层的按键事件。
  * 只含会话切换所需的白名单输入:切换修饰键本身(macOS 为 ⌘/Meta,其余平台为 Alt)

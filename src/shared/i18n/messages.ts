@@ -50,6 +50,16 @@ export const MESSAGES = {
   'nav.collapseSidebar': { zh: '收起侧边栏', en: 'Collapse sidebar' },
   'nav.instanceCount': { zh: '{n} 个实例', en: '{n} instances' },
 
+  // —— 应用菜单 / 页内查找 ——
+  'menu.edit': { zh: '编辑', en: 'Edit' },
+  'menu.find': { zh: '查找', en: 'Find' },
+  'find.placeholder': { zh: '在页面中查找', en: 'Find in page' },
+  'find.label': { zh: '页内查找', en: 'Find in page' },
+  'find.previous': { zh: '上一个匹配', en: 'Previous match' },
+  'find.next': { zh: '下一个匹配', en: 'Next match' },
+  'find.close': { zh: '关闭查找', en: 'Close find' },
+  'find.noResults': { zh: '无结果', en: 'No results' },
+
   // —— 空态 ——
   'empty.title': { zh: '还没有实例', en: 'No instances yet' },
   'empty.body': {
