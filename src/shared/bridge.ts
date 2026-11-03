@@ -268,7 +268,7 @@ export interface DshHubBridge {
   onVersionProgress: (listener: (event: DshVersionProgressEvent) => void) => () => void
   /** 订阅工作区白名单快捷键转发(⌘/Ctrl 与其数字组合);返回取消订阅函数。 */
   onWorkspaceHotkey: (listener: (event: WorkspaceHotkeyEvent) => void) => () => void
-  /** 订阅页内查找面板的开关请求（菜单快捷键 / 工作区 Escape）。 */
+  /** 订阅页内查找面板的开关请求（应用菜单打开 / 工作区 Escape 收起）。 */
   onFindRequest: (listener: (request: WorkspaceFindRequest) => void) => () => void
   /** 订阅页内查找结果（当前匹配序号与总数）。 */
   onFindResult: (listener: (result: WorkspaceFindResult) => void) => () => void

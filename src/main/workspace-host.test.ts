@@ -498,8 +498,10 @@ describe('createWorkspaceHost', () => {
     expect(requests.at(-1)).toEqual({ action: 'close' })
     expect(wc.stopFindInPage).toHaveBeenCalledTimes(3)
 
-    // ⌘/Ctrl+F 打开查找，同样先拦截页面默认行为。
+    // ⌘/Ctrl+F 不在主进程拦截：页面先拿到按键，页面未处理时由应用菜单的同一快捷键兜底。
     const isMac = process.platform === 'darwin'
+    const requestCount = requests.length
+    const guardCalls = guard.preventDefault.mock.calls.length
     beforeInput?.(guard, {
       type: 'keyDown',
       key: 'f',
@@ -508,7 +510,8 @@ describe('createWorkspaceHost', () => {
       control: !isMac,
       alt: false
     })
-    expect(requests.at(-1)).toEqual({ action: 'open' })
+    expect(guard.preventDefault).toHaveBeenCalledTimes(guardCalls)
+    expect(requests).toHaveLength(requestCount)
 
     // hide 会清除高亮；隐藏后查找不再落到旧视图。
     host.hide()

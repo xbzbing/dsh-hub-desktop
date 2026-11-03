@@ -27,7 +27,7 @@ export interface WindowControllerDeps {
   trayExists: () => boolean
   /** 退出进行中时放行窗口关闭 */
   isQuitting: () => boolean
-  /** 打开当前工作区的页内查找（菜单 ⌘/Ctrl+F 与快捷键共用）。 */
+  /** 打开当前工作区的页内查找（工作区未处理 ⌘/Ctrl+F 时的应用菜单入口）。 */
   requestFind: () => void
   getWorkspaceHost: () => WorkspaceHost
   getWorkspaceTooltipHost: () => WorkspaceTooltipHost
@@ -169,6 +169,8 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
       {
         id: 'workspace-find',
         label: tr('menu.find'),
+        // 工作区页面未处理 ⌘/Ctrl+F 时，未处理键盘事件回到主进程并触发这里的快捷键；
+        // 页面自己 preventDefault 的查找（如 dsh 面板里的文件预览）不会走到菜单。
         accelerator: 'CmdOrCtrl+F',
         click: () => deps.requestFind()
       }

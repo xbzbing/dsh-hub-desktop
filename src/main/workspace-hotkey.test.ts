@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { isFindShortcut, toWorkspaceHotkey, type WorkspaceKeyInput } from './workspace-hotkey'
+import { toWorkspaceHotkey, type WorkspaceKeyInput } from './workspace-hotkey'
 
 function input(patch: Partial<WorkspaceKeyInput>): WorkspaceKeyInput {
   return {
@@ -113,25 +113,5 @@ describe('toWorkspaceHotkey（通用过滤）', () => {
     const guard = vi.fn()
     toWorkspaceHotkey(input({ key: 'a', code: 'KeyA' }), 'darwin')
     expect(guard).not.toHaveBeenCalled()
-  })
-})
-
-describe('isFindShortcut（页内查找）', () => {
-  it('macOS 只认 ⌘F，不认 Ctrl+F', () => {
-    expect(isFindShortcut(input({ key: 'f', meta: true }), 'darwin')).toBe(true)
-    expect(isFindShortcut(input({ key: 'F', meta: true }), 'darwin')).toBe(true)
-    expect(isFindShortcut(input({ key: 'f', control: true }), 'darwin')).toBe(false)
-  })
-
-  it('Windows/Linux 只认 Ctrl+F', () => {
-    expect(isFindShortcut(input({ key: 'f', control: true }), 'win32')).toBe(true)
-    expect(isFindShortcut(input({ key: 'f', meta: true }), 'linux')).toBe(false)
-  })
-
-  it('排除 Alt 组合、非按下态与输入法组合态', () => {
-    expect(isFindShortcut(input({ key: 'f', control: true, alt: true }), 'win32')).toBe(false)
-    expect(isFindShortcut(input({ key: 'f', meta: true, type: 'keyUp' }), 'darwin')).toBe(false)
-    expect(isFindShortcut(input({ key: 'f', meta: true, isComposing: true }), 'darwin')).toBe(false)
-    expect(isFindShortcut(input({ key: 'g', meta: true }), 'darwin')).toBe(false)
   })
 })

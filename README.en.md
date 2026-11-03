@@ -27,7 +27,7 @@ Privacy policy: [PRIVACY.md](PRIVACY.md) — this app collects no personal data,
   - `http/https`: Remote direct connection
 - **Integrated Authentication**: Gateway five-state detection (login page / OTP / onboarding / API 401 / no auth required). Auth panel with full state flow (password → 6-digit OTP / backup codes → lockout countdown). **Silent login with saved passwords** (after checking "Remember password", no re-entry needed on restart/session expiry — passwords never cross process boundaries)
 - **WebView Integration**: Partitioned cookie injection (inject before loadURL), 302/401 request interception, session expiry signal-driven re-authentication
-- **Find in Page**: Press ⌘/Ctrl+F (or Edit → Find) while a workspace is open to search from the top bar; live match count, previous/next navigation, and Esc to close and clear highlights
+- **Find in Page**: Press ⌘/Ctrl+F (or Edit → Find) while a workspace is open to search from the top bar; live match count, previous/next navigation, and Esc to close and clear highlights. When the page handles the shortcut itself (e.g. a file preview or diff inside dsh), the page takes precedence; the Hub bar opens only when the page leaves it unhandled
 - **Credential Vault**: System keychain (safeStorage), remembered by default after login (uncheck to opt out); instant clear on uncheck/forget
 - **Audit Log**: Whitelist projection, credentials never stored
 - **SSH Security**: TOFU host fingerprint verification (trust on first use / reject on change), passwords passed via ephemeral memory channel
