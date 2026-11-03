@@ -13,7 +13,7 @@ import { installInstancePermissionPolicy } from './instance-permission'
 import { prepareInstanceView } from './webview/cookie-import'
 import { buildOpenViewPlan, type SessionCookie } from './webview/open-view-plan'
 import { isAllowedInstanceNavigation, openExternalSafely } from './window-host-policy'
-import { isFindShortcut, toWorkspaceHotkey } from './workspace-hotkey'
+import { toWorkspaceHotkey } from './workspace-hotkey'
 
 export interface WorkspaceView {
   loadURL(url: string): Promise<void>
@@ -178,17 +178,14 @@ export function createWorkspaceHost(
     })
     // 工作区视图持有键盘焦点时,主窗口收不到按键;会话切换所需的白名单输入
     // (⌘/Ctrl 与其数字组合)在此转发给 hub 渲染层,其余输入原样交回页面。
-    // 页内查找的开关同理:菜单快捷键未必落到这里,但视图持焦时的 Escape 只能在此截获。
+    // 页内查找不在此拦截:页面先拿到 ⌘/Ctrl+F,页面自行处理时 Chromium 视为已消费,
+    // 应用菜单的同一快捷键不会触发;页面未处理时才回到主进程,由菜单打开 Hub 查找条。
+    // 视图持焦时的 Escape 只能在此截获。
     webContents.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown' && input.key === 'Escape' && findSessionActive) {
         event.preventDefault()
         stopFind()
         forwardFindRequest({ action: 'close' })
-        return
-      }
-      if (isFindShortcut(input, process.platform)) {
-        event.preventDefault()
-        forwardFindRequest({ action: 'open' })
         return
       }
       const hotkey = toWorkspaceHotkey(input, process.platform)

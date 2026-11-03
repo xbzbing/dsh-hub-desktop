@@ -131,8 +131,9 @@ const e2eHidden = process.env.DSH_HUB_E2E_HIDDEN === '1'
 if (e2eHidden && process.platform === 'darwin') app.dock?.hide()
 
 /**
- * 菜单快捷键与工作区 ⌘/Ctrl+F 共用的入口：先把键盘焦点从 WebContentsView 交还 Hub，
- * 渲染层的查找输入框才能收到按键；随后请求渲染层打开查找条。
+ * 页内查找的菜单快捷键入口：工作区页面没有处理 ⌘/Ctrl+F 时，未处理键盘事件回到主进程
+ * 触发这里的 accelerator。先把键盘焦点从 WebContentsView 交还 Hub，渲染层的查找输入框
+ * 才能收到按键；随后请求渲染层打开查找条。
  */
 function requestWorkspaceFind(): void {
   const hubWindow = windowController.getHubWindow()

@@ -45,14 +45,3 @@ export function toWorkspaceHotkey(
   }
   return null
 }
-
-/**
- * 页内查找快捷键：macOS 为 ⌘F，其余平台为 Ctrl+F。
- * 只处理按下态并排除 Alt 组合，避免抢占页面里其它 F 快捷键。
- */
-export function isFindShortcut(input: WorkspaceKeyInput, platform: string): boolean {
-  if (input.isComposing || input.type !== 'keyDown') return false
-  if (input.key.toLowerCase() !== 'f') return false
-  const primary = platform === 'darwin' ? input.meta : input.control
-  return primary && !input.alt
-}

@@ -25,3 +25,4 @@
 | [0013](./0013-plugin-upgrade-remove-then-install.md) | 插件升级先停止并移除、再安装（与 dsh 官方 `updateBundle` 一致） | 已采纳 |
 | [0014](./0014-instance-download-controlled-path.md) | 实例分区下载受控放行（主进程定路径 + 文件名清洗 + 对话框兜底） | 落盘方式被 0015 取代 |
 | [0015](./0015-download-save-dialog.md) | 下载落点由用户在保存对话框确认（默认路径预填系统下载目录） | 已采纳 |
+| [0016](./0016-workspace-find-page-first.md) | 工作区 ⌘/Ctrl+F 由页面优先响应，菜单快捷键兜底 | 已采纳 |
