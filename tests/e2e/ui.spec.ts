@@ -1,6 +1,7 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { e2eDataDir, e2eEnv } from './data-dir'
 import { buildLaunchArgs } from './launch-args'
+import { openSelect } from './select'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, rm } from 'node:fs/promises'
 /**
@@ -45,24 +46,29 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await expect(win.getByText('请填写实例名称')).toBeVisible()
   await win.getByTestId('wizard-name').fill('E2E 演示实例')
   await win.locator('[data-testid="wizard-step-2"] details.adv > summary').click()
-  await expect(win.getByTestId('wizard-launcher')).toHaveValue('dsh')
+  await expect(win.getByTestId('wizard-launcher')).toHaveAttribute('data-value', 'dsh')
   // dsh 恒在且为默认；dush/duush 只在本机探测到时才渲染（未检测到直接隐藏，不是禁用）。
   // 选项集合随宿主安装状态变化，故只断言集合约束，不断言具体数量。
-  const launcherOptions = await win
-    .getByTestId('wizard-launcher')
-    .evaluate((select) =>
-      Array.from((select as HTMLSelectElement).options).map((option) => option.value)
-    )
+  const launcherMenu = await openSelect(win, 'wizard-launcher')
+  const launcherOptions = await launcherMenu
+    .getByRole('option')
+    .evaluateAll((options) => options.map((option) => option.getAttribute('data-value') ?? ''))
   expect(launcherOptions[0]).toBe('dsh')
   expect(new Set(launcherOptions).size).toBe(launcherOptions.length)
   expect(launcherOptions.every((value) => ['dsh', 'dush', 'duush'].includes(value))).toBe(true)
-  await expect(win.getByTestId('wizard-launcher').locator('option:disabled')).toHaveCount(0)
-  // 版本管理下拉已接线：选项首项恒为「跟随最新版本」（空值），与镜像拉取结果无关（离线安全）。
-  await expect(win.getByTestId('wizard-version')).toBeVisible()
-  await expect(win.getByTestId('wizard-version').locator('option').first()).toHaveAttribute(
-    'value',
-    ''
-  )
+  await expect(launcherMenu.locator('[role="option"][aria-disabled="true"]')).toHaveCount(0)
+  await win.keyboard.press('Escape')
+  await expect(launcherMenu).toHaveCount(0)
+  // 版本管理下拉已接线：当前值恒为「跟随最新版本」（空值），与镜像拉取结果无关（离线安全）。
+  const versionTrigger = win.getByTestId('wizard-version')
+  await expect(versionTrigger).toBeVisible()
+  await expect(versionTrigger).toHaveAttribute('data-value', '')
+  // 目录仍在拉取时触发器不可展开（禁用），拉到结果或失败后才可查看选项。
+  if (await versionTrigger.isEnabled()) {
+    const versionMenu = await openSelect(win, 'wizard-version')
+    await expect(versionMenu.getByRole('option').first()).toHaveAttribute('data-value', '')
+    await win.keyboard.press('Escape')
+  }
   await expect(win.getByText('请填写实例名称')).toBeHidden()
   await win.getByRole('button', { name: '下一步' }).click()
 

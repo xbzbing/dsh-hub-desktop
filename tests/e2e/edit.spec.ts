@@ -1,6 +1,7 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { e2eDataDir, e2eEnv } from './data-dir'
 import { buildLaunchArgs } from './launch-args'
+import { chooseOption, openSelect, pickOption } from './select'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -145,7 +146,7 @@ test('本地实例可编辑，端口留空时回到自动分配', async () => {
   const portInput = win.getByTestId('edit-port')
   await expect(portInput).toBeVisible()
   await expect(win.getByTestId('edit-launcher')).toBeVisible()
-  await win.getByTestId('edit-launcher').selectOption('dush')
+  await pickOption(win, 'edit-launcher', 'dush')
   await portInput.fill('30567')
   await win.getByTestId('edit-name').fill('改名后的本地实例')
   await win.getByTestId('edit-save').click()
@@ -192,18 +193,19 @@ test('本机编辑对话框可切换安装镜像，保存后 settings.json 落�
   const registry = win.getByTestId('edit-registry')
   await expect(registry).toBeVisible()
   // 新数据目录：镜像未设置 → 跟随系统；两档预设与自定义都可选。
-  await expect(registry).toHaveValue('system')
-  await expect(registry).toContainText('npmmirror')
-  await expect(registry).toContainText('npmjs')
-  await expect(registry).toContainText('自定义')
+  await expect(registry).toHaveAttribute('data-value', 'system')
+  const registryMenu = await openSelect(win, 'edit-registry')
+  await expect(registryMenu).toContainText('npmmirror')
+  await expect(registryMenu).toContainText('npmjs')
+  await expect(registryMenu).toContainText('自定义')
   // 作用范围写明是应用级设置：用户要知道改的不是单个实例的私有字段。
   await expect(dialog).toContainText('应用级设置')
 
   // 自定义档只切出 URL 输入框，不改当前值。
-  await registry.selectOption('custom')
+  await chooseOption(win, 'edit-registry', 'custom')
   await expect(win.getByTestId('edit-registry-url')).toBeVisible()
   // 切到 npmjs 预设：输入框收回。
-  await registry.selectOption('https://registry.npmjs.org')
+  await pickOption(win, 'edit-registry', 'https://registry.npmjs.org')
   await expect(win.getByTestId('edit-registry-url')).toHaveCount(0)
 
   await win.getByTestId('edit-save').click()
@@ -215,12 +217,55 @@ test('本机编辑对话框可切换安装镜像，保存后 settings.json 落�
 
   // 重开回读：仍选中 npmjs 档；改回跟随系统后再次落盘。
   await win.getByTestId('edit-btn').click()
-  await expect(win.getByTestId('edit-registry')).toHaveValue('https://registry.npmjs.org')
-  await win.getByTestId('edit-registry').selectOption('system')
+  await expect(win.getByTestId('edit-registry')).toHaveAttribute(
+    'data-value',
+    'https://registry.npmjs.org'
+  )
+  await pickOption(win, 'edit-registry', 'system')
   await win.getByTestId('edit-save').click()
   await expect(dialog).toBeHidden()
   const restored = JSON.parse(await readFile(join(DATA_DIR, 'settings.json'), 'utf8')) as {
     npmRegistry: string
   }
   expect(restored.npmRegistry).toBe('')
+})
+
+test('下拉菜单：浮层挂 body、键盘上下选择、Esc 只收菜单', async () => {
+  await win.getByTestId('brand').click()
+  await expect(win.getByTestId('instances-table')).toBeVisible()
+  await win.getByTestId('instances-table').getByText('改名后的本地实例', { exact: true }).click()
+  const workspaceBack = win.getByTestId('workspace-back-btn')
+  if (await workspaceBack.isVisible()) await workspaceBack.click()
+  await expect(win.getByTestId('view-detail')).toBeVisible()
+  await win.getByTestId('edit-btn').click()
+  const dialog = win.getByTestId('edit-dialog')
+  await expect(dialog).toBeVisible()
+
+  const auth = win.getByTestId('edit-authmode')
+  const menu = win.getByTestId('edit-authmode-menu')
+  await auth.focus()
+  await win.keyboard.press('ArrowDown')
+  await expect(menu).toBeVisible()
+  // 浮层直接挂 body：对话框的滚动容器裁不到它。
+  expect(await menu.evaluate((element) => element.parentElement === document.body)).toBe(true)
+  // 选中项由勾选图标标记，而不是系统下拉的蓝色高亮。
+  await expect(menu.locator('[role="option"][aria-selected="true"]')).toContainText('自动探测')
+  await expect(menu.locator('[data-value="auto"] .select-check')).toHaveCount(1)
+  await win.screenshot({ path: join(SHOT_DIR, 'select-menu-open.png'), animations: 'disabled' })
+
+  // 键盘下移一项后回车：菜单收起、值生效。
+  await win.keyboard.press('ArrowDown')
+  await win.keyboard.press('Enter')
+  await expect(menu).toHaveCount(0)
+  await expect(auth).toHaveAttribute('data-value', 'none')
+  await expect(auth).toContainText('无需登录')
+
+  // Esc 先收菜单，对话框不动；再按 Esc 才关对话框。
+  await auth.click()
+  await expect(menu).toBeVisible()
+  await win.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await expect(dialog).toBeVisible()
+  await win.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
 })

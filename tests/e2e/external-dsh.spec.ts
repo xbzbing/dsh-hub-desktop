@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { _electron as electron, expect, test } from '@playwright/test'
 import { e2eDataDir, e2eEnv } from './data-dir'
 import { buildLaunchArgs } from './launch-args'
+import { pickOption } from './select'
 import { closeAboutWithEscape, expectAboutClosed, openAboutViaMenu } from './about-menu'
 import { backToOverview } from './overview'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
@@ -43,7 +44,7 @@ let fixturePort: number | null = null
 async function selectFixtureDsh(page: Page, pid: number): Promise<void> {
   const picker = page.getByTestId('wizard-external-pick')
   if (await picker.isVisible()) {
-    await picker.selectOption(String(pid))
+    await pickOption(page, 'wizard-external-pick', String(pid))
   }
 }
 

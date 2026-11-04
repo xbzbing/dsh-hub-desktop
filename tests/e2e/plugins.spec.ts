@@ -1,6 +1,7 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { e2eDataDir, e2eEnv } from './data-dir'
 import { buildLaunchArgs } from './launch-args'
+import { openSelect, pickOption } from './select'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -477,8 +478,11 @@ test('安装两步：确定解析出版本、确认后才下发带 --registry �
   const dialog = win.getByTestId('install-plugin-dialog')
   await expect(dialog).toBeVisible()
   // 第一步：安装源两档（默认国内镜像）+ 常驻安全提醒。
-  await expect(win.getByTestId('install-plugin-source')).toHaveValue('npmmirror')
-  await expect(win.getByTestId('install-plugin-source')).toContainText('npmjs')
+  await expect(win.getByTestId('install-plugin-source')).toHaveAttribute('data-value', 'npmmirror')
+  const sourceMenu = await openSelect(win, 'install-plugin-source')
+  await expect(sourceMenu).toContainText('npmjs')
+  await win.keyboard.press('Escape')
+  await expect(sourceMenu).toHaveCount(0)
   await expect(dialog).toContainText('来源不明的插件可能损坏 DSH')
 
   await win.getByTestId('install-plugin-input').fill('demo-plugin')
@@ -583,7 +587,7 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
 
   // 安装源可在确认前改选：默认国内镜像，徽标与选择器同档。
   const source = win.getByTestId('upgrade-confirm-source')
-  await expect(source).toHaveValue('npmmirror')
+  await expect(source).toHaveAttribute('data-value', 'npmmirror')
   await expect(dialog.locator('.card-head .badge').first()).toContainText('npmmirror')
   // 版本演进：左旧右新（已装 1.0.0 → 目标 1.1.0）。
   const versionRow = win.getByTestId('install-confirm-version')
@@ -605,7 +609,7 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
   // 确认后才执行升级：改选安装源后按新源解析，add 必须带新源的 --registry。
   await upgrade.click()
   await expect(dialog).toBeVisible()
-  await win.getByTestId('upgrade-confirm-source').selectOption('npmjs')
+  await pickOption(win, 'upgrade-confirm-source', 'npmjs')
   // 改选即作废当前计划（确认区收回）→ 按 npmjs 重新解析出同一目标版本后确认区才回来。
   await expect(versionRow).toBeHidden()
   await expect(versionRow).toBeVisible({ timeout: 20_000 })
@@ -704,7 +708,7 @@ test('安装源默认档跟随应用镜像设置：设为 npmjs 后对话框默�
   // 安装第一步的默认档 = npmjs。
   await win.getByTestId('plugins-install-btn').click()
   await expect(win.getByTestId('install-plugin-dialog')).toBeVisible()
-  await expect(win.getByTestId('install-plugin-source')).toHaveValue('npmjs')
+  await expect(win.getByTestId('install-plugin-source')).toHaveAttribute('data-value', 'npmjs')
   await win.getByTestId('install-plugin-cancel').click()
   await expect(win.getByTestId('install-plugin-dialog')).toBeHidden()
 
@@ -717,7 +721,7 @@ test('安装源默认档跟随应用镜像设置：设为 npmjs 后对话框默�
   await upgrade.click()
   const dialog = win.getByTestId('upgrade-confirm-dialog')
   await expect(dialog).toBeVisible()
-  await expect(win.getByTestId('upgrade-confirm-source')).toHaveValue('npmjs')
+  await expect(win.getByTestId('upgrade-confirm-source')).toHaveAttribute('data-value', 'npmjs')
   await win.getByTestId('upgrade-confirm-cancel').click()
   await expect(dialog).toBeHidden()
 

@@ -5,6 +5,7 @@ import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
 import type { DshVersionCatalog } from '@shared/contracts'
 import { useAppStore } from '../../store'
+import Select from '../Select'
 import type { ExternalWorkspace, WizardForm } from './types'
 
 /** 外部 dsh 接管相关字段。 */
@@ -59,6 +60,11 @@ export default function LocalConfig(props: LocalConfigProps): ReactNode {
     catalogError: versionCatalogError,
     setVersionTouched
   } = versions
+  /** 下拉只给字符串值；写回表单时仍走同一个 setter，保持与输入框一致的行为。 */
+  const setField =
+    (key: Exclude<keyof WizardForm, 'useDefaultSpace'>) =>
+    (value: string): void =>
+      set(key)({ target: { value } })
   return (
     <>
       {externalWorkspaces.length > 0 && (
@@ -74,19 +80,17 @@ export default function LocalConfig(props: LocalConfigProps): ReactNode {
             {externalWorkspaces.length > 1 && (
               <div className="field mt8">
                 <label htmlFor="wizard-external-pick">{t('wizard.externalPickLabel')}</label>
-                <select
-                  className="input num"
+                <Select
+                  className="num"
                   id="wizard-external-pick"
-                  value={selectedPid ?? ''}
-                  onChange={(event) => onSelectExternal(Number(event.target.value))}
-                  data-testid="wizard-external-pick"
-                >
-                  {externalWorkspaces.map((item) => (
-                    <option key={item.pid} value={item.pid}>
-                      127.0.0.1:{item.port} · pid {item.pid}
-                    </option>
-                  ))}
-                </select>
+                  value={selectedPid === null ? '' : String(selectedPid)}
+                  onChange={(next) => onSelectExternal(Number(next))}
+                  options={externalWorkspaces.map((item) => ({
+                    value: String(item.pid),
+                    label: `127.0.0.1:${item.port} · pid ${item.pid}`
+                  }))}
+                  testId="wizard-external-pick"
+                />
               </div>
             )}
             <label className="check mt8">
@@ -121,51 +125,44 @@ export default function LocalConfig(props: LocalConfigProps): ReactNode {
           <div className="grid-2 mt8">
             <div className="field">
               <label htmlFor="wizard-launcher">{t('wizard.launcherLabel')}</label>
-              <select
-                className="input"
+              {/* dsh 恒为默认项（缺失时仍可选，启动会提示下载）；dush/duush 未检测到就不出现。 */}
+              <Select
                 id="wizard-launcher"
                 value={form.launcher}
-                onChange={set('launcher')}
-                data-testid="wizard-launcher"
-              >
-                {/* dsh 恒为默认项（缺失时仍可选，启动会提示下载）；dush/duush 未检测到就不出现。 */}
-                {LAUNCHERS.filter(
+                onChange={setField('launcher')}
+                options={LAUNCHERS.filter(
                   (name) => name === 'dsh' || localLaunchers.some((item) => item.launcher === name)
                 ).map((name) => {
                   const detected =
                     localLaunchers.find((item) => item.launcher === name)?.version ?? null
-                  return (
-                    <option key={name} value={name}>
-                      {name}
-                      {detected !== null ? ` · ${detected}` : ` · ${t('wizard.launcherMissing')}`}
-                    </option>
-                  )
+                  return {
+                    value: name,
+                    label: `${name}${detected !== null ? ` · ${detected}` : ` · ${t('wizard.launcherMissing')}`}`
+                  }
                 })}
-              </select>
+                testId="wizard-launcher"
+              />
               {localLaunchers.length === 0 && (
                 <span className="hint">{t('wizard.launcherMissingHint')}</span>
               )}
             </div>
             <div className="field">
               <label htmlFor="wizard-version">{t('wizard.versionLabel')}</label>
-              <select
-                className="input num"
+              <Select
+                className="num"
                 id="wizard-version"
                 value={form.version}
-                onChange={(event) => {
+                onChange={(next) => {
                   setVersionTouched(true)
-                  setForm((current) => ({ ...current, version: event.target.value }))
+                  setForm((current) => ({ ...current, version: next }))
                 }}
                 disabled={versionCatalog === null && versionCatalogError === null}
-                data-testid="wizard-version"
-              >
-                <option value="">{t('wizard.versionLatest')}</option>
-                {versionOptions.map((version) => (
-                  <option key={version} value={version}>
-                    {version}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: t('wizard.versionLatest') },
+                  ...versionOptions.map((version) => ({ value: version, label: version }))
+                ]}
+                testId="wizard-version"
+              />
               <span className="hint" data-testid="wizard-version-hint">
                 {versionCatalogError !== null
                   ? t('wizard.versionFetchFailed', { msg: versionCatalogError })
@@ -196,21 +193,18 @@ export default function LocalConfig(props: LocalConfigProps): ReactNode {
             </div>
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <label htmlFor="wizard-space">{t('wizard.spaceLabel')}</label>
-              <select
-                className="input"
+              <Select
                 id="wizard-space"
                 value={form.useDefaultSpace ? 'shared' : 'isolated'}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    useDefaultSpace: event.target.value === 'shared'
-                  }))
+                onChange={(next) =>
+                  setForm((current) => ({ ...current, useDefaultSpace: next === 'shared' }))
                 }
-                data-testid="wizard-space"
-              >
-                <option value="isolated">{t('wizard.spaceIsolated')}</option>
-                <option value="shared">{t('wizard.spaceShared')}</option>
-              </select>
+                options={[
+                  { value: 'isolated', label: t('wizard.spaceIsolated') },
+                  { value: 'shared', label: t('wizard.spaceShared') }
+                ]}
+                testId="wizard-space"
+              />
               {/* 选公共空间时显示解析后的真实路径（Windows 展开为 C:\Users\<用户>\.dsh）。 */}
               {form.useDefaultSpace && defaultDshHome && (
                 <span className="hint num" data-testid="wizard-space-path">
@@ -221,27 +215,25 @@ export default function LocalConfig(props: LocalConfigProps): ReactNode {
             </div>
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <label htmlFor="wizard-registry">{t('wizard.registryLabel')}</label>
-              <select
-                className="input"
+              <Select
                 id="wizard-registry"
                 value={registryPresetKey(form.registry)}
-                onChange={(event) => {
-                  const key = event.target.value
+                onChange={(key) => {
                   if (key === 'custom') return // 仅切出输入框；当前值保持原样，由输入框失焦落盘
                   const url = key === 'system' ? '' : key
                   setForm((current) => ({ ...current, registry: url }))
                   persistRegistry(url)
                 }}
-                data-testid="wizard-registry"
-              >
-                <option value="system">{t('wizard.registrySystem')}</option>
-                {REGISTRY_PRESETS.map((preset) => (
-                  <option key={preset.value} value={preset.value}>
-                    {t(preset.labelKey)}
-                  </option>
-                ))}
-                <option value="custom">{t('wizard.registryCustom')}</option>
-              </select>
+                options={[
+                  { value: 'system', label: t('wizard.registrySystem') },
+                  ...REGISTRY_PRESETS.map((preset) => ({
+                    value: preset.value,
+                    label: t(preset.labelKey)
+                  })),
+                  { value: 'custom', label: t('wizard.registryCustom') }
+                ]}
+                testId="wizard-registry"
+              />
               {registryPresetKey(form.registry) === 'custom' && (
                 <input
                   className="input num mt4"

@@ -5,6 +5,7 @@ import type { Translator } from '@shared/i18n'
 import { pluginRegistryFromUrl } from '@shared/settings'
 import { Icon } from '../../lib/icons'
 import { Modal } from '../Modal'
+import Select from '../Select'
 import { InfoTip } from '../InfoTip'
 import { useAppStore } from '../../store'
 import InstallConfirmPanel from './InstallConfirmPanel'
@@ -213,20 +214,17 @@ export default function InstallPluginDialog(props: {
       {plan === null && (
         <div className="field mt12">
           <label htmlFor="install-plugin-registry">{t('detail.plugin.installSource')}</label>
-          <select
-            className="input"
+          <Select
             id="install-plugin-registry"
             value={registry}
             disabled={busy}
-            onChange={(event) => setRegistry(event.target.value as PluginRegistryOption)}
-            data-testid="install-plugin-source"
-          >
-            {REGISTRY_CHOICES.map((choice) => (
-              <option key={choice.value} value={choice.value}>
-                {t(choice.labelKey)}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => setRegistry(next as PluginRegistryOption)}
+            options={REGISTRY_CHOICES.map((choice) => ({
+              value: choice.value,
+              label: t(choice.labelKey)
+            }))}
+            testId="install-plugin-source"
+          />
         </div>
       )}
 

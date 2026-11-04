@@ -5,6 +5,7 @@ import type { Translator } from '@shared/i18n'
 import { pluginRegistryFromUrl } from '@shared/settings'
 import { Icon } from '../../lib/icons'
 import { Modal } from '../Modal'
+import Select from '../Select'
 import { useAppStore } from '../../store'
 import InstallConfirmPanel from './InstallConfirmPanel'
 import { REGISTRY_CHOICES, registryLabel } from './registry-choices'
@@ -178,20 +179,17 @@ export default function UpgradeConfirmDialog(props: {
       {/* 安装源在确认区之前选定：解析与升级必须同源，改选即按新源重新解析。 */}
       <div className="field">
         <label htmlFor="upgrade-plugin-registry">{t('detail.plugin.installSource')}</label>
-        <select
-          className="input"
+        <Select
           id="upgrade-plugin-registry"
           value={registry}
           disabled={upgrading}
-          onChange={(event) => changeRegistry(event.target.value as PluginRegistryOption)}
-          data-testid="upgrade-confirm-source"
-        >
-          {REGISTRY_CHOICES.map((choice) => (
-            <option key={choice.value} value={choice.value}>
-              {t(choice.labelKey)}
-            </option>
-          ))}
-        </select>
+          onChange={(next) => changeRegistry(next as PluginRegistryOption)}
+          options={REGISTRY_CHOICES.map((choice) => ({
+            value: choice.value,
+            label: t(choice.labelKey)
+          }))}
+          testId="upgrade-confirm-source"
+        />
       </div>
 
       <div className="note n-warn mt12" data-testid="upgrade-confirm-safety">

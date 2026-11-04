@@ -6,6 +6,7 @@ import { REGISTRY_PRESETS, isAllowedNpmRegistry, registryPresetKey } from '@shar
 import { Icon } from '../lib/icons'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
+import Select from './Select'
 
 /**
  * 编辑当前 transport 支持的实例字段。transport 不可变更；如需变更则删除后重建。
@@ -174,17 +175,17 @@ export default function EditInstanceDialog({
       </div>
       <div className="field mt8">
         <label htmlFor="edit-authmode">{t('edit.authModeLabel')}</label>
-        <select
-          className="input"
+        <Select
           id="edit-authmode"
           value={authMode}
-          onChange={(event) => setAuthMode(event.target.value as typeof authMode)}
-          data-testid="edit-authmode"
-        >
-          <option value="auto">{t('edit.authModeAuto')}</option>
-          <option value="none">{t('edit.authModeNone')}</option>
-          <option value="gateway">{t('edit.authModeGateway')}</option>
-        </select>
+          onChange={(next) => setAuthMode(next as typeof authMode)}
+          options={[
+            { value: 'auto', label: t('edit.authModeAuto') },
+            { value: 'none', label: t('edit.authModeNone') },
+            { value: 'gateway', label: t('edit.authModeGateway') }
+          ]}
+          testId="edit-authmode"
+        />
         <span className="hint">{t('edit.authModeHint')}</span>
       </div>
 
@@ -215,19 +216,13 @@ export default function EditInstanceDialog({
           </div>
           <div className="field">
             <label htmlFor="edit-launcher">{t('edit.launcherLabel')}</label>
-            <select
-              className="input"
+            <Select
               id="edit-launcher"
               value={launcher}
-              onChange={(event) => setLauncher(event.target.value as LocalLauncher)}
-              data-testid="edit-launcher"
-            >
-              {LAUNCHERS.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+              onChange={(next) => setLauncher(next as LocalLauncher)}
+              options={LAUNCHERS.map((name) => ({ value: name, label: name }))}
+              testId="edit-launcher"
+            />
             <span className="hint">{t('edit.launcherHint')}</span>
           </div>
           <label
@@ -247,12 +242,10 @@ export default function EditInstanceDialog({
           {/* 安装镜像是应用级设置（dsh 下载与插件默认源都跟它走），跨两列摆放并明示作用范围。 */}
           <div className="field" style={{ gridColumn: '1 / -1' }}>
             <label htmlFor="edit-registry">{t('wizard.registryLabel')}</label>
-            <select
-              className="input"
+            <Select
               id="edit-registry"
               value={registryCustom ? 'custom' : registryPresetKey(registryUrl)}
-              onChange={(event) => {
-                const key = event.target.value
+              onChange={(key) => {
                 // 选「自定义」只切出输入框：URL 保持原样，由输入框编辑。
                 if (key === 'custom') {
                   setRegistryCustom(true)
@@ -261,16 +254,16 @@ export default function EditInstanceDialog({
                 setRegistryCustom(false)
                 setRegistryUrl(key === 'system' ? '' : key)
               }}
-              data-testid="edit-registry"
-            >
-              <option value="system">{t('wizard.registrySystem')}</option>
-              {REGISTRY_PRESETS.map((preset) => (
-                <option key={preset.value} value={preset.value}>
-                  {t(preset.labelKey)}
-                </option>
-              ))}
-              <option value="custom">{t('wizard.registryCustom')}</option>
-            </select>
+              options={[
+                { value: 'system', label: t('wizard.registrySystem') },
+                ...REGISTRY_PRESETS.map((preset) => ({
+                  value: preset.value,
+                  label: t(preset.labelKey)
+                })),
+                { value: 'custom', label: t('wizard.registryCustom') }
+              ]}
+              testId="edit-registry"
+            />
             {registryCustom && (
               <input
                 className="input num mt4"

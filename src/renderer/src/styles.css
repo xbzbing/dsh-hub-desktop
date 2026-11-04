@@ -42,6 +42,8 @@
   --shadow-layer: 0 10px 24px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06);
   --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.16);
   --shadow-win: 0 26px 64px rgb(0 0 0 / 0.16), 0 4px 14px rgb(0 0 0 / 0.08);
+  /* 下拉浮层：dsh 菜单的「细描边 + 柔和外扩」组合，比 --shadow-pop 更贴边、更轻。 */
+  --shadow-menu: 0 0 0 0.5px var(--border), 0 3px 8px rgb(0 0 0 / 0.04), 0 0 20px rgb(0 0 0 / 0.05);
 
   /* ---- 字体 ---- */
   --font-display:
@@ -89,6 +91,8 @@ html[data-theme='dark'] {
   --shadow-layer: 0 14px 34px rgb(0 0 0 / 0.5);
   --shadow-pop: 0 16px 40px rgb(0 0 0 / 0.55);
   --shadow-win: 0 30px 70px rgb(0 0 0 / 0.6);
+  --shadow-menu:
+    0 0 0 0.5px var(--border), 0 4px 12px rgb(0 0 0 / 0.45), 0 0 24px rgb(0 0 0 / 0.35);
 }
 
 *,
@@ -590,8 +594,7 @@ h3,
   color: var(--muted);
 }
 .input,
-.textarea,
-.select {
+.textarea {
   width: 100%;
   padding: 7px 11px;
   border: 1px solid var(--border);
@@ -602,27 +605,11 @@ h3,
   font-size: 13px;
   min-height: 32px;
 }
-.select {
-  appearance: none;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
-    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position:
-    calc(100% - 15px) 14px,
-    calc(100% - 10px) 14px;
-  background-size:
-    5px 5px,
-    5px 5px;
-  background-repeat: no-repeat;
-  padding-right: 30px;
-}
-.input:hover,
-.select:hover {
+.input:hover {
   border-color: color-mix(in oklch, var(--fg) 22%, var(--border));
 }
 .input:focus,
-.textarea:focus,
-.select:focus {
+.textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -630,6 +617,117 @@ h3,
 .input[aria-invalid='true'] {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px var(--danger-soft);
+}
+/* 下拉选择：触发器沿用输入框外观，展开时与聚焦态一致。 */
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.select-trigger:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--fg) 22%, var(--border));
+}
+.select-trigger:focus-visible,
+.select-trigger[aria-expanded='true'] {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.select-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.select-trigger.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.12s ease;
+}
+.select-trigger[aria-expanded='true'] .select-chevron {
+  transform: rotate(180deg);
+}
+/* 浮层：挂 body、fixed 落位，4px 内边距 + 34px 行高的 dsh 菜单规范。 */
+.select-menu {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: min(420px, calc(100vw - 16px));
+  max-height: min(320px, calc(100vh - 16px));
+  padding: 4px;
+  overflow-y: auto;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--surface) 96%, transparent);
+  backdrop-filter: blur(20px) saturate(140%);
+  box-shadow: var(--shadow-menu);
+  animation: select-menu-in 0.12s ease-out;
+}
+@keyframes select-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .select-menu {
+    animation: none;
+  }
+}
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+.select-option.is-active {
+  background: var(--hover);
+}
+.select-option[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.select-option-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-check {
+  flex: none;
+  color: var(--fg);
 }
 .err {
   font-size: 11.5px;
