@@ -11,6 +11,8 @@ import type { NpmVersionManifest } from './registry'
 import { SECURITY_LIMITS } from './limits'
 
 const TEXT_EXTENSIONS = /\.(?:js|cjs|mjs|ts|tsx|jsx|json|ya?ml)$/i
+/** 有注释语法、需要先遮掉注释再匹配的脚本扩展名。 */
+const SCRIPT_EXTENSIONS = /\.(?:js|cjs|mjs|ts|tsx|jsx)$/i
 const NATIVE_EXTENSIONS = /\.(?:node|exe|dll|so|dylib)$/i
 
 const SENSITIVE_PATTERNS: RegExp[] = [
@@ -116,6 +118,178 @@ function displayPath(path: string): string {
   return path.startsWith('package/') ? path.slice('package/'.length) : path
 }
 
+/**
+ * 词法扫描：跳过字符串、模板字面量、正则与注释，遇到注释时把字符换成空格。
+ *
+ * 注释不执行，却常提到 `.npmrc`、`fetch(`、`undici` 这类词；按原文匹配会把
+ * 「说明自己如何读 npm 配置」的文档注释当成凭据外发。替换成等长空白是为了让
+ * 证据里的行号仍指向原文件。字符串与模板字面量保留：真实调用就在里面。
+ *
+ * 必须处理正则字面量：`/['"]?x/` 里的引号不是字符串起点，按引号切分会让扫描状态
+ * 从这里失步，其后的注释遮不住。
+ */
+function maskComments(text: string): string {
+  const chars = text.split('')
+  const isSpace = (char: string): boolean =>
+    char === ' ' || char === '\t' || char === '\n' || char === '\r'
+  const isWordChar = (char: string): boolean => /[A-Za-z0-9_$]/.test(char)
+  const maskRange = (from: number, to: number): void => {
+    for (let cursor = from; cursor < to && cursor < chars.length; cursor += 1) {
+      if (chars[cursor] !== '\n') chars[cursor] = ' '
+    }
+  }
+  /** 正则字面量起点：前一个有效记号是运算符、分隔符或 `return` 这类关键字。 */
+  const regexPreceding = new Set([
+    '=',
+    '(',
+    '[',
+    '{',
+    ',',
+    ':',
+    ';',
+    '!',
+    '&',
+    '|',
+    '?',
+    '+',
+    '-',
+    '*',
+    '%',
+    '^',
+    '~',
+    '<',
+    '>',
+    ''
+  ])
+  const regexKeywords = new Set([
+    'return',
+    'typeof',
+    'instanceof',
+    'in',
+    'of',
+    'new',
+    'delete',
+    'void',
+    'case',
+    'do',
+    'else',
+    'yield',
+    'await'
+  ])
+  const skipQuoted = (from: number, quote: string): number => {
+    let cursor = from + 1
+    while (cursor < text.length) {
+      const char = text[cursor]
+      if (char === '\\') {
+        cursor += 2
+        continue
+      }
+      cursor += 1
+      if (char === quote) break
+    }
+    return cursor
+  }
+  const skipRegex = (from: number): number => {
+    let cursor = from + 1
+    let inClass = false
+    while (cursor < text.length) {
+      const char = text[cursor]
+      if (char === '\n') return from + 1
+      if (char === '\\') {
+        cursor += 2
+        continue
+      }
+      if (char === '[') inClass = true
+      else if (char === ']') inClass = false
+      else if (char === '/' && !inClass) return cursor + 1
+      cursor += 1
+    }
+    return cursor
+  }
+
+  /** 扫一段代码；模板字面量的 `${...}` 里会递归进来，`depth` 为花括号嵌套层数。 */
+  const scanCode = (start: number, depth: number): number => {
+    let index = start
+    let previous = ''
+    let word = ''
+    while (index < text.length) {
+      const char = text[index] as string
+      const next = text[index + 1]
+      if (depth >= 0 && char === '}' && --depth < 0) return index + 1
+      if (char === '/' && next === '/') {
+        const from = index
+        while (index < text.length && text[index] !== '\n') index += 1
+        maskRange(from, index)
+        previous = ''
+        word = ''
+        continue
+      }
+      if (char === '/' && next === '*') {
+        const from = index
+        index += 2
+        while (index < text.length && !(text[index] === '*' && text[index + 1] === '/')) index += 1
+        index = Math.min(text.length, index + 2)
+        maskRange(from, index)
+        previous = ''
+        word = ''
+        continue
+      }
+      if (char === '"' || char === "'") {
+        index = skipQuoted(index, char)
+        previous = 'v'
+        word = ''
+        continue
+      }
+      if (char === '`') {
+        index += 1
+        while (index < text.length) {
+          const current = text[index]
+          if (current === '\\') {
+            index += 2
+            continue
+          }
+          if (current === '`') {
+            index += 1
+            break
+          }
+          if (current === '$' && text[index + 1] === '{') {
+            index = scanCode(index + 2, 0)
+            continue
+          }
+          index += 1
+        }
+        previous = 'v'
+        word = ''
+        continue
+      }
+      if (char === '/' && (regexKeywords.has(word) || regexPreceding.has(previous))) {
+        index = skipRegex(index)
+        previous = 'v'
+        word = ''
+        continue
+      }
+      if (isSpace(char)) {
+        index += 1
+        continue
+      }
+      if (isWordChar(char)) {
+        const from = index
+        while (index < text.length && isWordChar(text[index] as string)) index += 1
+        word = text.slice(from, index)
+        previous = 'v'
+        continue
+      }
+      if (char === '{' && depth >= 0) depth += 1
+      previous = char
+      word = ''
+      index += 1
+    }
+    return index
+  }
+
+  scanCode(0, -1)
+  return chars.join('')
+}
 function lineOf(text: string, index: number): number {
   let line = 1
   for (let cursor = 0; cursor < index && cursor < text.length; cursor += 1) {
@@ -296,27 +470,29 @@ export function scanContent(entries: readonly TarEntry[]): ContentScanResult {
     const minified = isMinified(text)
     if (minified) minifiedFiles += 1
     const file = displayPath(entry.path)
+    // 只对 JS/TS 去注释；JSON/YAML 没有注释语义，原文匹配。
+    const code = SCRIPT_EXTENSIONS.test(entry.path) ? maskComments(text) : text
 
-    const sensitive = firstMatch(text, SENSITIVE_PATTERNS)
-    const network = firstMatch(text, NETWORK_PATTERNS)
-    const evaluation = firstMatch(text, EVAL_PATTERNS)
-    const encoded = firstMatch(text, ENCODED_PATTERNS)
-    const exfil = firstMatch(text, EXFIL_PATTERNS)
-    const miner = firstMatch(text, MINER_PATTERNS)
+    const sensitive = firstMatch(code, SENSITIVE_PATTERNS)
+    const network = firstMatch(code, NETWORK_PATTERNS)
+    const evaluation = firstMatch(code, EVAL_PATTERNS)
+    const encoded = firstMatch(code, ENCODED_PATTERNS)
+    const exfil = firstMatch(code, EXFIL_PATTERNS)
+    const miner = firstMatch(code, MINER_PATTERNS)
 
     if (sensitive !== null && network !== null) {
       addFinding(
         findings,
         'content.credential-exfil',
         'danger',
-        evidenceOf(file, lineOf(text, sensitive.index), 'sensitive-read+network')
+        evidenceOf(file, lineOf(code, sensitive.index), 'sensitive-read+network')
       )
     } else if (sensitive !== null && !minified) {
       addFinding(
         findings,
         'content.sensitive-read',
         'warn',
-        evidenceOf(file, lineOf(text, sensitive.index), sensitive.match)
+        evidenceOf(file, lineOf(code, sensitive.index), sensitive.match)
       )
     }
     if (evaluation !== null && encoded !== null) {
@@ -324,14 +500,14 @@ export function scanContent(entries: readonly TarEntry[]): ContentScanResult {
         findings,
         'content.obfuscated-eval',
         'danger',
-        evidenceOf(file, lineOf(text, evaluation.index), 'eval+encoded')
+        evidenceOf(file, lineOf(code, evaluation.index), 'eval+encoded')
       )
     } else if (evaluation !== null && !minified) {
       addFinding(
         findings,
         'content.dynamic-eval',
         'warn',
-        evidenceOf(file, lineOf(text, evaluation.index), evaluation.match)
+        evidenceOf(file, lineOf(code, evaluation.index), evaluation.match)
       )
     }
     if (exfil !== null) {
@@ -339,7 +515,7 @@ export function scanContent(entries: readonly TarEntry[]): ContentScanResult {
         findings,
         'content.exfil-domain',
         'danger',
-        evidenceOf(file, lineOf(text, exfil.index), exfil.match)
+        evidenceOf(file, lineOf(code, exfil.index), exfil.match)
       )
     }
     if (miner !== null) {
@@ -347,18 +523,18 @@ export function scanContent(entries: readonly TarEntry[]): ContentScanResult {
         findings,
         'content.miner',
         'danger',
-        evidenceOf(file, lineOf(text, miner.index), miner.match)
+        evidenceOf(file, lineOf(code, miner.index), miner.match)
       )
     }
 
     // 能力计数只统计非压缩代码，避免把客户端 bundle 里的第三方库算成作者代码。
     if (!minified) {
-      capabilities.spawn += countMatches(text, SPAWN_PATTERNS)
-      capabilities.network += countMatches(text, NETWORK_PATTERNS)
-      capabilities.fs += countMatches(text, FS_PATTERNS)
-      capabilities.env += countMatches(text, ENV_PATTERNS)
-      capabilities.eval += countMatches(text, EVAL_PATTERNS)
-      capabilities.sensitive += countMatches(text, SENSITIVE_PATTERNS)
+      capabilities.spawn += countMatches(code, SPAWN_PATTERNS)
+      capabilities.network += countMatches(code, NETWORK_PATTERNS)
+      capabilities.fs += countMatches(code, FS_PATTERNS)
+      capabilities.env += countMatches(code, ENV_PATTERNS)
+      capabilities.eval += countMatches(code, EVAL_PATTERNS)
+      capabilities.sensitive += countMatches(code, SENSITIVE_PATTERNS)
     }
   }
 

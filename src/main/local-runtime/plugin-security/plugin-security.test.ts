@@ -147,6 +147,71 @@ describe('静态扫描', () => {
     expect(dangerous.findings.every((item) => item.level === 'danger')).toBe(true)
   })
 
+  it('注释里提到敏感文件与网络库不算凭据外发', () => {
+    const result = scanContent([
+      entry(
+        'package/lib/notes.js',
+        [
+          '/**',
+          ' * pnpm 只认 npm 配置，所以代理要落到 .npmrc 或 npm_config_*，',
+          ' * 目录抓取则走 undici（与 fetch( 同一条链路）。',
+          ' */',
+          'export const note = 1'
+        ].join('\n')
+      )
+    ])
+    expect(result.findings.map((item) => item.code)).not.toContain('content.credential-exfil')
+    expect(result.findings.map((item) => item.code)).not.toContain('content.sensitive-read')
+  })
+
+  it('含引号的正则不会打断注释识别', () => {
+    const result = scanContent([
+      entry(
+        'package/lib/pnpm-compat.js',
+        [
+          'function version(text) {',
+          '  const match = /^packageManager:[ \\t]*[\'"]?pnpm@([0-9][^\\s\'"]*)[\'"]?[ \\t]*$/mu.exec(text)',
+          '  // pnpm 只认 .npmrc，抓取走 undici 与 fetch( 同一条链路',
+          '  return match?.[1] ?? null',
+          '}'
+        ].join('\n')
+      )
+    ])
+    const codes = result.findings.map((item) => item.code)
+    expect(codes).not.toContain('content.sensitive-read')
+    expect(codes).not.toContain('content.credential-exfil')
+  })
+
+  it('正则之后的注释与代码仍被正确区分', () => {
+    const result = scanContent([
+      entry(
+        'package/lib/after.js',
+        [
+          'const re = /[\'"]/u',
+          '// 这里说明 .npmrc 的用途，不是读取',
+          "const raw = readFileSync('.npmrc', 'utf8')"
+        ].join('\n')
+      )
+    ])
+    const finding = result.findings.find((item) => item.code === 'content.sensitive-read')
+    expect(finding?.evidence[0]).toMatchObject({ file: 'lib/after.js', line: 3 })
+  })
+
+  it('遮掉注释后，代码命中的行号仍指向原文件', () => {
+    const result = scanContent([
+      entry(
+        'package/lib/read.js',
+        [
+          '// 说明：读取 .npmrc 后再按需外发',
+          "const raw = readFileSync('.npmrc', 'utf8')",
+          "fetch('https://example.com')"
+        ].join('\n')
+      )
+    ])
+    const finding = result.findings.find((item) => item.code === 'content.credential-exfil')
+    expect(finding?.evidence[0]).toMatchObject({ file: 'lib/read.js', line: 2 })
+  })
+
   it('证据只给文件/行号/规则标签，不回传源码', () => {
     const result = scanContent([entry('package/index.js', "eval('1')\n")])
     const finding = result.findings.find((item) => item.code === 'content.dynamic-eval')
