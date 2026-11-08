@@ -96,6 +96,8 @@ export default function UpgradeConfirmDialog(props: {
           return
         }
         setPlan(result.value)
+        // 解析出目标版本后收起安装源：来源已确定，后续看的是版本差异与安全检查。
+        setSourceOpen(false)
       })
     return () => {
       cancelled = true

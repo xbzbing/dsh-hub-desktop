@@ -60,10 +60,18 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
   // 与安装第二步同宽：同一套确认区不因入口不同而变窄。
   expect((await dialog.boundingBox())?.width ?? 0).toBeGreaterThan(500)
 
-  // 安装源可在确认前改选：默认国内镜像，徽标与选择器同档。
+  // 解析完成后安装源自动收起：标题行补上当前档位，正文让给版本与安全检查。
   const source = win.getByTestId('upgrade-confirm-source')
-  await expect(source).toHaveAttribute('data-value', 'npmmirror')
+  const sourceToggle = win.getByTestId('upgrade-confirm-source-toggle')
+  await expect(sourceToggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(source).toHaveCount(0)
+  await expect(dialog.locator('.section-summary')).toContainText('npmmirror')
   await expect(dialog.locator('.card-head .badge').first()).toContainText('npmmirror')
+  // 需要改选时再展开，选择器与徽标同档。
+  await sourceToggle.click()
+  await expect(source).toHaveAttribute('data-value', 'npmmirror')
+  await sourceToggle.click()
+  await expect(source).toHaveCount(0)
   // 版本演进：左旧右新（已装 1.0.0 → 目标 1.1.0）。
   const versionRow = win.getByTestId('install-confirm-version')
   await expect(versionRow).toContainText(INSTALLED_VERSION)
@@ -92,11 +100,11 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
   await expect(securityToggle).toHaveAttribute('aria-expanded', 'false')
   await securityToggle.click()
   await expect(source).toHaveCount(0)
-  await expect(
-    win.getByTestId('upgrade-confirm-source-toggle'),
-    '安装源小节随安全检查展开而收起'
-  ).toHaveAttribute('aria-expanded', 'false')
-  await win.getByTestId('upgrade-confirm-source-toggle').click()
+  await expect(sourceToggle, '安装源在安全检查展开时保持收起').toHaveAttribute(
+    'aria-expanded',
+    'false'
+  )
+  await sourceToggle.click()
   await expect(source).toBeVisible()
 
   // 取消：不产生任何改动。
@@ -107,6 +115,9 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
   // 确认后才执行升级：改选安装源后按新源解析，add 必须带新源的 --registry。
   await upgrade.click()
   await expect(dialog).toBeVisible()
+  // 解析完成后安装源已收起，改选前先展开。
+  await expect(versionRow).toBeVisible({ timeout: 20_000 })
+  await sourceToggle.click()
   await pickOption(win, 'upgrade-confirm-source', 'npmjs')
   // 改选即作废当前计划（确认区收回）→ 按 npmjs 重新解析出同一目标版本后确认区才回来。
   await expect(versionRow).toBeHidden()
