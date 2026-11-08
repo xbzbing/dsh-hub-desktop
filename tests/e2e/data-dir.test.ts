@@ -19,6 +19,29 @@ function readSpecs(): Array<{ file: string; source: string }> {
     .map((file) => ({ file, source: readFileSync(join(SPEC_DIR, file), 'utf8') }))
 }
 
+/**
+ * 共享装置（`*-fixture.ts`）：应用启动搬到这里后，spec 里已经没有 `electron.launch`，
+ * 守卫必须把它一并纳入，否则「launch 必须注入数据目录」会在装置里失守。
+ */
+function readFixtures(): Array<{ file: string; source: string }> {
+  return readdirSync(SPEC_DIR)
+    .filter((name) => name.endsWith('-fixture.ts'))
+    .sort()
+    .map((file) => ({ file, source: readFileSync(join(SPEC_DIR, file), 'utf8') }))
+}
+
+/** `electron.launch(` 调用点后若干行内必须出现 `env: e2eEnv(`。 */
+function expectLaunchInjectsDataDir(file: string, source: string): void {
+  const lines = source.split('\n')
+  lines.forEach((line, index) => {
+    if (!line.includes('electron.launch(')) return
+    const callSite = lines.slice(index, index + 8).join('\n')
+    expect(callSite, `${file}:${index + 1} 的 electron.launch 必须用 env: e2eEnv(...)`).toContain(
+      'env: e2eEnv('
+    )
+  })
+}
+
 describe('e2eDataDir', () => {
   it('把一级目录名解析到 hub-data 下', () => {
     expect(e2eDataDir('e2e-smoke')).toBe(join(E2E_DATA_ROOT, 'e2e-smoke'))
@@ -72,17 +95,13 @@ describe('spec 文件', () => {
   })
 
   it('每个 electron.launch 都经 e2eEnv 注入数据目录', () => {
-    for (const { file, source } of specs) {
-      const lines = source.split('\n')
-      lines.forEach((line, index) => {
-        if (!line.includes('electron.launch(')) return
-        const callSite = lines.slice(index, index + 8).join('\n')
-        expect(
-          callSite,
-          `${file}:${index + 1} 的 electron.launch 必须用 env: e2eEnv(...)`
-        ).toContain('env: e2eEnv(')
-      })
-    }
+    for (const { file, source } of specs) expectLaunchInjectsDataDir(file, source)
+  })
+
+  it('共享装置里的 electron.launch 同样经 e2eEnv 注入数据目录', () => {
+    const fixtures = readFixtures()
+    expect(fixtures.length).toBeGreaterThan(0)
+    for (const { file, source } of fixtures) expectLaunchInjectsDataDir(file, source)
   })
 
   it('没有任何 spec 指向真实 userData', () => {
