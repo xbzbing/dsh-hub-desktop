@@ -305,8 +305,10 @@ test('设置页开关关闭后持久化，重启仍为关闭', async () => {
   await win.getByTestId('settings-btn').click()
   const toggle = win.getByTestId('settings-plugin-security-check')
   await expect(toggle).toBeChecked()
-  await toggle.uncheck()
-  await expect(toggle).not.toBeChecked()
+  // 受控复选框要等设置写盘后的 store 更新才翻转；uncheck() 会立即断言状态，
+  // Windows CI 上 IPC 稍慢就会误报「点击未改变状态」。显式等待状态收敛。
+  await toggle.click()
+  await expect(toggle).not.toBeChecked({ timeout: 15_000 })
   await expect
     .poll(async () => {
       const raw = await readFile(SETTINGS_FILE, 'utf8')
