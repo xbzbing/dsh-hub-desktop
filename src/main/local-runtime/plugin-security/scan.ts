@@ -119,7 +119,7 @@ function displayPath(path: string): string {
 }
 
 /**
- * 词法扫描：跳过字符串、模板字面量、正则与注释，遇到注释时把字符换成空格。
+ * 词法扫描：注释替换成空格，同时给出一份把正则字面量内容也替换成空格的文本。
  *
  * 注释不执行，却常提到 `.npmrc`、`fetch(`、`undici` 这类词；按原文匹配会把
  * 「说明自己如何读 npm 配置」的文档注释当成凭据外发。替换成等长空白是为了让
@@ -127,15 +127,25 @@ function displayPath(path: string): string {
  *
  * 必须处理正则字面量：`/['"]?x/` 里的引号不是字符串起点，按引号切分会让扫描状态
  * 从这里失步，其后的注释遮不住。
+ *
+ * 正则体只是模式，不是路径、域名或调用：`/\.npmrc|\.ssh/` 这样的拒绝名单会被
+ * 「敏感路径」规则误判。`literalFree` 把正则体换成等长空白，供路径、外发与求值
+ * 等文本特征匹配；字符串与模板字面量仍保留。
  */
-function maskComments(text: string): string {
+interface MaskedCode {
+  code: string
+  literalFree: string
+}
+
+function maskCode(text: string): MaskedCode {
   const chars = text.split('')
+  const literalFree = text.split('')
   const isSpace = (char: string): boolean =>
     char === ' ' || char === '\t' || char === '\n' || char === '\r'
   const isWordChar = (char: string): boolean => /[A-Za-z0-9_$]/.test(char)
-  const maskRange = (from: number, to: number): void => {
-    for (let cursor = from; cursor < to && cursor < chars.length; cursor += 1) {
-      if (chars[cursor] !== '\n') chars[cursor] = ' '
+  const maskRange = (target: string[], from: number, to: number): void => {
+    for (let cursor = from; cursor < to && cursor < target.length; cursor += 1) {
+      if (target[cursor] !== '\n') target[cursor] = ' '
     }
   }
   /** 正则字面量起点：前一个有效记号是运算符、分隔符或 `return` 这类关键字。 */
@@ -176,6 +186,8 @@ function maskComments(text: string): string {
     'yield',
     'await'
   ])
+  /** 只用于遮正则体：`</` 在 JSX 里是闭合标签，不能当成正则起点。 */
+  const literalPreceding = new Set([...regexPreceding].filter((token) => token !== '<'))
   const skipQuoted = (from: number, quote: string): number => {
     let cursor = from + 1
     while (cursor < text.length) {
@@ -219,7 +231,8 @@ function maskComments(text: string): string {
       if (char === '/' && next === '/') {
         const from = index
         while (index < text.length && text[index] !== '\n') index += 1
-        maskRange(from, index)
+        maskRange(chars, from, index)
+        maskRange(literalFree, from, index)
         previous = ''
         word = ''
         continue
@@ -229,7 +242,8 @@ function maskComments(text: string): string {
         index += 2
         while (index < text.length && !(text[index] === '*' && text[index + 1] === '/')) index += 1
         index = Math.min(text.length, index + 2)
-        maskRange(from, index)
+        maskRange(chars, from, index)
+        maskRange(literalFree, from, index)
         previous = ''
         word = ''
         continue
@@ -263,7 +277,13 @@ function maskComments(text: string): string {
         continue
       }
       if (char === '/' && (regexKeywords.has(word) || regexPreceding.has(previous))) {
-        index = skipRegex(index)
+        const start = index
+        const end = skipRegex(index)
+        // 先按原规则跳过正则体，保持注释识别状态；只有明确的起点才遮进 literalFree。
+        if (regexKeywords.has(word) || literalPreceding.has(previous)) {
+          maskRange(literalFree, start, end)
+        }
+        index = end
         previous = 'v'
         word = ''
         continue
@@ -288,7 +308,7 @@ function maskComments(text: string): string {
   }
 
   scanCode(0, -1)
-  return chars.join('')
+  return { code: chars.join(''), literalFree: literalFree.join('') }
 }
 function lineOf(text: string, index: number): number {
   let line = 1
@@ -470,15 +490,19 @@ export function scanContent(entries: readonly TarEntry[]): ContentScanResult {
     const minified = isMinified(text)
     if (minified) minifiedFiles += 1
     const file = displayPath(entry.path)
-    // 只对 JS/TS 去注释；JSON/YAML 没有注释语义，原文匹配。
-    const code = SCRIPT_EXTENSIONS.test(entry.path) ? maskComments(text) : text
+    // 只对 JS/TS 做词法遮罩；JSON/YAML 没有注释与正则字面量，原文匹配。
+    const masked = SCRIPT_EXTENSIONS.test(entry.path)
+      ? maskCode(text)
+      : { code: text, literalFree: text }
+    const code = masked.code
+    const literalFree = masked.literalFree
 
-    const sensitive = firstMatch(code, SENSITIVE_PATTERNS)
-    const network = firstMatch(code, NETWORK_PATTERNS)
-    const evaluation = firstMatch(code, EVAL_PATTERNS)
-    const encoded = firstMatch(code, ENCODED_PATTERNS)
-    const exfil = firstMatch(code, EXFIL_PATTERNS)
-    const miner = firstMatch(code, MINER_PATTERNS)
+    const sensitive = firstMatch(literalFree, SENSITIVE_PATTERNS)
+    const network = firstMatch(literalFree, NETWORK_PATTERNS)
+    const evaluation = firstMatch(literalFree, EVAL_PATTERNS)
+    const encoded = firstMatch(literalFree, ENCODED_PATTERNS)
+    const exfil = firstMatch(literalFree, EXFIL_PATTERNS)
+    const miner = firstMatch(literalFree, MINER_PATTERNS)
 
     if (sensitive !== null && network !== null) {
       addFinding(
@@ -529,12 +553,12 @@ export function scanContent(entries: readonly TarEntry[]): ContentScanResult {
 
     // 能力计数只统计非压缩代码，避免把客户端 bundle 里的第三方库算成作者代码。
     if (!minified) {
-      capabilities.spawn += countMatches(code, SPAWN_PATTERNS)
-      capabilities.network += countMatches(code, NETWORK_PATTERNS)
-      capabilities.fs += countMatches(code, FS_PATTERNS)
-      capabilities.env += countMatches(code, ENV_PATTERNS)
-      capabilities.eval += countMatches(code, EVAL_PATTERNS)
-      capabilities.sensitive += countMatches(code, SENSITIVE_PATTERNS)
+      capabilities.spawn += countMatches(literalFree, SPAWN_PATTERNS)
+      capabilities.network += countMatches(literalFree, NETWORK_PATTERNS)
+      capabilities.fs += countMatches(literalFree, FS_PATTERNS)
+      capabilities.env += countMatches(literalFree, ENV_PATTERNS)
+      capabilities.eval += countMatches(literalFree, EVAL_PATTERNS)
+      capabilities.sensitive += countMatches(literalFree, SENSITIVE_PATTERNS)
     }
   }
 

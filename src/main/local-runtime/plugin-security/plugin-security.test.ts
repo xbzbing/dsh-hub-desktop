@@ -182,6 +182,56 @@ describe('静态扫描', () => {
     expect(codes).not.toContain('content.credential-exfil')
   })
 
+  it('正则字面量里列出的敏感文件名不算读取', () => {
+    const result = scanContent([
+      entry(
+        'package/lib/secret-guard.mjs',
+        [
+          'const SECRET_NAME = /^(?:\\.env|\\.npmrc|\\.ssh|\\.aws|id_rsa)$/i;',
+          'export const isSecret = (name) => SECRET_NAME.test(name);'
+        ].join('\n')
+      )
+    ])
+    expect(result.findings.map((item) => item.code)).not.toContain('content.sensitive-read')
+    expect(result.capabilities.sensitive).toBe(0)
+  })
+
+  it('箭头函数返回的正则字面量同样遮掉敏感路径', () => {
+    const result = scanContent([
+      entry('package/lib/arrow.js', 'const guard = () => /\\.npmrc|\\.ssh/;\n')
+    ])
+    expect(result.findings.map((item) => item.code)).not.toContain('content.sensitive-read')
+  })
+
+  it('正则字面量里的网络与求值特征不算能力', () => {
+    const result = scanContent([
+      entry(
+        'package/lib/pattern-tables.js',
+        [
+          'const NETWORK = /fetch\\(|axios|undici/;',
+          'const EVAL = /eval\\(|new Function\\(/;',
+          "const raw = readFileSync('.npmrc', 'utf8')"
+        ].join('\n')
+      )
+    ])
+    const codes = result.findings.map((item) => item.code)
+    expect(codes).toContain('content.sensitive-read')
+    expect(codes).not.toContain('content.credential-exfil')
+    expect(codes).not.toContain('content.dynamic-eval')
+    expect(result.capabilities.network).toBe(0)
+    expect(result.capabilities.eval).toBe(0)
+  })
+
+  it('JSX 闭合标签不会被当成正则遮住后面的读取', () => {
+    const result = scanContent([
+      entry(
+        'package/view.tsx',
+        "const view = <div></div>; const raw = readFileSync('.npmrc'); // 注释"
+      )
+    ])
+    expect(result.findings.map((item) => item.code)).toContain('content.sensitive-read')
+  })
+
   it('正则之后的注释与代码仍被正确区分', () => {
     const result = scanContent([
       entry(
