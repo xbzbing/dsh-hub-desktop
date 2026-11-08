@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   protocol,
   session,
   shell,
@@ -459,6 +460,8 @@ void app.whenReady().then(() => {
       focusDebug(`[index] openExternal source=plugin-or-renderer url=${redactUrl(url)}`)
       openExternalSafely(url, (target) => shell.openExternal(target))
     },
+    // 本机实例的 BrowserAuth token 不出主进程：直接写入系统剪贴板。
+    copyTokenToClipboard: (token) => clipboard.writeText(token),
     closeInstanceView: (instanceId) => workspaceHost.disconnect(instanceId),
     // 重新登录成功后刷新工作区：注入最新会话 Cookie 并导航回工作区 URL，取代会话失效前的旧页面。
     reloadInstanceView: (instanceId) =>

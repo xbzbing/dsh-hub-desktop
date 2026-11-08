@@ -188,6 +188,8 @@ export interface DshHubBridge {
      * 本机实例带上已验证的 BrowserAuth token；token 不经渲染层。
      */
     openInBrowser: (id: string) => Promise<IpcResult<null>>
+    /** 把本机实例的 BrowserAuth token 写入剪贴板；token 由主进程解析，不经渲染层。 */
+    copyToken: (id: string) => Promise<IpcResult<null>>
     updateViewBounds: (bounds: WorkspaceViewBounds) => Promise<IpcResult<null>>
     /** 在当前活动工作区内查找；搜索范围由主进程确定为活动 WebContents。 */
     findInPage: (input: WorkspaceFindInput) => Promise<IpcResult<null>>

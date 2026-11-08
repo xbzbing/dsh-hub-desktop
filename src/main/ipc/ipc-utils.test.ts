@@ -3,6 +3,7 @@ import {
   defaultVerifyExternalAccess,
   externalAccessToken,
   externalAccessUrl,
+  tokenFromAccessUrl,
   upgradeEligibility
 } from './ipc-utils'
 import { InstanceStoreError } from '../registry/instance-store'
@@ -42,6 +43,19 @@ describe('externalAccessToken', () => {
 describe('externalAccessUrl', () => {
   it('拼回环端口并对 token 转义', () => {
     expect(externalAccessUrl('a b', 8080)).toBe('http://127.0.0.1:8080/?token=a%20b')
+  })
+})
+
+describe('tokenFromAccessUrl', () => {
+  it('取出查询串里的 token', () => {
+    expect(tokenFromAccessUrl('http://127.0.0.1:8080/?token=abc')).toBe('abc')
+    expect(tokenFromAccessUrl('http://127.0.0.1:8080/?token=a%20b')).toBe('a b')
+  })
+
+  it('缺 token 或地址不可解析返回 null', () => {
+    expect(tokenFromAccessUrl('http://127.0.0.1:8080/')).toBeNull()
+    expect(tokenFromAccessUrl('http://127.0.0.1:8080/?token=')).toBeNull()
+    expect(tokenFromAccessUrl('not a url')).toBeNull()
   })
 })
 

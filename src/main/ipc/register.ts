@@ -68,6 +68,8 @@ export interface InstanceViewDeps {
   reloadInstanceView?: (instanceId: string) => Promise<void>
   /** 在系统默认浏览器中打开 URL；地址由主进程解析并按协议白名单校验，渲染层只触发动作。 */
   openExternalUrl?: (url: string) => Promise<void>
+  /** 把本机实例的访问 token 写入系统剪贴板；token 只在主进程内流转。 */
+  copyTokenToClipboard?: (token: string) => void
   /** 隐藏当前内嵌工作区，不向渲染层暴露访客 WebContents。 */
   hideInstanceView?: () => void
   /** 销毁指定实例的内嵌工作区，不停止运行时或清除认证状态。 */

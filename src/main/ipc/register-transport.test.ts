@@ -33,13 +33,22 @@ let httpFake: HttpFake
 let authFake: AuthFake
 let openInstanceView: MockFn
 let openExternalUrl: MockFn
+let copyTokenToClipboard: MockFn
 let currentStatus: InstanceStatusEvent | null
 
 beforeEach(async () => {
   currentStatus = null
   harness = await setupRegister(() => currentStatus)
-  ;({ invoke, runtimeFake, tunnelsFake, httpFake, authFake, openInstanceView, openExternalUrl } =
-    harness)
+  ;({
+    invoke,
+    runtimeFake,
+    tunnelsFake,
+    httpFake,
+    authFake,
+    openInstanceView,
+    openExternalUrl,
+    copyTokenToClipboard
+  } = harness)
 })
 
 afterEach(async () => {
@@ -300,6 +309,61 @@ describe('registerIpc：传输路由与浏览器打开', () => {
     expect(opened.ok).toBe(false)
     expect(opened.code).toBe('invalid-state')
     expect(openExternalUrl).not.toHaveBeenCalled()
+  })
+
+  it('copyToken:运行中的本机实例把访问 token 写入剪贴板', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    runtimeFake.urlOf.mockReturnValue('http://127.0.0.1:31234/?token=copy-token-value')
+
+    const copied = (await invoke('instances:copyToken', created.value.id)) as { ok: boolean }
+    expect(copied.ok).toBe(true)
+    expect(copyTokenToClipboard).toHaveBeenCalledWith('copy-token-value')
+  })
+
+  it('copyToken:没有就绪 URL 或 URL 不含 token 时返回可见错误', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+
+    runtimeFake.urlOf.mockReturnValue(null)
+    const stopped = (await invoke('instances:copyToken', created.value.id)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(stopped.ok).toBe(false)
+    expect(stopped.code).toBe('invalid-state')
+
+    runtimeFake.urlOf.mockReturnValue('http://127.0.0.1:31234/')
+    const missing = (await invoke('instances:copyToken', created.value.id)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(missing.ok).toBe(false)
+    expect(missing.code).toBe('invalid-state')
+    expect(copyTokenToClipboard).not.toHaveBeenCalled()
+  })
+
+  it('copyToken:非本机实例拒绝', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '远程复制 token',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+
+    const copied = (await invoke('instances:copyToken', created.value.id)) as {
+      ok: boolean
+      code?: string
+    }
+    expect(copied.ok).toBe(false)
+    expect(copied.code).toBe('invalid-input')
+    expect(copyTokenToClipboard).not.toHaveBeenCalled()
   })
 
   it('openInBrowser:SSH 实例不支持在浏览器中打开', async () => {

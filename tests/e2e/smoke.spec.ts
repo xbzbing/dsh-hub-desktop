@@ -68,6 +68,7 @@ test('preload 白名单桥接形状正确(无多余暴露)', async () => {
   expect(runtimeKeys).toEqual([
     'adoptExternal',
     'checkDshVersion',
+    'copyToken',
     'disconnectView',
     'findInPage',
     'hideTooltip',

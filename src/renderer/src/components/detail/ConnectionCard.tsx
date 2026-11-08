@@ -16,13 +16,15 @@ export interface ConnectionCardProps {
   onLogin: () => void
   onCopyAddress: () => void
   onOpenInBrowser: () => void
+  /** 复制本机实例的访问 token；仅本机实例提供，非本机为 undefined 时不显示按钮。 */
+  onCopyToken?: () => void
   /** 打开本机实例的数据目录；仅本机实例提供，非本机为 undefined 时不显示按钮。 */
   onOpenDirectory?: () => void
   onDisconnect: () => void
   onLogout: () => void
 }
 
-/** 连接方式卡：地址/端口/认证模式等事实文本，登录/复制地址/在浏览器中打开/打开目录/断开/登出操作。 */
+/** 连接方式卡：地址/端口/认证模式等事实文本，登录/复制地址/在浏览器中打开/复制 token/打开目录/断开/登出操作。 */
 export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
   const {
     t,
@@ -32,6 +34,7 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
     onLogin,
     onCopyAddress,
     onOpenInBrowser,
+    onCopyToken,
     onOpenDirectory,
     onDisconnect,
     onLogout
@@ -112,6 +115,15 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
             onClick={onOpenInBrowser}
           >
             <Icon name="external" /> {t('detail.openInBrowser')}
+          </button>
+        )}
+        {onCopyToken && (
+          <button
+            className="btn btn-secondary btn-sm"
+            data-testid="copy-token-btn"
+            onClick={onCopyToken}
+          >
+            <Icon name="copy" /> {t('detail.copyToken')}
           </button>
         )}
         {onOpenDirectory && (

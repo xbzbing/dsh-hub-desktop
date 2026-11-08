@@ -92,6 +92,7 @@ const bridge: DshHubBridge = {
     openView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openView, id),
     reloadView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.reloadView, id),
     openInBrowser: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openInBrowser, id),
+    copyToken: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.copyToken, id),
     updateViewBounds: (bounds) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.updateViewBounds, bounds),
     findInPage: (input: WorkspaceFindInput) => ipcRenderer.invoke(WORKSPACE_FIND_IPC.find, input),
     stopFindInPage: (options?: WorkspaceFindStopOptions) =>

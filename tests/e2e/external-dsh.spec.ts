@@ -380,6 +380,22 @@ test('探测到已运行的 dsh web 后可接管并直接开窗', async () => {
   await win.getByTestId('workspace-back-btn').click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
   await expect(win.getByTestId('external-token-editor')).toBeVisible()
+
+  // 复制 token 紧跟在「在浏览器中打开」之后；明文由主进程写入剪贴板。
+  const copyToken = win.getByTestId('copy-token-btn')
+  await expect(copyToken).toBeVisible()
+  const followsOpen = await copyToken.evaluate((node) => {
+    const open = document.querySelector('[data-testid="open-in-browser-btn"]')
+    return (
+      open !== null && (open.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    )
+  })
+  expect(followsOpen).toBe(true)
+  await copyToken.click()
+  await expect
+    .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
+    .toBe('external-token')
+
   expect(fakeDsh?.killed).toBe(false)
 
   // 接管和断开都不应产生运行信息回写错误。

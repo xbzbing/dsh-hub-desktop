@@ -45,6 +45,7 @@ import {
   externalAccessToken,
   externalAccessUrl,
   parseId,
+  tokenFromAccessUrl,
   type ExternalAccessUrls,
   type IpcWrap
 } from './ipc-utils'
@@ -65,6 +66,8 @@ export interface RuntimeHandlerDeps {
   reloadInstanceView?: (instanceId: string) => Promise<void>
   /** 在系统默认浏览器中打开 URL；主进程按协议白名单校验后交给 shell.openExternal。 */
   openExternalUrl?: (url: string) => Promise<void>
+  /** 把本机实例的访问 token 写入系统剪贴板；token 只在主进程内流转。 */
+  copyTokenToClipboard?: (token: string) => void
   hideInstanceView?: () => void
   closeInstanceView?: (instanceId: string) => void
   setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => void
@@ -323,6 +326,28 @@ export function registerRuntimeHandlers(
         await deps.openExternalUrl(url)
         return null
       })
+  )
+
+  ipcMain.handle(INSTANCE_RUNTIME_IPC.copyToken, (_event, id: unknown): Promise<IpcResult<null>> =>
+    wrap(async () => {
+      const instance = await requireInstance(store, parseId(id))
+      if (instance.transport !== 'local') {
+        throw new InstanceStoreError('invalid-input', 'detail.errTokenLocalOnly')
+      }
+      // 与 openInBrowser 同源：外部接管用已验证的访问地址，hub 托管用就绪 URL。
+      const url =
+        externalAccessUrls.get(instance.id)?.url ?? deps.runtime.urlOf(instance.id) ?? null
+      const token = url === null ? null : tokenFromAccessUrl(url)
+      if (token === null) {
+        throw new InstanceStoreError('invalid-state', 'detail.errTokenMissing')
+      }
+      if (!deps.copyTokenToClipboard) {
+        throw new InstanceStoreError('internal', 'detail.errCopyTokenUnavailable')
+      }
+      // token 不返回渲染层，直接由主进程写入剪贴板。
+      deps.copyTokenToClipboard(token)
+      return null
+    })
   )
 
   ipcMain.handle(

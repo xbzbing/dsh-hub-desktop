@@ -144,6 +144,7 @@ export interface RegisterHarness {
   instanceViewUrlFake: MockFn
   openInstanceView: MockFn
   openExternalUrl: MockFn
+  copyTokenToClipboard: MockFn
   checkAppUpdate: MockFn
   onSettingsChanged: MockFn
   auditSpy: (entry: { instanceId?: string | null; event: string; result?: string }) => void
@@ -308,6 +309,7 @@ export async function setupRegister(
 
   const openInstanceView = vi.fn()
   const openExternalUrl = vi.fn(async () => undefined)
+  const copyTokenToClipboard = vi.fn()
   const pluginManagerFake: PluginManagerFake = {
     list: vi.fn(async () => []),
     check: vi.fn(async () => ({
@@ -421,6 +423,7 @@ export async function setupRegister(
     promptBroker: promptBrokerFake as never,
     openInstanceView: openInstanceView as never,
     openExternalUrl: openExternalUrl as never,
+    copyTokenToClipboard: copyTokenToClipboard as never,
     checkAppUpdate: checkAppUpdate as never,
     installer: installerFake as never,
     pluginManager: pluginManagerFake as never
@@ -454,6 +457,7 @@ export async function setupRegister(
     instanceViewUrlFake,
     openInstanceView,
     openExternalUrl,
+    copyTokenToClipboard,
     checkAppUpdate,
     onSettingsChanged,
     auditSpy,

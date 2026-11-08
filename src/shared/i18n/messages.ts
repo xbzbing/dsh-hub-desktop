@@ -974,6 +974,21 @@ export const MESSAGES = {
   'detail.disconnect': { zh: '断开工作区', en: 'Disconnect workspace' },
   'detail.openInBrowser': { zh: '在浏览器中打开', en: 'Open in browser' },
   'detail.openInBrowserFailed': { zh: '在浏览器中打开失败', en: 'Failed to open in browser' },
+  'detail.copyToken': { zh: '复制 token', en: 'Copy token' },
+  'detail.copyTokenFailed': { zh: '复制 token 失败', en: 'Failed to copy token' },
+  'detail.tokenCopied': { zh: '访问 token 已复制', en: 'Access token copied' },
+  'detail.errTokenLocalOnly': {
+    zh: '只有本机实例支持复制访问 token',
+    en: 'Only local instances support copying an access token'
+  },
+  'detail.errTokenMissing': {
+    zh: '没有可复制的访问 token',
+    en: 'No access token to copy'
+  },
+  'detail.errCopyTokenUnavailable': {
+    zh: '复制访问 token 不可用',
+    en: 'Copying the access token is unavailable'
+  },
   'detail.openDir': { zh: '打开实例目录', en: 'Open instance folder' },
   'detail.openDirFailed': { zh: '打开实例目录失败', en: 'Failed to open instance folder' },
   'detail.openLogDirFailed': { zh: '打开日志目录失败', en: 'Failed to open log folder' },

@@ -60,6 +60,7 @@ describe('registerIpc', () => {
       'instances:openView',
       'instances:reloadView',
       'instances:openInBrowser',
+      'instances:copyToken',
       'instances:updateViewBounds',
       'workspace:find',
       'workspace:stopFind',

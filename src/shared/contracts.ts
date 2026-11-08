@@ -103,6 +103,8 @@ export const INSTANCE_RUNTIME_IPC = {
   reloadView: 'instances:reloadView',
   /** 在系统默认浏览器中打开实例地址；URL 由主进程解析，本机实例的 token 不经渲染层。 */
   openInBrowser: 'instances:openInBrowser',
+  /** 把本机实例的 BrowserAuth token 写入系统剪贴板；token 由主进程解析，不经渲染层。 */
+  copyToken: 'instances:copyToken',
   updateViewBounds: 'instances:updateViewBounds',
   showTooltip: 'instances:showTooltip',
   hideTooltip: 'instances:hideTooltip',

@@ -10,6 +10,7 @@ import EditInstanceDialog from './EditInstanceDialog'
 import VaultCard from './VaultCard'
 import { useDshVersionControl } from './useDshVersionControl'
 import { showAuthActions } from '../lib/auth-actions'
+import { localizeIpcMessage } from '../lib/ipc-message'
 import ConnectionCard from './detail/ConnectionCard'
 import RuntimeCard from './detail/RuntimeCard'
 import ExternalTokenEditor from './detail/ExternalTokenEditor'
@@ -138,6 +139,17 @@ export default function DetailView(): ReactNode {
   const openInBrowser = async (): Promise<void> => {
     const result = await window.dshHub?.runtime.openInBrowser(record.id)
     if (result && !result.ok) toast('err', t('detail.openInBrowserFailed'), result.message)
+  }
+
+  /** 复制本机实例的访问 token；token 由主进程写入剪贴板，渲染层不接触明文。 */
+  const copyToken = async (): Promise<void> => {
+    const result = await window.dshHub?.runtime.copyToken(record.id)
+    if (!result) return
+    if (!result.ok) {
+      toast('err', t('detail.copyTokenFailed'), localizeIpcMessage(t, result.message))
+      return
+    }
+    toast('ok', t('detail.tokenCopied'))
   }
 
   /** 在系统文件管理器中打开本机实例的数据目录（DSH_HOME）；路径由主进程解析。 */
@@ -327,6 +339,11 @@ export default function DetailView(): ReactNode {
           onLogin={openAuthPanel}
           onCopyAddress={() => void copyAddress()}
           onOpenInBrowser={() => void openInBrowser()}
+          onCopyToken={
+            record.transport === 'local' && status?.status === 'running'
+              ? () => void copyToken()
+              : undefined
+          }
           onOpenDirectory={
             record.transport === 'local' ? () => void openInstanceDirectory() : undefined
           }

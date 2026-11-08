@@ -105,6 +105,16 @@ export function externalAccessUrl(token: string, port: number): string {
   return `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`
 }
 
+/** 从主进程持有的本机访问 URL 中取出 BrowserAuth token；缺失或不可解析返回 null。 */
+export function tokenFromAccessUrl(url: string): string | null {
+  try {
+    const token = new URL(url).searchParams.get('token')
+    return token === null || token === '' ? null : token
+  } catch {
+    return null
+  }
+}
+
 /** 外部 dsh 的访问地址映射(实例 id → 进程/端口/URL)：仅驻留在主进程会话内。 */
 export type ExternalAccessUrls = Map<string, { pid: number; port: number; url: string }>
 
