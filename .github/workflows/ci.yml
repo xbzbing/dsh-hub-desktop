@@ -16,6 +16,15 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Electron 44 起二进制按需下载（install 不再生成 dist）。缓存命中省掉每次约 100MB 的
+      # GitHub Releases 下载，也降低 CDN 偶发 5xx 拖垮整轮 E2E 的概率；缺失时 globalSetup 会补下。
+      - name: Cache Electron binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.pnpm/electron@*/node_modules/electron/dist
+            node_modules/.pnpm/electron@*/node_modules/electron/path.txt
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm lint
       # 格式漂移在 Linux job 拦一次即可（与平台无关，不必在 Windows 重复）
       - run: pnpm format:check
@@ -101,6 +110,15 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Electron 44 起二进制按需下载（install 不再生成 dist）。缓存命中省掉每次约 100MB 的
+      # GitHub Releases 下载，也降低 CDN 偶发 5xx 拖垮整轮 E2E 的概率；缺失时 globalSetup 会补下。
+      - name: Cache Electron binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.pnpm/electron@*/node_modules/electron/dist
+            node_modules/.pnpm/electron@*/node_modules/electron/path.txt
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
