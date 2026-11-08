@@ -94,5 +94,6 @@ pnpm release:publish
 - Electron 缓存使用 `ELECTRON_CACHE=/tmp/electron-cache`。
 - 受限环境运行 E2E：`DSH_HUB_E2E_ARGS="--no-sandbox --disable-gpu" CI=true pnpm test:e2e`。
 - 本机边工作边跑 E2E：`DSH_HUB_E2E_HIDDEN=1 CI=true pnpm test:e2e`（窗口不显示、应用不进 Dock、不抢焦点；CI 的 Linux 走 xvfb 无需此开关）。
+- E2E 并行度：默认 4 个 worker，Playwright 跨 spec 并行（各 spec 自带数据目录与单实例锁，互不干扰），单文件内用例仍串行；`DSH_HUB_E2E_WORKERS=<n>` 覆盖，CI 两个 job 显式设为 1。
 - 无 TTY 时运行 pnpm 脚本必须设置 `CI=true`。
 - 后台命令使用 `cd <workspace> && ...` 或 `pnpm --dir <workspace>`，确保在正确目录执行。

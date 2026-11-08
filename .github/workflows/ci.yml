@@ -38,6 +38,8 @@ jobs:
           DSH_HUB_E2E_PASSWORD_STORE: gnome-libsecret
           # 断言钉中文,不随 runner 系统语言漂移
           DSH_HUB_E2E_LOCALE: zh-CN
+          # xvfb 只有一块虚拟屏且 runner 配置未知,保持串行;本地默认 4 个 worker
+          DSH_HUB_E2E_WORKERS: '1'
         run: |
           dbus-run-session -- sh -c '
             echo "ci-unlock" | gnome-keyring-daemon --unlock --replace --components=secrets >/tmp/keyring.env 2>/tmp/keyring.err &
@@ -109,6 +111,7 @@ jobs:
           DSH_HUB_E2E_DECLINE_DOWNLOAD: '1'
           # 断言钉中文,不随 runner 系统语言漂移
           DSH_HUB_E2E_LOCALE: zh-CN
+          DSH_HUB_E2E_WORKERS: '1'
         run: pnpm test:e2e
       - name: Upload E2E failure artifacts
         if: failure()
