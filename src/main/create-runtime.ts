@@ -16,9 +16,10 @@ import type { LocalRuntimeManager } from './local-runtime/local-runtime'
 import { createRuntimeInstaller } from './local-runtime/runtime-installer'
 import type { BundledNpm, RuntimeInstaller } from './local-runtime/runtime-installer'
 import { createPluginManager } from './local-runtime/plugin-manager'
+import { createPluginSecurityChecker } from './local-runtime/plugin-security'
 import type { PluginManager } from './local-runtime/plugin-manager'
 import type { PackageInfoFetchers, ReleaseNotesInput } from './local-runtime/plugin-package-info'
-import type { PluginDownloads, PluginReleaseNotes } from '@shared/contracts'
+import type { PluginDownloads, PluginReleaseNotes, PluginSecurityReport } from '@shared/contracts'
 import { createPathProbe } from './local-runtime/runtime-source'
 import type { PathProbe } from './local-runtime/runtime-source'
 import { materializePnpmLauncher } from './shell/bundled-pnpm'
@@ -153,11 +154,31 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
             truncated: false
           })
         }
+  // E2E 注入点：安全检查默认真连 registry 并下载 tarball，无头测试不该依赖外网。
+  // `DSH_HUB_E2E_SECURITY_REPORT` 指向一份固定的检查报告，命中时所有检查都返回它；
+  // 设置关闭仍由 pluginManager 先短路为 disabled，不会走到这里。
+  const e2eSecurityReportPath = process.env['DSH_HUB_E2E_SECURITY_REPORT']
+  let e2eSecurityReport: PluginSecurityReport | null = null
+  if (e2eSecurityReportPath !== undefined) {
+    try {
+      e2eSecurityReport = JSON.parse(
+        readFileSync(e2eSecurityReportPath, 'utf8')
+      ) as PluginSecurityReport
+    } catch (error) {
+      console.error('[main] 无法读取 DSH_HUB_E2E_SECURITY_REPORT，安全检查改用真实取数', error)
+    }
+  }
+  const securityChecker =
+    e2eSecurityReport === null
+      ? createPluginSecurityChecker()
+      : { check: async (): Promise<PluginSecurityReport> => e2eSecurityReport }
   const pluginManager = createPluginManager({
     installer,
     dataRoot: deps.dataRoot,
     pathProbe,
     pnpmBinDir,
+    securityChecker,
+    securityEnabled: () => deps.readSettings().pluginSecurityCheck,
     // 与本机实例启动同源的环境继承：打包后 GUI 从 Finder/Dock 启动只继承 launchd 最小 PATH，
     // 缺 pnpm/node 目录会让 dsh plugin 转发 pnpm 失败；运行中改设置即时生效。
     inheritShellEnv: () => deps.readSettings().inheritShellEnv,

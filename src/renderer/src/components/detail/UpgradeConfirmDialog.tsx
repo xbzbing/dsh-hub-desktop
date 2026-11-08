@@ -8,7 +8,10 @@ import { Modal } from '../Modal'
 import Select from '../Select'
 import { useAppStore } from '../../store'
 import InstallConfirmPanel from './InstallConfirmPanel'
+import PluginSecurityPanel from './PluginSecurityPanel'
 import { REGISTRY_CHOICES, registryLabel } from './registry-choices'
+import { securityBlocked, securityNeedsAcknowledgement } from '../../lib/plugin-security-copy'
+import { usePluginSecurityCheck } from '../../lib/use-plugin-security-check'
 
 const BRIDGE = window.dshHub
 
@@ -36,12 +39,16 @@ export default function UpgradeConfirmDialog(props: {
   /** 目标版本（来自检查结果；升级固定走显式版本分型）。 */
   version: string
   onClose: () => void
-  /** 执行升级（留痕、清检查标记、刷新列表与生效提示由调用方完成）；入参是本次选定的安装源。 */
-  onConfirm: (registry: PluginRegistryOption) => Promise<UpgradeOutcome>
+  /** 执行升级（留痕、清检查标记、刷新列表与生效提示由调用方完成）；入参是本次选定的安装源与安全检查确认。 */
+  onConfirm: (
+    registry: PluginRegistryOption,
+    securityAcknowledged: boolean
+  ) => Promise<UpgradeOutcome>
 }): ReactNode {
   const { t, instanceId, name, version, onClose, onConfirm } = props
   const closeLabel = useAppStore((state) => state.t('common.close'))
   const npmRegistry = useAppStore((state) => state.settings.npmRegistry)
+  const securityEnabled = useAppStore((state) => state.settings.pluginSecurityCheck)
 
   // 默认安装源跟随应用设置的镜像档位：与 check 的默认源同口径（主进程同一设置推导）。
   const [registry, setRegistry] = useState<PluginRegistryOption>(() =>
@@ -55,6 +62,20 @@ export default function UpgradeConfirmDialog(props: {
   const [riskAccepted, setRiskAccepted] = useState(false)
   /** 本确认框是否已「放到后台」：收起即失效，升级结束后的收尾据此不再碰对话框状态。 */
   const backgroundedRef = useRef(false)
+  const security = usePluginSecurityCheck({
+    instanceId,
+    spec: plan?.installSpec ?? null,
+    registry,
+    enabled: securityEnabled
+  })
+  const securityReport = security.state.status === 'ready' ? security.state.report : null
+  const securityChecking =
+    plan !== null && (security.state.status === 'loading' || security.state.status === 'idle')
+  const securityBlockedNow = securityBlocked(securityReport)
+  const securityAck = securityNeedsAcknowledgement(
+    securityReport,
+    security.state.status === 'error'
+  )
 
   useEffect(() => {
     const bridge = BRIDGE
@@ -93,9 +114,10 @@ export default function UpgradeConfirmDialog(props: {
     if (plan === null || upgrading) return
     // 不兼容：未勾选风险确认时不允许提交（按钮同时禁用，这里再兜一层）。
     if (plan.compatible === false && !riskAccepted) return
+    if (securityChecking || securityBlockedNow) return
     setUpgrading(true)
     setUpgradeError(null)
-    const result = await onConfirm(registry)
+    const result = await onConfirm(registry, securityAck)
     // 已「放到后台」：本确认框只对当前插件生效这一次，收起即失效，收尾不再执行。
     // 否则这里的 onClose() 作用的是用户此刻打开的另一个插件的确认框 —— 上一次
     // 后台升级每完成一次就关掉一个新打开的确认框，表现为「点谁的升级都被放到后台」。
@@ -122,7 +144,12 @@ export default function UpgradeConfirmDialog(props: {
   }
 
   const submitDisabled =
-    resolving || upgrading || plan === null || (plan.compatible === false && !riskAccepted)
+    resolving ||
+    upgrading ||
+    securityChecking ||
+    securityBlockedNow ||
+    plan === null ||
+    (plan.compatible === false && !riskAccepted)
 
   return (
     <Modal
@@ -157,21 +184,31 @@ export default function UpgradeConfirmDialog(props: {
                 {t('common.cancel')}
               </button>
             )}
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={() => void upgrade()}
-              disabled={submitDisabled}
-              data-testid="upgrade-confirm-submit"
-            >
-              <span className="btn-swap">
-                <span className="btn-swap-cell" data-active={!upgrading}>
-                  {t('detail.plugin.upgradeTo', { version: plan?.targetVersion ?? version })}
+            {securityBlockedNow ? null : (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => void upgrade()}
+                disabled={submitDisabled}
+                data-testid="upgrade-confirm-submit"
+              >
+                <span className="btn-swap">
+                  <span className="btn-swap-cell" data-active={!upgrading}>
+                    {securityChecking
+                      ? t('detail.plugin.security.checkingButton')
+                      : securityAck
+                        ? t('detail.plugin.security.acknowledgeUpgrade', {
+                            version: plan?.targetVersion ?? version
+                          })
+                        : t('detail.plugin.upgradeTo', {
+                            version: plan?.targetVersion ?? version
+                          })}
+                  </span>
+                  <span className="btn-swap-cell" data-active={upgrading}>
+                    {t('detail.plugin.upgrading')}
+                  </span>
                 </span>
-                <span className="btn-swap-cell" data-active={upgrading}>
-                  {t('detail.plugin.upgrading')}
-                </span>
-              </span>
-            </button>
+              </button>
+            )}
           </span>
         </>
       }
@@ -214,6 +251,9 @@ export default function UpgradeConfirmDialog(props: {
             registryLabel={registryLabel(t, registry)}
             riskAccepted={riskAccepted}
             onRiskChange={setRiskAccepted}
+            securityPanel={
+              <PluginSecurityPanel t={t} state={security.state} onRefresh={security.refresh} />
+            }
           />
           <p className="meta mt8">{t('detail.plugin.upgradeKeepState')}</p>
           {upgradeError !== null && (

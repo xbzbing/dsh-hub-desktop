@@ -1165,7 +1165,326 @@ export const MESSAGES = {
   'about.dependencies': { zh: '第三方依赖', en: 'Third-party dependencies' },
   'about.depsShow': { zh: '展开', en: 'Show' },
   'about.depsHide': { zh: '收起', en: 'Hide' },
-  'about.copyright': { zh: '版权所有 © 2026 xbzbing', en: 'Copyright © 2026 xbzbing' }
+  'about.copyright': { zh: '版权所有 © 2026 xbzbing', en: 'Copyright © 2026 xbzbing' },
+
+  // —— 插件安装安全检查 ——
+  'detail.plugin.security.title': { zh: '安全检查', en: 'Security check' },
+  'detail.plugin.security.refresh': { zh: '重新检查', en: 'Re-check' },
+  'detail.plugin.security.refreshing': { zh: '检查中…', en: 'Checking…' },
+  'detail.plugin.security.checking': {
+    zh: '正在下载并检查插件包…',
+    en: 'Downloading and checking the plugin package…'
+  },
+  'detail.plugin.security.checkFailed': {
+    zh: '安全检查未完成：{msg}',
+    en: 'Security check did not finish: {msg}'
+  },
+  'detail.plugin.security.verdict.pass': { zh: '未发现明显风险', en: 'No obvious risks found' },
+  'detail.plugin.security.verdict.warn': {
+    zh: '有 {count} 项需要留意',
+    en: '{count} items need attention'
+  },
+  'detail.plugin.security.verdict.blocked': { zh: '已阻止安装', en: 'Installation blocked' },
+  'detail.plugin.security.verdict.unavailable': {
+    zh: '关键检查未完成',
+    en: 'Essential checks incomplete'
+  },
+  'detail.plugin.security.verdict.disabled': {
+    zh: '安装前安全检查已关闭',
+    en: 'Pre-install security check is off'
+  },
+  'detail.plugin.security.summary.pass': {
+    zh: '未发现明显风险。静态检查只能降低风险，不能保证插件安全。',
+    en: 'No obvious risks found. Static checks reduce risk but cannot guarantee a plugin is safe.'
+  },
+  'detail.plugin.security.summary.warn': {
+    zh: '以下项目需要留意，确认后可继续安装。',
+    en: 'Review the items below; you can still install after confirming.'
+  },
+  'detail.plugin.security.summary.blocked': {
+    zh: '发现高风险问题，无法继续安装。请更换版本或安装源。',
+    en: 'High-risk issues found; installation cannot continue. Choose another version or source.'
+  },
+  'detail.plugin.security.summary.unavailable': {
+    zh: '关键检查未能完成，无法确认包体是否安全；确认后可继续安装。',
+    en: 'Essential checks did not finish, so the package cannot be verified; you can still install after confirming.'
+  },
+  'detail.plugin.security.summary.disabled': {
+    zh: '安装前安全检查已关闭，本次不会检查插件来源与内容。',
+    en: 'The pre-install security check is off; this plugin will not be checked.'
+  },
+  'detail.plugin.security.disabledHint': {
+    zh: '可在「设置 → 安全」中重新开启。',
+    en: 'You can re-enable it in Settings → Security.'
+  },
+  'detail.plugin.security.backToEdit': { zh: '返回修改', en: 'Back to edit' },
+  'detail.plugin.security.checkingButton': { zh: '检查中…', en: 'Checking…' },
+  'detail.plugin.security.acknowledge': {
+    zh: '仍要安装 {version}',
+    en: 'Install anyway {version}'
+  },
+  'detail.plugin.security.acknowledgeUpgrade': {
+    zh: '仍要升级到 {version}',
+    en: 'Upgrade anyway to {version}'
+  },
+  'detail.plugin.security.details': { zh: '查看检查详情', en: 'View check details' },
+  'detail.plugin.security.partial': { zh: '部分检查未完成', en: 'Some checks did not finish' },
+  'detail.plugin.security.privacy': {
+    zh: '检查在本机完成，不会上传插件代码。静态检查只能降低风险，不能保证安全；插件运行时拥有你的权限。',
+    en: 'Checks run locally and never upload plugin code. Static checks reduce risk but cannot guarantee safety; plugins run with your permissions.'
+  },
+  'detail.plugin.security.pnpmNote': {
+    zh: 'dsh 的 pnpm 默认会阻止未放行的依赖构建脚本；只有 profile 的 allowBuilds 放行时才会执行。',
+    en: "dsh's pnpm blocks dependency lifecycle scripts unless the profile's allowBuilds permits them."
+  },
+  'detail.plugin.security.fact.source': { zh: '来源与发布者', en: 'Source and publisher' },
+  'detail.plugin.security.fact.integrity': { zh: '包体完整性', en: 'Package integrity' },
+  'detail.plugin.security.fact.scripts': { zh: '安装脚本', en: 'Install scripts' },
+  'detail.plugin.security.fact.content': { zh: '代码特征', en: 'Code characteristics' },
+  'detail.plugin.security.fact.dependencies': { zh: '名称与依赖', en: 'Name and dependencies' },
+  'detail.plugin.security.fact.vulnerabilities': { zh: '已知漏洞', en: 'Known vulnerabilities' },
+  'detail.plugin.security.facts.none': { zh: '无', en: 'None' },
+  'detail.plugin.security.facts.downloads': {
+    zh: '近 30 天 {count} 次下载',
+    en: '{count} downloads in 30 days'
+  },
+  'detail.plugin.security.facts.versions': { zh: '{count} 个版本', en: '{count} versions' },
+  'detail.plugin.security.facts.size': {
+    zh: '{size} / {files} 个文件',
+    en: '{size} / {files} files'
+  },
+  'detail.plugin.security.facts.publisher': { zh: '发布者 {name}', en: 'Publisher {name}' },
+  'detail.plugin.security.facts.capabilities': {
+    zh: '命令 {spawn} · 网络 {network} · 动态求值 {eval} · 敏感读取 {sensitive}',
+    en: 'Commands {spawn} · Network {network} · Dynamic eval {eval} · Sensitive reads {sensitive}'
+  },
+  'detail.plugin.security.facts.scripts': { zh: '包含 {names}', en: 'Includes {names}' },
+  'detail.plugin.security.facts.deps': {
+    zh: '{count} 个直接依赖',
+    en: '{count} direct dependencies'
+  },
+  'detail.plugin.security.facts.nonRegistry': {
+    zh: ' · {count} 个非 registry 依赖',
+    en: ' · {count} non-registry dependencies'
+  },
+  'detail.plugin.security.facts.native': {
+    zh: ' · {count} 个原生模块',
+    en: ' · {count} native modules'
+  },
+  'detail.plugin.security.level.pass': { zh: '通过', en: 'Pass' },
+  'detail.plugin.security.level.info': { zh: '提示', en: 'Info' },
+  'detail.plugin.security.level.warn': { zh: '留意', en: 'Attention' },
+  'detail.plugin.security.level.danger': { zh: '高风险', en: 'High risk' },
+  'detail.plugin.security.level.blocked': { zh: '已阻止', en: 'Blocked' },
+  'detail.plugin.security.level.skip': { zh: '未完成', en: 'Skipped' },
+  'detail.plugin.security.check.source': { zh: '来源与发布者', en: 'Source and publisher' },
+  'detail.plugin.security.check.integrity': { zh: '包体完整性', en: 'Package integrity' },
+  'detail.plugin.security.check.reputation': { zh: '发布历史', en: 'Release history' },
+  'detail.plugin.security.check.name': { zh: '名称与仿冒', en: 'Name and impersonation' },
+  'detail.plugin.security.check.scripts': { zh: '安装脚本', en: 'Install scripts' },
+  'detail.plugin.security.check.content': { zh: '代码内容', en: 'Code content' },
+  'detail.plugin.security.check.dependencies': { zh: '依赖', en: 'Dependencies' },
+  'detail.plugin.security.check.vulnerabilities': { zh: '已知漏洞', en: 'Known vulnerabilities' },
+  'detail.plugin.security.code.source.npm': { zh: 'npm registry', en: 'npm registry' },
+  'detail.plugin.security.code.source.mirror': { zh: '经镜像源', en: 'Via mirror' },
+  'detail.plugin.security.code.source.publisher.changed': {
+    zh: '发布者已变更',
+    en: 'Publisher changed'
+  },
+  'detail.plugin.security.code.source.provenance.present': {
+    zh: '构建来源可验证',
+    en: 'Build provenance available'
+  },
+  'detail.plugin.security.code.source.provenance.lost': {
+    zh: '新版本缺少构建来源证明',
+    en: 'New version lost build provenance'
+  },
+  'detail.plugin.security.code.source.no-repository': {
+    zh: '未声明代码仓库',
+    en: 'No repository declared'
+  },
+  'detail.plugin.security.code.source.unavailable': {
+    zh: '来源信息不可用',
+    en: 'Source information unavailable'
+  },
+  'detail.plugin.security.code.source.github.pinned': {
+    zh: 'GitHub 固定提交',
+    en: 'GitHub commit pinned'
+  },
+  'detail.plugin.security.code.source.github.unpinned': {
+    zh: 'GitHub 未固定提交，默认分支会变化',
+    en: 'GitHub commit not pinned; the default branch can change'
+  },
+  'detail.plugin.security.code.source.local': { zh: '本地路径', en: 'Local path' },
+  'detail.plugin.security.code.source.deprecated': {
+    zh: '该版本已被标记为废弃',
+    en: 'This version is deprecated'
+  },
+  'detail.plugin.security.code.integrity.ok': { zh: 'sha512 校验通过', en: 'sha512 verified' },
+  'detail.plugin.security.code.integrity.github': {
+    zh: 'GitHub 快照已解包',
+    en: 'GitHub snapshot unpacked'
+  },
+  'detail.plugin.security.code.integrity.local': {
+    zh: '本地文件已读取',
+    en: 'Local files read'
+  },
+  'detail.plugin.security.code.integrity.mismatch': {
+    zh: '包体哈希与 registry 声明不一致',
+    en: 'Package hash does not match the registry'
+  },
+  'detail.plugin.security.code.integrity.manifest-mismatch': {
+    zh: '包内 package.json 与 registry 元数据不一致',
+    en: 'Package metadata does not match the registry'
+  },
+  'detail.plugin.security.code.integrity.unavailable': {
+    zh: '完整性校验未完成',
+    en: 'Integrity check did not finish'
+  },
+  'detail.plugin.security.code.tarball.unsafe-path': {
+    zh: '包内包含越界路径',
+    en: 'Package contains an unsafe path'
+  },
+  'detail.plugin.security.code.tarball.manifest-missing': {
+    zh: '包内缺少 package.json',
+    en: 'Package is missing package.json'
+  },
+  'detail.plugin.security.code.reputation.established': {
+    zh: '版本与下载量正常',
+    en: 'Release history looks normal'
+  },
+  'detail.plugin.security.code.reputation.new': {
+    zh: '新发布的包',
+    en: 'Recently published package'
+  },
+  'detail.plugin.security.code.reputation.low-downloads': {
+    zh: '下载量较低',
+    en: 'Low download count'
+  },
+  'detail.plugin.security.code.reputation.unknown': {
+    zh: '新包、下载量低且无可验证来源',
+    en: 'New, low-download package without verifiable source'
+  },
+  'detail.plugin.security.code.reputation.partial': {
+    zh: '发布历史不完整',
+    en: 'Release history incomplete'
+  },
+  'detail.plugin.security.code.name.ok': { zh: '未发现仿冒', en: 'No impersonation detected' },
+  'detail.plugin.security.code.name.official-impersonation': {
+    zh: '名称疑似模仿官方包',
+    en: 'Name may impersonate an official package'
+  },
+  'detail.plugin.security.code.name.similar-installed': {
+    zh: '与已装插件名称相似',
+    en: 'Name is similar to an installed plugin'
+  },
+  'detail.plugin.security.code.name.scope-similar': {
+    zh: '与已装插件 scope 相似',
+    en: 'Scope is similar to an installed plugin'
+  },
+  'detail.plugin.security.code.name.skipped': { zh: '名称检查未完成', en: 'Name check skipped' },
+  'detail.plugin.security.code.scripts.none': { zh: '无安装脚本', en: 'No install scripts' },
+  'detail.plugin.security.code.scripts.present': {
+    zh: '包含 {count} 个安装脚本',
+    en: 'Includes {count} install scripts'
+  },
+  'detail.plugin.security.code.scripts.remote-fetch': {
+    zh: '安装脚本会从网络获取并执行代码',
+    en: 'Install script downloads and executes remote code'
+  },
+  'detail.plugin.security.code.scripts.skipped': {
+    zh: '安装脚本检查未完成',
+    en: 'Install script check skipped'
+  },
+  'detail.plugin.security.code.content.clean': {
+    zh: '未发现高风险代码特征',
+    en: 'No high-risk code patterns found'
+  },
+  'detail.plugin.security.code.content.capabilities': {
+    zh: '可执行命令 {spawn} · 网络 {network} · 动态求值 {eval} · 敏感读取 {sensitive}',
+    en: 'Commands {spawn} · Network {network} · Dynamic eval {eval} · Sensitive reads {sensitive}'
+  },
+  'detail.plugin.security.code.content.credential-exfil': {
+    zh: '疑似读取凭据并外发',
+    en: 'Possible credential access and exfiltration'
+  },
+  'detail.plugin.security.code.content.dynamic-eval': {
+    zh: '动态求值',
+    en: 'Dynamic evaluation'
+  },
+  'detail.plugin.security.code.content.exfil-domain': {
+    zh: '连接可疑外发域名',
+    en: 'Connects to a suspicious exfiltration domain'
+  },
+  'detail.plugin.security.code.content.miner': { zh: '疑似挖矿代码', en: 'Possible miner code' },
+  'detail.plugin.security.code.content.native-binary': {
+    zh: '包含原生二进制',
+    en: 'Contains native binaries'
+  },
+  'detail.plugin.security.code.content.obfuscated-eval': {
+    zh: '混淆代码后动态执行',
+    en: 'Executes obfuscated code dynamically'
+  },
+  'detail.plugin.security.code.content.partial': {
+    zh: '部分文件未扫描',
+    en: 'Some files not scanned'
+  },
+  'detail.plugin.security.code.content.sensitive-read': {
+    zh: '读取敏感路径',
+    en: 'Reads sensitive paths'
+  },
+  'detail.plugin.security.code.content.skipped': {
+    zh: '内容扫描未完成',
+    en: 'Content scan skipped'
+  },
+  'detail.plugin.security.code.deps.registry-only': {
+    zh: '依赖均来自 registry',
+    en: 'All dependencies come from a registry'
+  },
+  'detail.plugin.security.code.deps.non-registry': {
+    zh: '包含非 registry 依赖',
+    en: 'Includes non-registry dependencies'
+  },
+  'detail.plugin.security.code.deps.native': { zh: '包含原生模块', en: 'Includes native modules' },
+  'detail.plugin.security.code.dependencies.skipped': {
+    zh: '依赖检查未完成',
+    en: 'Dependency check skipped'
+  },
+  'detail.plugin.security.code.vuln.none': {
+    zh: '未发现已知漏洞',
+    en: 'No known vulnerabilities'
+  },
+  'detail.plugin.security.code.vuln.known': {
+    zh: '发现 {count} 个已知漏洞',
+    en: '{count} known vulnerabilities found'
+  },
+  'detail.plugin.security.code.vuln.malware': {
+    zh: '命中 {count} 个恶意软件通告',
+    en: '{count} malware advisories matched'
+  },
+  'detail.plugin.security.code.vuln.unavailable': {
+    zh: '漏洞查询未完成',
+    en: 'Vulnerability lookup did not finish'
+  },
+  'detail.plugin.security.code.vuln.skipped': {
+    zh: '漏洞检查未完成',
+    en: 'Vulnerability check skipped'
+  },
+
+  // —— 设置：插件安全检查 ——
+  'settings.security': { zh: '安全', en: 'Security' },
+  'settings.securityCheck': {
+    zh: '安装插件前进行安全检查',
+    en: 'Check plugins before installation'
+  },
+  'settings.securityCheckHint': {
+    zh: '检查来源与发布者、包体完整性、安装脚本、代码特征、名称仿冒与已知漏洞。有风险时需要确认「仍要安装」，完整性异常会阻止安装。',
+    en: 'Checks source and publisher, package integrity, install scripts, code characteristics, name impersonation and known vulnerabilities. Risks require an explicit "install anyway"; integrity failures block installation.'
+  },
+  'settings.securityCheckPrivacy': {
+    zh: '检查在本机完成，不会上传插件代码。',
+    en: 'Checks run locally and never upload plugin code.'
+  }
 } as const satisfies Record<string, Message>
 
 export type MessageKey = keyof typeof MESSAGES

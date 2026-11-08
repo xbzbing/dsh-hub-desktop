@@ -42,6 +42,7 @@ describe('settings-store（偏好落盘）', () => {
         'language',
         'notifications',
         'npmRegistry',
+        'pluginSecurityCheck',
         'preventSleepWhenRunning',
         'theme',
         'tray',
@@ -105,7 +106,8 @@ describe('settings-store（偏好落盘）', () => {
       preventSleepWhenRunning: false,
       workspaceCacheSize: 3,
       inheritShellEnv: true,
-      npmRegistry: ''
+      npmRegistry: '',
+      pluginSecurityCheck: true
     })
     // 内存缓存也必须与落盘一致
     expect(store.read()).toEqual(persisted)

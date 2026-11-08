@@ -23,8 +23,10 @@ import type {
   PluginMutationResult,
   PluginPackageInfo,
   PluginRegistryOption,
-  PluginRegistryOptions,
-  PluginUpdateCheck
+  PluginSecurityOptions,
+  PluginSecurityReport,
+  PluginUpdateCheck,
+  PluginUpgradeOptions
 } from '@shared/contracts'
 import { DEFAULT_PLUGIN_REGISTRY } from '@shared/settings'
 import { execFileResult } from './exec-file'
@@ -59,6 +61,8 @@ import {
 } from './plugin-info'
 import type { PluginLocale, PluginManifest, ProfileListEntry } from './plugin-info'
 import { nodeModeExecutable } from '../node-mode'
+import { disabledSecurityReport } from './plugin-security'
+import type { PluginSecurityChecker } from './plugin-security'
 
 /** HMR 判定与生效口径已抽出；此处再导出以保留既有导入路径。 */
 export { profileHasHmr } from './plugin-hmr'
@@ -110,6 +114,10 @@ export interface PluginManagerOptions {
   bundleStore?: ProfileBundleStore
   /** 更新内容与下载量取数（注入便于测试）；缺省走 npm 下载量接口与 GitHub Release/CHANGELOG。 */
   packageInfoFetchers?: PackageInfoFetchers
+  /** 安装/升级前的安全检查器；缺省不检查（单测）。 */
+  securityChecker?: PluginSecurityChecker
+  /** 安全检查开关；缺省 false（仅注入检查器的生产装配开启）。 */
+  securityEnabled?: () => boolean
   /**
    * 插件命令（check/resolve/install/upgrade）未显式指定安装源时使用的默认档位；
    * 由设置项注入（读取函数，运行中改设置即时生效）。缺省 npmmirror。
@@ -141,6 +149,12 @@ export interface PluginManager {
     spec: string,
     options?: PluginInstallOptions
   ): Promise<PluginMutationResult>
+  /** 安装/升级前的安全检查；设置关闭时返回 disabled 报告。 */
+  securityCheck(
+    instance: LocalInstance,
+    spec: string,
+    options?: PluginSecurityOptions
+  ): Promise<PluginSecurityReport>
   /** 某版本的更新内容（GitHub Release → CHANGELOG → 无）与近 30 天下载量；取不到不是错误。 */
   packageInfo(instance: LocalInstance, name: string, version: string): Promise<PluginPackageInfo>
   /**
@@ -155,7 +169,7 @@ export interface PluginManager {
     instance: LocalInstance,
     name: string,
     version: string,
-    options?: PluginRegistryOptions
+    options?: PluginUpgradeOptions
   ): Promise<PluginMutationResult>
   remove(instance: LocalInstance, name: string): Promise<PluginMutationResult>
   /** 读取该实例的持久化检查状态（含在飞检查），供渲染层挂载时恢复标记。 */
@@ -226,6 +240,9 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   /** 未显式指定安装源时的默认档位（由设置项注入；缺省国内镜像）。 */
   const defaultRegistry =
     options.defaultRegistry ?? ((): PluginRegistryOption => DEFAULT_PLUGIN_REGISTRY)
+  /** 安全检查器与开关：单测未注入时关闭，生产装配由 create-runtime 注入。 */
+  const securityChecker = options.securityChecker ?? null
+  const securityEnabled = options.securityEnabled ?? ((): boolean => false)
 
   /**
    * 在飞检查的插件名（实例 id → 名字集合）。检查在后台跑到结束（用户切走也不中止），
@@ -375,6 +392,62 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       .sort((a, b) => a.name.localeCompare(b.name))
   }
 
+  /** 安全检查：设置关闭/未注入时返回 disabled；已装列表只用于名称仿冒与升级发布者对比。 */
+  async function securityCheck(
+    instance: LocalInstance,
+    spec: string,
+    options: PluginSecurityOptions = {}
+  ): Promise<PluginSecurityReport> {
+    if (securityChecker === null || !securityEnabled()) return disabledSecurityReport(spec)
+    const registry = options.registry ?? defaultRegistry()
+    let installed: Array<{ name: string; version: string }> = []
+    try {
+      const resolved = await resolveDshEntry(instance)
+      installed = (await listPlugins(instance, 'zh', resolved)).map((plugin) => ({
+        name: plugin.name,
+        version: plugin.version
+      }))
+    } catch {
+      // 列表读不到（实例未初始化/profile 未就绪）不影响 npm 检查；名称仿冒与发布者对比降级。
+    }
+    return securityChecker.check({
+      spec,
+      registry,
+      installed,
+      ...(options.refresh === true ? { refresh: true } : {})
+    })
+  }
+
+  /**
+   * 安装/升级前闸门：blocked（含 danger）永远拒绝；warn/unavailable 需要用户显式确认。
+   * 复用 securityCheck 的 10 分钟缓存，确认后再次安装不会重复打网络。
+   */
+  async function guardSecurity(
+    instance: LocalInstance,
+    spec: string,
+    registry: PluginRegistryOption,
+    acknowledged: boolean
+  ): Promise<void> {
+    const report = await securityCheck(instance, spec, { registry })
+    if (report.verdict === 'disabled' || report.verdict === 'pass') return
+    if (report.verdict === 'blocked') {
+      const codes = report.checks
+        .filter((check) => check.level === 'danger' || check.level === 'blocked')
+        .map((check) => check.code)
+        .slice(0, 3)
+      throw new InstanceStoreError(
+        'invalid-state',
+        `安全检查未通过${codes.length > 0 ? `（${codes.join('、')}）` : ''}，已阻止安装`
+      )
+    }
+    if (!acknowledged) {
+      throw new InstanceStoreError(
+        'invalid-state',
+        '安全检查需要确认：请查看检查结果并点击「仍要安装」'
+      )
+    }
+  }
+
   async function applyEnabled(
     instance: LocalInstance,
     profileDir: string,
@@ -421,6 +494,10 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   }
 
   return {
+    async securityCheck(instance, spec, options = {}): Promise<PluginSecurityReport> {
+      return securityCheck(instance, spec, options)
+    },
+
     async list(instance, locale = 'zh'): Promise<PluginInfo[]> {
       const plugins = await listPlugins(instance, locale, await resolveDshEntry(instance))
       const state = await stateStore.read(instance.id)
@@ -613,6 +690,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       const before = await bundleStore.read(profileDir)
 
       const resolved = await resolveDshEntry(instance)
+      await guardSecurity(instance, spec, registry, options.securityAcknowledged === true)
       await runPlugin(instance, ['add', spec], resolved, registry)
       const plugins = await listPlugins(instance, 'zh', resolved)
       const hasHostSide = plugins.some(
@@ -646,6 +724,12 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       const before = await bundleStore.read(profileDir)
       const current = (await listPlugins(instance, 'zh', resolved)).find(
         (plugin) => plugin.name === name
+      )
+      await guardSecurity(
+        instance,
+        `${name}@${version}`,
+        registry,
+        options.securityAcknowledged === true
       )
       const hadHostSide = current?.hasHostSide ?? false
       const previousVersion =

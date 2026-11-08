@@ -33,9 +33,12 @@ import type {
   PluginMutationResult,
   PluginPackageInfo,
   PluginRegistryOptions,
+  PluginSecurityOptions,
+  PluginSecurityReport,
   PluginCheckSnapshot,
   PluginEnableResult,
   PluginUpdateCheck,
+  PluginUpgradeOptions,
   VaultPolicy,
   VaultStatusSnapshot,
   IpcResult,
@@ -238,6 +241,12 @@ export interface DshHubBridge {
       spec: string,
       options?: PluginRegistryOptions
     ) => Promise<IpcResult<PluginInstallPlan>>
+    /** 安装/升级前的安全检查；设置关闭时返回 disabled 报告。 */
+    securityCheck: (
+      id: string,
+      spec: string,
+      options?: PluginSecurityOptions
+    ) => Promise<IpcResult<PluginSecurityReport>>
     /** 单个版本的更新内容与近 30 天下载量（确认区懒加载；取不到不算错误）。 */
     packageInfo: (
       id: string,
@@ -249,7 +258,7 @@ export interface DshHubBridge {
       id: string,
       name: string,
       version: string,
-      options?: PluginRegistryOptions
+      options?: PluginUpgradeOptions
     ) => Promise<IpcResult<PluginMutationResult>>
     /** 卸载插件。 */
     remove: (id: string, name: string) => Promise<IpcResult<PluginMutationResult>>

@@ -80,6 +80,7 @@ describe('registerIpc', () => {
       'plugin:checkState',
       'plugin:install',
       'plugin:resolveInstall',
+      'plugin:securityCheck',
       'plugin:packageInfo',
       'plugin:upgrade',
       'plugin:remove',

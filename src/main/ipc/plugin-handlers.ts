@@ -14,7 +14,9 @@ import {
   PLUGIN_IPC,
   PLUGIN_NAME_SCHEMA,
   PLUGIN_REGISTRY_OPTIONS_SCHEMA,
+  PLUGIN_SECURITY_OPTIONS_SCHEMA,
   PLUGIN_SPEC_SCHEMA,
+  PLUGIN_UPGRADE_OPTIONS_SCHEMA,
   type IpcResult,
   type LocalInstance,
   type PluginCheckSnapshot,
@@ -23,6 +25,7 @@ import {
   type PluginInstallPlan,
   type PluginMutationResult,
   type PluginPackageInfo,
+  type PluginSecurityReport,
   type PluginUpdateCheck
 } from '@shared/contracts'
 import { InstanceStoreError, requireInstance, type InstanceStore } from '../registry/instance-store'
@@ -106,6 +109,23 @@ export function registerPluginHandlers(
   )
 
   ipcMain.handle(
+    PLUGIN_IPC.securityCheck,
+    (
+      _event,
+      id: unknown,
+      spec: unknown,
+      options: unknown
+    ): Promise<IpcResult<PluginSecurityReport>> =>
+      wrap(async () => {
+        const instance = await requireLocal(id)
+        const pluginSpec = PLUGIN_SPEC_SCHEMA.parse(spec)
+        const parsedOptions = PLUGIN_SECURITY_OPTIONS_SCHEMA.parse(options ?? {})
+        if (!deps.pluginManager) throw new InstanceStoreError('internal', '插件管理能力不可用')
+        return deps.pluginManager.securityCheck(instance, pluginSpec, parsedOptions)
+      })
+  )
+
+  ipcMain.handle(
     PLUGIN_IPC.install,
     (
       _event,
@@ -147,7 +167,7 @@ export function registerPluginHandlers(
         const instance = await requireLocal(id)
         const pluginName = PLUGIN_NAME_SCHEMA.parse(name)
         const targetVersion = PLUGIN_VERSION_SCHEMA.parse(version)
-        const parsedOptions = PLUGIN_REGISTRY_OPTIONS_SCHEMA.parse(options ?? {})
+        const parsedOptions = PLUGIN_UPGRADE_OPTIONS_SCHEMA.parse(options ?? {})
         if (!deps.pluginManager) throw new InstanceStoreError('internal', '插件管理能力不可用')
         return deps.pluginManager.upgrade(instance, pluginName, targetVersion, parsedOptions)
       })

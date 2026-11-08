@@ -209,6 +209,8 @@ export const PLUGIN_IPC = {
   resolveInstall: 'plugin:resolveInstall',
   /** 单个版本的更新内容与近 30 天下载量（安装确认与升级确认共用，懒加载）。 */
   packageInfo: 'plugin:packageInfo',
+  /** 安装/升级前的安全检查：检查精确版本的来源、完整性、脚本与代码特征。 */
+  securityCheck: 'plugin:securityCheck',
   /** 升级到指定版本（显式版本，非 latest；可从所选安装源取该版本）。 */
   upgrade: 'plugin:upgrade',
   /** 卸载插件。 */
@@ -253,7 +255,9 @@ export const PLUGIN_REGISTRY_SCHEMA = z.enum(PLUGIN_REGISTRY_OPTIONS)
  */
 export const PLUGIN_INSTALL_OPTIONS_SCHEMA = z.object({
   enable: z.boolean().optional(),
-  registry: PLUGIN_REGISTRY_SCHEMA.optional()
+  registry: PLUGIN_REGISTRY_SCHEMA.optional(),
+  /** 用户已查看安全检查结果并确认「仍要安装」；仅对 warn/unavailable 生效。 */
+  securityAcknowledged: z.boolean().optional()
 })
 
 export type PluginInstallOptions = z.infer<typeof PLUGIN_INSTALL_OPTIONS_SCHEMA>
@@ -267,6 +271,22 @@ export const PLUGIN_REGISTRY_OPTIONS_SCHEMA = z.object({
 })
 
 export type PluginRegistryOptions = z.infer<typeof PLUGIN_REGISTRY_OPTIONS_SCHEMA>
+
+/** 升级参数：安装源档位 + 安全检查确认。 */
+export const PLUGIN_UPGRADE_OPTIONS_SCHEMA = z.object({
+  registry: PLUGIN_REGISTRY_SCHEMA.optional(),
+  securityAcknowledged: z.boolean().optional()
+})
+
+export type PluginUpgradeOptions = z.infer<typeof PLUGIN_UPGRADE_OPTIONS_SCHEMA>
+
+/** 安全检查参数：安装源档位 + 是否绕过 10 分钟内存缓存重新检查。 */
+export const PLUGIN_SECURITY_OPTIONS_SCHEMA = z.object({
+  registry: PLUGIN_REGISTRY_SCHEMA.optional(),
+  refresh: z.boolean().optional()
+})
+
+export type PluginSecurityOptions = z.infer<typeof PLUGIN_SECURITY_OPTIONS_SCHEMA>
 
 /** 安装 spec 的种类；github/file 不联网解析版本，只展示来源。 */
 export type PluginInstallKind = 'npm' | 'github' | 'file'
@@ -327,6 +347,96 @@ export interface PluginPackageInfo {
   /** 非 npm 来源或接口失败时为 null，界面显示占位符。 */
   downloads: PluginDownloads | null
   releaseNotes: PluginReleaseNotes
+}
+
+/** 安全检查判定：pass 正常安装；warn 需「仍要安装」；blocked 禁止安装；unavailable 需确认；disabled 设置关闭。 */
+export type PluginSecurityVerdict = 'pass' | 'warn' | 'blocked' | 'unavailable' | 'disabled'
+
+/** 安全检查分组（渲染层按 id 组织分组文案）。 */
+export type PluginSecurityCheckId =
+  | 'source'
+  | 'integrity'
+  | 'reputation'
+  | 'name'
+  | 'scripts'
+  | 'content'
+  | 'dependencies'
+  | 'vulnerabilities'
+
+/** 单项检查等级：danger/blocked 会阻止安装，warn 允许「仍要安装」，info 只展示。 */
+export type PluginSecurityLevel = 'pass' | 'info' | 'warn' | 'danger' | 'blocked' | 'skip'
+
+/** 一项检查的结论；code + params 由渲染层映射为 zh/en 文案。 */
+export interface PluginSecurityCheck {
+  id: PluginSecurityCheckId
+  level: PluginSecurityLevel
+  /** 稳定 code（如 `scripts.present`），渲染层按 code + params 取 i18n。 */
+  code: string
+  params: Record<string, string | number | boolean | null>
+  /** 关联的 finding code，用于展开详情。 */
+  findingCodes: string[]
+}
+
+/** finding 的证据位置；只给文件/行号/规则标签，不回传源码片段。 */
+export interface PluginSecurityEvidence {
+  /** 包内相对路径；null = 无文件位置（元数据结论）。 */
+  file: string | null
+  /** 1-based 行号；null = 文件级。 */
+  line: number | null
+  /** 规则标签（如 child_process），不展示源码。 */
+  match: string | null
+}
+
+/** 一条检查发现；同一规则命中多次合并到 count/evidence。 */
+export interface PluginSecurityFinding {
+  code: string
+  level: 'info' | 'warn' | 'danger'
+  count: number
+  evidence: PluginSecurityEvidence[]
+  /** advisory id / 规则引用（可选）。 */
+  refs: string[]
+}
+
+/** 报告里的展示事实（确认区与详情共用）。 */
+export interface PluginSecurityFacts {
+  source: 'npm' | 'github' | 'file'
+  registry: 'npmmirror' | 'npmjs' | null
+  publisher: string | null
+  maintainers: string[]
+  /** 目标版本发布时间（ISO）；未知 null。 */
+  publishedAt: string | null
+  /** 首次发布时间（ISO）；未知 null。 */
+  firstPublishedAt: string | null
+  versionCount: number | null
+  downloads30d: number | null
+  repositoryUrl: string | null
+  deprecated: string | null
+  hasProvenance: boolean
+  hasRegistrySignature: boolean
+  unpackedSize: number | null
+  fileCount: number | null
+  directDependencies: number
+  nonRegistryDependencies: string[]
+  nativeModules: string[]
+  installScripts: Array<{ name: string; command: string }>
+}
+
+/** 一次安全检查的完整报告。 */
+export interface PluginSecurityReport {
+  /** 被检查的精确 spec（npm 为 name@x.y.z）。 */
+  spec: string
+  verdict: PluginSecurityVerdict
+  checkedAt: string
+  durationMs: number
+  /** npm: sha512-...；github: commit sha；file: null。 */
+  fingerprint: string | null
+  /** 关键检查（完整性/内容）是否完成；false 时 verdict 为 unavailable。 */
+  essentialComplete: boolean
+  /** 可选检查（下载量/GitHub/OSV 等）是否全部完成；false 时面板显示「部分检查未完成」。 */
+  partial: boolean
+  checks: PluginSecurityCheck[]
+  findings: PluginSecurityFinding[]
+  facts: PluginSecurityFacts
 }
 
 /** 插件安装源档位（对外再导出，渲染层只依赖契约）。 */

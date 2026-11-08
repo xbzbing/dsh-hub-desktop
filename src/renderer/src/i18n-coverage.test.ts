@@ -423,6 +423,22 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
     '`升级 ${name} 到 ${version} 失败，已恢复旧版本 ${previousVersion}：${reason}`'
   ),
   debt(
+    'src/main/local-runtime/plugin-manager.ts',
+    "`安全检查未通过${codes.length > 0 ? `（${codes.join('、')}）` : ''}，已阻止安装`"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-manager.ts',
+    "'安全检查需要确认：请查看检查结果并点击「仍要安装」'"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/index.ts',
+    "throw new InstanceStoreError('invalid-input', `安全检查需要精确版本：${name}@x.y.z`)"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/registry.ts',
+    "throw new InstanceStoreError('not-found', `版本不存在：${name}@${version}`)"
+  ),
+  debt(
     'src/main/local-runtime/profile-bundles.ts',
     "if (!isRecord(manifest)) throw new Error('profile package.json 结构异常，未做改动')"
   ),
@@ -953,6 +969,70 @@ const NON_RENDERER_COPY_DEBT_INTERNAL: readonly DebtEntry[] = [
   debt(
     'src/main/shell/top-level-failure.ts',
     'deps.log(`[main] 未捕获的异常：${describeReason(error)}`)'
+  ),
+
+  // —— 插件安全检查内部的解析/网络错误:checker 捕获后一律降级为 unavailable 报告,
+  //    错误消息不进报告字段、不经 IPC,只用于主进程内部分支判断 ——
+  debt(
+    'src/main/local-runtime/plugin-security/tar.ts',
+    'throw new TarParseError(`tar 头字段非法：${text}`)'
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/tar.ts',
+    "if (!Number.isFinite(size) || size < 0) throw new TarParseError('tar 条目长度非法')"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/tar.ts',
+    "if (dataEnd > buffer.length) throw new TarParseError('tar 条目被截断')"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/tar.ts',
+    "if (unpacked > maxUnpackedBytes) throw new TarParseError('tar 解压总量超过上限')"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/tar.ts',
+    "if (entries.length >= maxEntries) throw new TarParseError('tar 条目数超过上限')"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/tar.ts',
+    "if (entries.length === 0) throw new TarParseError('tar 包为空')"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/net.ts',
+    "throw new SecurityFetchError('too-large', `响应超过上限 ${maxBytes} 字节`)"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/net.ts',
+    "throw new SecurityFetchError('timeout', `请求超时：${url}`)"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/net.ts',
+    "throw new SecurityFetchError('network', `网络请求失败：${url}`)"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/net.ts',
+    "throw new SecurityFetchError('http', `HTTP ${response.status}：${url}`, response.status)"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/net.ts',
+    "throw new SecurityFetchError('parse', `无法解析 JSON：${url}`)"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/registry.ts',
+    'if (manifest === null) throw new Error(`无法解析版本元数据：${name}@${version}`)'
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/index.ts',
+    "if (entries.length === 0) throw new Error('本地插件为空')"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-security/index.ts',
+    "if (total > SECURITY_LIMITS.maxUnpackedBytes) throw new Error('本地插件总量超过上限')"
+  ),
+  debt('src/main/local-runtime/plugin-security/index.ts', "throw new Error('包体解压失败')"),
+  debt(
+    'src/main/local-runtime/plugin-security/index.ts',
+    "throw new Error('本地插件文件数超过上限')"
   )
 ]
 

@@ -345,7 +345,8 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   const performUpgrade = async (
     name: string,
     version: string,
-    registry: PluginRegistryOption
+    registry: PluginRegistryOption,
+    securityAcknowledged: boolean
   ): Promise<UpgradeOutcome> => {
     if (!BRIDGE) return { ok: false }
     setRowBusy(name, { upgrading: true })
@@ -354,7 +355,7 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
     const result = await trackPluginUpgrade(
       instanceId,
       name,
-      BRIDGE.plugin.upgrade(instanceId, name, version, { registry })
+      BRIDGE.plugin.upgrade(instanceId, name, version, { registry, securityAcknowledged })
     )
     setRowBusy(name, { upgrading: false })
     if (!result.ok) {
@@ -581,8 +582,13 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
           name={upgradeTarget.name}
           version={upgradeTarget.version}
           onClose={() => setUpgradeTarget(null)}
-          onConfirm={(registry) =>
-            performUpgrade(upgradeTarget.name, upgradeTarget.version, registry)
+          onConfirm={(registry, securityAcknowledged) =>
+            performUpgrade(
+              upgradeTarget.name,
+              upgradeTarget.version,
+              registry,
+              securityAcknowledged
+            )
           }
         />
       )}

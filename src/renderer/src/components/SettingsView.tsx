@@ -343,6 +343,23 @@ export default function SettingsView(): ReactNode {
         </div>
       </div>
 
+      <div className="card mt12" data-testid="settings-security">
+        <div className="card-head">
+          <h3>{t('settings.security')}</h3>
+        </div>
+        <label className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <input
+            type="checkbox"
+            data-testid="settings-plugin-security-check"
+            checked={settings.pluginSecurityCheck}
+            onChange={(event) => apply({ pluginSecurityCheck: event.target.checked })}
+          />
+          <span>{t('settings.securityCheck')}</span>
+        </label>
+        <p className="meta mt8">{t('settings.securityCheckHint')}</p>
+        <p className="meta mt8">{t('settings.securityCheckPrivacy')}</p>
+      </div>
+
       <div className="card mt12">
         <div className="card-head">
           <h3>{t('settings.dataDir')}</h3>

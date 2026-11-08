@@ -38,6 +38,7 @@ describe('i18n 目录（双语）', () => {
       'detail.plugin.confirmSourceNpm',
       'detail.plugin.field.github',
       'detail.plugin.field.npm',
+      'detail.plugin.security.code.source.npm',
       'detail.plugin.source.github',
       'detail.plugin.source.npm',
       'edit.profileLabel',

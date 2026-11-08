@@ -114,6 +114,7 @@ export interface PluginManagerFake {
   checkState: MockFn
   install: MockFn
   resolveInstall: MockFn
+  securityCheck: MockFn
   packageInfo: MockFn
   upgrade: MockFn
   remove: MockFn
@@ -330,6 +331,37 @@ export async function setupRegister(
       dshVersion: null,
       compatible: true,
       installedVersion: null
+    })),
+    securityCheck: vi.fn(async () => ({
+      spec: 'demo-plugin@1.1.0',
+      verdict: 'disabled',
+      checkedAt: new Date(0).toISOString(),
+      durationMs: 0,
+      fingerprint: null,
+      essentialComplete: true,
+      partial: false,
+      checks: [],
+      findings: [],
+      facts: {
+        source: 'npm',
+        registry: null,
+        publisher: null,
+        maintainers: [],
+        publishedAt: null,
+        firstPublishedAt: null,
+        versionCount: null,
+        downloads30d: null,
+        repositoryUrl: null,
+        deprecated: null,
+        hasProvenance: false,
+        hasRegistrySignature: false,
+        unpackedSize: null,
+        fileCount: null,
+        directDependencies: 0,
+        nonRegistryDependencies: [],
+        nativeModules: [],
+        installScripts: []
+      }
     })),
     packageInfo: vi.fn(async () => ({
       downloads: null,

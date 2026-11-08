@@ -1,6 +1,7 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { e2eDataDir, e2eEnv } from './data-dir'
 import { buildLaunchArgs } from './launch-args'
+import { securityReportEnv } from './security-report'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -127,7 +128,10 @@ test.beforeAll(async () => {
 
   app = await electron.launch({
     args: buildLaunchArgs(),
-    env: e2eEnv(DATA_DIR, { DSH_HUB_E2E_RELEASE_NOTES: notesFile })
+    env: e2eEnv(DATA_DIR, {
+      ...securityReportEnv(DATA_DIR),
+      DSH_HUB_E2E_RELEASE_NOTES: notesFile
+    })
   })
   win = await app.firstWindow()
 

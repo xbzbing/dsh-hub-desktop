@@ -23,7 +23,8 @@ describe('settings（非敏感偏好）', () => {
       preventSleepWhenRunning: false,
       workspaceCacheSize: 3,
       inheritShellEnv: true,
-      npmRegistry: ''
+      npmRegistry: '',
+      pluginSecurityCheck: true
     })
   })
 
@@ -50,7 +51,8 @@ describe('settings（非敏感偏好）', () => {
       preventSleepWhenRunning: true,
       workspaceCacheSize: 7,
       inheritShellEnv: false,
-      npmRegistry: 'https://registry.npmmirror.com'
+      npmRegistry: 'https://registry.npmmirror.com',
+      pluginSecurityCheck: false
     }
     expect(normalizeSettings(input)).toEqual(input)
   })
@@ -73,7 +75,8 @@ describe('settings（非敏感偏好）', () => {
       preventSleepWhenRunning: false, // 缺失回落默认
       workspaceCacheSize: 3, // 缺失回落默认
       inheritShellEnv: true, // 缺失回落默认
-      npmRegistry: '' // 缺失回落默认
+      npmRegistry: '', // 缺失回落默认
+      pluginSecurityCheck: true // 缺失回落默认
     })
   })
 

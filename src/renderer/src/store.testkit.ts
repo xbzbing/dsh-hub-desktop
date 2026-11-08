@@ -18,7 +18,8 @@ export const DEFAULTS: Settings = {
   preventSleepWhenRunning: false,
   workspaceCacheSize: 3,
   inheritShellEnv: true,
-  npmRegistry: ''
+  npmRegistry: '',
+  pluginSecurityCheck: true
 }
 
 type SettingsResult = { ok: true; value: Settings } | { ok: false; message: string }

@@ -221,6 +221,41 @@ describe('registerIpc：插件管理', () => {
     expect(result).toMatchObject({ ok: false, code: 'invalid-input' })
   })
 
+  it('plugin:securityCheck：精确版本与检查参数经校验后转发', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    const result = (await invoke('plugin:securityCheck', created.value.id, 'demo-plugin@1.1.0', {
+      registry: 'npmjs',
+      refresh: true
+    })) as { ok: boolean; value: { verdict: string } }
+    expect(result.ok).toBe(true)
+    expect(result.value.verdict).toBe('disabled')
+    expect(pluginManagerFake.securityCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.value.id }),
+      'demo-plugin@1.1.0',
+      { registry: 'npmjs', refresh: true }
+    )
+  })
+
+  it('plugin:securityCheck：非法安装源被拒，不到达检查器', async () => {
+    const created = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    const badRegistry = (await invoke(
+      'plugin:securityCheck',
+      created.value.id,
+      'demo-plugin@1.1.0',
+      { registry: 'evil.example.com' }
+    )) as { ok: boolean; code?: string }
+    expect(badRegistry).toMatchObject({ ok: false, code: 'invalid-input' })
+    expect(pluginManagerFake.securityCheck).not.toHaveBeenCalled()
+  })
+
   it('plugin:packageInfo：包名与版本经校验后转发（取不到内容不是错误）', async () => {
     const created = (await invoke('instances:create', VALID_LOCAL)) as {
       ok: boolean

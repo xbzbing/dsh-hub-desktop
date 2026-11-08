@@ -26,6 +26,8 @@ export interface InstallConfirmPanelProps {
   /** 不兼容风险勾选值；未勾选时调用方禁用主按钮。 */
   riskAccepted: boolean
   onRiskChange: (accepted: boolean) => void
+  /** 安全检查面板；由调用方取数与判定，插在事实区与更新内容之间。 */
+  securityPanel?: ReactNode
 }
 
 /**
@@ -36,7 +38,8 @@ export interface InstallConfirmPanelProps {
  * 更新内容与下载量是增强信息：主进程取不到时按「无」渲染（显示占位符），不影响提交。
  */
 export default function InstallConfirmPanel(props: InstallConfirmPanelProps): ReactNode {
-  const { t, instanceId, plan, mode, registryLabel, riskAccepted, onRiskChange } = props
+  const { t, instanceId, plan, mode, registryLabel, riskAccepted, onRiskChange, securityPanel } =
+    props
   const toast = useAppStore((state) => state.toast)
   const [info, setInfo] = useState<InfoState>({ status: 'none' })
 
@@ -195,6 +198,8 @@ export default function InstallConfirmPanel(props: InstallConfirmPanelProps): Re
           </label>
         </>
       )}
+
+      {securityPanel}
 
       <div className="card-head mt16">
         <h3>{t('detail.plugin.releaseNotesTitle')}</h3>

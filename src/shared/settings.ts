@@ -105,7 +105,9 @@ export const SettingsSchema = z.object({
     .string()
     .trim()
     .refine((value) => value === '' || isAllowedNpmRegistry(value), '镜像地址必须是 https URL')
-    .default('')
+    .default(''),
+  /** 安装/升级插件前进行安全检查；关闭后不检查、不拦截。 */
+  pluginSecurityCheck: z.boolean().default(true)
 })
 
 export type Settings = z.infer<typeof SettingsSchema>
@@ -152,6 +154,7 @@ export function normalizeSettings(value: unknown): Settings {
     preventSleepWhenRunning: pick('preventSleepWhenRunning'),
     workspaceCacheSize: pick('workspaceCacheSize'),
     inheritShellEnv: pick('inheritShellEnv'),
-    npmRegistry: pick('npmRegistry')
+    npmRegistry: pick('npmRegistry'),
+    pluginSecurityCheck: pick('pluginSecurityCheck')
   }
 }

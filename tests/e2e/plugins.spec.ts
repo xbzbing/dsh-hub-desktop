@@ -1,6 +1,7 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { e2eDataDir, e2eEnv } from './data-dir'
 import { buildLaunchArgs } from './launch-args'
+import { securityReportEnv } from './security-report'
 import { openSelect, pickOption } from './select'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -178,7 +179,7 @@ test.beforeAll(async () => {
 
   app = await electron.launch({
     args: buildLaunchArgs(),
-    env: e2eEnv(DATA_DIR)
+    env: e2eEnv(DATA_DIR, securityReportEnv(DATA_DIR))
   })
   win = await app.firstWindow()
 
@@ -313,7 +314,7 @@ test('检查升级（不兼容）：给警告不给升级按钮', async () => {
   await app.close()
   app = await electron.launch({
     args: buildLaunchArgs(),
-    env: e2eEnv(DATA_DIR, { DSH_E2E_PLUGIN_INCOMPAT: '1' })
+    env: e2eEnv(DATA_DIR, { DSH_E2E_PLUGIN_INCOMPAT: '1', ...securityReportEnv(DATA_DIR) })
   })
   win = await app.firstWindow()
   await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 15_000 })
@@ -356,7 +357,7 @@ test('一键检查：批量进行中锁定单行检查按钮，结束后解锁',
   await app.close()
   app = await electron.launch({
     args: buildLaunchArgs(),
-    env: e2eEnv(DATA_DIR, { DSH_E2E_PLUGIN_VIEW_DELAY_MS: '1500' })
+    env: e2eEnv(DATA_DIR, { DSH_E2E_PLUGIN_VIEW_DELAY_MS: '1500', ...securityReportEnv(DATA_DIR) })
   })
   win = await app.firstWindow()
   await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 15_000 })
@@ -634,7 +635,10 @@ test('升级开始后不可取消：只能放到后台，切走再回来仍显�
   await app.close()
   app = await electron.launch({
     args: buildLaunchArgs(),
-    env: e2eEnv(DATA_DIR, { DSH_E2E_PLUGIN_MUTATION_DELAY_MS: '3000' })
+    env: e2eEnv(DATA_DIR, {
+      DSH_E2E_PLUGIN_MUTATION_DELAY_MS: '3000',
+      ...securityReportEnv(DATA_DIR)
+    })
   })
   win = await app.firstWindow()
   await expect(win.getByTestId('view-home')).toBeVisible({ timeout: 15_000 })
@@ -741,6 +745,7 @@ test('放到后台只对当前插件生效：上一个后台升级完成时不�
   app = await electron.launch({
     args: buildLaunchArgs(),
     env: e2eEnv(DATA_DIR, {
+      ...securityReportEnv(DATA_DIR),
       DSH_E2E_PLUGIN_MUTATION_DELAY_MS: '3000',
       DSH_E2E_PLUGIN_SECOND: '1'
     })

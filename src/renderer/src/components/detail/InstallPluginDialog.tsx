@@ -9,7 +9,10 @@ import Select from '../Select'
 import { InfoTip } from '../InfoTip'
 import { useAppStore } from '../../store'
 import InstallConfirmPanel from './InstallConfirmPanel'
+import PluginSecurityPanel from './PluginSecurityPanel'
 import { REGISTRY_CHOICES, registryLabel } from './registry-choices'
+import { securityBlocked, securityNeedsAcknowledgement } from '../../lib/plugin-security-copy'
+import { usePluginSecurityCheck } from '../../lib/use-plugin-security-check'
 
 const BRIDGE = window.dshHub
 
@@ -43,6 +46,7 @@ export default function InstallPluginDialog(props: {
   const { t, instanceId, onClose, onInstallStart, onInstalled, onInstallFailed } = props
   const closeLabel = useAppStore((state) => state.t('common.close'))
   const npmRegistry = useAppStore((state) => state.settings.npmRegistry)
+  const securityEnabled = useAppStore((state) => state.settings.pluginSecurityCheck)
 
   const [spec, setSpec] = useState('')
   // 默认安装源跟随应用设置的镜像档位（打开对话框时读取；设置改动后重开生效）。
@@ -62,6 +66,20 @@ export default function InstallPluginDialog(props: {
   const [reconfirmNeeded, setReconfirmNeeded] = useState(false)
   /** 最新输入：解析期间又编辑时，用它丢弃对应旧输入的解析结果。 */
   const specRef = useRef('')
+  const security = usePluginSecurityCheck({
+    instanceId,
+    spec: plan?.installSpec ?? null,
+    registry,
+    enabled: securityEnabled
+  })
+  const securityReport = security.state.status === 'ready' ? security.state.report : null
+  const securityChecking =
+    plan !== null && (security.state.status === 'loading' || security.state.status === 'idle')
+  const securityBlockedNow = securityBlocked(securityReport)
+  const securityAck = securityNeedsAcknowledgement(
+    securityReport,
+    security.state.status === 'error'
+  )
 
   const changeSpec = (value: string): void => {
     specRef.current = value
@@ -103,12 +121,14 @@ export default function InstallPluginDialog(props: {
     if (!bridge || confirmed === null || busy) return
     // 不兼容：未勾选风险确认时不允许提交（按钮同时禁用，这里再兜一层）。
     if (confirmed.compatible === false && !riskAccepted) return
+    if (securityChecking || securityBlockedNow) return
     setBusy(true)
     setInstallError(null)
     onInstallStart(confirmed)
     const result = await bridge.plugin.install(instanceId, confirmed.installSpec, {
       enable: enableAfter,
-      registry
+      registry,
+      securityAcknowledged: securityAck
     })
     if (!result.ok) {
       setBusy(false)
@@ -137,14 +157,29 @@ export default function InstallPluginDialog(props: {
 
   const reinstall =
     plan !== null && plan.targetVersion !== null && plan.installedVersion === plan.targetVersion
+  const targetLabel = plan?.targetVersion ?? plan?.installSpec ?? ''
   const actionLabel =
     plan === null
       ? ''
-      : reinstall
-        ? t('detail.plugin.reinstallAction', { version: plan.targetVersion ?? plan.installSpec })
-        : t('detail.plugin.installAction', { version: plan.targetVersion ?? plan.installSpec })
+      : securityAck
+        ? t('detail.plugin.security.acknowledge', { version: targetLabel })
+        : reinstall
+          ? t('detail.plugin.reinstallAction', { version: targetLabel })
+          : t('detail.plugin.installAction', { version: targetLabel })
   const submitDisabled =
-    busy || (plan === null ? spec.trim() === '' : plan.compatible === false && !riskAccepted)
+    busy ||
+    securityChecking ||
+    securityBlockedNow ||
+    (plan === null ? spec.trim() === '' : plan.compatible === false && !riskAccepted)
+
+  /** 阻止后返回第一步修改标识或安装源；保留输入，作废已确认的计划。 */
+  const backToEdit = (): void => {
+    if (busy) return
+    setPlan(null)
+    setRiskAccepted(false)
+    setInstallError(null)
+    setReconfirmNeeded(true)
+  }
 
   return (
     <Modal
@@ -169,24 +204,38 @@ export default function InstallPluginDialog(props: {
             >
               {t('common.cancel')}
             </button>
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={() => void (plan === null ? resolve() : install())}
-              disabled={submitDisabled}
-              data-testid="install-plugin-submit"
-            >
-              {/* 两个候选文案叠放，按钮宽度取最长者：第一步与第二步切换、忙碌态切换都不跳动。 */}
-              <span className="btn-swap">
-                <span className="btn-swap-cell" data-active={!busy}>
-                  {plan === null ? t('detail.plugin.installResolve') : actionLabel}
+            {plan !== null && securityBlockedNow ? (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={backToEdit}
+                data-testid="install-plugin-back"
+              >
+                {t('detail.plugin.security.backToEdit')}
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => void (plan === null ? resolve() : install())}
+                disabled={submitDisabled}
+                data-testid="install-plugin-submit"
+              >
+                {/* 两个候选文案叠放，按钮宽度取最长者：第一步与第二步切换、忙碌/检查态都不跳动。 */}
+                <span className="btn-swap">
+                  <span className="btn-swap-cell" data-active={!busy}>
+                    {plan === null
+                      ? t('detail.plugin.installResolve')
+                      : securityChecking
+                        ? t('detail.plugin.security.checkingButton')
+                        : actionLabel}
+                  </span>
+                  <span className="btn-swap-cell" data-active={busy}>
+                    {plan === null
+                      ? t('detail.plugin.installResolving')
+                      : t('detail.plugin.installing')}
+                  </span>
                 </span>
-                <span className="btn-swap-cell" data-active={busy}>
-                  {plan === null
-                    ? t('detail.plugin.installResolving')
-                    : t('detail.plugin.installing')}
-                </span>
-              </span>
-            </button>
+              </button>
+            )}
           </span>
         </>
       }
@@ -243,6 +292,9 @@ export default function InstallPluginDialog(props: {
             registryLabel={registryLabel(t, registry)}
             riskAccepted={riskAccepted}
             onRiskChange={setRiskAccepted}
+            securityPanel={
+              <PluginSecurityPanel t={t} state={security.state} onRefresh={security.refresh} />
+            }
           />
           <div className="row mt12" style={{ gap: 6, alignItems: 'center' }}>
             <label className="check">
