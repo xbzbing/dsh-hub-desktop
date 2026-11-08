@@ -141,7 +141,23 @@ export function registerInstanceHandlers(
     (_event, input: unknown): Promise<IpcResult<InstanceRecord>> =>
       wrap(async () => {
         const parsed = CreateInstanceInputSchema.parse(input)
-        if (parsed.transport !== 'local') return store.create(parsed)
+        if (parsed.transport !== 'local') {
+          const proxyPassword =
+            parsed.transport === 'http' && typeof parsed.proxy?.password === 'string'
+              ? parsed.proxy.password
+              : undefined
+          const record = await store.create(parsed)
+          if (record.transport === 'http' && proxyPassword !== undefined) {
+            try {
+              await deps.vault.rememberProxyPassword(record.id, proxyPassword)
+            } catch (error) {
+              // 新实例尚未对外暴露；密码写入失败时回滚记录，避免留下“配置了需认证代理但无密码”的实例。
+              await store.remove(record.id).catch(() => undefined)
+              throw error
+            }
+          }
+          return record
+        }
         if (parsed.existingSpaceId) {
           const space = (await localSpaces()).find((item) => item.id === parsed.existingSpaceId)
           if (!space) throw new InstanceStoreError('not-found', '找不到该本机隔离空间')
@@ -184,7 +200,23 @@ export function registerInstanceHandlers(
   ipcMain.handle(
     INSTANCE_IPC.update,
     (_event, id: unknown, patch: unknown): Promise<IpcResult<InstanceRecord>> =>
-      wrap(() => store.update(parseId(id), PatchInstanceSchema.parse(patch)))
+      wrap(async () => {
+        const instanceId = parseId(id)
+        const parsed = PatchInstanceSchema.parse(patch)
+        const record = await store.update(instanceId, parsed)
+        if (record.transport !== 'http' || parsed.proxy === undefined) return record
+        // 密码与代理配置分开：记录先落盘，密码写 vault。清空代理、显式 null 或
+        // 不再需要认证（无用户名 / SOCKS5）都忘掉旧密码，避免留下不再使用的密文。
+        const proxy = parsed.proxy
+        if (proxy === null || proxy.password === null || !proxy.username) {
+          await deps.vault.forgetProxyPassword(instanceId).catch((error: unknown) => {
+            console.error('[ipc] 清除代理密码失败：', error)
+          })
+        } else if (typeof proxy.password === 'string') {
+          await deps.vault.rememberProxyPassword(instanceId, proxy.password)
+        }
+        return record
+      })
   )
 
   ipcMain.handle(

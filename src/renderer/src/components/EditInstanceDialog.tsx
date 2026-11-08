@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { isValidProfile, type InstanceRecord, type PatchInstanceInput } from '@shared/contracts'
+import {
+  isValidProfile,
+  type InstanceRecord,
+  type PatchInstanceInput,
+  type ProxyType
+} from '@shared/contracts'
 import { LAUNCHERS, type LocalLauncher } from '@shared/local-launch'
 import { REGISTRY_PRESETS, isAllowedNpmRegistry, registryPresetKey } from '@shared/settings'
 import { Icon } from '../lib/icons'
@@ -54,6 +59,13 @@ export default function EditInstanceDialog({
   const [endpointUrl, setEndpointUrl] = useState(
     record.transport === 'http' ? record.endpointUrl : ''
   )
+  const existingProxy = record.transport === 'http' ? (record.proxy ?? null) : null
+  const [proxyType, setProxyType] = useState<ProxyType | 'none'>(existingProxy?.type ?? 'none')
+  const [proxyHost, setProxyHost] = useState(existingProxy?.host ?? '')
+  const [proxyPort, setProxyPort] = useState(existingProxy ? String(existingProxy.port) : '8080')
+  const [proxyUsername, setProxyUsername] = useState(existingProxy?.username ?? '')
+  const [proxyPassword, setProxyPassword] = useState('')
+  const [proxyClearPassword, setProxyClearPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   /**
    * 安装镜像（应用级设置，非实例字段）：URL 态（'' = 跟随系统 npm 配置）+ 是否选中「自定义」档。
@@ -115,6 +127,32 @@ export default function EditInstanceDialog({
         return
       }
       patch.endpointUrl = endpointUrl.trim()
+      if (proxyType === 'none') {
+        patch.proxy = null
+      } else {
+        if (proxyHost.trim() === '') {
+          toast('err', t('edit.proxyRequired'))
+          return
+        }
+        const proxyPortNumber = Number(proxyPort.trim())
+        if (!Number.isInteger(proxyPortNumber) || proxyPortNumber < 1 || proxyPortNumber > 65535) {
+          toast('err', t('edit.proxyPortInvalid'))
+          return
+        }
+        patch.proxy = {
+          type: proxyType,
+          host: proxyHost.trim(),
+          port: proxyPortNumber,
+          ...(proxyType === 'http' && proxyUsername.trim() !== ''
+            ? { username: proxyUsername.trim() }
+            : {}),
+          ...(proxyType === 'http' && proxyPassword !== ''
+            ? { password: proxyPassword }
+            : proxyType === 'http' && proxyClearPassword
+              ? { password: null }
+              : {})
+        }
+      }
     }
     setBusy(true)
     const result = await window.dshHub?.instances.update(record.id, patch)
@@ -327,17 +365,120 @@ export default function EditInstanceDialog({
       )}
 
       {record.transport === 'http' && (
-        <div className="field mt8">
-          <label htmlFor="edit-endpoint">{t('edit.endpointLabel')}</label>
-          <input
-            className="input"
-            id="edit-endpoint"
-            value={endpointUrl}
-            onChange={(event) => setEndpointUrl(event.target.value)}
-            data-testid="edit-endpoint"
-          />
-          <span className="hint">{t('edit.endpointHint')}</span>
-        </div>
+        <>
+          <div className="field mt8">
+            <label htmlFor="edit-endpoint">{t('edit.endpointLabel')}</label>
+            <input
+              className="input"
+              id="edit-endpoint"
+              value={endpointUrl}
+              onChange={(event) => setEndpointUrl(event.target.value)}
+              data-testid="edit-endpoint"
+            />
+            <span className="hint">{t('edit.endpointHint')}</span>
+          </div>
+
+          <div className="field mt12">
+            <label htmlFor="edit-proxy-type">{t('edit.proxyTypeLabel')}</label>
+            <Select
+              id="edit-proxy-type"
+              value={proxyType}
+              onChange={(value) => {
+                const next = value as ProxyType | 'none'
+                setProxyType(next)
+                if (next === 'socks5') {
+                  setProxyUsername('')
+                  setProxyPassword('')
+                  setProxyClearPassword(false)
+                }
+              }}
+              options={[
+                { value: 'none', label: t('wizard.proxyNone') },
+                { value: 'http', label: t('wizard.proxyHttp') },
+                { value: 'socks5', label: t('wizard.proxySocks5') }
+              ]}
+              testId="edit-proxy-type"
+            />
+            <span className="hint">{t('edit.proxyHint')}</span>
+          </div>
+
+          {proxyType !== 'none' && (
+            <>
+              <div className="grid-2 mt8">
+                <div className="field">
+                  <label htmlFor="edit-proxy-host">{t('wizard.proxyHostLabel')}</label>
+                  <input
+                    className="input num"
+                    id="edit-proxy-host"
+                    placeholder="127.0.0.1"
+                    value={proxyHost}
+                    onChange={(event) => setProxyHost(event.target.value)}
+                    data-testid="edit-proxy-host"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-proxy-port">{t('wizard.proxyPortLabel')}</label>
+                  <input
+                    className="input num"
+                    id="edit-proxy-port"
+                    inputMode="numeric"
+                    placeholder="8080"
+                    value={proxyPort}
+                    onChange={(event) => setProxyPort(event.target.value)}
+                    data-testid="edit-proxy-port"
+                  />
+                </div>
+                {proxyType === 'http' && (
+                  <>
+                    <div className="field">
+                      <label htmlFor="edit-proxy-username">{t('wizard.proxyUsernameLabel')}</label>
+                      <input
+                        className="input"
+                        id="edit-proxy-username"
+                        autoComplete="off"
+                        value={proxyUsername}
+                        onChange={(event) => setProxyUsername(event.target.value)}
+                        data-testid="edit-proxy-username"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="edit-proxy-password">{t('wizard.proxyPasswordLabel')}</label>
+                      <input
+                        className="input"
+                        id="edit-proxy-password"
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder={t('edit.proxyPasswordKeep')}
+                        value={proxyPassword}
+                        onChange={(event) => {
+                          setProxyPassword(event.target.value)
+                          if (event.target.value !== '') setProxyClearPassword(false)
+                        }}
+                        data-testid="edit-proxy-password"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+              {proxyType === 'socks5' && <p className="meta mt8">{t('wizard.proxySocksNoAuth')}</p>}
+              {record.proxy && proxyType === 'http' && (
+                <label className="row mt8" style={{ gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={proxyClearPassword}
+                    onChange={(event) => {
+                      setProxyClearPassword(event.target.checked)
+                      if (event.target.checked) setProxyPassword('')
+                    }}
+                    data-testid="edit-proxy-clear-password"
+                  />
+                  <span>{t('edit.proxyClearPassword')}</span>
+                </label>
+              )}
+              <p className="meta mt8">{t('edit.proxyPasswordHint')}</p>
+            </>
+          )}
+        </>
       )}
 
       {running && <p className="hint mt8">{t('edit.restartHint')}</p>}

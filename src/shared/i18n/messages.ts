@@ -463,6 +463,44 @@ export const MESSAGES = {
     zh: '该地址是 http://，数据面为明文：密码、动态验证码与会话 Cookie 都会以明文经过网络。http 实例完全可用；若希望数据面也被加密，https 端点或 SSH 隧道更稳妥。',
     en: 'This address uses http://, so the data plane is cleartext: the password, verification code and session cookie travel over the network unencrypted. http instances work fine; an https endpoint or an SSH tunnel is simply more private if you want the data plane encrypted too.'
   },
+  'wizard.proxyLabel': { zh: '代理', en: 'Proxy' },
+  'wizard.proxyTypeLabel': { zh: '代理类型', en: 'Proxy type' },
+  'wizard.proxyNone': { zh: '不使用代理', en: 'No proxy' },
+  'wizard.proxyHttp': { zh: 'HTTP 代理', en: 'HTTP proxy' },
+  'wizard.proxySocks5': { zh: 'SOCKS5 代理', en: 'SOCKS5 proxy' },
+  'wizard.proxyTypeHint': {
+    zh: '需要经代理访问该端点时选择；HTTP 代理同时用于 http 与 https 目标。',
+    en: 'Choose when the endpoint is reachable through a proxy; an HTTP proxy also handles https targets.'
+  },
+  'wizard.proxyHostLabel': { zh: '代理主机', en: 'Proxy host' },
+  'wizard.proxyPortLabel': { zh: '代理端口', en: 'Proxy port' },
+  'wizard.proxyUsernameLabel': { zh: '代理用户名（可选）', en: 'Proxy username (optional)' },
+  'wizard.proxyPasswordLabel': { zh: '代理密码（可选）', en: 'Proxy password (optional)' },
+  'wizard.proxyHint': {
+    zh: '需要认证的 HTTP 代理密码保存在系统凭据保险库，不会写入实例配置。',
+    en: 'For an authenticated HTTP proxy, the password is stored in the system credential vault, not in the instance record.'
+  },
+  'wizard.proxySocksNoAuth': {
+    zh: 'SOCKS5 代理不支持用户名/密码认证；代理服务器需允许无认证连接。',
+    en: 'SOCKS5 proxies do not support username/password authentication; the proxy server must allow unauthenticated connections.'
+  },
+  'wizard.proxyDetectHint': {
+    zh: '已启用代理：登录方式将在实例启动后通过代理探测。',
+    en: 'Proxy enabled: the sign-in mode will be probed through it after the instance starts.'
+  },
+  'wizard.errProxyHost': { zh: '代理主机不能为空', en: 'Proxy host is required' },
+  'wizard.errProxyPort': {
+    zh: '代理端口必须在 1–65535 之间',
+    en: 'Proxy port must be between 1 and 65535'
+  },
+  'wizard.errProxyPassword': {
+    zh: '填写代理用户名时也需要填写代理密码',
+    en: 'A proxy password is required when a proxy username is set'
+  },
+  'wizard.errProxySocksAuth': {
+    zh: 'SOCKS5 代理不支持用户名/密码认证',
+    en: 'SOCKS5 proxies do not support username/password authentication'
+  },
   'wizard.typeLocal': { zh: '本机运行的 dsh', en: 'dsh running locally' },
   'wizard.typeLocalDesc': {
     zh: '版本按需安装，互不干扰',
@@ -519,6 +557,8 @@ export const MESSAGES = {
   'detail.identityFile': { zh: '使用密钥', en: 'Key' },
   'detail.defaultAgentFirst': { zh: '默认（agent 优先）', en: 'default (ssh-agent first)' },
   'detail.authMode': { zh: '认证', en: 'Auth' },
+  'detail.proxy': { zh: '代理', en: 'Proxy' },
+  'detail.proxyNone': { zh: '直连（不使用代理）', en: 'Direct (no proxy)' },
   'detail.authNone': { zh: '无需登录', en: 'no sign-in required' },
   'detail.authGateway': { zh: '网关登录（密码 + 动态验证码）', en: 'gateway (password + TOTP)' },
   'detail.authAuto': { zh: '自动探测（连接后识别）', en: 'auto-detect on connect' },
@@ -994,6 +1034,28 @@ export const MESSAGES = {
     en: 'http/https only; inline credentials are rejected'
   },
   'edit.endpointRequired': { zh: '端点 URL 不能为空', en: 'Endpoint URL is required' },
+  'edit.proxyTypeLabel': { zh: '代理', en: 'Proxy' },
+  'edit.proxyHint': {
+    zh: '改动在实例下次启动时生效；密码只写入系统凭据保险库。',
+    en: 'Changes take effect on the next start; the password is stored only in the system credential vault.'
+  },
+  'edit.proxyRequired': { zh: '代理主机不能为空', en: 'Proxy host is required' },
+  'edit.proxyPortInvalid': {
+    zh: '代理端口必须在 1–65535 之间',
+    en: 'Proxy port must be between 1 and 65535'
+  },
+  'edit.proxyPasswordKeep': {
+    zh: '留空保持不变',
+    en: 'Leave empty to keep the saved password'
+  },
+  'edit.proxyClearPassword': {
+    zh: '清除已保存的代理密码',
+    en: 'Forget the saved proxy password'
+  },
+  'edit.proxyPasswordHint': {
+    zh: '代理用户名与密码只在需要认证时填写；清空代理会一并清除密码。',
+    en: 'Fill in username and password only if the proxy requires authentication; removing the proxy also forgets the password.'
+  },
   'edit.saved': { zh: '已保存', en: 'Saved' },
   'edit.failed': { zh: '保存失败', en: 'Failed to save' },
   'edit.restartHint': {

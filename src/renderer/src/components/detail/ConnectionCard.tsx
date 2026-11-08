@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { isCleartextEndpoint } from '@shared/endpoint'
+import { proxyAddress } from '@shared/contracts'
 import type { AuthPhase, InstanceRecord } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
@@ -73,6 +74,10 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
                 : record.authMode === 'gateway'
                   ? t('detail.authGateway')
                   : t('detail.authAuto')}
+            </dd>
+            <dt>{t('detail.proxy')}</dt>
+            <dd className="num" data-testid="detail-proxy">
+              {record.proxy ? proxyAddress(record.proxy) : t('detail.proxyNone')}
             </dd>
           </>
         )}

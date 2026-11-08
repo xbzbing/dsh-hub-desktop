@@ -8,7 +8,7 @@ export interface SshConfigProps {
   t: Translator
   form: WizardForm
   set: (
-    key: Exclude<keyof WizardForm, 'useDefaultSpace'>
+    key: Exclude<keyof WizardForm, 'useDefaultSpace' | 'proxyType'>
   ) => (event: { target: { value: string } }) => void
 }
 

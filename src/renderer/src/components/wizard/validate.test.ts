@@ -70,6 +70,65 @@ describe('validateWizardForm', () => {
     expect(run({ transport: 'ssh', form: { name: 'a', host: 'h', username: 'u' } })).toBeNull()
   })
 
+  it('http 代理：主机、端口与用户名对应的密码依次校验', () => {
+    const base = { name: 'a', endpointUrl: 'https://gw.example.com/dsh' }
+    expect(run({ transport: 'http', form: { ...base, proxyType: 'http' } })).toBe(
+      'wizard.errProxyHost'
+    )
+    expect(
+      run({
+        transport: 'http',
+        form: { ...base, proxyType: 'http', proxyHost: 'proxy' }
+      })
+    ).toBeNull()
+    for (const port of ['0', '65536', 'abc', '']) {
+      expect(
+        run({
+          transport: 'http',
+          form: { ...base, proxyType: 'http', proxyHost: 'proxy', proxyPort: port }
+        })
+      ).toBe('wizard.errProxyPort')
+    }
+    expect(
+      run({
+        transport: 'http',
+        form: {
+          ...base,
+          proxyType: 'http',
+          proxyHost: 'proxy',
+          proxyPort: '8080',
+          proxyUsername: 'u'
+        }
+      })
+    ).toBe('wizard.errProxyPassword')
+    expect(
+      run({
+        transport: 'http',
+        form: {
+          ...base,
+          proxyType: 'http',
+          proxyHost: 'proxy',
+          proxyPort: '8080',
+          proxyUsername: 'u',
+          proxyPassword: 'p'
+        }
+      })
+    ).toBeNull()
+    expect(
+      run({
+        transport: 'http',
+        form: {
+          ...base,
+          proxyType: 'socks5',
+          proxyHost: 'proxy',
+          proxyPort: '1080',
+          proxyUsername: 'u',
+          proxyPassword: 'p'
+        }
+      })
+    ).toBe('wizard.errProxySocksAuth')
+  })
+
   it('http：endpointUrl 解析失败返回解析错误文案，合法端点通过', () => {
     const bad = run({ transport: 'http', form: { name: 'a', endpointUrl: 'ftp://nope' } })
     expect(bad).not.toBeNull()

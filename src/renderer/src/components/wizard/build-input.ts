@@ -43,5 +43,24 @@ export function buildCreateInput(args: {
       ...(form.remotePort !== '3080' ? { remotePort: Number(form.remotePort) } : {})
     }
   }
-  return { transport: 'http', name, endpointUrl: form.endpointUrl.trim() }
+  return {
+    transport: 'http',
+    name,
+    endpointUrl: form.endpointUrl.trim(),
+    ...(form.proxyType === 'none'
+      ? {}
+      : {
+          proxy: {
+            type: form.proxyType,
+            host: form.proxyHost.trim(),
+            port: Number(form.proxyPort),
+            ...(form.proxyType === 'http' && form.proxyUsername.trim() !== ''
+              ? { username: form.proxyUsername.trim() }
+              : {}),
+            ...(form.proxyType === 'http' && form.proxyPassword !== ''
+              ? { password: form.proxyPassword }
+              : {})
+          }
+        })
+  }
 }

@@ -29,6 +29,7 @@ import { createPromptBroker } from './ssh/prompt-broker'
 import type { PromptBroker } from './ssh/prompt-broker'
 import { createHttpEndpoints } from './transport/http-endpoint'
 import type { HttpEndpointManager } from './transport/http-endpoint'
+import type { InstanceProxy } from './proxy/instance-proxy'
 import { createSshTunnels } from './transport/ssh-tunnel'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
 
@@ -50,6 +51,8 @@ export interface RuntimeControllerDeps {
   closeWorkspace: (instanceId: string) => void
   /** 本机实例状态推进（仅 local）；供休眠阻止按运行中的本机实例决定是否持有电源断言 */
   onLocalStatus?: (event: InstanceStatusEvent) => void
+  /** 远程 HTTP 实例的代理；未装配时直连。 */
+  proxy?: InstanceProxy
 }
 
 export interface RuntimeController {
@@ -225,7 +228,15 @@ export function createRuntimeController(deps: RuntimeControllerDeps): RuntimeCon
     confirmHostKey: (request) => promptBroker?.requestHostKey(request) ?? Promise.resolve('reject'),
     askpass: (request) => promptBroker?.requestAskpass(request) ?? Promise.resolve(null)
   })
-  const httpEndpoints = createHttpEndpoints()
+  const proxy = deps.proxy
+  const httpEndpoints = createHttpEndpoints({
+    ...(proxy === undefined
+      ? {}
+      : {
+          prepare: (instance) => proxy.apply(instance),
+          fetchFor: (instance) => proxy.fetchFor(instance)
+        })
+  })
 
   // 状态推进（local + ssh 共用同一通道）→ 广播到所有窗口；把实际端口/版本回写注册表
   // （transport 感知：ssh 的「端口」是隧道本地口 localPort，local 的才是监听 port）；

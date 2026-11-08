@@ -79,6 +79,12 @@ export interface Vault {
   getExternalAccessToken(instanceId: string): string | null
   forgetExternalAccessToken(instanceId: string): Promise<void>
 
+  /** 远程 HTTP 实例的代理密码；属于连接配置，随实例存续，不做「记住」勾选。 */
+  hasProxyPassword(instanceId: string): boolean
+  rememberProxyPassword(instanceId: string, password: string): Promise<void>
+  getProxyPassword(instanceId: string): string | null
+  forgetProxyPassword(instanceId: string): Promise<void>
+
   hasSession(instanceId: string): boolean
   rememberSession(instanceId: string, session: StoredSession): Promise<void>
   getSession(instanceId: string): StoredSession | null
@@ -111,6 +117,8 @@ interface VaultItem {
   password?: string
   /** 外部本机 dsh BrowserAuth token 的密文。 */
   externalAccessToken?: string
+  /** 远程 HTTP 实例的代理密码密文。 */
+  proxyPassword?: string
   session?: string
 }
 interface VaultFile {
@@ -177,10 +185,12 @@ export function createVault(options: VaultOptions): Vault {
         if (typeof raw.password === 'string') entry.password = raw.password
         if (typeof raw.externalAccessToken === 'string')
           entry.externalAccessToken = raw.externalAccessToken
+        if (typeof raw.proxyPassword === 'string') entry.proxyPassword = raw.proxyPassword
         if (typeof raw.session === 'string') entry.session = raw.session
         if (
           entry.password !== undefined ||
           entry.externalAccessToken !== undefined ||
+          entry.proxyPassword !== undefined ||
           entry.session !== undefined
         ) {
           items.set(id, entry)
@@ -230,10 +240,12 @@ export function createVault(options: VaultOptions): Vault {
       if (entry.password !== undefined) next.password = entry.password
       if (entry.externalAccessToken !== undefined)
         next.externalAccessToken = entry.externalAccessToken
+      if (entry.proxyPassword !== undefined) next.proxyPassword = entry.proxyPassword
       if (entry.session !== undefined) next.session = entry.session
       if (
         next.password !== undefined ||
         next.externalAccessToken !== undefined ||
+        next.proxyPassword !== undefined ||
         next.session !== undefined
       ) {
         payload.items[id] = next
@@ -296,6 +308,7 @@ export function createVault(options: VaultOptions): Vault {
       entry &&
       entry.password === undefined &&
       entry.externalAccessToken === undefined &&
+      entry.proxyPassword === undefined &&
       entry.session === undefined
     ) {
       items.delete(instanceId)
@@ -316,6 +329,7 @@ export function createVault(options: VaultOptions): Vault {
       const entry = items.get(instanceId)
       if (entry?.password === payload) delete entry.password
       if (entry?.externalAccessToken === payload) delete entry.externalAccessToken
+      if (entry?.proxyPassword === payload) delete entry.proxyPassword
       if (entry?.session === payload) delete entry.session
       dropIfEmpty(instanceId)
       return null
@@ -396,6 +410,25 @@ export function createVault(options: VaultOptions): Vault {
 
     async forgetExternalAccessToken(instanceId) {
       await forgetField(instanceId, 'externalAccessToken')
+    },
+
+    hasProxyPassword(instanceId) {
+      return hasField(instanceId, 'proxyPassword')
+    },
+
+    async rememberProxyPassword(instanceId, password) {
+      if (password === '') throw new Error('空代理密码不写入 vault')
+      load()
+      entryFor(instanceId).proxyPassword = encode(password)
+      await persist()
+    },
+
+    getProxyPassword(instanceId) {
+      return readStored(instanceId, 'proxyPassword')
+    },
+
+    async forgetProxyPassword(instanceId) {
+      await forgetField(instanceId, 'proxyPassword')
     },
 
     hasSession(instanceId) {

@@ -1,6 +1,6 @@
 # 隐私政策（Privacy Policy）
 
-> **English summary:** DSH Hub Desktop collects **no personal data**. It contains **no telemetry, analytics, crash reporting, advertising, or auto-update mechanism** — the update check runs only when you click "Check for updates" in Settings. It makes network connections **only to endpoints you explicitly configure or that such a user action targets** — local dsh processes on loopback, SSH hosts you add, remote HTTP/HTTPS dsh instances you register, the npm registry, npm downloads API, OSV and GitHub for the plugin security check you trigger, the GitHub API for plugin release notes and update checks, and the dsh runtime installer you approve. All application data (registry, credentials, logs, session cookies) stays on your device. The entire source code is public and auditable.
+> **English summary:** DSH Hub Desktop collects **no personal data**. It contains **no telemetry, analytics, crash reporting, advertising, or auto-update mechanism** — the update check runs only when you click "Check for updates" in Settings. It makes network connections **only to endpoints you explicitly configure or that such a user action targets** — local dsh processes on loopback, SSH hosts you add, remote HTTP/HTTPS dsh instances you register and any HTTP/SOCKS5 proxy you configure for them, the npm registry, npm downloads API, OSV and GitHub for the plugin security check you trigger, the GitHub API for plugin release notes and update checks, and the dsh runtime installer you approve. All application data (registry, credentials, logs, session cookies) stays on your device. The entire source code is public and auditable.
 
 本文档说明 DSH Hub Desktop（以下简称"本应用"）的数据处理行为。核心结论：**本应用不收集任何用户个人数据，不包含任何遥测、分析、崩溃上报、广告或自动更新机制**；所有网络连接都只发往**用户明确配置的目标**或**用户主动操作所指向的公开服务**（插件 registry、GitHub），所有数据都只保存在用户自己的设备上。
 
@@ -23,7 +23,7 @@
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
 | 本机实例运行与健康探测 | `127.0.0.1`（回环，dsh 子进程与 SSH 隧道本地端口）                                                                                                    | 用户创建并启动 local 实例        |
 | 健康探测               | 实例就绪 URL（仅回环地址）                                                                                                                            | 启动/接管实例时自动              |
-| 远程实例               | 用户注册的 HTTP/HTTPS 端点 URL（认证、Cookie 注入均发往该端点）                                                                                       | 用户添加 http 实例               |
+| 远程实例               | 用户注册的 HTTP/HTTPS 端点 URL（认证、Cookie 注入均发往该端点）；用户为远程实例配置的 HTTP / SOCKS5 代理服务器                                        | 用户添加 http 实例 / 配置代理    |
 | SSH 隧道               | 用户配置的 SSH 主机（经系统 OpenSSH）                                                                                                                 | 用户添加 ssh 实例                |
 | 插件管理               | npm registry（默认 `registry.npmjs.org`，可用环境变量 `DSH_HUB_NPM_REGISTRY` 指定镜像；https 信任根）；GitHub API（读取插件 Release 更新内容）        | 用户在插件卡主动安装/升级/检查   |
 | 插件安装安全检查       | 所选 npm registry（版本元数据与 tarball）、`api.npmjs.org`（近 30 天下载量）、`api.osv.dev`（已知漏洞查询）、`codeload.github.com`（GitHub 来源包体） | 用户确认安装/升级且设置开启时    |
@@ -38,7 +38,7 @@
 应用数据位于系统用户数据目录（`<userData>`，可用 `DSH_HUB_DATA_DIR` 覆盖）：
 
 - **实例注册表** `registry/instances.json`：实例清单与配置，原子写 + 滚动备份 + 损坏自愈。
-- **凭据保险库**：经操作系统安全存储（macOS Keychain / Windows DPAPI，Electron `safeStorage`）加密保存；**仅在用户显式勾选"记住"时才落盘**，取消勾选/忘记即清除。
+- **凭据保险库**：经操作系统安全存储（macOS Keychain / Windows DPAPI，Electron `safeStorage`）加密保存；**仅在用户显式勾选"记住"时才落盘**，取消勾选/忘记即清除。远程实例的代理密码同样只存保险库，不写入注册表。
 - **会话 Cookie 分区**：webview 分区的认证 Cookie，仅用于渲染用户实例页面；删除实例时清理。
 - **本地隔离空间** `homes/<instanceId>`：本地实例的 dsh 配置与工作数据（用户可删除/移入系统废纸篓）。
 - **审计日志与应用日志**：本地文件；凭据类内容（密码、OTP、Cookie、私钥）在写入前一律脱敏。

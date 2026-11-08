@@ -27,6 +27,8 @@ export interface AuthRegistryOptions {
   restore?: (instanceId: string, client: AuthClient) => Promise<void> | void
   /** 注入 fetch(测试) */
   fetchImpl?: typeof fetch
+  /** 按实例注入 fetch（远程 HTTP 实例绑定代理 session）；优先于 fetchImpl。 */
+  fetchImplFor?: (instanceId: string) => Promise<typeof fetch | undefined>
   now?: () => number
 }
 
@@ -69,10 +71,13 @@ export function createAuthRegistry(options: AuthRegistryOptions): AuthRegistry {
   async function createClient(instanceId: string): Promise<AuthClient | null> {
     const endpointUrl = await options.resolveEndpoint(instanceId)
     if (!endpointUrl) return null
+    const fetchImpl =
+      (await options.fetchImplFor?.(instanceId)) ??
+      (options.fetchImpl === undefined ? undefined : options.fetchImpl)
     const created = factory({
       instanceId,
       endpointUrl,
-      ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+      ...(fetchImpl === undefined ? {} : { fetchImpl }),
       ...(options.now === undefined ? {} : { now: options.now }),
       onState: (state) => options.onState?.(instanceId, state),
       onLoginSucceeded: () => options.onLoginSucceeded?.(instanceId)

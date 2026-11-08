@@ -166,6 +166,29 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(record.endpointUrl).toBe('https://gw.example.com/dsh')
   })
 
+  it('create/update http 代理只落非敏感字段，密码被剥离', async () => {
+    const record = asHttp(
+      await store.create(
+        httpInput({
+          proxy: { type: 'http', host: '127.0.0.1', port: 7897, username: 'u', password: 'secret' }
+        })
+      )
+    )
+    expect(record.proxy).toEqual({ type: 'http', host: '127.0.0.1', port: 7897, username: 'u' })
+    expect(await readFile(join(dir, 'instances.json'), 'utf8')).not.toContain('secret')
+
+    const updated = asHttp(
+      await store.update(record.id, {
+        proxy: { type: 'http', host: '::1', port: 1080, username: 'u', password: 'new-secret' }
+      })
+    )
+    expect(updated.proxy).toEqual({ type: 'http', host: '::1', port: 1080, username: 'u' })
+    expect(await readFile(join(dir, 'instances.json'), 'utf8')).not.toContain('new-secret')
+
+    const cleared = asHttp(await store.update(record.id, { proxy: null }))
+    expect(cleared.proxy).toBeNull()
+  })
+
   it('create 非法输入一律 invalid-input,且文件不被写入', async () => {
     const cases: CreateInstanceInput[] = [
       localInput({ unknownField: 1 }),

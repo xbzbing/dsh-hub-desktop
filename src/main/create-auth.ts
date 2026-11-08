@@ -9,6 +9,7 @@ import { restoreSessionFromVault } from './auth/session-restore'
 import type { InstanceStore } from './registry/instance-store'
 import type { SshTunnelManager } from './transport/ssh-tunnel'
 import { authEndpointOf } from './transport/endpoint-resolver'
+import type { InstanceProxy } from './proxy/instance-proxy'
 import type { Vault } from './vault/vault'
 
 export interface AuthControllerDeps {
@@ -18,6 +19,8 @@ export interface AuthControllerDeps {
   store: InstanceStore
   /** SSH 隧道管理器（端点解析取实时隧道端口）；未装配返回 null */
   getTunnels: () => SshTunnelManager | null
+  /** 远程 HTTP 实例的代理应用与 fetch 取用；未装配时直连。 */
+  proxy?: InstanceProxy
   auditWrite: (entry: AuditEntry) => void
 }
 
@@ -70,11 +73,17 @@ export function createAuthController(deps: AuthControllerDeps): AuthController {
     resolveEndpoint: async (instanceId) => {
       const record = await deps.store.get(instanceId)
       if (!record) return null
+      // HTTP 实例先应用代理再构造客户端：探测/登录请求必须与工作区走同一代理。
+      if (record.transport === 'http') await deps.proxy?.apply(record)
       // 只取**实时**隧道端口:注册表的 localPort 可能已陈旧(隧道重启会重新分配),
       // 「隧道已停也要能清 Cookie」的需求由 clearPartitionSession 的 plan 承担。
       const tunnelPort =
         record.transport === 'ssh' ? deps.getTunnels()?.statusOf(instanceId)?.port : undefined
       return authEndpointOf(record, tunnelPort)
+    },
+    fetchImplFor: async (instanceId) => {
+      const record = await deps.store.get(instanceId)
+      return record?.transport === 'http' ? deps.proxy?.fetchFor(record) : undefined
     },
     onState: (instanceId, state) => {
       for (const win of BrowserWindow.getAllWindows()) {

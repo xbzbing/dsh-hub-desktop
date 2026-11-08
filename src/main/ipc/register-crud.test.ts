@@ -308,6 +308,39 @@ describe('registerIpc：实例 CRUD 与空间', () => {
     if (result.ok) expect(result.value.removed).toBe(true)
   })
 
+  it('create/update http 代理：密码只进 vault，记录只保留非敏感字段', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '代理远程',
+      endpointUrl: 'https://gw.example.com/dsh',
+      proxy: {
+        type: 'http',
+        host: '127.0.0.1',
+        port: 7897,
+        username: 'alice',
+        password: 'secret'
+      }
+    })) as {
+      ok: boolean
+      value: { id: string; proxy?: Record<string, unknown> }
+    }
+    if (!created.ok) throw new Error('创建失败')
+    expect(created.value.proxy).toEqual({
+      type: 'http',
+      host: '127.0.0.1',
+      port: 7897,
+      username: 'alice'
+    })
+    expect(vaultFake.rememberProxyPassword).toHaveBeenCalledWith(created.value.id, 'secret')
+
+    const updated = (await invoke('instances:update', created.value.id, {
+      proxy: { type: 'socks5', host: '::1', port: 1080, password: null }
+    })) as { ok: boolean; value: { proxy?: Record<string, unknown> } }
+    expect(updated.ok).toBe(true)
+    expect(updated.value.proxy).toEqual({ type: 'socks5', host: '::1', port: 1080 })
+    expect(vaultFake.forgetProxyPassword).toHaveBeenCalledWith(created.value.id)
+  })
+
   it('delete:非 local 实例不触碰运行时', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',

@@ -9,18 +9,23 @@
 
 export type HealthProbe = (url: string, timeoutMs: number) => Promise<boolean>
 
-export const httpHealthProbe: HealthProbe = async (url, timeoutMs) => {
-  try {
-    // 若跟随重定向,302 到探测面不可达的外部 IdP 会被判「未就绪」→ 隧道被误杀并进入重连死循环
-    const response = await fetch(url, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(timeoutMs)
-    })
-    return response.status >= 100 && response.status < 600
-  } catch {
-    return false
+/** 用给定 fetch 构造健康探测；远程 HTTP 实例注入绑定代理 session 的实现。 */
+export function createHttpHealthProbe(fetchImpl: typeof fetch = fetch): HealthProbe {
+  return async (url, timeoutMs) => {
+    try {
+      // 若跟随重定向,302 到探测面不可达的外部 IdP 会被判「未就绪」→ 隧道被误杀并进入重连死循环
+      const response = await fetchImpl(url, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(timeoutMs)
+      })
+      return response.status >= 100 && response.status < 600
+    } catch {
+      return false
+    }
   }
 }
+
+export const httpHealthProbe: HealthProbe = createHttpHealthProbe()
 
 /** 短暂等待（unref 不挂住进程；探测重试间隔用） */
 export function sleep(ms: number): Promise<void> {

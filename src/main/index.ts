@@ -63,6 +63,7 @@ import { pinStartupLanguage } from './startup-language'
 import { createWindowController } from './create-window'
 import { createTrayController } from './create-tray'
 import { createAuthController } from './create-auth'
+import { createInstanceProxy } from './proxy/instance-proxy'
 import { createRuntimeController } from './create-runtime'
 import { createVaultControl } from './create-vault'
 import { auditWrite, createAudit } from './create-audit'
@@ -316,6 +317,13 @@ void app.whenReady().then(() => {
     .catch((error: unknown) => console.error('[main] 插件操作日志归并失败：', error))
   const vaultControl = createVaultControl(dataRoot)
   vault = vaultControl.vault
+  // 代理认证由 Chromium 在页面/独立窗口发起；按分区 session 找回实例与 vault 密码。
+  const instanceProxy = createInstanceProxy({
+    getProxyPassword: (instanceId) => vault?.getProxyPassword(instanceId) ?? null
+  })
+  app.on('login', (event, webContents, _details, authInfo, callback) => {
+    instanceProxy.handleLogin(event, webContents, authInfo, callback)
+  })
   const settings = createSettingsStore({ dir: dataRoot })
   settingsRef = settings
 
@@ -396,6 +404,7 @@ void app.whenReady().then(() => {
   const runtimeController = createRuntimeController({
     dataRoot,
     store: instanceStore,
+    proxy: instanceProxy,
     readSettings: () => settings.read(),
     runtimeStates: lastRuntimeState,
     auditWrite,
@@ -417,6 +426,7 @@ void app.whenReady().then(() => {
     getVault: () => vault,
     store: instanceStore,
     getTunnels: () => tunnels,
+    proxy: instanceProxy,
     auditWrite
   })
   auth = authController.auth
@@ -474,6 +484,7 @@ void app.whenReady().then(() => {
     openInstanceLogDir: (record) =>
       openInstanceLogDir({ dataRoot, openPath: (path) => shell.openPath(path) }, record),
     clearPartitionSession: async (instanceId) => {
+      instanceProxy.forget(instanceId)
       const record = await instanceStore.get(instanceId)
       // 否则「先停隧道再清 Cookie」会静默 no-op
       const plan = planPartitionClear(record, tunnels?.statusOf(instanceId)?.port)
@@ -483,6 +494,8 @@ void app.whenReady().then(() => {
     },
     promptBroker: promptBroker as PromptBroker,
     openInstanceView: async (instance, url) => {
+      // 导航前把代理落到该实例分区；否则首个 main-frame 会直连。
+      if (instance.transport === 'http') await instanceProxy.apply(instance)
       // Write the session Cookie before navigation starts.
       const plan = buildOpenViewPlan(url, auth?.sessionCookie(instance.id) ?? null)
       await openInstanceViewFlow(

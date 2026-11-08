@@ -32,7 +32,7 @@ export interface LocalConfigProps {
   t: Translator
   form: WizardForm
   set: (
-    key: Exclude<keyof WizardForm, 'useDefaultSpace'>
+    key: Exclude<keyof WizardForm, 'useDefaultSpace' | 'proxyType'>
   ) => (event: { target: { value: string } }) => void
   setForm: (updater: (current: WizardForm) => WizardForm) => void
   external: ExternalAdoption
@@ -62,7 +62,7 @@ export default function LocalConfig(props: LocalConfigProps): ReactNode {
   } = versions
   /** 下拉只给字符串值；写回表单时仍走同一个 setter，保持与输入框一致的行为。 */
   const setField =
-    (key: Exclude<keyof WizardForm, 'useDefaultSpace'>) =>
+    (key: Exclude<keyof WizardForm, 'useDefaultSpace' | 'proxyType'>) =>
     (value: string): void =>
       set(key)({ target: { value } })
   return (

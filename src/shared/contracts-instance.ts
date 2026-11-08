@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { tryParseEndpoint } from './endpoint'
 import { LAUNCHERS } from './local-launch'
 import { isValidSshHost } from './contracts-util'
+import { ProxyConfigSchema, ProxyInputSchema } from './contracts-proxy'
 
 // ===== 枚举 =====
 
@@ -140,7 +141,12 @@ export const HttpInstanceSchema = z.object({
     .refine(
       (value) => tryParseEndpoint(value).ok,
       '端点 URL 无法解析（仅支持 http/https，禁止内嵌凭据 / 查询串 / 锚点）'
-    )
+    ),
+  /**
+   * 可选的 HTTP / SOCKS5 代理。密码不在注册表里：创建/更新时经 IPC 写入 vault，
+   * 记录只保留类型、主机、端口与用户名。省略 = 直连。
+   */
+  proxy: ProxyConfigSchema.nullable().optional()
 })
 
 export const InstanceRecordSchema = z.discriminatedUnion('transport', [
@@ -203,7 +209,8 @@ export const CreateInstanceInputSchema = z.discriminatedUnion('transport', [
         .refine(
           (value) => tryParseEndpoint(value).ok,
           '端点 URL 无法解析（仅支持 http/https，禁止内嵌凭据 / 查询串 / 锚点）'
-        )
+        ),
+      proxy: ProxyInputSchema.nullable().optional()
     })
     .strict()
 ])
@@ -257,7 +264,8 @@ export const PatchInstanceSchema = z
         (value) => tryParseEndpoint(value).ok,
         '端点 URL 无法解析（仅支持 http/https，禁止内嵌凭据 / 查询串 / 锚点）'
       )
-      .optional()
+      .optional(),
+    proxy: ProxyInputSchema.nullable().optional()
   })
   .strict()
   .refine((patch) => Object.keys(patch).length > 0, '补丁不能为空')

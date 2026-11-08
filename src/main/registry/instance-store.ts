@@ -17,6 +17,7 @@ import {
   InstanceRecordSchema,
   LocalInstanceSchema,
   PatchInstanceSchema,
+  proxyConfigOf,
   REGISTRY_SCHEMA_VERSION,
   RegistryFileSchema,
   SshInstanceSchema,
@@ -311,30 +312,38 @@ export function createInstanceStore(options: InstanceStoreOptions): InstanceStor
         : { ...input, host: split.host }
     }
     if (input.transport === 'http') {
-      // 存归一化 baseUrl（去尾斜杠等），判重语义与 isSameEndpoint 一致
-      return { ...input, endpointUrl: parseEndpointUrl(input.endpointUrl).baseUrl }
+      // 存归一化 baseUrl（去尾斜杠等），判重语义与 isSameEndpoint 一致；
+      // 代理密码只走 vault，落盘前从入参里剥掉。
+      const base = { ...input, endpointUrl: parseEndpointUrl(input.endpointUrl).baseUrl }
+      if (input.proxy === undefined) return base
+      return { ...base, proxy: proxyConfigOf(input.proxy) }
     }
     return input
   }
 
   function normalizePatch(patch: PatchInstanceParams): PatchInstanceParams {
+    let next = patch
     // 与 create 语义一致：仅当 host 内真正带 `:port` 时才采用其端口；
     // 方括号剥离只改主机形态，绝不注入默认端口（否则会静默改掉记录里的端口）
-    if (patch.host !== undefined) {
-      const split = splitSshHostPort(patch.host, patch.port ?? 22)
-      if (split.host !== patch.host) {
-        return split.portEmbedded
-          ? { ...patch, host: split.host, port: split.port }
-          : { ...patch, host: split.host }
+    if (next.host !== undefined) {
+      const split = splitSshHostPort(next.host, next.port ?? 22)
+      if (split.host !== next.host) {
+        next = split.portEmbedded
+          ? { ...next, host: split.host, port: split.port }
+          : { ...next, host: split.host }
       }
     }
-    if (patch.endpointUrl !== undefined) {
-      const parsed = parseEndpointUrl(patch.endpointUrl)
-      if (parsed.baseUrl !== patch.endpointUrl.trim()) {
-        return { ...patch, endpointUrl: parsed.baseUrl }
+    if (next.endpointUrl !== undefined) {
+      const parsed = parseEndpointUrl(next.endpointUrl)
+      if (parsed.baseUrl !== next.endpointUrl.trim()) {
+        next = { ...next, endpointUrl: parsed.baseUrl }
       }
     }
-    return patch
+    // 代理密码只走 vault；`null` 表示清空代理，`undefined` 表示不修改。
+    if (next.proxy !== undefined) {
+      next = { ...next, proxy: next.proxy === null ? null : proxyConfigOf(next.proxy) }
+    }
+    return next
   }
 
   function stamp(record: unknown): InstanceRecord {

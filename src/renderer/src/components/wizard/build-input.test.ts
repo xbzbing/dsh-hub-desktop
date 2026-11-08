@@ -74,6 +74,48 @@ describe('buildCreateInput', () => {
     })
   })
 
+  it('http:代理开启时带类型/主机/端口与可选凭据，关闭时省略 proxy', () => {
+    expect(
+      buildCreateInput({
+        transport: 'http',
+        form: {
+          ...EMPTY_FORM,
+          endpointUrl: ' https://gw ',
+          proxyType: 'http',
+          proxyHost: ' proxy.local ',
+          proxyPort: '8080',
+          proxyUsername: ' u ',
+          proxyPassword: 'secret'
+        },
+        name: 'a',
+        useExistingExternal: false,
+        externalWorkspace: null,
+        existingSpaceId: null
+      })
+    ).toEqual({
+      transport: 'http',
+      name: 'a',
+      endpointUrl: 'https://gw',
+      proxy: {
+        type: 'http',
+        host: 'proxy.local',
+        port: 8080,
+        username: 'u',
+        password: 'secret'
+      }
+    })
+    expect(
+      buildCreateInput({
+        transport: 'http',
+        form: { ...EMPTY_FORM, endpointUrl: 'https://gw' },
+        name: 'a',
+        useExistingExternal: false,
+        externalWorkspace: null,
+        existingSpaceId: null
+      })
+    ).toEqual({ transport: 'http', name: 'a', endpointUrl: 'https://gw' })
+  })
+
   it('http:归一化 endpointUrl（去空白）', () => {
     expect(
       buildCreateInput({

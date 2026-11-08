@@ -135,6 +135,20 @@ describe('vault（ 凭据存储策略）', () => {
     expect(restarted.getExternalAccessToken('i1')).toBeNull()
   })
 
+  it('代理密码加密落盘、重启后可读，且不依赖网关密码策略', async () => {
+    const first = createVault({ filePath, crypto: fakeCrypto() })
+    await first.rememberProxyPassword('i1', 'proxy-secret')
+    expect(first.hasProxyPassword('i1')).toBe(true)
+    expect(first.getProxyPassword('i1')).toBe('proxy-secret')
+    expect(await readFile(filePath, 'utf8')).not.toContain('proxy-secret')
+
+    const restarted = createVault({ filePath, crypto: fakeCrypto() })
+    expect(restarted.getProxyPassword('i1')).toBe('proxy-secret')
+    await restarted.forgetProxyPassword('i1')
+    expect(restarted.getProxyPassword('i1')).toBeNull()
+    await expect(restarted.rememberProxyPassword('i1', '')).rejects.toThrow()
+  })
+
   it('取消勾选必须真的忘掉(不只是停止「继续记住」)', async () => {
     const vault = await optIn()
     await vault.rememberPassword('i1', 'hunter2')

@@ -1,5 +1,5 @@
+import type { ExternalDshWebSnapshot, ProxyType } from '@shared/contracts'
 import type { LocalLauncher } from '@shared/local-launch'
-import type { ExternalDshWebSnapshot } from '@shared/contracts'
 
 /** 向导表单：三种传输的字段合并存放，未使用字段保持默认值。 */
 export interface WizardForm {
@@ -15,6 +15,12 @@ export interface WizardForm {
   sshPort: string
   remotePort: string
   endpointUrl: string
+  /** 'none' = 直连；其余为代理协议。 */
+  proxyType: ProxyType | 'none'
+  proxyHost: string
+  proxyPort: string
+  proxyUsername: string
+  proxyPassword: string
   externalAccess: string
 }
 
@@ -31,6 +37,11 @@ export const EMPTY_FORM: WizardForm = {
   sshPort: '22',
   remotePort: '3080',
   endpointUrl: '',
+  proxyType: 'none',
+  proxyHost: '',
+  proxyPort: '8080',
+  proxyUsername: '',
+  proxyPassword: '',
   externalAccess: ''
 }
 

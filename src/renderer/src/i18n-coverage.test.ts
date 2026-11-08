@@ -818,6 +818,24 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
     "schemaVersion: z.number('schemaVersion 必须是数字').int().min(1),"
   ),
 
+  // —— 代理配置的 zod message:同 contracts-instance，经 instances.create/update 的
+  //    invalid-input 信封 message 直接进渲染层 toast/表单错误。 ——
+  debt('src/shared/contracts-proxy.ts', ".number('代理端口必须是数字')"),
+  debt('src/shared/contracts-proxy.ts', ".int('代理端口必须是整数')"),
+  debt('src/shared/contracts-proxy.ts', ".min(1, '代理端口最小 1')"),
+  debt('src/shared/contracts-proxy.ts', ".max(65535, '代理端口最大 65535')"),
+  debt('src/shared/contracts-proxy.ts', ".min(1, '代理主机不能为空')"),
+  debt('src/shared/contracts-proxy.ts', ".max(255, '代理主机最长 255 字符')"),
+  debt('src/shared/contracts-proxy.ts', "'代理主机格式不合法（不允许空白、斜杠、@ 或端口）'"),
+  debt('src/shared/contracts-proxy.ts', ".min(1, '代理用户名不能为空')"),
+  debt('src/shared/contracts-proxy.ts', ".max(128, '代理用户名最长 128 字符')"),
+  debt(
+    'src/shared/contracts-proxy.ts',
+    "password: z.string().min(1, '代理密码不能为空').max(1024).nullable().optional()"
+  ),
+  debt('src/shared/contracts-proxy.ts', "message: 'SOCKS5 代理不支持用户名/密码认证',"),
+  debt('src/shared/contracts-proxy.ts', "message: '设置代理密码时必须同时提供用户名',"),
+
   //    渠道:`EndpointParseError.message` → `register.ts` wrap 的 invalid-input 信封 message
   //    → `Wizard.tsx:83/120` 与 `UrlDetect.tsx:65` 的 `setError(result.message)` **直接上屏**。
   //    迁移同样只需把静态文案换成 code。
@@ -914,6 +932,7 @@ const NON_RENDERER_COPY_DEBT_INTERNAL: readonly DebtEntry[] = [
   debt('src/main/ssh/key-preview.ts', "else reject(error ?? new Error('ssh -G 未返回任何配置'))"),
   debt('src/main/ssh/host-trust.ts', "else reject(error ?? new Error('ssh -G 未返回任何配置'))"),
   debt('src/main/vault/vault.ts', "if (password === '') throw new Error('空密码不写入 vault')"),
+  debt('src/main/vault/vault.ts', "if (password === '') throw new Error('空代理密码不写入 vault')"),
   debt('src/main/vault/vault.ts', "if (token === '') throw new Error('空访问 token 不写入 vault')"),
   debt(
     'src/main/vault/vault.ts',
@@ -1020,6 +1039,10 @@ const NON_RENDERER_COPY_DEBT_INTERNAL: readonly DebtEntry[] = [
   debt(
     'src/main/local-runtime/plugin-security/registry.ts',
     'if (manifest === null) throw new Error(`无法解析版本元数据：${name}@${version}`)'
+  ),
+  debt(
+    'src/main/proxy/session-fetch.ts',
+    "throw new TypeError('session fetch 只支持字符串/URLSearchParams/二进制 body')"
   ),
   debt(
     'src/main/local-runtime/plugin-security/index.ts',

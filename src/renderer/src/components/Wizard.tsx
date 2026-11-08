@@ -124,7 +124,7 @@ export default function Wizard(): ReactNode {
   }
 
   const set =
-    (key: Exclude<keyof WizardForm, 'useDefaultSpace'>) =>
+    (key: Exclude<keyof WizardForm, 'useDefaultSpace' | 'proxyType'>) =>
     (event: { target: { value: string } }) => {
       const value = event.target.value
       setForm((current) => ({ ...current, [key]: value }))
@@ -292,7 +292,7 @@ export default function Wizard(): ReactNode {
 
           {transport === 'ssh' && <SshConfig t={t} form={form} set={set} />}
 
-          {transport === 'http' && <HttpConfig t={t} form={form} set={set} />}
+          {transport === 'http' && <HttpConfig t={t} form={form} set={set} setForm={setForm} />}
         </div>
       )}
 

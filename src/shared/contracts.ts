@@ -10,6 +10,7 @@ import type { AuthMode, Transport } from './contracts-instance'
 import type { LocalLauncher } from './local-launch'
 
 export * from './contracts-instance'
+export * from './contracts-proxy'
 export * from './contracts-ssh'
 export * from './contracts-auth'
 export { HOMEPAGE_URL, splitSshHostPort, type SshHostPortSplit } from './contracts-util'

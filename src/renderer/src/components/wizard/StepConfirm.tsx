@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Translator } from '@shared/i18n'
+import { proxyAddress } from '@shared/contracts'
 import { Icon } from '../../lib/icons'
 import { TYPE_INFO } from '../../lib/format'
 import type { ExternalWorkspace, WizardForm, WizardTransport } from './types'
@@ -49,6 +50,18 @@ export default function StepConfirm(props: StepConfirmProps): ReactNode {
                 ? `${form.host}:${form.remotePort}`
                 : form.endpointUrl}
           </dd>
+          {transport === 'http' && form.proxyType !== 'none' && (
+            <>
+              <dt>{t('wizard.proxyLabel')}</dt>
+              <dd className="num">
+                {proxyAddress({
+                  type: form.proxyType,
+                  host: form.proxyHost.trim(),
+                  port: Number(form.proxyPort)
+                })}
+              </dd>
+            </>
+          )}
           {transport === 'local' && useExistingExternal && externalWorkspace && (
             <>
               <dt>PID</dt>

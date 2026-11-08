@@ -8,11 +8,15 @@ import type { HttpInstance, InstanceStatusEvent } from '@shared/contracts'
 import { parseEndpointUrl } from '@shared/endpoint'
 import { detectAuthMode, type AuthDetection } from '../auth/detect'
 import { httpDirectEndpoint } from './endpoint-resolver'
-import { httpHealthProbe, retryProbe, type HealthProbe } from './probe'
+import { createHttpHealthProbe, retryProbe, type HealthProbe } from './probe'
 import { createStatusBus } from './status-bus'
 
 export interface HttpEndpointOptions {
   probe?: HealthProbe
+  /** 应用实例代理等前置动作；在探测前 await。 */
+  prepare?: (instance: HttpInstance) => Promise<void>
+  /** 绑定实例 session（含代理）的 fetch；缺省用 Node 全局 fetch。 */
+  fetchFor?: (instance: HttpInstance) => typeof fetch
   detect?: (url: string) => Promise<AuthDetection>
   healthTimeoutMs?: number
   healthProbeRetries?: number
@@ -38,8 +42,6 @@ interface Entry {
 }
 
 export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndpointManager {
-  const probe = options.probe ?? httpHealthProbe
-  const detect = options.detect ?? ((url: string) => detectAuthMode(url))
   const healthTimeoutMs = options.healthTimeoutMs ?? 5_000
   // 就绪探测重试次数默认 5 次，与本机实例一致；见 probe.ts 的 retryProbe。
   const healthProbeRetries = options.healthProbeRetries ?? 5
@@ -75,6 +77,11 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
     const cancelled = (): boolean => (cancelGen.get(id) ?? 0) !== myGen
     try {
       const url = httpDirectEndpoint(instance)
+      await options.prepare?.(instance)
+      const fetchImpl = options.fetchFor?.(instance) ?? fetch
+      const probeImpl = options.probe ?? createHttpHealthProbe(fetchImpl)
+      const detectImpl =
+        options.detect ?? ((target: string) => detectAuthMode(target, { fetchImpl }))
       const created: Entry = {
         id,
         url,
@@ -88,7 +95,7 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
 
       const healthy = await retryProbe({
         url,
-        probe,
+        probe: probeImpl,
         retries: healthProbeRetries,
         retryMs: healthProbeRetryMs,
         timeoutMs: healthTimeoutMs,
@@ -104,7 +111,7 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
       let detection: AuthDetection | null = null
       if (instance.authMode === 'auto') {
         emit(id, 'starting', { url, detail: '探测认证模式' })
-        detection = await detect(url)
+        detection = await detectImpl(url)
         if (cancelled() || created.stopping || !created.current()) return
         created.detection = detection
       }

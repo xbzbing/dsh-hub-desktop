@@ -39,6 +39,20 @@ export function validateWizardForm(args: {
   if (transport === 'http') {
     const parsed = tryParseEndpoint(form.endpointUrl)
     if (!parsed.ok) return parsed.message
+    if (form.proxyType !== 'none') {
+      if (form.proxyHost.trim() === '') return t('wizard.errProxyHost')
+      const port = Number(form.proxyPort.trim())
+      if (!Number.isInteger(port) || port < 1 || port > 65535) return t('wizard.errProxyPort')
+      if (
+        form.proxyType === 'socks5' &&
+        (form.proxyUsername.trim() !== '' || form.proxyPassword !== '')
+      ) {
+        return t('wizard.errProxySocksAuth')
+      }
+      if (form.proxyUsername.trim() !== '' && form.proxyPassword === '') {
+        return t('wizard.errProxyPassword')
+      }
+    }
   }
   return null
 }
