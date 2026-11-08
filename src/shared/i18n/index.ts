@@ -6,7 +6,7 @@
  * 不会悄悄显示成 "undefined" 让用户困惑。
  */
 import type { Language } from '../settings'
-import { MESSAGES, type MessageKey } from './messages'
+import { MESSAGES, type Message, type MessageKey } from './messages'
 
 export type TranslateParams = Record<string, string | number>
 
@@ -23,7 +23,7 @@ export type Translator = (key: MessageKey, params?: TranslateParams) => string
 
 /** 取某语言下的文案(未知 key 返回 key 本身,便于在 UI 上直接看出漏配) */
 export function translate(language: Language, key: MessageKey, params?: TranslateParams): string {
-  const message = MESSAGES[key] as { zh: string; en: string } | undefined
+  const message = MESSAGES[key] as Message | undefined
   if (!message) return key
   return interpolate(message[language], params)
 }

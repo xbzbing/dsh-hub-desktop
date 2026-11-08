@@ -1,8 +1,23 @@
 import { describe, expect, it } from 'vitest'
+import { LANGUAGES } from '../settings'
+import { EN_MESSAGES } from './catalog/en'
+import { ZH_MESSAGES } from './catalog/zh'
 import { createTranslator, interpolate, translate } from './index'
 import { MESSAGES, MESSAGE_KEYS } from './messages'
 
 describe('i18n 目录（双语）', () => {
+  it('zh 与 en 的键集合一致(合并层类型断言的运行期兜底)', () => {
+    expect(Object.keys(EN_MESSAGES).sort()).toEqual(Object.keys(ZH_MESSAGES).sort())
+    expect(MESSAGE_KEYS).toHaveLength(Object.keys(ZH_MESSAGES).length)
+  })
+
+  it('每条文案都覆盖 Language 声明的全部语言', () => {
+    const languages = LANGUAGES.filter((language) => language !== 'system').sort()
+    for (const key of MESSAGE_KEYS) {
+      expect(Object.keys(MESSAGES[key]).sort(), `${key} 的语言不全`).toEqual(languages)
+    }
+  })
+
   it('每条文案都有 zh 与 en,且都非空', () => {
     for (const key of MESSAGE_KEYS) {
       const message = MESSAGES[key]

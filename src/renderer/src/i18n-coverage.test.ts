@@ -41,13 +41,15 @@ const ALLOWED_LITERALS: readonly RegExp[] = [/^\{?language === 'zh' \? '中文' 
 
 /**
  * 扫描时唯一排除文案目录本身，避免把文案定义视为待迁移的硬编码文案。
+ * 文案按语言分文件后排除面是一个目录：目录内新增语言文件不需要再改这里。
  */
-const SOURCE_EXCLUSIONS: readonly string[] = ['src/shared/i18n/messages.ts']
+const SOURCE_EXCLUSIONS: readonly string[] = ['src/shared/i18n/catalog']
 
 /** SOURCE_EXCLUSIONS 的独立字面量副本。 */
-const SOURCE_EXCLUSIONS_PIN: readonly string[] = ['src/shared/i18n/messages.ts']
+const SOURCE_EXCLUSIONS_PIN: readonly string[] = ['src/shared/i18n/catalog']
 
-const isExcluded = (path: string): boolean => SOURCE_EXCLUSIONS.includes(path)
+const isExcluded = (path: string): boolean =>
+  SOURCE_EXCLUSIONS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
 
 /** 测试文件与 testkit 不参与判定:里面的中文是测试名、fixture 与断言数据,不是界面文案,也不进打包产物 */
 const isTestFile = (path: string): boolean => /\.test(?:kit)?\.tsx?$/.test(path)
@@ -1184,9 +1186,13 @@ describe('i18n 覆盖检查', () => {
     // 未经过滤的整树集合里它们**存在**,过滤后的扫描集合里它们**不存在**
     // (只断言后者会是恒真式,等于没测)
     const unfiltered = collectSourceFiles(SRC_ROOT, SOURCE_EXTENSIONS).map((file) => file.path)
-    expect(unfiltered.includes('src/shared/i18n/messages.ts')).toBe(true)
+    expect(unfiltered.includes('src/shared/i18n/catalog/zh.ts')).toBe(true)
+    expect(unfiltered.includes('src/shared/i18n/catalog/en.ts')).toBe(true)
     expect(unfiltered.some((path) => isTestFile(path))).toBe(true)
-    expect(paths.includes('src/shared/i18n/messages.ts')).toBe(false)
+    expect(paths.includes('src/shared/i18n/catalog/zh.ts')).toBe(false)
+    expect(paths.includes('src/shared/i18n/catalog/en.ts')).toBe(false)
+    // 聚合器不在豁免面内:它一旦写死中文,同样要被扫描到
+    expect(paths.includes('src/shared/i18n/messages.ts')).toBe(true)
     expect(paths.some((path) => isTestFile(path))).toBe(false)
   })
 
@@ -1633,11 +1639,22 @@ describe('i18n 覆盖检查', () => {
   it('仅排除文案目录，且排除清单与独立副本保持一致', () => {
     expect([...SOURCE_EXCLUSIONS]).toEqual([...SOURCE_EXCLUSIONS_PIN])
     expect(SOURCE_EXCLUSIONS, '排除面只允许文案目录这一条(新增排除=新增暗门)').toEqual([
-      'src/shared/i18n/messages.ts'
+      'src/shared/i18n/catalog'
     ])
     for (const path of SOURCE_EXCLUSIONS) {
       expect(existsSync(join(process.cwd(), path)), `${path} 已不在磁盘上,请修正排除面`).toBe(true)
     }
+    // 目录粒度不等于整段放行:目录内每个源文件都必须命中,目录外一个都不能命中
+    const catalogFiles = collectSourceFiles(
+      join(process.cwd(), 'src/shared/i18n/catalog'),
+      SOURCE_EXTENSIONS
+    )
+    expect(catalogFiles.length, '文案目录应能遍历到源文件').toBeGreaterThan(0)
+    for (const file of catalogFiles) {
+      expect(isExcluded(file.path), `${file.path} 必须被排除`).toBe(true)
+    }
+    expect(isExcluded('src/shared/i18n/messages.ts')).toBe(false)
+    expect(isExcluded('src/shared/i18n/index.ts')).toBe(false)
   })
 
   it('文案目录覆盖设置页与托盘所需的键(缺键会在运行时显示 key)', () => {
