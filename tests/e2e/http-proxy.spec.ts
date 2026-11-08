@@ -154,15 +154,37 @@ test('HTTP 实例经认证代理启动、打开，清空代理后直连', async 
 
   await win.getByTestId('workspace-back-btn').click()
   await expect(win.getByTestId('detail-proxy')).toContainText(`http://127.0.0.1:${proxyPort}`)
+
+  // 通用编辑对话框仍完整展示代理字段（此处只核对回填，随后取消）。
   await win.getByTestId('edit-btn').click()
   await expect(win.getByTestId('edit-dialog')).toBeVisible()
   await expect(win.getByTestId('edit-proxy-host')).toHaveValue('127.0.0.1')
   await expect(win.getByTestId('edit-proxy-port')).toHaveValue(String(proxyPort))
   await expect(win.getByTestId('edit-proxy-username')).toHaveValue(PROXY_USER)
-  await pickOption(win, 'edit-proxy-type', 'none')
-  await win.getByTestId('edit-save').click()
+  await win.getByTestId('edit-cancel').click()
   await expect(win.getByTestId('edit-dialog')).toBeHidden()
+
+  // 「连接方式」卡里的编辑代理：关闭代理并保存。
+  await win.getByTestId('edit-proxy-btn').click()
+  await expect(win.getByTestId('proxy-dialog')).toBeVisible()
+  await expect(win.getByTestId('proxy-dialog-host')).toHaveValue('127.0.0.1')
+  await expect(win.getByTestId('proxy-dialog-port')).toHaveValue(String(proxyPort))
+  await expect(win.getByTestId('proxy-dialog-username')).toHaveValue(PROXY_USER)
+  await pickOption(win, 'proxy-dialog-type', 'none')
+  await win.getByTestId('proxy-save').click()
+  await expect(win.getByTestId('proxy-dialog')).toBeHidden()
   await expect(win.getByTestId('detail-proxy')).toContainText('直连')
+
+  // 代理已落到实例分区，缓存的工作区被就地刷新：不必重新打开工作区就走直连。
+  await expect.poll(() => targetHits, { timeout: 15_000 }).toBeGreaterThan(0)
+  await expect
+    .poll(
+      async () => {
+        return await workspaceText('document.getElementById("direct-ok")?.textContent ?? ""')
+      },
+      { timeout: 20_000 }
+    )
+    .toBe('direct ok')
 
   const id2 = id
   await win.evaluate(async (instanceId) => {

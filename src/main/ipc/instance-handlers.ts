@@ -12,6 +12,7 @@ import {
   SSH_IPC,
   SshKeyPreviewInputSchema,
   type HostKeyDecision,
+  type HttpInstance,
   type InstanceRecord,
   type InstanceRuntimeStatus,
   type InstanceSummary,
@@ -60,6 +61,11 @@ export interface InstanceHandlerDeps {
   openInstanceDir?: (record: InstanceRecord) => Promise<void>
   /** 在系统文件管理器中打开本机实例的日志目录；主进程按实例解析路径。 */
   openInstanceLogDir?: (record: InstanceRecord) => Promise<void>
+  /**
+   * 把实例当前配置的代理重新落到其分区 session。
+   * 编辑代理后立即调用，避免等到下次打开工作区才生效；缺省（单测）不装配。
+   */
+  applyInstanceProxy?: (instance: HttpInstance) => Promise<void>
   hideInstanceView?: () => void
 }
 
@@ -267,6 +273,13 @@ export function registerInstanceHandlers(
         } catch (error) {
           if (proxy !== undefined) await restoreProxyPassword(instanceId, previousPassword)
           throw error
+        }
+        // 记录已落盘：代理变更立刻落到分区 session，工作区刷新与后续探测才走新代理。
+        // 这里失败不回滚记录（配置本身已通过 schema 校验），只留排查线索。
+        if (proxy !== undefined && record.transport === 'http' && deps.applyInstanceProxy) {
+          await deps.applyInstanceProxy(record).catch((error: unknown) => {
+            console.error('[ipc] 更新实例代理失败：', instanceId, error)
+          })
         }
         return record
       })

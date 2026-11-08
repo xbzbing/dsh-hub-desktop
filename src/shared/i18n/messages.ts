@@ -599,6 +599,16 @@ export const MESSAGES = {
   'detail.authMode': { zh: '认证', en: 'Auth' },
   'detail.proxy': { zh: '代理', en: 'Proxy' },
   'detail.proxyNone': { zh: '直连（不使用代理）', en: 'Direct (no proxy)' },
+  'detail.editProxy': { zh: '编辑代理', en: 'Edit proxy' },
+  'detail.editProxySub': {
+    zh: '{name}：保存后立即生效，已打开的工作区会刷新。',
+    en: '{name}: applied immediately on save; an open workspace reloads.'
+  },
+  'detail.editProxyHint': {
+    zh: '代理挂在实例自己的会话上：改动同时影响内嵌工作区与健康探测。',
+    en: 'The proxy lives on the instance session: changes apply to the embedded workspace and health probes alike.'
+  },
+  'detail.proxySaved': { zh: '代理已保存', en: 'Proxy saved' },
   'detail.authNone': { zh: '无需登录', en: 'no sign-in required' },
   'detail.authGateway': { zh: '网关登录（密码 + 动态验证码）', en: 'gateway (password + TOTP)' },
   'detail.authAuto': { zh: '自动探测（连接后识别）', en: 'auto-detect on connect' },

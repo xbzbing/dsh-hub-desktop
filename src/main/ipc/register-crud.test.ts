@@ -354,6 +354,66 @@ describe('registerIpc：实例 CRUD 与空间', () => {
     expect(vaultFake.rememberProxyPassword).not.toHaveBeenCalled()
   })
 
+  it('update 带 proxy 时把新代理落到该实例 session', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '编辑代理',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    harness.applyInstanceProxy.mockClear()
+
+    const updated = (await invoke('instances:update', created.value.id, {
+      proxy: { type: 'http', host: '127.0.0.1', port: 7897 }
+    })) as { ok: boolean; value: { proxy?: unknown } }
+    expect(updated.ok).toBe(true)
+    expect(harness.applyInstanceProxy).toHaveBeenCalledTimes(1)
+    expect(harness.applyInstanceProxy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.value.id, transport: 'http' })
+    )
+  })
+
+  it('update 带 proxy: null 也把直连落到 session；不带 proxy 时不动 session', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '清除代理',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    harness.applyInstanceProxy.mockClear()
+
+    const renamed = (await invoke('instances:update', created.value.id, { name: '改名' })) as {
+      ok: boolean
+    }
+    expect(renamed.ok).toBe(true)
+    expect(harness.applyInstanceProxy).not.toHaveBeenCalled()
+
+    const cleared = (await invoke('instances:update', created.value.id, { proxy: null })) as {
+      ok: boolean
+    }
+    expect(cleared.ok).toBe(true)
+    expect(harness.applyInstanceProxy).toHaveBeenCalledTimes(1)
+  })
+
+  it('应用代理失败不影响记录保存', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '代理应用失败',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    harness.applyInstanceProxy.mockRejectedValueOnce(new Error('setProxy failed'))
+    // 失败按约定只留日志，不改变 IPC 结果；此处静音以免污染测试输出。
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const updated = (await invoke('instances:update', created.value.id, {
+      proxy: { type: 'socks5', host: '127.0.0.1', port: 1080 }
+    })) as { ok: boolean; value: { proxy?: unknown } }
+    quiet.mockRestore()
+    expect(updated.ok).toBe(true)
+    expect(updated.value.proxy).toEqual({ type: 'socks5', host: '127.0.0.1', port: 1080 })
+  })
+
   it('vault 写失败时 create 回滚记录与密码，update 保持旧记录', async () => {
     vaultFake['rememberProxyPassword']!.mockRejectedValueOnce(new Error('vault down'))
     const failedCreate = (await invoke('instances:create', {

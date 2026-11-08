@@ -10,6 +10,7 @@ import { LAUNCHERS, type LocalLauncher } from '@shared/local-launch'
 import { REGISTRY_PRESETS, isAllowedNpmRegistry, registryPresetKey } from '@shared/settings'
 import { Icon } from '../lib/icons'
 import { localizeIpcMessage } from '../lib/ipc-message'
+import { buildProxyPatch, proxyDraftOf, switchProxyType } from '../lib/proxy-form'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
 import Select from './Select'
@@ -61,12 +62,7 @@ export default function EditInstanceDialog({
     record.transport === 'http' ? record.endpointUrl : ''
   )
   const existingProxy = record.transport === 'http' ? (record.proxy ?? null) : null
-  const [proxyType, setProxyType] = useState<ProxyType | 'none'>(existingProxy?.type ?? 'none')
-  const [proxyHost, setProxyHost] = useState(existingProxy?.host ?? '')
-  const [proxyPort, setProxyPort] = useState(existingProxy ? String(existingProxy.port) : '8080')
-  const [proxyUsername, setProxyUsername] = useState(existingProxy?.username ?? '')
-  const [proxyPassword, setProxyPassword] = useState('')
-  const [proxyClearPassword, setProxyClearPassword] = useState(false)
+  const [proxyDraft, setProxyDraft] = useState(() => proxyDraftOf(existingProxy))
   const [busy, setBusy] = useState(false)
   /**
    * 安装镜像（应用级设置，非实例字段）：URL 态（'' = 跟随系统 npm 配置）+ 是否选中「自定义」档。
@@ -128,53 +124,12 @@ export default function EditInstanceDialog({
         return
       }
       patch.endpointUrl = endpointUrl.trim()
-      if (proxyType === 'none') {
-        patch.proxy = null
-      } else {
-        if (proxyHost.trim() === '') {
-          toast('err', t('edit.proxyRequired'))
-          return
-        }
-        const proxyPortNumber = Number(proxyPort.trim())
-        if (!Number.isInteger(proxyPortNumber) || proxyPortNumber < 1 || proxyPortNumber > 65535) {
-          toast('err', t('edit.proxyPortInvalid'))
-          return
-        }
-        if (proxyType === 'http') {
-          const trimmedUsername = proxyUsername.trim()
-          const existingUsername =
-            record.transport === 'http' ? (record.proxy?.username ?? null) : null
-          if (trimmedUsername === '' && proxyPassword !== '') {
-            toast('err', t('edit.proxyUsernameRequired'))
-            return
-          }
-          if (trimmedUsername !== '' && proxyClearPassword) {
-            toast('err', t('edit.proxyPasswordClearConflict'))
-            return
-          }
-          if (
-            trimmedUsername !== '' &&
-            proxyPassword === '' &&
-            existingUsername !== trimmedUsername
-          ) {
-            toast('err', t('edit.proxyPasswordRequired'))
-            return
-          }
-        }
-        patch.proxy = {
-          type: proxyType,
-          host: proxyHost.trim(),
-          port: proxyPortNumber,
-          ...(proxyType === 'http' && proxyUsername.trim() !== ''
-            ? { username: proxyUsername.trim() }
-            : {}),
-          ...(proxyType === 'http' && proxyPassword !== ''
-            ? { password: proxyPassword }
-            : proxyType === 'http' && proxyClearPassword
-              ? { password: null }
-              : {})
-        }
+      const built = buildProxyPatch(proxyDraft, existingProxy)
+      if (!built.ok) {
+        toast('err', t(built.messageKey))
+        return
       }
+      patch.proxy = built.proxy
     }
     setBusy(true)
     const result = await window.dshHub?.instances.update(record.id, patch)
@@ -404,16 +359,10 @@ export default function EditInstanceDialog({
             <label htmlFor="edit-proxy-type">{t('edit.proxyTypeLabel')}</label>
             <Select
               id="edit-proxy-type"
-              value={proxyType}
-              onChange={(value) => {
-                const next = value as ProxyType | 'none'
-                setProxyType(next)
-                if (next === 'socks5') {
-                  setProxyUsername('')
-                  setProxyPassword('')
-                  setProxyClearPassword(false)
-                }
-              }}
+              value={proxyDraft.type}
+              onChange={(value) =>
+                setProxyDraft((current) => switchProxyType(current, value as ProxyType | 'none'))
+              }
               options={[
                 { value: 'none', label: t('wizard.proxyNone') },
                 { value: 'http', label: t('wizard.proxyHttp') },
@@ -424,7 +373,7 @@ export default function EditInstanceDialog({
             <span className="hint">{t('edit.proxyHint')}</span>
           </div>
 
-          {proxyType !== 'none' && (
+          {proxyDraft.type !== 'none' && (
             <>
               <div className="grid-2 mt8">
                 <div className="field">
@@ -433,8 +382,10 @@ export default function EditInstanceDialog({
                     className="input num"
                     id="edit-proxy-host"
                     placeholder="127.0.0.1"
-                    value={proxyHost}
-                    onChange={(event) => setProxyHost(event.target.value)}
+                    value={proxyDraft.host}
+                    onChange={(event) =>
+                      setProxyDraft((current) => ({ ...current, host: event.target.value }))
+                    }
                     data-testid="edit-proxy-host"
                   />
                 </div>
@@ -445,12 +396,14 @@ export default function EditInstanceDialog({
                     id="edit-proxy-port"
                     inputMode="numeric"
                     placeholder="8080"
-                    value={proxyPort}
-                    onChange={(event) => setProxyPort(event.target.value)}
+                    value={proxyDraft.port}
+                    onChange={(event) =>
+                      setProxyDraft((current) => ({ ...current, port: event.target.value }))
+                    }
                     data-testid="edit-proxy-port"
                   />
                 </div>
-                {proxyType === 'http' && (
+                {proxyDraft.type === 'http' && (
                   <>
                     <div className="field">
                       <label htmlFor="edit-proxy-username">{t('wizard.proxyUsernameLabel')}</label>
@@ -458,8 +411,10 @@ export default function EditInstanceDialog({
                         className="input"
                         id="edit-proxy-username"
                         autoComplete="off"
-                        value={proxyUsername}
-                        onChange={(event) => setProxyUsername(event.target.value)}
+                        value={proxyDraft.username}
+                        onChange={(event) =>
+                          setProxyDraft((current) => ({ ...current, username: event.target.value }))
+                        }
                         data-testid="edit-proxy-username"
                       />
                     </div>
@@ -471,10 +426,14 @@ export default function EditInstanceDialog({
                         type="password"
                         autoComplete="new-password"
                         placeholder={t('edit.proxyPasswordKeep')}
-                        value={proxyPassword}
+                        value={proxyDraft.password}
                         onChange={(event) => {
-                          setProxyPassword(event.target.value)
-                          if (event.target.value !== '') setProxyClearPassword(false)
+                          const value = event.target.value
+                          setProxyDraft((current) => ({
+                            ...current,
+                            password: value,
+                            ...(value !== '' ? { clearPassword: false } : {})
+                          }))
                         }}
                         data-testid="edit-proxy-password"
                       />
@@ -482,15 +441,21 @@ export default function EditInstanceDialog({
                   </>
                 )}
               </div>
-              {proxyType === 'socks5' && <p className="meta mt8">{t('wizard.proxySocksNoAuth')}</p>}
-              {record.proxy && proxyType === 'http' && (
+              {proxyDraft.type === 'socks5' && (
+                <p className="meta mt8">{t('wizard.proxySocksNoAuth')}</p>
+              )}
+              {existingProxy && proxyDraft.type === 'http' && (
                 <label className="row mt8" style={{ gap: 8, alignItems: 'center' }}>
                   <input
                     type="checkbox"
-                    checked={proxyClearPassword}
+                    checked={proxyDraft.clearPassword}
                     onChange={(event) => {
-                      setProxyClearPassword(event.target.checked)
-                      if (event.target.checked) setProxyPassword('')
+                      const checked = event.target.checked
+                      setProxyDraft((current) => ({
+                        ...current,
+                        clearPassword: checked,
+                        ...(checked ? { password: '' } : {})
+                      }))
                     }}
                     data-testid="edit-proxy-clear-password"
                   />

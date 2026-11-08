@@ -151,6 +151,7 @@ export interface RegisterHarness {
   clearPartitionSession: MockFn
   closeInstanceView: MockFn
   reloadInstanceView: MockFn
+  applyInstanceProxy: MockFn
   showInstanceTooltip: MockFn
   hideInstanceTooltip: MockFn
   findInInstanceView: MockFn
@@ -255,6 +256,7 @@ export async function setupRegister(
   const clearPartitionSession = vi.fn(async () => undefined)
   const closeInstanceView = vi.fn()
   const reloadInstanceView = vi.fn(async () => undefined)
+  const applyInstanceProxy = vi.fn(async () => undefined)
   const showInstanceTooltip = vi.fn(async () => undefined)
   const hideInstanceTooltip = vi.fn()
   const findInInstanceView = vi.fn()
@@ -415,6 +417,7 @@ export async function setupRegister(
     clearPartitionSession: clearPartitionSession as never,
     closeInstanceView: closeInstanceView as never,
     reloadInstanceView: reloadInstanceView as never,
+    applyInstanceProxy: applyInstanceProxy as never,
     showInstanceTooltip: showInstanceTooltip as never,
     hideInstanceTooltip: hideInstanceTooltip as never,
     findInInstanceView: findInInstanceView as never,
@@ -464,6 +467,7 @@ export async function setupRegister(
     clearPartitionSession,
     closeInstanceView,
     reloadInstanceView,
+    applyInstanceProxy,
     showInstanceTooltip,
     hideInstanceTooltip,
     findInInstanceView,

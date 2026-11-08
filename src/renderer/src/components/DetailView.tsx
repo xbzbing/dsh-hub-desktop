@@ -12,6 +12,7 @@ import { useDshVersionControl } from './useDshVersionControl'
 import { showAuthActions } from '../lib/auth-actions'
 import { localizeIpcMessage } from '../lib/ipc-message'
 import ConnectionCard from './detail/ConnectionCard'
+import ProxyDialog from './detail/ProxyDialog'
 import RuntimeCard from './detail/RuntimeCard'
 import ExternalTokenEditor from './detail/ExternalTokenEditor'
 import ExternalDshCard from './detail/ExternalDshCard'
@@ -45,6 +46,7 @@ export default function DetailView(): ReactNode {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [trashSpace, setTrashSpace] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [showProxy, setShowProxy] = useState(false)
   /** 检测尚未由 Hub 管理的本地 dsh web 进程。 */
   const [externalDsh, setExternalDsh] = useState<ExternalDshWebSnapshot[]>([])
   const [adopting, setAdopting] = useState<number | null>(null)
@@ -349,6 +351,7 @@ export default function DetailView(): ReactNode {
           }
           onDisconnect={() => void disconnectWorkspace(record.id)}
           onLogout={() => void logout()}
+          onEditProxy={record.transport === 'http' ? () => setShowProxy(true) : undefined}
         />
 
         {/* 凭据默认持久化，用户可在实例详情中显式取消。 */}
@@ -437,6 +440,10 @@ export default function DetailView(): ReactNode {
           }}
           onConfirm={() => void deleteInstance()}
         />
+      )}
+
+      {showProxy && (
+        <ProxyDialog key={record.id} record={record} onClose={() => setShowProxy(false)} />
       )}
 
       {showEdit && (

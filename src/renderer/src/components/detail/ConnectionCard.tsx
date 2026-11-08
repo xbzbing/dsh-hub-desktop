@@ -22,6 +22,8 @@ export interface ConnectionCardProps {
   onOpenDirectory?: () => void
   onDisconnect: () => void
   onLogout: () => void
+  /** 打开代理编辑对话框；仅 http 实例提供，其余传输类型没有代理。 */
+  onEditProxy?: () => void
 }
 
 /** 连接方式卡：地址/端口/认证模式等事实文本，登录/复制地址/在浏览器中打开/复制 token/打开目录/断开/登出操作。 */
@@ -37,7 +39,8 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
     onCopyToken,
     onOpenDirectory,
     onDisconnect,
-    onLogout
+    onLogout,
+    onEditProxy
   } = props
   return (
     <div className="card selectable">
@@ -79,8 +82,20 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
                   : t('detail.authAuto')}
             </dd>
             <dt>{t('detail.proxy')}</dt>
-            <dd className="num" data-testid="detail-proxy">
-              {record.proxy ? proxyAddress(record.proxy) : t('detail.proxyNone')}
+            <dd className="proxy-row" data-testid="detail-proxy">
+              <span className="num">
+                {record.proxy ? proxyAddress(record.proxy) : t('detail.proxyNone')}
+              </span>
+              {onEditProxy && (
+                <button
+                  className="btn btn-ghost btn-sm kv-inline-btn"
+                  onClick={onEditProxy}
+                  data-testid="edit-proxy-btn"
+                  title={t('detail.editProxy')}
+                >
+                  <Icon name="edit" /> {t('detail.editProxy')}
+                </button>
+              )}
             </dd>
           </>
         )}

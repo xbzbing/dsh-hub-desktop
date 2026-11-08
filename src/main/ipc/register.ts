@@ -6,6 +6,7 @@ import { ipcMain } from 'electron'
 import { z } from 'zod'
 import { IPC, type AppUpdateCheck } from '@shared/bridge'
 import type {
+  HttpInstance,
   InstanceRecord,
   IpcResult,
   WorkspaceFindInput,
@@ -117,6 +118,15 @@ export interface SettingsDeps {
   openDataDir?: () => Promise<void>
 }
 
+/** 代理装配依赖。 */
+export interface ProxyDeps {
+  /**
+   * 把实例当前配置的代理落到其分区 session；实例记录更新（含编辑代理）后由装配层调用。
+   * 缺省（单测）时不改写任何 session。
+   */
+  applyInstanceProxy?: (instance: HttpInstance) => Promise<void>
+}
+
 /** 本地隔离空间通道依赖。 */
 export interface SpaceDeps {
   /** 只列出 Hub 自己管理的隔离空间；调用方不能提供路径。 */
@@ -163,6 +173,7 @@ export interface IpcDeps
     AuthDeps,
     VaultDeps,
     SettingsDeps,
+    ProxyDeps,
     SpaceDeps,
     VersionDeps,
     PluginDeps,
