@@ -91,10 +91,15 @@ export function checkPluginName(name: string, installedNames: readonly string[])
     }
   }
 
+  // 同 scope 是同一发布者的正常共存（升级、同作者的第二个插件），不算仿冒；
+  // 只有「相似但不同」的 scope 才可能是抢注的近似域。
   const targetScope = target.scope
   if (targetScope !== null) {
     const similarScope = others.find(
-      (item) => item.scope !== null && distance(targetScope, item.scope, 1) <= 1
+      (item) =>
+        item.scope !== null &&
+        item.scope !== targetScope &&
+        distance(targetScope, item.scope, 1) <= 1
     )
     if (similarScope !== undefined && similarScope.scope !== null) {
       return {

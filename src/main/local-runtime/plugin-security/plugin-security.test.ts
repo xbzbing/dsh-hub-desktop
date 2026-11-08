@@ -198,6 +198,20 @@ describe('名称仿冒与判定', () => {
     })
   })
 
+  it('与已装插件同 scope 视为同一发布者，只有相似但不同的 scope 才提示', () => {
+    // 升级或同作者第二个插件：scope 完全相同，不是仿冒。
+    expect(
+      checkPluginName('@michengai/dsh-skills-manager', ['@michengai/dsh-archive-manager'])
+    ).toMatchObject({ level: 'pass', code: 'name.ok' })
+    // 抢注近似域：差一个字符，提示。
+    expect(
+      checkPluginName('@micheng-ai/dsh-skills-manager', ['@michengai/dsh-archive-manager'])
+    ).toMatchObject({
+      level: 'warn',
+      code: 'name.scope-similar'
+    })
+  })
+
   it('danger 优先于 warn，blocked 不接受覆盖', () => {
     const report = buildReport({
       spec: 'demo@1.0.0',
