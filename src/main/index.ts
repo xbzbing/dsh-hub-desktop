@@ -291,7 +291,7 @@ if (process.env.DSH_HUB_E2E_PASSWORD_STORE) {
 // 否则工作区 dsh web 按 navigator 检测出英文(职责与约束见 startup-language.ts)。
 pinStartupLanguage()
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return
   registerRendererProtocol()
 
@@ -316,11 +316,11 @@ void app.whenReady().then(() => {
       })
     )
     .catch((error: unknown) => console.error('[main] 插件操作日志归并失败：', error))
-  const vaultControl = createVaultControl(dataRoot)
+  const vaultControl = await createVaultControl(dataRoot)
   vault = vaultControl.vault
   // 代理认证由 Chromium 在页面/独立窗口发起；按分区 session 找回实例与 vault 密码。
   const instanceProxy = createInstanceProxy({
-    getProxyPassword: (instanceId) => vault?.getProxyPassword(instanceId) ?? null
+    getProxyPassword: async (instanceId) => (await vault?.getProxyPassword(instanceId)) ?? null
   })
   app.on('login', (event, webContents, _details, authInfo, callback) => {
     instanceProxy.handleLogin(event, webContents, authInfo, callback)

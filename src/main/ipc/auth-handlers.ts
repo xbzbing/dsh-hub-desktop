@@ -50,11 +50,14 @@ export function registerAuthHandlers(deps: AuthHandlerDeps, wrap: IpcWrap): Auth
    * 主进程自行读取。门禁:策略允许记住密码且 vault 里确有该实例的密码,
    * 否则 invalid-input(渲染层无从绕过:通道只收实例 id 与可选 OTP)。
    */
-  function loginWithStored(instanceId: string, otp?: string): Promise<AuthStateSnapshot | null> {
+  async function loginWithStored(
+    instanceId: string,
+    otp?: string
+  ): Promise<AuthStateSnapshot | null> {
     if (!deps.vault.getPolicy(instanceId).rememberPassword) {
       throw new InstanceStoreError('invalid-input', '未勾选「记住密码」，没有已保存的密码可用')
     }
-    const stored = deps.vault.getPassword(instanceId)
+    const stored = await deps.vault.getPassword(instanceId)
     if (stored === null) {
       throw new InstanceStoreError('invalid-input', '保险库中没有该实例的已存密码')
     }

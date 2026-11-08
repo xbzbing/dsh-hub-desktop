@@ -14,11 +14,15 @@ export interface VaultControl {
 
 /**
  * safeStorage 装配与凭据保险库初始化。
+ *
+ * Electron 45 起同步 safeStorage API 已废弃：可用性、加解密都必须走异步接口，
+ * 否则启动与读写凭据时都会打印弃用警告。异步加密器在首次调用时惰性初始化，
+ * 因此必须在 app ready 之后执行。
  */
-export function createVaultControl(dataRoot: string): VaultControl {
-  const safeStorageAvailable = (() => {
+export async function createVaultControl(dataRoot: string): Promise<VaultControl> {
+  const safeStorageAvailable = await (async () => {
     try {
-      return safeStorage.isEncryptionAvailable()
+      return await safeStorage.isAsyncEncryptionAvailable()
     } catch {
       return false
     }
@@ -42,8 +46,9 @@ export function createVaultControl(dataRoot: string): VaultControl {
     filePath: join(dataRoot, 'vault', 'credentials.json'),
     crypto: {
       isAvailable: () => safeStorageAvailable,
-      encrypt: (plain) => safeStorage.encryptString(plain).toString('base64'),
-      decrypt: (payload) => safeStorage.decryptString(Buffer.from(payload, 'base64'))
+      encrypt: async (plain) => (await safeStorage.encryptStringAsync(plain)).toString('base64'),
+      decrypt: async (payload) =>
+        (await safeStorage.decryptStringAsync(Buffer.from(payload, 'base64'))).result
     }
   })
   return {

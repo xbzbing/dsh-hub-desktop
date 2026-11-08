@@ -50,7 +50,7 @@ export async function restoreSessionFromVault(
   const now = deps.now ?? (() => Date.now())
   try {
     if (!deps.vault.getPolicy(instanceId).rememberSession) return false
-    const stored = deps.vault.getSession(instanceId)
+    const stored = await deps.vault.getSession(instanceId)
     if (!stored || stored.value === '') return false
 
     if (stored.expiresAt !== null && stored.expiresAt <= now()) {

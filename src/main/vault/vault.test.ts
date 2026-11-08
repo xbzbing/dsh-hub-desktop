@@ -9,8 +9,8 @@ import type { StoredSession, VaultCrypto } from './vault'
 function fakeCrypto(available = true): VaultCrypto {
   return {
     isAvailable: () => available,
-    encrypt: (plain) => `enc:${Buffer.from(plain, 'utf8').toString('base64')}`,
-    decrypt: (payload) => {
+    encrypt: async (plain) => `enc:${Buffer.from(plain, 'utf8').toString('base64')}`,
+    decrypt: async (payload) => {
       if (!payload.startsWith('enc:')) throw new Error('密文损坏')
       return Buffer.from(payload.slice(4), 'base64').toString('utf8')
     }
@@ -53,15 +53,15 @@ describe('vault（ 凭据存储策略）', () => {
     expect(vault.status()).toEqual({ available: true, degraded: false, instanceCount: 0 })
     expect(vault.getPolicy('i1')).toEqual({ rememberPassword: true, rememberSession: true })
     expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: true, rememberSession: true })
-    expect(vault.getPassword('i1')).toBeNull()
-    expect(vault.getSession('i1')).toBeNull()
+    expect(await vault.getPassword('i1')).toBeNull()
+    expect(await vault.getSession('i1')).toBeNull()
     expect(vault.rememberedIds()).toEqual([])
   })
 
   it('默认策略可保存凭据；显式取消后拒绝落盘', async () => {
     const vault = createVault({ filePath, crypto: fakeCrypto() })
     await vault.rememberPassword('i-default', 'hunter2')
-    expect(vault.getPassword('i-default')).toBe('hunter2')
+    expect(await vault.getPassword('i-default')).toBe('hunter2')
     await vault.setPolicy('i1', { rememberPassword: false, rememberSession: false })
     await expect(vault.rememberPassword('i1', 'hunter2')).rejects.toThrow()
     await expect(vault.rememberSession('i1', SESSION)).rejects.toThrow()
@@ -75,19 +75,19 @@ describe('vault（ 凭据存储策略）', () => {
     expect(vault.hasPassword('i1')).toBe(false)
     await vault.rememberPassword('i1', 'hunter2')
     expect(vault.hasPassword('i1')).toBe(true)
-    expect(vault.getPassword('i1')).toBe('hunter2')
+    expect(await vault.getPassword('i1')).toBe('hunter2')
     await vault.forgetPassword('i1')
     expect(vault.hasPassword('i1')).toBe(false)
-    expect(vault.getPassword('i1')).toBeNull()
+    expect(await vault.getPassword('i1')).toBeNull()
   })
 
   it('勾选后:会话 Cookie 记住 → 读回(含 expiresAt)→ 清除', async () => {
     const vault = await optIn()
     await vault.rememberSession('i1', SESSION)
     expect(vault.hasSession('i1')).toBe(true)
-    expect(vault.getSession('i1')).toEqual(SESSION)
+    expect(await vault.getSession('i1')).toEqual(SESSION)
     await vault.forgetSession('i1')
-    expect(vault.getSession('i1')).toBeNull()
+    expect(await vault.getSession('i1')).toBeNull()
   })
 
   it('落盘内容是密文(绝不出现明文密码/会话值)', async () => {
@@ -118,34 +118,34 @@ describe('vault（ 凭据存储策略）', () => {
     await first.rememberSession('i1', SESSION)
 
     const second = createVault({ filePath, crypto: fakeCrypto() })
-    expect(second.getPassword('i1')).toBe('hunter2')
-    expect(second.getSession('i1')).toEqual(SESSION)
+    expect(await second.getPassword('i1')).toBe('hunter2')
+    expect(await second.getSession('i1')).toEqual(SESSION)
     expect(second.getPolicy('i1')).toEqual(BOTH)
   })
 
   it('外部本机 dsh token 加密落盘并在重启后可读，且不依赖网关密码策略', async () => {
     const first = createVault({ filePath, crypto: fakeCrypto() })
     await first.rememberExternalAccessToken('i1', 'external-token')
-    expect(first.getExternalAccessToken('i1')).toBe('external-token')
+    expect(await first.getExternalAccessToken('i1')).toBe('external-token')
     expect(await readFile(filePath, 'utf8')).not.toContain('external-token')
 
     const restarted = createVault({ filePath, crypto: fakeCrypto() })
-    expect(restarted.getExternalAccessToken('i1')).toBe('external-token')
+    expect(await restarted.getExternalAccessToken('i1')).toBe('external-token')
     await restarted.forgetExternalAccessToken('i1')
-    expect(restarted.getExternalAccessToken('i1')).toBeNull()
+    expect(await restarted.getExternalAccessToken('i1')).toBeNull()
   })
 
   it('代理密码加密落盘、重启后可读，且不依赖网关密码策略', async () => {
     const first = createVault({ filePath, crypto: fakeCrypto() })
     await first.rememberProxyPassword('i1', 'proxy-secret')
     expect(first.hasProxyPassword('i1')).toBe(true)
-    expect(first.getProxyPassword('i1')).toBe('proxy-secret')
+    expect(await first.getProxyPassword('i1')).toBe('proxy-secret')
     expect(await readFile(filePath, 'utf8')).not.toContain('proxy-secret')
 
     const restarted = createVault({ filePath, crypto: fakeCrypto() })
-    expect(restarted.getProxyPassword('i1')).toBe('proxy-secret')
+    expect(await restarted.getProxyPassword('i1')).toBe('proxy-secret')
     await restarted.forgetProxyPassword('i1')
-    expect(restarted.getProxyPassword('i1')).toBeNull()
+    expect(await restarted.getProxyPassword('i1')).toBeNull()
     await expect(restarted.rememberProxyPassword('i1', '')).rejects.toThrow()
   })
 
@@ -155,11 +155,11 @@ describe('vault（ 凭据存储策略）', () => {
     await vault.rememberSession('i1', SESSION)
 
     await vault.setPolicy('i1', { rememberPassword: false, rememberSession: true })
-    expect(vault.getPassword('i1')).toBeNull()
-    expect(vault.getSession('i1')).toEqual(SESSION)
+    expect(await vault.getPassword('i1')).toBeNull()
+    expect(await vault.getSession('i1')).toEqual(SESSION)
 
     await vault.setPolicy('i1', { rememberPassword: false, rememberSession: false })
-    expect(vault.getSession('i1')).toBeNull()
+    expect(await vault.getSession('i1')).toBeNull()
     expect(vault.getPolicy('i1')).toEqual({ rememberPassword: false, rememberSession: false })
     expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: true, rememberSession: true })
     expect(vault.rememberedIds()).toEqual([])
@@ -173,7 +173,7 @@ describe('vault（ 凭据存储策略）', () => {
     const vault = await optIn({}, false)
     expect(vault.status()).toEqual({ available: false, degraded: true, instanceCount: 0 })
     await vault.rememberPassword('i1', 'hunter2')
-    expect(vault.getPassword('i1')).toBe('hunter2') // 本会话可用
+    expect(await vault.getPassword('i1')).toBe('hunter2') // 本会话可用
     // 关键:降级模式绝不把明文写到磁盘
     await expect(readFile(filePath, 'utf8')).rejects.toThrow()
   })
@@ -182,7 +182,7 @@ describe('vault（ 凭据存储策略）', () => {
     const vault = await optIn({}, false)
     await vault.rememberPassword('i1', 'hunter2')
     const restarted = createVault({ filePath, crypto: fakeCrypto(false) })
-    expect(restarted.getPassword('i1')).toBeNull()
+    expect(await restarted.getPassword('i1')).toBeNull()
   })
 
   it('解密失败只丢该条目,不影响其它实例', async () => {
@@ -203,9 +203,9 @@ describe('vault（ 凭据存储策略）', () => {
       crypto: fakeCrypto(),
       onError: (error) => errors.push(error)
     })
-    expect(reopened.getPassword('i1')).toBeNull()
+    expect(await reopened.getPassword('i1')).toBeNull()
     expect(errors).toHaveLength(1)
-    expect(reopened.getPassword('i2')).toBe('p2')
+    expect(await reopened.getPassword('i2')).toBe('p2')
     expect(reopened.rememberedIds()).toEqual(['i2'])
 
     // 读路径不写盘:坏条目只是从内存里丢掉,文件由下一次显式写入收敛
@@ -263,7 +263,7 @@ describe('vault（ 凭据存储策略）', () => {
     await vault.setPolicy('i1', BOTH)
     await vault.rememberSession('i1', SESSION)
     const reloaded = createVault({ filePath, crypto: fakeCrypto(), onError: () => undefined })
-    expect(reloaded.getSession('i1')).toEqual(SESSION)
+    expect(await reloaded.getSession('i1')).toEqual(SESSION)
     // 新实例再读(触发 load)不再产生新错误 —— 损坏已被隔离干净
     const errors2: unknown[] = []
     createVault({ filePath, crypto: fakeCrypto(), onError: (e) => errors2.push(e) })
@@ -281,7 +281,7 @@ describe('vault（ 凭据存储策略）', () => {
           : vault.forgetSession('i1')
       )
     )
-    expect(vault.getSession('i1')).toBeNull()
+    expect(await vault.getSession('i1')).toBeNull()
     // 文件存在且为合法 JSON、无残留 tmp
     const raw = await readFile(filePath, 'utf8')
     expect(() => JSON.parse(raw)).not.toThrow()
@@ -289,7 +289,7 @@ describe('vault（ 凭据存储策略）', () => {
     expect(leftovers).toEqual([])
     // 并发写后的文件没有损坏:新实例读到的终态一致
     const reloaded = createVault({ filePath, crypto: fakeCrypto(), onError: () => undefined })
-    expect(reloaded.getSession('i1')).toBeNull()
+    expect(await reloaded.getSession('i1')).toBeNull()
   })
 
   it('磁盘被篡改的 policy 垃圾值在重开时收敛为默认(不勾选)', async () => {
@@ -340,11 +340,11 @@ describe('vault（ 凭据存储策略）', () => {
     await vault.rememberPassword('i2', 'p2')
 
     await vault.forgetInstance('i1')
-    expect(vault.getPassword('i1')).toBeNull()
-    expect(vault.getSession('i1')).toBeNull()
+    expect(await vault.getPassword('i1')).toBeNull()
+    expect(await vault.getSession('i1')).toBeNull()
     expect(vault.getPolicy('i1')).toEqual({ rememberPassword: true, rememberSession: true })
     expect(DEFAULT_VAULT_POLICY).toEqual({ rememberPassword: true, rememberSession: true })
-    expect(vault.getPassword('i2')).toBe('p2')
+    expect(await vault.getPassword('i2')).toBe('p2')
     expect(vault.getPolicy('i2')).toEqual(BOTH)
 
     await vault.clearAll()
@@ -371,7 +371,7 @@ describe('vault（ 凭据存储策略）', () => {
     const parsed = JSON.parse(await readFile(filePath, 'utf8')) as {
       items: Record<string, { session: string }>
     }
-    parsed.items['i1']!.session = encryption.encrypt('sess-secret-not-json')
+    parsed.items['i1']!.session = await encryption.encrypt('sess-secret-not-json')
     await writeFile(filePath, JSON.stringify(parsed))
 
     const errors: unknown[] = []
@@ -380,7 +380,7 @@ describe('vault（ 凭据存储策略）', () => {
       crypto: encryption,
       onError: (error) => errors.push(error)
     })
-    expect(reopened.getSession('i1')).toBeNull()
+    expect(await reopened.getSession('i1')).toBeNull()
     expect(errors).toHaveLength(1)
     // 关键断言:错误对象里不得出现解密后的内容
     const serialized =

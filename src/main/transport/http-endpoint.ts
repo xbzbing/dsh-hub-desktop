@@ -16,7 +16,7 @@ export interface HttpEndpointOptions {
   /** 应用实例代理等前置动作；在探测前 await。 */
   prepare?: (instance: HttpInstance) => Promise<void>
   /** 绑定实例 session（含代理）的 fetch；缺省用 Node 全局 fetch。 */
-  fetchFor?: (instance: HttpInstance) => typeof fetch
+  fetchFor?: (instance: HttpInstance) => Promise<typeof fetch>
   detect?: (url: string) => Promise<AuthDetection>
   healthTimeoutMs?: number
   healthProbeRetries?: number
@@ -78,7 +78,7 @@ export function createHttpEndpoints(options: HttpEndpointOptions = {}): HttpEndp
     try {
       const url = httpDirectEndpoint(instance)
       await options.prepare?.(instance)
-      const fetchImpl = options.fetchFor?.(instance) ?? fetch
+      const fetchImpl = (await options.fetchFor?.(instance)) ?? fetch
       const probeImpl = options.probe ?? createHttpHealthProbe(fetchImpl)
       const detectImpl =
         options.detect ?? ((target: string) => detectAuthMode(target, { fetchImpl }))

@@ -16,7 +16,7 @@ import { createSessionFetch, type ProxyAuth } from './session-fetch'
 
 export interface InstanceProxyOptions {
   /** 从 vault 读取代理密码；没有则返回 null。 */
-  getProxyPassword: (instanceId: string) => string | null
+  getProxyPassword: (instanceId: string) => Promise<string | null>
   /** 测试注入；默认按实例 id 取 `persist:inst-<id>`。 */
   sessionFor?: (instanceId: string) => Session
   onError?: (error: unknown) => void
@@ -30,7 +30,7 @@ export interface InstanceProxy {
   /** 应用实例当前配置的代理；配置未变时直接返回。 */
   apply(instance: HttpInstance): Promise<void>
   /** 返回绑定到实例 session 与代理认证的 fetch。 */
-  fetchFor(instance: HttpInstance): typeof fetch
+  fetchFor(instance: HttpInstance): Promise<typeof fetch>
   /** 代理要求认证时，按 session 找到实例并回填用户名/密码；返回是否已处理。 */
   handleLogin(
     event: ProxyLoginEvent,
@@ -62,10 +62,10 @@ export function createInstanceProxy(options: InstanceProxyOptions): InstanceProx
   const instanceBySession = new Map<Session, string>()
   const sessionById = new Map<string, Session>()
 
-  function authFor(instance: HttpInstance): ProxyAuth | null {
+  async function authFor(instance: HttpInstance): Promise<ProxyAuth | null> {
     const username = proxyUsesAuth(instance.proxy) ? instance.proxy?.username : null
     if (!username) return null
-    const password = options.getProxyPassword(instance.id)
+    const password = await options.getProxyPassword(instance.id)
     // 空串同样视为无密码：避免把损坏的 vault 值交给代理反复认证。
     if (!password) return null
     return { username, password }
@@ -76,8 +76,8 @@ export function createInstanceProxy(options: InstanceProxyOptions): InstanceProx
   }
 
   /** 记录最新凭据；只有用户名/密码实际变化时递增版本。 */
-  function rememberAuth(instance: HttpInstance): number {
-    const next = authFor(instance)
+  async function rememberAuth(instance: HttpInstance): Promise<number> {
+    const next = await authFor(instance)
     const previous = authById.get(instance.id) ?? null
     let revision = authRevisionById.get(instance.id) ?? 0
     if (!sameAuth(previous, next)) {
@@ -129,7 +129,7 @@ export function createInstanceProxy(options: InstanceProxyOptions): InstanceProx
 
   return {
     async apply(instance) {
-      const revision = rememberAuth(instance)
+      const revision = await rememberAuth(instance)
       const rules = proxyRulesFor(instance.proxy) ?? 'direct'
       const previous = chains.get(instance.id) ?? Promise.resolve()
       const next = previous.catch(() => undefined).then(() => applyNow(instance, rules, revision))
@@ -141,11 +141,11 @@ export function createInstanceProxy(options: InstanceProxyOptions): InstanceProx
       }
     },
 
-    fetchFor(instance) {
+    async fetchFor(instance) {
       const target = sessionFor(instance.id)
       rememberSession(instance.id, target)
       const previousRevision = authRevisionById.get(instance.id)
-      const revision = rememberAuth(instance)
+      const revision = await rememberAuth(instance)
       // 正常路径 apply 已处理连接清理；直接取 fetch 时仍保证换密码后旧连接不残留。
       if (previousRevision !== undefined && revision !== previousRevision) {
         void target.closeAllConnections().catch(onError)

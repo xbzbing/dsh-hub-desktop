@@ -219,7 +219,7 @@ export function registerRuntimeHandlers(
       }
       const match = external.find((item) => item.port === instance.port)
       if (match && match.port !== null) {
-        const token = deps.vault.getExternalAccessToken(instanceId)
+        const token = await deps.vault.getExternalAccessToken(instanceId)
         if (!token) {
           throw new InstanceStoreError(
             'invalid-state',
@@ -409,7 +409,7 @@ export function registerRuntimeHandlers(
           throw new InstanceStoreError('invalid-state', LISTEN_PORT_UNDETERMINED)
         }
         const previousAccess = externalAccessUrls.get(instanceId)
-        const previousToken = deps.vault.getExternalAccessToken(instanceId)
+        const previousToken = await deps.vault.getExternalAccessToken(instanceId)
         const currentRuntime = deps.runtime.statusOf(instanceId)
         const replacingExternal = deps.runtime.runningIds().includes(instanceId)
         if (replacingExternal && currentRuntime?.runtimeSource !== 'external') {

@@ -247,7 +247,7 @@ export function registerInstanceHandlers(
         let previousPassword: string | null = null
         if (proxy !== undefined) {
           if (current?.transport === 'http' && current.proxy?.username) {
-            previousPassword = deps.vault.getProxyPassword(instanceId) || null
+            previousPassword = (await deps.vault.getProxyPassword(instanceId)) || null
           }
           try {
             if (proxy === null || proxy.password === null || !proxy.username) {

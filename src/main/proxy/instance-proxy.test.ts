@@ -34,7 +34,7 @@ describe('createInstanceProxy', () => {
   it('把 HTTP / SOCKS5 代理落到实例 session，配置未变时不重复设置', async () => {
     const target = fakeSession()
     const proxy = createInstanceProxy({
-      getProxyPassword: () => null,
+      getProxyPassword: async () => null,
       sessionFor: () => target as never
     })
     const http = instance({ type: 'http', host: '127.0.0.1', port: 7897 })
@@ -60,7 +60,7 @@ describe('createInstanceProxy', () => {
     let password = 'old-secret'
     const target = fakeSession()
     const proxy = createInstanceProxy({
-      getProxyPassword: () => password,
+      getProxyPassword: async () => password,
       sessionFor: () => target as never
     })
     const http = instance({ type: 'http', host: '127.0.0.1', port: 7897, username: 'alice' })
@@ -83,21 +83,21 @@ describe('createInstanceProxy', () => {
     let password = 'old-secret'
     const target = fakeSession()
     const proxy = createInstanceProxy({
-      getProxyPassword: () => password,
+      getProxyPassword: async () => password,
       sessionFor: () => target as never
     })
     const http = instance({ type: 'http', host: '127.0.0.1', port: 7897, username: 'alice' })
     await proxy.apply(http)
     expect(target.closeAllConnections).toHaveBeenCalledTimes(1)
     password = 'new-secret'
-    proxy.fetchFor(http)
-    await vi.waitFor(() => expect(target.closeAllConnections).toHaveBeenCalledTimes(2))
+    await proxy.fetchFor(http)
+    expect(target.closeAllConnections).toHaveBeenCalledTimes(2)
   })
 
   it('清空代理时显式回到 direct', async () => {
     const target = fakeSession()
     const proxy = createInstanceProxy({
-      getProxyPassword: () => null,
+      getProxyPassword: async () => null,
       sessionFor: () => target as never
     })
     await proxy.apply(instance({ type: 'http', host: 'proxy', port: 8080 }))
@@ -108,7 +108,7 @@ describe('createInstanceProxy', () => {
   it('代理认证按 session 找回实例，并从 vault 读取密码', async () => {
     const target = fakeSession()
     const proxy = createInstanceProxy({
-      getProxyPassword: () => 'secret',
+      getProxyPassword: async () => 'secret',
       sessionFor: () => target as never
     })
     await proxy.apply(instance({ type: 'http', host: 'proxy', port: 8080, username: 'alice' }))
@@ -129,7 +129,7 @@ describe('createInstanceProxy', () => {
     const target = fakeSession()
     const proxy = createInstanceProxy({
       // 空串视同未保存密码，不能拿去代理认证。
-      getProxyPassword: () => '',
+      getProxyPassword: async () => '',
       sessionFor: () => target as never
     })
     await proxy.apply(instance({ type: 'http', host: 'proxy', port: 8080, username: 'alice' }))

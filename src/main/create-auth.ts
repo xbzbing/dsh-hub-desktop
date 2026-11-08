@@ -55,7 +55,7 @@ export function createAuthController(deps: AuthControllerDeps): AuthController {
       if (!vault.getPolicy(instanceId).rememberSession) return
       const cookie = registry.sessionCookie(instanceId)
       if (!cookie || cookie.value === '') return
-      const existing = vault.getSession(instanceId)
+      const existing = await vault.getSession(instanceId)
       if (existing?.value === cookie.value) return
       await vault.rememberSession(instanceId, cookie)
       deps.auditWrite({ instanceId, event: 'vault-write', result: 'session' })
@@ -84,7 +84,7 @@ export function createAuthController(deps: AuthControllerDeps): AuthController {
       if (record?.transport !== 'http' || !deps.proxy) return undefined
       // 在创建 fetch 的同一调用里应用代理，避免 resolveEndpoint 与这里各读一次记录造成配置错位。
       await deps.proxy.apply(record)
-      return deps.proxy.fetchFor(record)
+      return await deps.proxy.fetchFor(record)
     },
     onState: (instanceId, state) => {
       for (const win of BrowserWindow.getAllWindows()) {

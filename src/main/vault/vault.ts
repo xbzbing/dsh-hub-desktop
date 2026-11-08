@@ -36,10 +36,10 @@ import type { VaultPolicy as SharedVaultPolicy } from '@shared/contracts'
 export interface VaultCrypto {
   /** 系统加密是否可用;false 即降级为内存模式 */
   isAvailable(): boolean
-  /** 明文 → 可落盘字符串(通常 base64) */
-  encrypt(plain: string): string
+  /** 明文 → 可落盘字符串(通常 base64)；safeStorage 只提供异步加密 */
+  encrypt(plain: string): Promise<string>
   /** 落盘字符串 → 明文;失败应抛 */
-  decrypt(payload: string): string
+  decrypt(payload: string): Promise<string>
 }
 
 /** 持久化的会话 Cookie(与 AuthClient 内存态同构) */
@@ -70,24 +70,24 @@ export interface Vault {
   status(): VaultStatus
   hasPassword(instanceId: string): boolean
   rememberPassword(instanceId: string, password: string): Promise<void>
-  getPassword(instanceId: string): string | null
+  getPassword(instanceId: string): Promise<string | null>
   forgetPassword(instanceId: string): Promise<void>
 
   /** 外部本机 dsh 的 BrowserAuth token；始终加密存储，不复用网关密码字段。 */
   hasExternalAccessToken(instanceId: string): boolean
   rememberExternalAccessToken(instanceId: string, token: string): Promise<void>
-  getExternalAccessToken(instanceId: string): string | null
+  getExternalAccessToken(instanceId: string): Promise<string | null>
   forgetExternalAccessToken(instanceId: string): Promise<void>
 
   /** 远程 HTTP 实例的代理密码；属于连接配置，随实例存续，不做「记住」勾选。 */
   hasProxyPassword(instanceId: string): boolean
   rememberProxyPassword(instanceId: string, password: string): Promise<void>
-  getProxyPassword(instanceId: string): string | null
+  getProxyPassword(instanceId: string): Promise<string | null>
   forgetProxyPassword(instanceId: string): Promise<void>
 
   hasSession(instanceId: string): boolean
   rememberSession(instanceId: string, session: StoredSession): Promise<void>
-  getSession(instanceId: string): StoredSession | null
+  getSession(instanceId: string): Promise<StoredSession | null>
   forgetSession(instanceId: string): Promise<void>
 
   /** 读取勾选策略(未设置即「都不记住」) */
@@ -233,6 +233,22 @@ export function createVault(options: VaultOptions): Vault {
   let persistQueue: Promise<void> = Promise.resolve()
   let tmpSeq = 0
 
+  /**
+   * 改内存/落盘的操作按调用顺序串行执行。
+   *
+   * 加密现在是异步的：若在 `await encode()` 期间让后一次调用插入，条目终态会与
+   * 调用顺序不一致（例如并发 remember/forget 时已被 forget 的字段又被写回）。
+   */
+  let mutationQueue: Promise<void> = Promise.resolve()
+  function enqueueMutation<T>(task: () => Promise<T>): Promise<T> {
+    const run = mutationQueue.then(task)
+    mutationQueue = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run
+  }
+
   function serializePayload(): string {
     const payload: VaultFile = { version: 1, items: {}, policy: {} }
     for (const [id, entry] of items) {
@@ -320,10 +336,10 @@ export function createVault(options: VaultOptions): Vault {
    *
    * 那是并发不可控的副作用(单测在并行负载下会偶发失败),而且读操作本就不该有写副作用。
    */
-  function readField(instanceId: string, payload: string): string | null {
+  async function readField(instanceId: string, payload: string): Promise<string | null> {
     if (!available) return payload // 降级模式条目本就是明文
     try {
-      return crypto.decrypt(payload)
+      return await crypto.decrypt(payload)
     } catch (error) {
       onError(error)
       const entry = items.get(instanceId)
@@ -337,8 +353,8 @@ export function createVault(options: VaultOptions): Vault {
   }
 
   /** 写入字段:降级模式下存明文(内存),可用时存密文 */
-  function encode(value: string): string {
-    return available ? crypto.encrypt(value) : value
+  async function encode(value: string): Promise<string> {
+    return available ? await crypto.encrypt(value) : value
   }
 
   /** 条目中可单独读写或遗忘的字段名。 */
@@ -352,19 +368,22 @@ export function createVault(options: VaultOptions): Vault {
 
   /** 遗忘单个字段并回写;条目因此变空时一并从内存移除。 */
   async function forgetField(instanceId: string, field: VaultField): Promise<void> {
-    load()
-    const entry = items.get(instanceId)
-    if (!entry) return
-    delete entry[field]
-    dropIfEmpty(instanceId)
-    await persist()
+    await enqueueMutation(async () => {
+      load()
+      const entry = items.get(instanceId)
+      if (!entry) return
+      delete entry[field]
+      dropIfEmpty(instanceId)
+      await persist()
+    })
   }
 
   /** 读取并解密单个字段;字段未存或解密失败都返回 null。 */
-  function readStored(instanceId: string, field: VaultField): string | null {
+  async function readStored(instanceId: string, field: VaultField): Promise<string | null> {
+    await mutationQueue
     load()
     const payload = items.get(instanceId)?.[field]
-    return payload === undefined ? null : readField(instanceId, payload)
+    return payload === undefined ? null : await readField(instanceId, payload)
   }
 
   return {
@@ -378,15 +397,18 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async rememberPassword(instanceId, password) {
-      if (password === '') throw new Error('空密码不写入 vault')
-      load()
-      requireOptIn(instanceId, 'rememberPassword')
-      entryFor(instanceId).password = encode(password)
-      await persist()
+      await enqueueMutation(async () => {
+        if (password === '') throw new Error('空密码不写入 vault')
+        load()
+        requireOptIn(instanceId, 'rememberPassword')
+        const encoded = await encode(password)
+        entryFor(instanceId).password = encoded
+        await persist()
+      })
     },
 
-    getPassword(instanceId) {
-      return readStored(instanceId, 'password')
+    async getPassword(instanceId) {
+      return await readStored(instanceId, 'password')
     },
 
     async forgetPassword(instanceId) {
@@ -398,14 +420,17 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async rememberExternalAccessToken(instanceId, token) {
-      if (token === '') throw new Error('空访问 token 不写入 vault')
-      load()
-      entryFor(instanceId).externalAccessToken = encode(token)
-      await persist()
+      await enqueueMutation(async () => {
+        if (token === '') throw new Error('空访问 token 不写入 vault')
+        load()
+        const encoded = await encode(token)
+        entryFor(instanceId).externalAccessToken = encoded
+        await persist()
+      })
     },
 
-    getExternalAccessToken(instanceId) {
-      return readStored(instanceId, 'externalAccessToken')
+    async getExternalAccessToken(instanceId) {
+      return await readStored(instanceId, 'externalAccessToken')
     },
 
     async forgetExternalAccessToken(instanceId) {
@@ -417,14 +442,17 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async rememberProxyPassword(instanceId, password) {
-      if (password === '') throw new Error('空代理密码不写入 vault')
-      load()
-      entryFor(instanceId).proxyPassword = encode(password)
-      await persist()
+      await enqueueMutation(async () => {
+        if (password === '') throw new Error('空代理密码不写入 vault')
+        load()
+        const encoded = await encode(password)
+        entryFor(instanceId).proxyPassword = encoded
+        await persist()
+      })
     },
 
-    getProxyPassword(instanceId) {
-      return readStored(instanceId, 'proxyPassword')
+    async getProxyPassword(instanceId) {
+      return await readStored(instanceId, 'proxyPassword')
     },
 
     async forgetProxyPassword(instanceId) {
@@ -436,15 +464,18 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async rememberSession(instanceId, session) {
-      if (session.value === '') throw new Error('空会话不写入 vault')
-      load()
-      requireOptIn(instanceId, 'rememberSession')
-      entryFor(instanceId).session = encode(JSON.stringify(session))
-      await persist()
+      await enqueueMutation(async () => {
+        if (session.value === '') throw new Error('空会话不写入 vault')
+        load()
+        requireOptIn(instanceId, 'rememberSession')
+        const encoded = await encode(JSON.stringify(session))
+        entryFor(instanceId).session = encoded
+        await persist()
+      })
     },
 
-    getSession(instanceId) {
-      const plain = readStored(instanceId, 'session')
+    async getSession(instanceId) {
+      const plain = await readStored(instanceId, 'session')
       if (plain === null) return null
       try {
         const parsed: unknown = JSON.parse(plain)
@@ -469,24 +500,28 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async forgetInstance(instanceId) {
-      load()
-      items.delete(instanceId)
-      // 实例已删除:勾选策略一并清掉(否则重建同名实例会继承旧策略)
-      policy.delete(instanceId)
-      await persist()
+      await enqueueMutation(async () => {
+        load()
+        items.delete(instanceId)
+        // 实例已删除:勾选策略一并清掉(否则重建同名实例会继承旧策略)
+        policy.delete(instanceId)
+        await persist()
+      })
     },
 
     async clearAll() {
-      load()
-      // 把受影响实例的策略显式钉在「都不记住」：即便未来默认值变化，
-      // 已清除的实例也不会在下一次登录时立刻重新写入。
-      const affectedIds = new Set([...items.keys(), ...policy.keys()])
-      items.clear()
-      policy.clear()
-      for (const instanceId of affectedIds) {
-        policy.set(instanceId, { rememberPassword: false, rememberSession: false })
-      }
-      await persist()
+      await enqueueMutation(async () => {
+        load()
+        // 把受影响实例的策略显式钉在「都不记住」：即便未来默认值变化，
+        // 已清除的实例也不会在下一次登录时立刻重新写入。
+        const affectedIds = new Set([...items.keys(), ...policy.keys()])
+        items.clear()
+        policy.clear()
+        for (const instanceId of affectedIds) {
+          policy.set(instanceId, { rememberPassword: false, rememberSession: false })
+        }
+        await persist()
+      })
     },
 
     getPolicy(instanceId) {
@@ -495,23 +530,25 @@ export function createVault(options: VaultOptions): Vault {
     },
 
     async setPolicy(instanceId, next) {
-      load()
-      const normalized = normalizePolicy(next)
-      // **取消勾选必须真的忘掉**,而不是只停止「继续记住」
-      const entry = items.get(instanceId)
-      if (!normalized.rememberPassword && entry?.password !== undefined) delete entry.password
-      if (!normalized.rememberSession && entry?.session !== undefined) delete entry.session
-      dropIfEmpty(instanceId)
-      // 仅保存与默认策略不同的显式选择；这样新实例默认勾选，而取消勾选仍可跨重启保留。
-      if (
-        normalized.rememberPassword === DEFAULT_VAULT_POLICY.rememberPassword &&
-        normalized.rememberSession === DEFAULT_VAULT_POLICY.rememberSession
-      ) {
-        policy.delete(instanceId)
-      } else {
-        policy.set(instanceId, normalized)
-      }
-      await persist()
+      await enqueueMutation(async () => {
+        load()
+        const normalized = normalizePolicy(next)
+        // **取消勾选必须真的忘掉**,而不是只停止「继续记住」
+        const entry = items.get(instanceId)
+        if (!normalized.rememberPassword && entry?.password !== undefined) delete entry.password
+        if (!normalized.rememberSession && entry?.session !== undefined) delete entry.session
+        dropIfEmpty(instanceId)
+        // 仅保存与默认策略不同的显式选择；这样新实例默认勾选，而取消勾选仍可跨重启保留。
+        if (
+          normalized.rememberPassword === DEFAULT_VAULT_POLICY.rememberPassword &&
+          normalized.rememberSession === DEFAULT_VAULT_POLICY.rememberSession
+        ) {
+          policy.delete(instanceId)
+        } else {
+          policy.set(instanceId, normalized)
+        }
+        await persist()
+      })
     },
 
     rememberedIds() {
