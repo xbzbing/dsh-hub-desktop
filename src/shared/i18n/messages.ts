@@ -299,6 +299,22 @@ export const MESSAGES = {
     zh: '打开发布页失败',
     en: 'Failed to open the release page'
   },
+  'settings.updateDialogTitle': {
+    zh: '发现新版本 v{version}',
+    en: 'New version v{version}'
+  },
+  'settings.updateDialogCurrent': {
+    zh: '当前版本 v{current}',
+    en: 'Current version v{current}'
+  },
+  'settings.updateDialogMeta': {
+    zh: '当前版本 v{current} · 发布于 {date}',
+    en: 'Current version v{current} · published {date}'
+  },
+  'settings.updateDialogNoNotes': {
+    zh: '该版本没有提供更新说明。',
+    en: 'This release has no notes.'
+  },
   'spaces.title': { zh: '空间管理', en: 'Space management' },
   'spaces.summary': {
     zh: '已有空间 {count} 个 · 占用 {size}',

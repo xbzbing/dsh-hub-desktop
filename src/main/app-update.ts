@@ -17,6 +17,9 @@ const UPDATE_TIMEOUT_MS = 5_000
 /** 读取的 Release 条数：只为求出最新版本，取前若干条即可。 */
 const RELEASES_FETCH_COUNT = 30
 
+/** 正文只用于对话框展示，超长截断，避免把整篇说明塞进一次 IPC。 */
+const NOTES_MAX_CHARS = 20_000
+
 /** 取数依赖：注入便于单测（超时与网络行为不外泄给测试）。 */
 export interface UpdateCheckDeps {
   /** 取 JSON；非 2xx、超时与网络失败统一返回 null。 */
@@ -39,6 +42,8 @@ interface ReleaseEntry {
   url: string | null
   /** 发布时间（ISO 8601）；应答缺失时为 null。 */
   publishedAt: string | null
+  /** Release 正文（Markdown）；缺失或为空时为 null。 */
+  notes: string | null
 }
 
 /**
@@ -61,6 +66,7 @@ function parseReleases(raw: unknown): ReleaseEntry[] {
       html_url?: unknown
       published_at?: unknown
       draft?: unknown
+      body?: unknown
     }
     if (record.draft === true) continue
     const tag = typeof record.tag_name === 'string' ? record.tag_name.trim() : ''
@@ -73,6 +79,10 @@ function parseReleases(raw: unknown): ReleaseEntry[] {
       publishedAt:
         typeof record.published_at === 'string' && record.published_at !== ''
           ? record.published_at
+          : null,
+      notes:
+        typeof record.body === 'string' && record.body.trim() !== ''
+          ? Array.from(record.body).slice(0, NOTES_MAX_CHARS).join('')
           : null
     })
   }
@@ -146,6 +156,7 @@ export function createUpdateChecker(
       releaseUrl:
         latest.url ?? `https://github.com/${slug}/releases/tag/${encodeURIComponent(latest.tag)}`,
       publishedAt: latest.publishedAt,
+      notes: latest.notes,
       checkedAt: now()
     }
   }

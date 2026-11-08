@@ -233,6 +233,18 @@ html[data-platform='darwin'] .app-shell.rail .topbar {
   justify-content: space-between;
   gap: var(--gap-sm);
 }
+/* 关于卡：检查结果跟在按钮右侧；窄窗口下换行，按钮不压缩变形。 */
+.about-actions {
+  flex-wrap: wrap;
+}
+.about-actions > .btn {
+  flex: none;
+  white-space: nowrap;
+}
+.about-result {
+  min-width: 0;
+}
+
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

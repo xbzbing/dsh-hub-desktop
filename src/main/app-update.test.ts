@@ -26,6 +26,7 @@ describe('createUpdateChecker（应用自身更新检查）', () => {
         tag_name: 'v0.1.10',
         html_url: 'https://github.com/o/r/releases/tag/v0.1.10',
         published_at: '2026-03-01T00:00:00Z',
+        body: '# DSH Hub v0.1.10\n\n## 亮点\n\n- 示例说明',
         draft: false
       },
       { tag_name: '0.1.9', published_at: '2026-02-01T00:00:00Z' }
@@ -40,6 +41,7 @@ describe('createUpdateChecker（应用自身更新检查）', () => {
       hasUpdate: true,
       releaseUrl: 'https://github.com/o/r/releases/tag/v0.1.10',
       publishedAt: '2026-03-01T00:00:00Z',
+      notes: '# DSH Hub v0.1.10\n\n## 亮点\n\n- 示例说明',
       checkedAt: NOW
     })
   })
@@ -56,6 +58,20 @@ describe('createUpdateChecker（应用自身更新检查）', () => {
     expect(result.latest).toBe('0.1.6')
     expect(result.releaseUrl).toBe('https://github.com/xbzbing/dsh-hub-desktop/releases/tag/v0.1.6')
     expect(result.checkedAt).toBe(NOW)
+  })
+
+  it('Release 正文缺失或为空 → notes 为 null', async () => {
+    for (const body of [undefined, '', '   ', 42]) {
+      const { check } = checkerWith([{ tag_name: 'v0.1.7', body }])
+      const result = await check('0.1.6')
+      expect(result.notes).toBeNull()
+    }
+  })
+
+  it('超长正文按字符截断，避免整篇说明塞进 IPC', async () => {
+    const { check } = checkerWith([{ tag_name: 'v0.1.7', body: '字'.repeat(25_000) }])
+    const result = await check('0.1.6')
+    expect(result.notes).toHaveLength(20_000)
   })
 
   it('丢弃草稿与非版本 tag，只在可比条目里取最大', async () => {

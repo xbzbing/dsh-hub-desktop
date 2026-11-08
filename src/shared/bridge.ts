@@ -129,6 +129,8 @@ export interface AppUpdateCheck {
   releaseUrl: string | null
   /** 最新 Release 发布时间（ISO 8601）；未知为 null。 */
   publishedAt: string | null
+  /** 最新 Release 正文（Markdown，超长已截断）；未提供为 null。 */
+  notes: string | null
   /** 本次检查时间（ISO 8601）。 */
   checkedAt: string
 }

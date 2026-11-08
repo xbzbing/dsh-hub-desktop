@@ -7,6 +7,7 @@ import type { LanguagePreference, Theme } from '@shared/settings'
 import { Icon } from '../lib/icons'
 import { InfoTip } from './InfoTip'
 import { Modal } from './Modal'
+import UpdateAvailableDialog from './UpdateAvailableDialog'
 import { useAppStore } from '../store'
 
 const BRIDGE = window.dshHub
@@ -32,6 +33,8 @@ export default function SettingsView(): ReactNode {
   /** 应用更新检查结果；null = 尚未检查（本次失败经 toast 报告，不留半截状态）。 */
   const [updateCheck, setUpdateCheck] = useState<AppUpdateCheck | null>(null)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
+  /** 发现新版本时自动打开更新说明；关闭后本次结果仍在按钮右侧可见。 */
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
 
   useEffect(() => {
     void BRIDGE?.vault.status().then((result) => {
@@ -120,6 +123,7 @@ export default function SettingsView(): ReactNode {
           return
         }
         setUpdateCheck(result.value)
+        setUpdateDialogOpen(result.value.hasUpdate)
       })
       .finally(() => setCheckingUpdate(false))
   }
@@ -128,6 +132,13 @@ export default function SettingsView(): ReactNode {
   const openReleasePage = (): void => {
     const url = updateCheck?.releaseUrl
     if (url === null || url === undefined) return
+    void BRIDGE?.openExternalLink(url).then((result) => {
+      if (result && !result.ok) toast('err', t('settings.updateOpenReleaseFailed'), result.message)
+    })
+  }
+
+  /** 更新说明里的外链：同样交主进程按协议白名单后用系统浏览器打开。 */
+  const openNoteLink = (url: string): void => {
     void BRIDGE?.openExternalLink(url).then((result) => {
       if (result && !result.ok) toast('err', t('settings.updateOpenReleaseFailed'), result.message)
     })
@@ -498,7 +509,7 @@ export default function SettingsView(): ReactNode {
             <h3>{t('about.open')}</h3>
             <span className="meta">{t('about.sectionHint')}</span>
           </div>
-          <div className="row mt12" style={{ gap: 8, alignItems: 'center' }}>
+          <div className="row mt12 about-actions">
             <button
               className="btn btn-secondary btn-sm"
               data-testid="settings-open-about"
@@ -516,34 +527,41 @@ export default function SettingsView(): ReactNode {
               <Icon name="refresh" />{' '}
               {checkingUpdate ? t('settings.checkingUpdate') : t('settings.checkUpdate')}
             </button>
-          </div>
-          {updateCheck && (
-            <div
-              className="row mt12"
-              style={{ gap: 8, alignItems: 'center', minWidth: 0 }}
-              data-testid="settings-update-result"
-            >
-              <span className="meta" data-testid="settings-update-verdict">
-                {updateCheck.hasUpdate
-                  ? t('settings.updateAvailable', {
+            {/* 结果紧跟按钮右侧：有更新时可点开对话框重看说明，最新时只是状态文字。 */}
+            {updateCheck &&
+              (updateCheck.hasUpdate ? (
+                <button
+                  className="link-btn about-result"
+                  data-testid="settings-update-result"
+                  title={t('settings.updateDialogTitle', { version: updateCheck.latest })}
+                  onClick={() => setUpdateDialogOpen(true)}
+                >
+                  <span data-testid="settings-update-verdict">
+                    {t('settings.updateAvailable', {
                       latest: updateCheck.latest,
                       current: updateCheck.current
-                    })
-                  : t('settings.updateUpToDate', { version: updateCheck.current })}
-              </span>
-              {updateCheck.hasUpdate && updateCheck.releaseUrl && (
-                <button
-                  className="btn btn-secondary btn-sm"
-                  data-testid="settings-open-release"
-                  onClick={openReleasePage}
-                >
-                  {t('settings.updateOpenRelease')}
+                    })}
+                  </span>
                 </button>
-              )}
-            </div>
-          )}
+              ) : (
+                <span className="meta about-result" data-testid="settings-update-result">
+                  <span data-testid="settings-update-verdict">
+                    {t('settings.updateUpToDate', { version: updateCheck.current })}
+                  </span>
+                </span>
+              ))}
+          </div>
         </div>
       </div>
+      {updateCheck !== null && updateDialogOpen && (
+        <UpdateAvailableDialog
+          t={t}
+          update={updateCheck}
+          onClose={() => setUpdateDialogOpen(false)}
+          onOpenRelease={openReleasePage}
+          onOpenLink={openNoteLink}
+        />
+      )}
       {trashTarget && (
         <Modal
           title={t('spaces.trashTitle')}
