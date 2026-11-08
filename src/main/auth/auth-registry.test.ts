@@ -231,4 +231,23 @@ describe('auth-registry（每实例客户端）', () => {
     await registry.client('i1')
     expect(restore).toHaveBeenCalledTimes(1)
   })
+
+  it('按实例注入的 fetch 优先于全局 fetch', async () => {
+    const perInstance = vi.fn() as unknown as typeof fetch
+    const globalFetch = vi.fn() as unknown as typeof fetch
+    const seen: Array<typeof fetch | undefined> = []
+    const registry = createAuthRegistry({
+      resolveEndpoint: async (id) => `https://${id}/dsh`,
+      fetchImplFor: async (id) => (id === 'proxied' ? perInstance : undefined),
+      fetchImpl: globalFetch,
+      factory: (options) => {
+        seen.push(options.fetchImpl)
+        return fakeClient()
+      }
+    })
+
+    await registry.client('proxied')
+    await registry.client('direct')
+    expect(seen).toEqual([perInstance, globalFetch])
+  })
 })
