@@ -59,10 +59,10 @@ test('空态 → 向导三步创建本地实例 → 表格与侧栏可见', asyn
   await expect(launcherMenu.locator('[role="option"][aria-disabled="true"]')).toHaveCount(0)
   await win.keyboard.press('Escape')
   await expect(launcherMenu).toHaveCount(0)
-  // 版本管理下拉已接线：当前值恒为「跟随最新版本」（空值），与镜像拉取结果无关（离线安全）。
+  // 版本管理下拉已接线：默认值可能是「跟随最新版本」（空）或本机已安装版本，
+  // 具体取决于宿主环境；这里只断言控件可选，且第一项始终是「跟随最新版本」。
   const versionTrigger = win.getByTestId('wizard-version')
   await expect(versionTrigger).toBeVisible()
-  await expect(versionTrigger).toHaveAttribute('data-value', '')
   // 目录仍在拉取时触发器不可展开（禁用），拉到结果或失败后才可查看选项。
   if (await versionTrigger.isEnabled()) {
     const versionMenu = await openSelect(win, 'wizard-version')
