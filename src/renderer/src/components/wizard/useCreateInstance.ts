@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useAppStore } from '../../store'
+import { localizeIpcMessage } from '../../lib/ipc-message'
 import { buildCreateInput } from './build-input'
 import { validateWizardForm } from './validate'
 import type { ExternalWorkspace, WizardForm, WizardTransport } from './types'
@@ -112,7 +113,7 @@ export function useCreateInstance(args: UseCreateInstanceArgs): UseCreateInstanc
     setError(null)
     const result = await bridge.instances.create(input).finally(() => setBusy(false))
     if (!result.ok) {
-      setError(result.message)
+      setError(localizeIpcMessage(t, result.message))
       setStep(2)
       return
     }

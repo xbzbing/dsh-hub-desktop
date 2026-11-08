@@ -501,6 +501,42 @@ export const MESSAGES = {
     zh: 'SOCKS5 代理不支持用户名/密码认证',
     en: 'SOCKS5 proxies do not support username/password authentication'
   },
+  // 代理 schema 的验证文案是稳定 key，经 IPC 交给渲染层本地化，避免在 shared 层硬编码中文。
+  'proxy.errPortNumber': { zh: '代理端口必须是数字', en: 'Proxy port must be a number' },
+  'proxy.errPortInteger': { zh: '代理端口必须是整数', en: 'Proxy port must be an integer' },
+  'proxy.errPortMin': { zh: '代理端口最小 1', en: 'Proxy port must be at least 1' },
+  'proxy.errPortMax': { zh: '代理端口最大 65535', en: 'Proxy port must be at most 65535' },
+  'proxy.errHostRequired': { zh: '代理主机不能为空', en: 'Proxy host is required' },
+  'proxy.errHostTooLong': {
+    zh: '代理主机最长 255 字符',
+    en: 'Proxy host must be at most 255 characters'
+  },
+  'proxy.errHostFormat': {
+    zh: '代理主机格式不合法（不允许空白、斜杠、@ 或端口）',
+    en: 'Invalid proxy host (no whitespace, slashes, userinfo, or port)'
+  },
+  'proxy.errUsernameRequired': { zh: '代理用户名不能为空', en: 'Proxy username is required' },
+  'proxy.errUsernameTooLong': {
+    zh: '代理用户名最长 128 字符',
+    en: 'Proxy username must be at most 128 characters'
+  },
+  'proxy.errPasswordEmpty': { zh: '代理密码不能为空', en: 'Proxy password is required' },
+  'proxy.errPasswordTooLong': {
+    zh: '代理密码最长 1024 字符',
+    en: 'Proxy password must be at most 1024 characters'
+  },
+  'proxy.errSocksNoAuth': {
+    zh: 'SOCKS5 代理不支持用户名/密码认证',
+    en: 'SOCKS5 proxies do not support username/password authentication'
+  },
+  'proxy.errPasswordNeedsUsername': {
+    zh: '设置代理密码时必须同时提供用户名',
+    en: 'A proxy username is required when a proxy password is set'
+  },
+  'proxy.errPasswordMissing': {
+    zh: '代理用户名需要同时设置密码',
+    en: 'A proxy password is required when a proxy username is set'
+  },
   'wizard.errProxyUsername': {
     zh: '填写代理密码时也需要填写代理用户名',
     en: 'A proxy username is required when a proxy password is set'

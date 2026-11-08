@@ -71,7 +71,7 @@ export function registerInstanceHandlers(
 ): void {
   /** 代理用户名与密码必须成对出现，避免保存一个在运行时必然 407 的配置。 */
   function proxyPasswordRequired(): never {
-    throw new InstanceStoreError('invalid-input', '代理用户名需要同时设置密码')
+    throw new InstanceStoreError('invalid-input', 'proxy.errPasswordMissing')
   }
 
   /** vault 写入失败或记录更新失败时，把代理密码恢复到改动前的状态。 */

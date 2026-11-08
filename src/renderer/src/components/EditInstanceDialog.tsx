@@ -9,6 +9,7 @@ import {
 import { LAUNCHERS, type LocalLauncher } from '@shared/local-launch'
 import { REGISTRY_PRESETS, isAllowedNpmRegistry, registryPresetKey } from '@shared/settings'
 import { Icon } from '../lib/icons'
+import { localizeIpcMessage } from '../lib/ipc-message'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
 import Select from './Select'
@@ -179,7 +180,7 @@ export default function EditInstanceDialog({
     const result = await window.dshHub?.instances.update(record.id, patch)
     setBusy(false)
     if (result && !result.ok) {
-      toast('err', t('edit.failed'), result.message)
+      toast('err', t('edit.failed'), localizeIpcMessage(t, result.message))
       return
     }
     await Promise.all([refreshList(), reloadRecord(record.id)])

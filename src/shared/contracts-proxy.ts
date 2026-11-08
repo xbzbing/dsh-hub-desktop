@@ -13,10 +13,10 @@ export const PROXY_TYPES = ['http', 'socks5'] as const
 export type ProxyType = (typeof PROXY_TYPES)[number]
 
 const PROXY_PORT_SCHEMA = z
-  .number('代理端口必须是数字')
-  .int('代理端口必须是整数')
-  .min(1, '代理端口最小 1')
-  .max(65535, '代理端口最大 65535')
+  .number('proxy.errPortNumber')
+  .int('proxy.errPortInteger')
+  .min(1, 'proxy.errPortMin')
+  .max(65535, 'proxy.errPortMax')
 
 /**
  * 代理主机：主机名、IPv4、裸 IPv6，或方括号包裹的 IPv6。
@@ -25,22 +25,22 @@ const PROXY_PORT_SCHEMA = z
 const PROXY_HOST_SCHEMA = z
   .string()
   .trim()
-  .min(1, '代理主机不能为空')
-  .max(255, '代理主机最长 255 字符')
+  .min(1, 'proxy.errHostRequired')
+  .max(255, 'proxy.errHostTooLong')
   .refine(
     (value) =>
       /^[A-Za-z0-9._:[\]]+$/.test(value) &&
       (value.startsWith('[')
         ? /^\[[0-9A-Fa-f:.]+\]$/.test(value)
         : !value.includes(':') || (value.split(':').length >= 3 && /^[0-9A-Fa-f:.]+$/.test(value))),
-    '代理主机格式不合法（不允许空白、斜杠、@ 或端口）'
+    'proxy.errHostFormat'
   )
 
 const PROXY_USERNAME_SCHEMA = z
   .string()
   .trim()
-  .min(1, '代理用户名不能为空')
-  .max(128, '代理用户名最长 128 字符')
+  .min(1, 'proxy.errUsernameRequired')
+  .max(128, 'proxy.errUsernameTooLong')
 
 /** 注册表里的代理配置：只含非敏感字段。 */
 export const ProxyConfigSchema = z
@@ -58,7 +58,7 @@ export const ProxyConfigSchema = z
     if (proxy.type === 'socks5' && proxy.username) {
       ctx.addIssue({
         code: 'custom',
-        message: 'SOCKS5 代理不支持用户名/密码认证',
+        message: 'proxy.errSocksNoAuth',
         path: ['username']
       })
     }
@@ -77,7 +77,12 @@ export const ProxyInputSchema = z
     host: PROXY_HOST_SCHEMA,
     port: PROXY_PORT_SCHEMA,
     username: PROXY_USERNAME_SCHEMA.nullable().optional(),
-    password: z.string().min(1, '代理密码不能为空').max(1024).nullable().optional()
+    password: z
+      .string()
+      .min(1, 'proxy.errPasswordEmpty')
+      .max(1024, 'proxy.errPasswordTooLong')
+      .nullable()
+      .optional()
   })
   .strict()
   .superRefine((proxy, ctx) => {
@@ -85,14 +90,14 @@ export const ProxyInputSchema = z
       if (proxy.username) {
         ctx.addIssue({
           code: 'custom',
-          message: 'SOCKS5 代理不支持用户名/密码认证',
+          message: 'proxy.errSocksNoAuth',
           path: ['username']
         })
       }
       if (typeof proxy.password === 'string') {
         ctx.addIssue({
           code: 'custom',
-          message: 'SOCKS5 代理不支持用户名/密码认证',
+          message: 'proxy.errSocksNoAuth',
           path: ['password']
         })
       }
@@ -101,7 +106,7 @@ export const ProxyInputSchema = z
     if (typeof proxy.password === 'string' && !proxy.username) {
       ctx.addIssue({
         code: 'custom',
-        message: '设置代理密码时必须同时提供用户名',
+        message: 'proxy.errPasswordNeedsUsername',
         path: ['password']
       })
     }

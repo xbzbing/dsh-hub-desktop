@@ -155,10 +155,6 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
     ".refine((v) => v === null || v.trim() !== '', '口令不能为空串')"
   ),
   debt(
-    'src/main/ipc/instance-handlers.ts',
-    "throw new InstanceStoreError('invalid-input', '代理用户名需要同时设置密码')"
-  ),
-  debt(
     'src/main/registry/instance-store.ts',
     "return new InstanceStoreError('not-found', `实例不存在：${id}`)"
   ),
@@ -821,24 +817,6 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
     'src/shared/contracts-instance.ts',
     "schemaVersion: z.number('schemaVersion 必须是数字').int().min(1),"
   ),
-
-  // —— 代理配置的 zod message:同 contracts-instance，经 instances.create/update 的
-  //    invalid-input 信封 message 直接进渲染层 toast/表单错误。 ——
-  debt('src/shared/contracts-proxy.ts', ".number('代理端口必须是数字')"),
-  debt('src/shared/contracts-proxy.ts', ".int('代理端口必须是整数')"),
-  debt('src/shared/contracts-proxy.ts', ".min(1, '代理端口最小 1')"),
-  debt('src/shared/contracts-proxy.ts', ".max(65535, '代理端口最大 65535')"),
-  debt('src/shared/contracts-proxy.ts', ".min(1, '代理主机不能为空')"),
-  debt('src/shared/contracts-proxy.ts', ".max(255, '代理主机最长 255 字符')"),
-  debt('src/shared/contracts-proxy.ts', "'代理主机格式不合法（不允许空白、斜杠、@ 或端口）'"),
-  debt('src/shared/contracts-proxy.ts', ".min(1, '代理用户名不能为空')"),
-  debt('src/shared/contracts-proxy.ts', ".max(128, '代理用户名最长 128 字符')"),
-  debt(
-    'src/shared/contracts-proxy.ts',
-    "password: z.string().min(1, '代理密码不能为空').max(1024).nullable().optional()"
-  ),
-  debt('src/shared/contracts-proxy.ts', "message: 'SOCKS5 代理不支持用户名/密码认证',"),
-  debt('src/shared/contracts-proxy.ts', "message: '设置代理密码时必须同时提供用户名',"),
 
   //    渠道:`EndpointParseError.message` → `register.ts` wrap 的 invalid-input 信封 message
   //    → `Wizard.tsx:83/120` 与 `UrlDetect.tsx:65` 的 `setError(result.message)` **直接上屏**。
