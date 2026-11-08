@@ -6,6 +6,7 @@ import { pluginRegistryFromUrl } from '@shared/settings'
 import { Icon } from '../../lib/icons'
 import { Modal } from '../Modal'
 import Select from '../Select'
+import SectionHead from './SectionHead'
 import { useAppStore } from '../../store'
 import InstallConfirmPanel from './InstallConfirmPanel'
 import PluginSecurityPanel from './PluginSecurityPanel'
@@ -60,6 +61,8 @@ export default function UpgradeConfirmDialog(props: {
   const [resolveError, setResolveError] = useState<string | null>(null)
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
   const [riskAccepted, setRiskAccepted] = useState(false)
+  /** 安装源小节默认展开；展开安全检查后收起，把纵向空间让给它。 */
+  const [sourceOpen, setSourceOpen] = useState(true)
   /** 本确认框是否已「放到后台」：收起即失效，升级结束后的收尾据此不再碰对话框状态。 */
   const backgroundedRef = useRef(false)
   const security = usePluginSecurityCheck({
@@ -213,26 +216,41 @@ export default function UpgradeConfirmDialog(props: {
         </>
       }
     >
-      {/* 安装源在确认区之前选定：解析与升级必须同源，改选即按新源重新解析。 */}
-      <div className="field">
-        <label htmlFor="upgrade-plugin-registry">{t('detail.plugin.installSource')}</label>
-        <Select
-          id="upgrade-plugin-registry"
-          value={registry}
-          disabled={upgrading}
-          onChange={(next) => changeRegistry(next as PluginRegistryOption)}
-          options={REGISTRY_CHOICES.map((choice) => ({
-            value: choice.value,
-            label: t(choice.labelKey)
-          }))}
-          testId="upgrade-confirm-source"
-        />
-      </div>
+      {/* 安装源在确认区之前选定：解析与升级必须同源，改选即按新源重新解析。
+          收起后标题行保留当前来源，不展开也能确认本次从哪取包。 */}
+      <SectionHead
+        title={t('detail.plugin.installSource')}
+        // 展开时选择器本身已显示来源，摘要只在收起后补位，避免同一行重复。
+        aside={
+          sourceOpen ? undefined : (
+            <span className="section-summary">{registryLabel(t, registry)}</span>
+          )
+        }
+        open={sourceOpen}
+        onToggle={() => setSourceOpen((open) => !open)}
+        testId="upgrade-confirm-source-toggle"
+      />
+      {sourceOpen && (
+        <>
+          <Select
+            ariaLabel={t('detail.plugin.installSource')}
+            id="upgrade-plugin-registry"
+            value={registry}
+            disabled={upgrading}
+            onChange={(next) => changeRegistry(next as PluginRegistryOption)}
+            options={REGISTRY_CHOICES.map((choice) => ({
+              value: choice.value,
+              label: t(choice.labelKey)
+            }))}
+            testId="upgrade-confirm-source"
+          />
 
-      <div className="note n-warn mt12" data-testid="upgrade-confirm-safety">
-        <Icon name="alert" />
-        <span>{t('detail.plugin.installSafety')}</span>
-      </div>
+          <div className="note n-warn mt12" data-testid="upgrade-confirm-safety">
+            <Icon name="alert" />
+            <span>{t('detail.plugin.installSafety')}</span>
+          </div>
+        </>
+      )}
 
       {resolving && <p className="meta mt12">{t('detail.plugin.installResolving')}</p>}
       {resolveError !== null && (
@@ -252,7 +270,12 @@ export default function UpgradeConfirmDialog(props: {
             riskAccepted={riskAccepted}
             onRiskChange={setRiskAccepted}
             securityPanel={
-              <PluginSecurityPanel t={t} state={security.state} onRefresh={security.refresh} />
+              <PluginSecurityPanel
+                t={t}
+                state={security.state}
+                onRefresh={security.refresh}
+                onExpand={() => setSourceOpen(false)}
+              />
             }
           />
           <p className="meta mt8">{t('detail.plugin.upgradeKeepState')}</p>

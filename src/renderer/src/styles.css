@@ -473,6 +473,50 @@ h3,
   padding-bottom: 0;
   margin-bottom: 0;
 }
+/* 可折叠小节：标题行整体是按钮，箭头靠右；折叠后标题与状态徽标仍可见。 */
+.section-head {
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.section-toggle h3 {
+  flex: none;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.section-toggle > svg {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+}
+.section-toggle:hover > svg {
+  color: var(--fg);
+}
+.section-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.section-summary {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .runtime-card {
   display: flex;
   flex-direction: column;
@@ -1701,14 +1745,27 @@ h3,
   padding: 16px 18px;
 }
 .modal-foot {
+  --modal-foot-bg: color-mix(in oklch, var(--bg) 45%, var(--surface));
   flex: none;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 13px 18px;
   border-top: 1px solid var(--border);
-  background: color-mix(in oklch, var(--bg) 45%, var(--surface));
+  background: var(--modal-foot-bg);
+}
+/* 正文滚到页脚边界时渐隐到页脚底色：内容是被页脚接住，而不是被一条硬线切断。 */
+.modal-foot::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 20px;
+  background: linear-gradient(to bottom, transparent, var(--modal-foot-bg));
+  pointer-events: none;
 }
 .modal-foot .right {
   display: flex;

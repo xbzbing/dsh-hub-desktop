@@ -76,6 +76,28 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
   const versionBox = await versionRow.boundingBox()
   expect(nameBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(versionBox?.y ?? -1)
 
+  // 信息栏可折叠：收起「将升级到」只藏事实行，标题与来源徽标仍在。
+  const factsToggle = win.getByTestId('install-confirm-facts-toggle')
+  await factsToggle.click()
+  await expect(versionRow).toBeHidden()
+  await expect(dialog.locator('.card-head .badge').first()).toBeVisible()
+  await factsToggle.click()
+  await expect(versionRow).toBeVisible()
+
+  // 展开逐项检查后安装源自动收起，把纵向空间让给检查结果；再点标题可展开回来。
+  // 逐项框只在报告就绪后渲染：先等判定出来，避免在 loading 态点空。
+  await expect(win.getByTestId('plugin-security-panel')).toHaveAttribute('data-verdict', 'pass', {
+    timeout: 20_000
+  })
+  await win.getByTestId('plugin-security-details').locator('summary').click()
+  await expect(source).toHaveCount(0)
+  await expect(
+    win.getByTestId('upgrade-confirm-source-toggle'),
+    '安装源小节随安全检查展开而收起'
+  ).toHaveAttribute('aria-expanded', 'false')
+  await win.getByTestId('upgrade-confirm-source-toggle').click()
+  await expect(source).toBeVisible()
+
   // 取消：不产生任何改动。
   await win.getByTestId('upgrade-confirm-cancel').click()
   await expect(dialog).toBeHidden()

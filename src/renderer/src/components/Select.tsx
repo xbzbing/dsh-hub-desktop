@@ -21,6 +21,8 @@ export interface SelectOption {
 export interface SelectProps {
   /** 触发器 id，配合 `<label htmlFor>` 使用。 */
   id?: string
+  /** 没有可见 label 时（如折叠小节的标题即字段名）给读屏用的名称。 */
+  ariaLabel?: string
   value: string
   options: readonly SelectOption[]
   onChange: (value: string) => void
@@ -32,7 +34,7 @@ export interface SelectProps {
 }
 
 export default function Select(props: SelectProps): ReactNode {
-  const { id, value, options, onChange, disabled = false, className, testId } = props
+  const { id, ariaLabel, value, options, onChange, disabled = false, className, testId } = props
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   /** 键盘/指针是否已明确指向某项：刚打开时不画高亮，与 dsh 菜单一致。 */
@@ -160,6 +162,7 @@ export default function Select(props: SelectProps): ReactNode {
         ref={triggerRef}
         type="button"
         id={id}
+        aria-label={ariaLabel}
         className={className === undefined ? 'select-trigger' : `select-trigger ${className}`}
         role="combobox"
         aria-haspopup="listbox"

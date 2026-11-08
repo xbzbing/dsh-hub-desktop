@@ -6,6 +6,7 @@ import { Icon } from '../../lib/icons'
 import { fmtLogTime } from '../../lib/format'
 import { useAppStore } from '../../store'
 import MarkdownView from './MarkdownView'
+import SectionHead from './SectionHead'
 
 const BRIDGE = window.dshHub
 
@@ -42,6 +43,8 @@ export default function InstallConfirmPanel(props: InstallConfirmPanelProps): Re
     props
   const toast = useAppStore((state) => state.toast)
   const [info, setInfo] = useState<InfoState>({ status: 'none' })
+  /** 版本事实可收起，默认展开；收起后标题行保留来源徽标。 */
+  const [factsOpen, setFactsOpen] = useState(true)
 
   const packageName = plan.packageName
   const targetVersion = plan.targetVersion
@@ -123,59 +126,63 @@ export default function InstallConfirmPanel(props: InstallConfirmPanelProps): Re
 
   return (
     <>
-      <div className="card-head mt16">
-        <h3>
-          {t(
-            mode === 'install'
-              ? 'detail.plugin.confirmInstallSection'
-              : 'detail.plugin.confirmUpgradeSection'
-          )}
-        </h3>
-        <span className="badge">{sourceBadge}</span>
-      </div>
-      <dl className="kv">
-        {/* 插件名在版本之上：npm 用包名，github/file 没有包名，用实际安装的 spec 作对象标识。 */}
-        <dt>{t('detail.plugin.confirmPlugin')}</dt>
-        <dd data-testid="install-confirm-name">{packageName ?? plan.installSpec}</dd>
-        <dt>{t('detail.plugin.confirmVersion')}</dt>
-        <dd data-testid="install-confirm-version">
-          {versionEvolution ? (
-            <>
-              <span className="meta num">{installed}</span>
-              <span className="ver-arrow">→</span>
-              <span className="badge num">{targetVersion ?? plan.installSpec}</span>
-            </>
-          ) : (
-            <>
-              <span className="badge num">{targetVersion ?? plan.installSpec}</span>
-              {installedNote !== null && (
-                <>
-                  {' '}
-                  <span className="meta">{installedNote}</span>
-                </>
-              )}
-            </>
-          )}
-        </dd>
-        <dt>{t('detail.plugin.field.published')}</dt>
-        <dd className="num" data-testid="install-confirm-published">
-          {plan.publishedAt === null ? '—' : fmtLogTime(plan.publishedAt)}
-        </dd>
-        <dt>{t('detail.plugin.confirmDownloads')}</dt>
-        <dd className="num" data-testid="install-confirm-downloads">
-          {downloads === null ? '—' : downloads.count.toLocaleString()}
-          {downloads !== null && (
-            <>
-              {' '}
-              <span className="meta">{t('detail.plugin.confirmDownloadsNote')}</span>
-            </>
-          )}
-        </dd>
-        <dt>{t('detail.plugin.confirmCompat')}</dt>
-        <dd className="num" data-testid="install-confirm-compat">
-          {plan.dshPeer ?? '—'} · {plan.dshVersion ?? '—'} {compatVerdict}
-        </dd>
-      </dl>
+      <SectionHead
+        className="mt16"
+        title={t(
+          mode === 'install'
+            ? 'detail.plugin.confirmInstallSection'
+            : 'detail.plugin.confirmUpgradeSection'
+        )}
+        aside={<span className="badge">{sourceBadge}</span>}
+        open={factsOpen}
+        onToggle={() => setFactsOpen((open) => !open)}
+        testId="install-confirm-facts-toggle"
+      />
+      {factsOpen && (
+        <dl className="kv">
+          {/* 插件名在版本之上：npm 用包名，github/file 没有包名，用实际安装的 spec 作对象标识。 */}
+          <dt>{t('detail.plugin.confirmPlugin')}</dt>
+          <dd data-testid="install-confirm-name">{packageName ?? plan.installSpec}</dd>
+          <dt>{t('detail.plugin.confirmVersion')}</dt>
+          <dd data-testid="install-confirm-version">
+            {versionEvolution ? (
+              <>
+                <span className="meta num">{installed}</span>
+                <span className="ver-arrow">→</span>
+                <span className="badge num">{targetVersion ?? plan.installSpec}</span>
+              </>
+            ) : (
+              <>
+                <span className="badge num">{targetVersion ?? plan.installSpec}</span>
+                {installedNote !== null && (
+                  <>
+                    {' '}
+                    <span className="meta">{installedNote}</span>
+                  </>
+                )}
+              </>
+            )}
+          </dd>
+          <dt>{t('detail.plugin.field.published')}</dt>
+          <dd className="num" data-testid="install-confirm-published">
+            {plan.publishedAt === null ? '—' : fmtLogTime(plan.publishedAt)}
+          </dd>
+          <dt>{t('detail.plugin.confirmDownloads')}</dt>
+          <dd className="num" data-testid="install-confirm-downloads">
+            {downloads === null ? '—' : downloads.count.toLocaleString()}
+            {downloads !== null && (
+              <>
+                {' '}
+                <span className="meta">{t('detail.plugin.confirmDownloadsNote')}</span>
+              </>
+            )}
+          </dd>
+          <dt>{t('detail.plugin.confirmCompat')}</dt>
+          <dd className="num" data-testid="install-confirm-compat">
+            {plan.dshPeer ?? '—'} · {plan.dshVersion ?? '—'} {compatVerdict}
+          </dd>
+        </dl>
+      )}
 
       {/* 兼容性为 false 才是「已知风险」：要求显式勾选后才放行主按钮；无法判定（null）不要求。 */}
       {plan.compatible === false && (
