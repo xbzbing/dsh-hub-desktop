@@ -97,6 +97,18 @@ describe('validateWizardForm', () => {
           proxyType: 'http',
           proxyHost: 'proxy',
           proxyPort: '8080',
+          proxyPassword: 'p'
+        }
+      })
+    ).toBe('wizard.errProxyUsername')
+    expect(
+      run({
+        transport: 'http',
+        form: {
+          ...base,
+          proxyType: 'http',
+          proxyHost: 'proxy',
+          proxyPort: '8080',
           proxyUsername: 'u'
         }
       })

@@ -57,7 +57,9 @@ export function buildCreateInput(args: {
             ...(form.proxyType === 'http' && form.proxyUsername.trim() !== ''
               ? { username: form.proxyUsername.trim() }
               : {}),
-            ...(form.proxyType === 'http' && form.proxyPassword !== ''
+            ...(form.proxyType === 'http' &&
+            form.proxyUsername.trim() !== '' &&
+            form.proxyPassword !== ''
               ? { password: form.proxyPassword }
               : {})
           }

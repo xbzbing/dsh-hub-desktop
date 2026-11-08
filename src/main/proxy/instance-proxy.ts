@@ -11,7 +11,7 @@
  */
 import { session as electronSession, type Session, type WebContents } from 'electron'
 import type { HttpInstance } from '@shared/contracts'
-import { proxyRulesFor } from '@shared/contracts'
+import { proxyRulesFor, proxyUsesAuth } from '@shared/contracts'
 import { createSessionFetch, type ProxyAuth } from './session-fetch'
 
 export interface InstanceProxyOptions {
@@ -49,22 +49,44 @@ export function createInstanceProxy(options: InstanceProxyOptions): InstanceProx
     options.sessionFor ??
     ((instanceId: string) => electronSession.fromPartition(partitionOf(instanceId)))
 
-  /** 已成功应用到 session 的 proxyRules；'direct' 表示显式直连。 */
-  const applied = new Map<string, string>()
+  /** 已成功应用到 session 的代理规则与凭据版本；两者任一变化都要重建连接。 */
+  const applied = new Map<string, { rules: string; authRevision: number }>()
   /** 同实例 apply 串行化，避免 setProxy 竞态后落成旧配置。 */
   const chains = new Map<string, Promise<void>>()
   /** 当前实例的代理认证信息；每次 apply/fetch 都按最新密码更新。 */
   const authById = new Map<string, ProxyAuth | null>()
+  /** 凭据版本：密码/用户名变化时递增，供连接池失效判断。 */
+  const authRevisionById = new Map<string, number>()
+  let nextAuthRevision = 1
   /** session → 实例 id，供工作区页面的 proxy login 事件回查。 */
   const instanceBySession = new Map<Session, string>()
   const sessionById = new Map<string, Session>()
 
   function authFor(instance: HttpInstance): ProxyAuth | null {
-    const proxy = instance.proxy
-    if (!proxy?.username) return null
+    const username = proxyUsesAuth(instance.proxy) ? instance.proxy?.username : null
+    if (!username) return null
     const password = options.getProxyPassword(instance.id)
-    if (password === null) return null
-    return { username: proxy.username, password }
+    // 空串同样视为无密码：避免把损坏的 vault 值交给代理反复认证。
+    if (!password) return null
+    return { username, password }
+  }
+
+  function sameAuth(left: ProxyAuth | null, right: ProxyAuth | null): boolean {
+    return left?.username === right?.username && left?.password === right?.password
+  }
+
+  /** 记录最新凭据；只有用户名/密码实际变化时递增版本。 */
+  function rememberAuth(instance: HttpInstance): number {
+    const next = authFor(instance)
+    const previous = authById.get(instance.id) ?? null
+    let revision = authRevisionById.get(instance.id) ?? 0
+    if (!sameAuth(previous, next)) {
+      revision = nextAuthRevision
+      nextAuthRevision += 1
+      authRevisionById.set(instance.id, revision)
+    }
+    authById.set(instance.id, next)
+    return revision
   }
 
   function rememberSession(instanceId: string, target: Session): void {
@@ -74,24 +96,31 @@ export function createInstanceProxy(options: InstanceProxyOptions): InstanceProx
     instanceBySession.set(target, instanceId)
   }
 
-  async function applyNow(instance: HttpInstance, rules: string): Promise<void> {
+  async function applyNow(
+    instance: HttpInstance,
+    rules: string,
+    authRevision: number
+  ): Promise<void> {
     const target = sessionFor(instance.id)
     rememberSession(instance.id, target)
-    if (applied.get(instance.id) === rules) return
+    const current = applied.get(instance.id)
+    if (current?.rules === rules && current.authRevision === authRevision) return
     try {
-      await target.setProxy(
-        rules === 'direct'
-          ? { mode: 'direct' }
-          : {
-              mode: 'fixed_servers',
-              proxyRules: rules,
-              // 显式配置代理时连回环也走代理；Chromium 默认的 `<-loopback>` 会绕过本机目标。
-              proxyBypassRules: '<-loopback>'
-            }
-      )
-      // 代理变更后关闭旧连接池，避免新请求复用按旧代理建立的 socket。
+      if (current?.rules !== rules) {
+        await target.setProxy(
+          rules === 'direct'
+            ? { mode: 'direct' }
+            : {
+                mode: 'fixed_servers',
+                proxyRules: rules,
+                // 显式配置代理时连回环也走代理；Chromium 默认的 `<-loopback>` 会绕过本机目标。
+                proxyBypassRules: '<-loopback>'
+              }
+        )
+      }
+      // 代理规则或凭据变化后关闭旧连接池，避免新请求复用按旧配置建立的 socket。
       await target.closeAllConnections()
-      applied.set(instance.id, rules)
+      applied.set(instance.id, { rules, authRevision })
     } catch (error) {
       onError(error)
       throw error
@@ -100,10 +129,10 @@ export function createInstanceProxy(options: InstanceProxyOptions): InstanceProx
 
   return {
     async apply(instance) {
-      authById.set(instance.id, authFor(instance))
+      const revision = rememberAuth(instance)
       const rules = proxyRulesFor(instance.proxy) ?? 'direct'
       const previous = chains.get(instance.id) ?? Promise.resolve()
-      const next = previous.catch(() => undefined).then(() => applyNow(instance, rules))
+      const next = previous.catch(() => undefined).then(() => applyNow(instance, rules, revision))
       chains.set(instance.id, next)
       try {
         await next
@@ -115,9 +144,13 @@ export function createInstanceProxy(options: InstanceProxyOptions): InstanceProx
     fetchFor(instance) {
       const target = sessionFor(instance.id)
       rememberSession(instance.id, target)
-      const auth = authFor(instance)
-      authById.set(instance.id, auth)
-      return createSessionFetch({ session: target, auth })
+      const previousRevision = authRevisionById.get(instance.id)
+      const revision = rememberAuth(instance)
+      // 正常路径 apply 已处理连接清理；直接取 fetch 时仍保证换密码后旧连接不残留。
+      if (previousRevision !== undefined && revision !== previousRevision) {
+        void target.closeAllConnections().catch(onError)
+      }
+      return createSessionFetch({ session: target, auth: authById.get(instance.id) ?? null })
     },
 
     handleLogin(event, webContents, authInfo, callback) {
@@ -137,6 +170,7 @@ export function createInstanceProxy(options: InstanceProxyOptions): InstanceProx
       sessionById.delete(instanceId)
       applied.delete(instanceId)
       authById.delete(instanceId)
+      authRevisionById.delete(instanceId)
       chains.delete(instanceId)
     }
   }

@@ -501,6 +501,10 @@ export const MESSAGES = {
     zh: 'SOCKS5 代理不支持用户名/密码认证',
     en: 'SOCKS5 proxies do not support username/password authentication'
   },
+  'wizard.errProxyUsername': {
+    zh: '填写代理密码时也需要填写代理用户名',
+    en: 'A proxy username is required when a proxy password is set'
+  },
   'wizard.typeLocal': { zh: '本机运行的 dsh', en: 'dsh running locally' },
   'wizard.typeLocalDesc': {
     zh: '版本按需安装，互不干扰',
@@ -1055,6 +1059,18 @@ export const MESSAGES = {
   'edit.proxyPasswordHint': {
     zh: '代理用户名与密码只在需要认证时填写；清空代理会一并清除密码。',
     en: 'Fill in username and password only if the proxy requires authentication; removing the proxy also forgets the password.'
+  },
+  'edit.proxyUsernameRequired': {
+    zh: '填写代理密码时也需要填写代理用户名',
+    en: 'A proxy username is required when a proxy password is set'
+  },
+  'edit.proxyPasswordRequired': {
+    zh: '新增或修改代理用户名时，需要同时填写密码',
+    en: 'A password is required when adding or changing the proxy username'
+  },
+  'edit.proxyPasswordClearConflict': {
+    zh: '清除代理密码时，请同时移除代理用户名或关闭代理',
+    en: 'To clear the proxy password, also remove the username or turn the proxy off'
   },
   'edit.saved': { zh: '已保存', en: 'Saved' },
   'edit.failed': { zh: '保存失败', en: 'Failed to save' },

@@ -155,6 +155,10 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
     ".refine((v) => v === null || v.trim() !== '', '口令不能为空串')"
   ),
   debt(
+    'src/main/ipc/instance-handlers.ts',
+    "throw new InstanceStoreError('invalid-input', '代理用户名需要同时设置密码')"
+  ),
+  debt(
     'src/main/registry/instance-store.ts',
     "return new InstanceStoreError('not-found', `实例不存在：${id}`)"
   ),

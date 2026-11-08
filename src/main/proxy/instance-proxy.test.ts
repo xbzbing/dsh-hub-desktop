@@ -56,6 +56,44 @@ describe('createInstanceProxy', () => {
     expect(target.setProxy).toHaveBeenCalledTimes(2)
   })
 
+  it('代理规则不变但凭据变化时关闭旧连接池', async () => {
+    let password = 'old-secret'
+    const target = fakeSession()
+    const proxy = createInstanceProxy({
+      getProxyPassword: () => password,
+      sessionFor: () => target as never
+    })
+    const http = instance({ type: 'http', host: '127.0.0.1', port: 7897, username: 'alice' })
+    await proxy.apply(http)
+    expect(target.setProxy).toHaveBeenCalledTimes(1)
+    expect(target.closeAllConnections).toHaveBeenCalledTimes(1)
+
+    // 相同规则、相同密码：不重建连接。
+    await proxy.apply(http)
+    expect(target.closeAllConnections).toHaveBeenCalledTimes(1)
+
+    // 相同规则、不同密码：必须关闭旧连接，让新密码生效。
+    password = 'new-secret'
+    await proxy.apply(http)
+    expect(target.setProxy).toHaveBeenCalledTimes(1)
+    expect(target.closeAllConnections).toHaveBeenCalledTimes(2)
+  })
+
+  it('直接取 fetch 时换密码同样关闭旧连接', async () => {
+    let password = 'old-secret'
+    const target = fakeSession()
+    const proxy = createInstanceProxy({
+      getProxyPassword: () => password,
+      sessionFor: () => target as never
+    })
+    const http = instance({ type: 'http', host: '127.0.0.1', port: 7897, username: 'alice' })
+    await proxy.apply(http)
+    expect(target.closeAllConnections).toHaveBeenCalledTimes(1)
+    password = 'new-secret'
+    proxy.fetchFor(http)
+    await vi.waitFor(() => expect(target.closeAllConnections).toHaveBeenCalledTimes(2))
+  })
+
   it('清空代理时显式回到 direct', async () => {
     const target = fakeSession()
     const proxy = createInstanceProxy({
@@ -90,7 +128,8 @@ describe('createInstanceProxy', () => {
   it('无凭据或非代理认证时不拦截默认行为', async () => {
     const target = fakeSession()
     const proxy = createInstanceProxy({
-      getProxyPassword: () => null,
+      // 空串视同未保存密码，不能拿去代理认证。
+      getProxyPassword: () => '',
       sessionFor: () => target as never
     })
     await proxy.apply(instance({ type: 'http', host: 'proxy', port: 8080, username: 'alice' }))

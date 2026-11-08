@@ -139,6 +139,27 @@ export default function EditInstanceDialog({
           toast('err', t('edit.proxyPortInvalid'))
           return
         }
+        if (proxyType === 'http') {
+          const trimmedUsername = proxyUsername.trim()
+          const existingUsername =
+            record.transport === 'http' ? (record.proxy?.username ?? null) : null
+          if (trimmedUsername === '' && proxyPassword !== '') {
+            toast('err', t('edit.proxyUsernameRequired'))
+            return
+          }
+          if (trimmedUsername !== '' && proxyClearPassword) {
+            toast('err', t('edit.proxyPasswordClearConflict'))
+            return
+          }
+          if (
+            trimmedUsername !== '' &&
+            proxyPassword === '' &&
+            existingUsername !== trimmedUsername
+          ) {
+            toast('err', t('edit.proxyPasswordRequired'))
+            return
+          }
+        }
         patch.proxy = {
           type: proxyType,
           host: proxyHost.trim(),

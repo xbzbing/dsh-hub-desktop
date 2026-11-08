@@ -49,6 +49,9 @@ export function validateWizardForm(args: {
       ) {
         return t('wizard.errProxySocksAuth')
       }
+      if (form.proxyUsername.trim() === '' && form.proxyPassword !== '') {
+        return t('wizard.errProxyUsername')
+      }
       if (form.proxyUsername.trim() !== '' && form.proxyPassword === '') {
         return t('wizard.errProxyPassword')
       }

@@ -114,6 +114,29 @@ describe('buildCreateInput', () => {
         existingSpaceId: null
       })
     ).toEqual({ transport: 'http', name: 'a', endpointUrl: 'https://gw' })
+    // 密码没有用户名时不应被提交；校验层会先给出错误。
+    expect(
+      buildCreateInput({
+        transport: 'http',
+        form: {
+          ...EMPTY_FORM,
+          endpointUrl: 'https://gw',
+          proxyType: 'http',
+          proxyHost: 'proxy',
+          proxyPort: '8080',
+          proxyPassword: 'secret'
+        },
+        name: 'a',
+        useExistingExternal: false,
+        externalWorkspace: null,
+        existingSpaceId: null
+      })
+    ).toEqual({
+      transport: 'http',
+      name: 'a',
+      endpointUrl: 'https://gw',
+      proxy: { type: 'http', host: 'proxy', port: 8080 }
+    })
   })
 
   it('http:归一化 endpointUrl（去空白）', () => {

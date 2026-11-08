@@ -308,6 +308,88 @@ describe('registerIpc：实例 CRUD 与空间', () => {
     if (result.ok) expect(result.value.removed).toBe(true)
   })
 
+  it('create/update：代理用户名必须与密码成对，缺密码直接拒绝', async () => {
+    const missing = (await invoke('instances:create', {
+      transport: 'http',
+      name: '缺代理密码',
+      endpointUrl: 'https://gw.example.com/dsh',
+      proxy: { type: 'http', host: '127.0.0.1', port: 7897, username: 'alice' }
+    })) as { ok: boolean; code?: string }
+    expect(missing).toMatchObject({ ok: false, code: 'invalid-input' })
+    expect(vaultFake.rememberProxyPassword).not.toHaveBeenCalled()
+
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '无代理',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    vaultFake['hasProxyPassword']!.mockReturnValue(false)
+    const updated = (await invoke('instances:update', created.value.id, {
+      proxy: { type: 'http', host: '127.0.0.1', port: 7897, username: 'alice' }
+    })) as { ok: boolean; code?: string }
+    expect(updated).toMatchObject({ ok: false, code: 'invalid-input' })
+    const stored = (await invoke('instances:get', created.value.id)) as {
+      ok: boolean
+      value: { proxy?: unknown }
+    }
+    if (!stored.ok) throw new Error('读取失败')
+    expect(stored.value.proxy).toBeUndefined()
+  })
+
+  it('同一用户名留空密码时沿用 vault 中已保存的密码', async () => {
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '保留代理密码',
+      endpointUrl: 'https://gw.example.com/dsh',
+      proxy: { type: 'http', host: '127.0.0.1', port: 7897, username: 'alice', password: 'secret' }
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    vaultFake['hasProxyPassword']!.mockReturnValue(true)
+    vaultFake['rememberProxyPassword']!.mockClear()
+    const updated = (await invoke('instances:update', created.value.id, {
+      proxy: { type: 'http', host: '127.0.0.1', port: 7897, username: 'alice' }
+    })) as { ok: boolean }
+    expect(updated.ok).toBe(true)
+    expect(vaultFake.rememberProxyPassword).not.toHaveBeenCalled()
+  })
+
+  it('vault 写失败时 create 回滚记录与密码，update 保持旧记录', async () => {
+    vaultFake['rememberProxyPassword']!.mockRejectedValueOnce(new Error('vault down'))
+    const failedCreate = (await invoke('instances:create', {
+      transport: 'http',
+      name: '写入失败',
+      endpointUrl: 'https://gw.example.com/dsh',
+      proxy: { type: 'http', host: '127.0.0.1', port: 7897, username: 'alice', password: 'secret' }
+    })) as { ok: boolean }
+    expect(failedCreate.ok).toBe(false)
+    expect(vaultFake.forgetProxyPassword).toHaveBeenCalledWith(expect.any(String))
+    const listed = (await invoke('instances:list')) as {
+      ok: boolean
+      value: Array<{ name: string }>
+    }
+    if (!listed.ok) throw new Error('列表失败')
+    expect(listed.value.map((item) => item.name)).not.toContain('写入失败')
+
+    const created = (await invoke('instances:create', {
+      transport: 'http',
+      name: '更新失败',
+      endpointUrl: 'https://gw.example.com/dsh'
+    })) as { ok: boolean; value: { id: string } }
+    if (!created.ok) throw new Error('创建失败')
+    vaultFake['rememberProxyPassword']!.mockRejectedValueOnce(new Error('vault down'))
+    const failedUpdate = (await invoke('instances:update', created.value.id, {
+      proxy: { type: 'http', host: '127.0.0.1', port: 7897, username: 'alice', password: 'secret' }
+    })) as { ok: boolean }
+    expect(failedUpdate.ok).toBe(false)
+    const stored = (await invoke('instances:get', created.value.id)) as {
+      ok: boolean
+      value: { proxy?: unknown }
+    }
+    if (!stored.ok) throw new Error('读取失败')
+    expect(stored.value.proxy).toBeUndefined()
+  })
+
   it('create/update http 代理：密码只进 vault，记录只保留非敏感字段', async () => {
     const created = (await invoke('instances:create', {
       transport: 'http',

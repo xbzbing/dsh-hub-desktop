@@ -69,6 +69,24 @@ export function registerInstanceHandlers(
   externalAccessUrls: ExternalAccessUrls,
   wrap: IpcWrap
 ): void {
+  /** 代理用户名与密码必须成对出现，避免保存一个在运行时必然 407 的配置。 */
+  function proxyPasswordRequired(): never {
+    throw new InstanceStoreError('invalid-input', '代理用户名需要同时设置密码')
+  }
+
+  /** vault 写入失败或记录更新失败时，把代理密码恢复到改动前的状态。 */
+  async function restoreProxyPassword(instanceId: string, password: string | null): Promise<void> {
+    if (password !== null) {
+      await deps.vault
+        .rememberProxyPassword(instanceId, password)
+        .catch((error: unknown) => console.error('[ipc] 回滚代理密码失败：', instanceId, error))
+    } else {
+      await deps.vault
+        .forgetProxyPassword(instanceId)
+        .catch((error: unknown) => console.error('[ipc] 回滚代理密码失败：', instanceId, error))
+    }
+  }
+
   // —— 实例注册表 CRUD ——
 
   function statusFor(record: InstanceRecord): InstanceRuntimeStatus | undefined {
@@ -142,6 +160,9 @@ export function registerInstanceHandlers(
       wrap(async () => {
         const parsed = CreateInstanceInputSchema.parse(input)
         if (parsed.transport !== 'local') {
+          if (parsed.transport === 'http' && parsed.proxy?.username) {
+            if (typeof parsed.proxy.password !== 'string') proxyPasswordRequired()
+          }
           const proxyPassword =
             parsed.transport === 'http' && typeof parsed.proxy?.password === 'string'
               ? parsed.proxy.password
@@ -151,7 +172,12 @@ export function registerInstanceHandlers(
             try {
               await deps.vault.rememberProxyPassword(record.id, proxyPassword)
             } catch (error) {
-              // 新实例尚未对外暴露；密码写入失败时回滚记录，避免留下“配置了需认证代理但无密码”的实例。
+              // 新实例尚未对外暴露；密码写入失败时回滚记录与可能已写入内存的密码。
+              await deps.vault
+                .forgetProxyPassword(record.id)
+                .catch((cleanupError: unknown) =>
+                  console.error('[ipc] 回滚代理密码失败：', record.id, cleanupError)
+                )
               await store.remove(record.id).catch(() => undefined)
               throw error
             }
@@ -203,17 +229,44 @@ export function registerInstanceHandlers(
       wrap(async () => {
         const instanceId = parseId(id)
         const parsed = PatchInstanceSchema.parse(patch)
-        const record = await store.update(instanceId, parsed)
-        if (record.transport !== 'http' || parsed.proxy === undefined) return record
-        // 密码与代理配置分开：记录先落盘，密码写 vault。清空代理、显式 null 或
-        // 不再需要认证（无用户名 / SOCKS5）都忘掉旧密码，避免留下不再使用的密文。
         const proxy = parsed.proxy
-        if (proxy === null || proxy.password === null || !proxy.username) {
-          await deps.vault.forgetProxyPassword(instanceId).catch((error: unknown) => {
-            console.error('[ipc] 清除代理密码失败：', error)
-          })
-        } else if (typeof proxy.password === 'string') {
-          await deps.vault.rememberProxyPassword(instanceId, proxy.password)
+        const current = proxy === undefined ? null : await store.get(instanceId)
+        // 先校验再写任何存储：用户名必须有密码，或者沿用同一用户名已保存的密码。
+        if (proxy !== undefined && proxy !== null && proxy.username) {
+          if (proxy.password === null) proxyPasswordRequired()
+          if (proxy.password === undefined && current !== null) {
+            const sameUsername =
+              current.transport === 'http' && current.proxy?.username === proxy.username
+            if (!sameUsername || !deps.vault.hasProxyPassword(instanceId)) {
+              proxyPasswordRequired()
+            }
+          }
+        }
+
+        // 密码先写 vault，失败时记录保持原样；记录更新失败再回滚密码。
+        let previousPassword: string | null = null
+        if (proxy !== undefined) {
+          if (current?.transport === 'http' && current.proxy?.username) {
+            previousPassword = deps.vault.getProxyPassword(instanceId) || null
+          }
+          try {
+            if (proxy === null || proxy.password === null || !proxy.username) {
+              await deps.vault.forgetProxyPassword(instanceId)
+            } else if (typeof proxy.password === 'string') {
+              await deps.vault.rememberProxyPassword(instanceId, proxy.password)
+            }
+          } catch (error) {
+            await restoreProxyPassword(instanceId, previousPassword)
+            throw error
+          }
+        }
+
+        let record: InstanceRecord
+        try {
+          record = await store.update(instanceId, parsed)
+        } catch (error) {
+          if (proxy !== undefined) await restoreProxyPassword(instanceId, previousPassword)
+          throw error
         }
         return record
       })

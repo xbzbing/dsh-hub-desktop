@@ -81,23 +81,23 @@ export const ProxyInputSchema = z
   })
   .strict()
   .superRefine((proxy, ctx) => {
-    if (proxy.type !== 'socks5') return
-    if (proxy.username) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'SOCKS5 代理不支持用户名/密码认证',
-        path: ['username']
-      })
+    if (proxy.type === 'socks5') {
+      if (proxy.username) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'SOCKS5 代理不支持用户名/密码认证',
+          path: ['username']
+        })
+      }
+      if (typeof proxy.password === 'string') {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'SOCKS5 代理不支持用户名/密码认证',
+          path: ['password']
+        })
+      }
+      return
     }
-    if (typeof proxy.password === 'string') {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'SOCKS5 代理不支持用户名/密码认证',
-        path: ['password']
-      })
-    }
-  })
-  .superRefine((proxy, ctx) => {
     if (typeof proxy.password === 'string' && !proxy.username) {
       ctx.addIssue({
         code: 'custom',

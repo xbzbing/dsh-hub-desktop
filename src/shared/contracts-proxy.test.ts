@@ -70,6 +70,17 @@ describe('代理配置 schema 与格式化', () => {
     ).toBe(true)
   })
 
+  it('HTTP 代理密码必须同时有用户名', () => {
+    expect(
+      ProxyInputSchema.safeParse({
+        type: 'http',
+        host: 'proxy',
+        port: 8080,
+        password: 'secret'
+      }).success
+    ).toBe(false)
+  })
+
   it('ProxyInput 允许密码，ProxyConfig 不允许密码落进注册表', () => {
     expect(
       ProxyInputSchema.parse({

@@ -73,8 +73,6 @@ export function createAuthController(deps: AuthControllerDeps): AuthController {
     resolveEndpoint: async (instanceId) => {
       const record = await deps.store.get(instanceId)
       if (!record) return null
-      // HTTP 实例先应用代理再构造客户端：探测/登录请求必须与工作区走同一代理。
-      if (record.transport === 'http') await deps.proxy?.apply(record)
       // 只取**实时**隧道端口:注册表的 localPort 可能已陈旧(隧道重启会重新分配),
       // 「隧道已停也要能清 Cookie」的需求由 clearPartitionSession 的 plan 承担。
       const tunnelPort =
@@ -83,7 +81,10 @@ export function createAuthController(deps: AuthControllerDeps): AuthController {
     },
     fetchImplFor: async (instanceId) => {
       const record = await deps.store.get(instanceId)
-      return record?.transport === 'http' ? deps.proxy?.fetchFor(record) : undefined
+      if (record?.transport !== 'http' || !deps.proxy) return undefined
+      // 在创建 fetch 的同一调用里应用代理，避免 resolveEndpoint 与这里各读一次记录造成配置错位。
+      await deps.proxy.apply(record)
+      return deps.proxy.fetchFor(record)
     },
     onState: (instanceId, state) => {
       for (const win of BrowserWindow.getAllWindows()) {
