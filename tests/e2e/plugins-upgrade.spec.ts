@@ -84,12 +84,13 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
   await factsToggle.click()
   await expect(versionRow).toBeVisible()
 
-  // 展开逐项检查后安装源自动收起，把纵向空间让给检查结果；再点标题可展开回来。
-  // 逐项框只在报告就绪后渲染：先等判定出来，避免在 loading 态点空。
+  // 无风险时安全检查默认收起；展开它会让安装源自动收起，把纵向空间让给检查结果。
   await expect(win.getByTestId('plugin-security-panel')).toHaveAttribute('data-verdict', 'pass', {
     timeout: 20_000
   })
-  await win.getByTestId('plugin-security-details').locator('summary').click()
+  const securityToggle = win.getByTestId('plugin-security-toggle')
+  await expect(securityToggle).toHaveAttribute('aria-expanded', 'false')
+  await securityToggle.click()
   await expect(source).toHaveCount(0)
   await expect(
     win.getByTestId('upgrade-confirm-source-toggle'),

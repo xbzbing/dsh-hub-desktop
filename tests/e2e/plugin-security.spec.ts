@@ -226,6 +226,13 @@ test('pass：显示未发现明显风险，主按钮保持普通安装', async (
   const panel = win.getByTestId('plugin-security-panel')
   await expect(panel).toHaveAttribute('data-verdict', 'pass', { timeout: 15_000 })
   await expect(panel).toContainText('未发现明显风险')
+  // 无风险时默认收起：只留标题行（徽标 + 重新检查），明细要手动展开。
+  const toggle = win.getByTestId('plugin-security-toggle')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(win.getByTestId('plugin-security-summary')).toHaveCount(0)
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(win.getByTestId('plugin-security-summary')).toBeVisible()
   await expect(win.getByTestId('install-plugin-submit')).toContainText('安装 1.1.0')
   await expect(win.getByTestId('install-plugin-back')).toHaveCount(0)
 })

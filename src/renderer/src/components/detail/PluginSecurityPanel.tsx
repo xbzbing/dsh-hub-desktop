@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PluginSecurityEvidence, PluginSecurityLevel } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
@@ -49,7 +49,16 @@ export default function PluginSecurityPanel(props: {
 }): ReactNode {
   const { t, state, onRefresh, onExpand } = props
   const [open, setOpen] = useState(true)
+  /** 用户手动开合过就不再自动收起：避免把用户刚展开的内容又关掉。 */
+  const userToggled = useRef(false)
   const report = state.status === 'ready' ? state.report : null
+
+  // 结论为「未发现明显风险」时默认收起：标题行仍显示徽标，需要细节时再展开，
+  // 对话框不会被一段确定安全的明细撑长。有关注项（warn/unavailable/blocked）保持展开。
+  const autoCollapse = report !== null && report.verdict === 'pass'
+  useEffect(() => {
+    if (!userToggled.current && autoCollapse) setOpen(false)
+  }, [autoCollapse])
   const warnCount = report?.checks.filter((check) => check.level === 'warn').length ?? 0
   const blocked = report?.verdict === 'blocked'
   const noteClass =
@@ -77,6 +86,7 @@ export default function PluginSecurityPanel(props: {
       }
       open={open}
       onToggle={() => {
+        userToggled.current = true
         const next = !open
         setOpen(next)
         if (next) onExpand?.()
