@@ -203,12 +203,13 @@ describe('名称仿冒与判定', () => {
     expect(
       checkPluginName('@michengai/dsh-skills-manager', ['@michengai/dsh-archive-manager'])
     ).toMatchObject({ level: 'pass', code: 'name.ok' })
-    // 抢注近似域：差一个字符，提示。
+    // 抢注近似域：差一个字符，提示并指明相似的是哪个已装包。
     expect(
       checkPluginName('@micheng-ai/dsh-skills-manager', ['@michengai/dsh-archive-manager'])
     ).toMatchObject({
       level: 'warn',
-      code: 'name.scope-similar'
+      code: 'name.scope-similar',
+      params: { similar: '@michengai/dsh-archive-manager' }
     })
   })
 

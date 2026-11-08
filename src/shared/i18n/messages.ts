@@ -1514,12 +1514,12 @@ export const MESSAGES = {
     en: 'Name may impersonate an official package'
   },
   'detail.plugin.security.code.name.similar-installed': {
-    zh: '与已装插件名称相似',
-    en: 'Name is similar to an installed plugin'
+    zh: '与已装插件 {similar} 名称相似',
+    en: 'Name is similar to installed plugin {similar}'
   },
   'detail.plugin.security.code.name.scope-similar': {
-    zh: '与已装插件 scope 相似',
-    en: 'Scope is similar to an installed plugin'
+    zh: '与已装插件 {similar} 的 scope 相似',
+    en: 'Scope is similar to the scope of installed plugin {similar}'
   },
   'detail.plugin.security.code.name.skipped': { zh: '名称检查未完成', en: 'Name check skipped' },
   'detail.plugin.security.code.scripts.none': { zh: '无安装脚本', en: 'No install scripts' },

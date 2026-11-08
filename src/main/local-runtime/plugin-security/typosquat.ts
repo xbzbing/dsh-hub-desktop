@@ -105,7 +105,7 @@ export function checkPluginName(name: string, installedNames: readonly string[])
       return {
         level: 'warn',
         code: 'name.scope-similar',
-        params: { name, similarScope: similarScope.scope },
+        params: { name, similarScope: similarScope.scope, similar: similarScope.raw },
         findings: [finding('name.scope-similar', similarScope.scope)]
       }
     }
