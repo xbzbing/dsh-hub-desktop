@@ -1324,6 +1324,10 @@ export const MESSAGES = {
     en: '{count} items need attention'
   },
   'detail.plugin.security.verdict.blocked': { zh: '已阻止安装', en: 'Installation blocked' },
+  'detail.plugin.security.verdict.blockedOverridable': {
+    zh: '高风险，可确认安装',
+    en: 'High risk, install optional'
+  },
   'detail.plugin.security.verdict.unavailable': {
     zh: '关键检查未完成',
     en: 'Essential checks incomplete'
@@ -1343,6 +1347,10 @@ export const MESSAGES = {
   'detail.plugin.security.summary.blocked': {
     zh: '发现高风险问题，无法继续安装。请更换版本或安装源。',
     en: 'High-risk issues found; installation cannot continue. Choose another version or source.'
+  },
+  'detail.plugin.security.summary.blockedOverridable': {
+    zh: '静态检查把以下特征判为高风险，但它可能是误报。核对证据后仍可安装，风险由你承担。',
+    en: 'Static checks flagged these traits as high risk, which can be a false positive. You can still install after reviewing the evidence; the risk is yours.'
   },
   'detail.plugin.security.summary.unavailable': {
     zh: '关键检查未能完成，无法确认包体是否安全；确认后可继续安装。',

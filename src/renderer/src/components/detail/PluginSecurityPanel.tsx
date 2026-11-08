@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PluginSecurityEvidence, PluginSecurityLevel } from '@shared/contracts'
+import { securityHardBlocked } from '@shared/plugin-security'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
 import {
@@ -61,6 +62,8 @@ export default function PluginSecurityPanel(props: {
   }, [autoCollapse])
   const warnCount = report?.checks.filter((check) => check.level === 'warn').length ?? 0
   const blocked = report?.verdict === 'blocked'
+  /** 启发式规则给出的阻断：核对证据后仍要安装；结构性失败没有覆盖入口。 */
+  const overridable = blocked && !securityHardBlocked(report)
   const noteClass =
     report?.verdict === 'pass'
       ? 'n-ok'
@@ -80,7 +83,9 @@ export default function PluginSecurityPanel(props: {
           <span className="badge">{t('detail.plugin.security.verdict.disabled')}</span>
         ) : report !== null ? (
           <span className={`badge security-badge security-badge--${report.verdict}`}>
-            {securityVerdictText(t, report.verdict, { count: warnCount })}
+            {overridable
+              ? t('detail.plugin.security.verdict.blockedOverridable')
+              : securityVerdictText(t, report.verdict, { count: warnCount })}
           </span>
         ) : null
       }
@@ -220,13 +225,21 @@ export default function PluginSecurityPanel(props: {
   ].filter((part): part is string => part !== null)
 
   return (
-    <div data-testid="plugin-security-panel" data-verdict={readyReport.verdict}>
+    <div
+      data-testid="plugin-security-panel"
+      data-verdict={readyReport.verdict}
+      data-overridable={overridable ? 'true' : undefined}
+    >
       {header}
       {open && (
         <>
           <div className={`note ${noteClass}`} data-testid="plugin-security-summary">
             <Icon name={readyReport.verdict === 'pass' ? 'check' : 'alert'} />
-            <span>{securitySummaryText(t, readyReport.verdict)}</span>
+            <span>
+              {overridable
+                ? t('detail.plugin.security.summary.blockedOverridable')
+                : securitySummaryText(t, readyReport.verdict)}
+            </span>
           </div>
 
           <dl className="kv mt12">

@@ -27,3 +27,4 @@
 | [0015](./0015-download-save-dialog.md) | 下载落点由用户在保存对话框确认（默认路径预填系统下载目录） | 已采纳 |
 | [0016](./0016-workspace-find-page-first.md) | 工作区 ⌘/Ctrl+F 由页面优先响应，菜单快捷键兜底 | 已采纳 |
 | [0017](./0017-plugin-install-security-check.md) | 插件安装前静态安全检查：danger 硬阻止、warn 可确认、应用级开关 | 已采纳 |
+| [0018](./0018-heuristic-block-overridable.md) | 启发式检查的 blocked 允许确认后安装；结构性失败仍硬阻止 | 已采纳（部分取代 0017 覆盖口径） |

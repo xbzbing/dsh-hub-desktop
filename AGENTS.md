@@ -51,6 +51,7 @@ scripts/release/ 发布检查和校验和脚本
 - IPC 不得接受可被 renderer 用来执行任意路径、命令或其他危险操作的输入。由主进程自行确定目录和命令。
 - 实例类型为 `local`、`ssh`、`http`；传输类型不可通过 patch 修改。
 - SSH 采用 TOFU：首次读取主机指纹后由用户确认；已保存的指纹发生变化时拒绝连接，用户可显式删除本地指纹后重新确认。
+- 插件安装安全检查的放行口径只写在 `src/shared/plugin-security.ts`（结构性失败硬阻止、启发式结论需确认），主进程闸门与渲染层按钮都调用它，不得各写一份（见 `docs/adr/0018-heuristic-block-overridable.md`）。
 - 目录别名 `@shared` 指向 `src/shared`，配置位于 electron-vite、三个 tsconfig、Vitest 和 Playwright 设置中。
 
 ## 并发编辑与 Git

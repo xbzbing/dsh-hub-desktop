@@ -352,7 +352,10 @@ export interface PluginPackageInfo {
   releaseNotes: PluginReleaseNotes
 }
 
-/** 安全检查判定：pass 正常安装；warn 需「仍要安装」；blocked 禁止安装；unavailable 需确认；disabled 设置关闭。 */
+/**
+ * 安全检查判定：pass 正常安装；warn 需「仍要安装」；blocked 分结构性失败（禁止安装）与
+ * 启发式结论（需「仍要安装」，见 `securityHardBlocked`）；unavailable 需确认；disabled 设置关闭。
+ */
 export type PluginSecurityVerdict = 'pass' | 'warn' | 'blocked' | 'unavailable' | 'disabled'
 
 /** 安全检查分组（渲染层按 id 组织分组文案）。 */
@@ -366,7 +369,7 @@ export type PluginSecurityCheckId =
   | 'dependencies'
   | 'vulnerabilities'
 
-/** 单项检查等级：danger/blocked 会阻止安装，warn 允许「仍要安装」，info 只展示。 */
+/** 单项检查等级：danger/blocked 判定为 blocked，是否为硬阻止取决于检查项，warn 允许「仍要安装」，info 只展示。 */
 export type PluginSecurityLevel = 'pass' | 'info' | 'warn' | 'danger' | 'blocked' | 'skip'
 
 /** 一项检查的结论；code + params 由渲染层映射为 zh/en 文案。 */

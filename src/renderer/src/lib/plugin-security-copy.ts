@@ -135,18 +135,3 @@ export function securityCodeText(
   }
   return t(key, values)
 }
-
-/** warn / unavailable / 取数失败都需要显式确认后才能提交安装。 */
-export function securityNeedsAcknowledgement(
-  report: { verdict: PluginSecurityVerdict } | null,
-  error: boolean
-): boolean {
-  if (error) return true
-  if (report === null) return false
-  return report.verdict === 'warn' || report.verdict === 'unavailable'
-}
-
-/** 阻止安装：danger/blocked 的硬闸门，以及检查结果明确不允许安装。 */
-export function securityBlocked(report: { verdict: PluginSecurityVerdict } | null): boolean {
-  return report?.verdict === 'blocked'
-}

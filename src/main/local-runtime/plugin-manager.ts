@@ -29,6 +29,7 @@ import type {
   PluginUpgradeOptions
 } from '@shared/contracts'
 import { DEFAULT_PLUGIN_REGISTRY } from '@shared/settings'
+import { securityHardBlocked, securityNeedsAcknowledgement } from '@shared/plugin-security'
 import { execFileResult } from './exec-file'
 import type { CommandResult, CommandRunner } from './exec-file'
 import type { RuntimeInstaller } from './runtime-installer'
@@ -419,7 +420,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   }
 
   /**
-   * 安装/升级前闸门：blocked（含 danger）永远拒绝；warn/unavailable 需要用户显式确认。
+   * 安装/升级前闸门：结构性失败（包体与元数据不符）始终拒绝；其余结论，包括
+   * 启发式规则给出的 blocked，都要求用户显式确认后放行。
    * 复用 securityCheck 的 10 分钟缓存，确认后再次安装不会重复打网络。
    */
   async function guardSecurity(
@@ -430,7 +432,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
   ): Promise<void> {
     const report = await securityCheck(instance, spec, { registry })
     if (report.verdict === 'disabled' || report.verdict === 'pass') return
-    if (report.verdict === 'blocked') {
+    if (securityHardBlocked(report)) {
       const codes = report.checks
         .filter((check) => check.level === 'danger' || check.level === 'blocked')
         .map((check) => check.code)
@@ -440,7 +442,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
         `安全检查未通过${codes.length > 0 ? `（${codes.join('、')}）` : ''}，已阻止安装`
       )
     }
-    if (!acknowledged) {
+    if (securityNeedsAcknowledgement(report) && !acknowledged) {
       throw new InstanceStoreError(
         'invalid-state',
         '安全检查需要确认：请查看检查结果并点击「仍要安装」'

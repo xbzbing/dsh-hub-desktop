@@ -4,7 +4,18 @@ import type { PluginSecurityChecker } from './plugin-security'
 import { createPluginManager } from './plugin-manager'
 import { baseOptions, fakeRun, localInstance } from './plugin-manager.testkit'
 
-function report(verdict: PluginSecurityReport['verdict']): PluginSecurityReport {
+function check(
+  id: PluginSecurityReport['checks'][number]['id'],
+  level: PluginSecurityReport['checks'][number]['level'],
+  code: string
+): PluginSecurityReport['checks'][number] {
+  return { id, level, code, params: {}, findingCodes: [] }
+}
+
+function report(
+  verdict: PluginSecurityReport['verdict'],
+  checks: PluginSecurityReport['checks'] = []
+): PluginSecurityReport {
   return {
     spec: 'demo-plugin@1.1.0',
     verdict,
@@ -13,7 +24,7 @@ function report(verdict: PluginSecurityReport['verdict']): PluginSecurityReport 
     fingerprint: null,
     essentialComplete: verdict !== 'unavailable',
     partial: false,
-    checks: [],
+    checks,
     findings: [],
     facts: {
       source: 'npm',
@@ -77,9 +88,11 @@ describe('plugin manager 安全检查闸门', () => {
     expect(run.mock.calls.some(([, args]) => args.includes('add'))).toBe(true)
   })
 
-  it('blocked：即使确认也拒绝，不执行 add', async () => {
+  it('结构性失败：即使确认也拒绝，不执行 add', async () => {
     const run = fakeRun()
-    const checker = checkerFor(report('blocked'))
+    const checker = checkerFor(
+      report('blocked', [check('integrity', 'blocked', 'integrity.mismatch')])
+    )
     const manager = createPluginManager({
       ...baseOptions(run),
       securityChecker: checker,
@@ -89,6 +102,25 @@ describe('plugin manager 安全检查闸门', () => {
       manager.install(localInstance(), 'demo-plugin@1.1.0', { securityAcknowledged: true })
     ).rejects.toThrow('已阻止安装')
     expect(run.mock.calls.some(([, args]) => args.includes('add'))).toBe(false)
+  })
+
+  it('启发式失败：blocked 未确认时拒绝，确认后继续', async () => {
+    const run = fakeRun()
+    const checker = checkerFor(
+      report('blocked', [check('content', 'danger', 'content.credential-exfil')])
+    )
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      securityChecker: checker,
+      securityEnabled: () => true
+    })
+    await expect(manager.install(localInstance(), 'demo-plugin@1.1.0')).rejects.toThrow(
+      '安全检查需要确认'
+    )
+    expect(run.mock.calls.some(([, args]) => args.includes('add'))).toBe(false)
+
+    await manager.install(localInstance(), 'demo-plugin@1.1.0', { securityAcknowledged: true })
+    expect(run.mock.calls.some(([, args]) => args.includes('add'))).toBe(true)
   })
 
   it('设置关闭：返回 disabled，不调用检查器，安装继续', async () => {
@@ -126,9 +158,11 @@ describe('plugin manager 安全检查闸门', () => {
     expect(run.mock.calls.some(([, args]) => args.includes('add'))).toBe(true)
   })
 
-  it('upgrade：blocked 在删除旧版本之前拒绝', async () => {
+  it('upgrade：结构性失败在删除旧版本之前拒绝', async () => {
     const run = fakeRun()
-    const checker = checkerFor(report('blocked'))
+    const checker = checkerFor(
+      report('blocked', [check('integrity', 'blocked', 'integrity.mismatch')])
+    )
     const manager = createPluginManager({
       ...baseOptions(run),
       securityChecker: checker,

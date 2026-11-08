@@ -168,6 +168,41 @@ function reportPatch(verdict: PluginSecurityReport['verdict']): Partial<PluginSe
   return { verdict }
 }
 
+function contentDangerPatch(): Partial<PluginSecurityReport> {
+  return {
+    verdict: 'blocked',
+    checks: [
+      check('source', 'pass', 'source.npm'),
+      check('integrity', 'pass', 'integrity.ok'),
+      check('reputation', 'pass', 'reputation.established'),
+      check('name', 'pass', 'name.ok'),
+      check('scripts', 'pass', 'scripts.none'),
+      check('content', 'danger', 'content.credential-exfil', {
+        spawn: 0,
+        network: 2,
+        fs: 1,
+        env: 1,
+        eval: 0,
+        sensitive: 1,
+        files: 6,
+        minified: 0
+      }),
+      check('dependencies', 'pass', 'deps.registry-only'),
+      check('vulnerabilities', 'pass', 'vuln.none')
+    ],
+    findings: [
+      {
+        code: 'content.credential-exfil',
+        level: 'danger',
+        count: 1,
+        evidence: [{ file: 'lib/install.js', line: 12, match: 'sensitive-read+network' }],
+        refs: []
+      }
+    ],
+    essentialComplete: true
+  }
+}
+
 async function launch(
   patch: Partial<PluginSecurityReport> = {},
   preserveData = false,
@@ -280,6 +315,22 @@ test('blocked：不提供安装按钮，返回修改回到第一步', async () =
   await win.getByTestId('install-plugin-back').click()
   await expect(win.getByTestId('install-plugin-input')).toBeVisible()
   await expect(win.getByTestId('install-confirm-version')).toHaveCount(0)
+})
+
+test('启发式 blocked：给出「仍要安装」，确认后执行安装', async () => {
+  test.setTimeout(90_000)
+  await launch(contentDangerPatch())
+  await openInstallDialog()
+  const panel = win.getByTestId('plugin-security-panel')
+  await expect(panel).toHaveAttribute('data-verdict', 'blocked', { timeout: 15_000 })
+  await expect(panel).toHaveAttribute('data-overridable', 'true')
+  await expect(panel).toContainText('高风险，可确认安装')
+  const submit = win.getByTestId('install-plugin-submit')
+  await expect(submit).toContainText('仍要安装 1.1.0')
+  await submit.click()
+  await expect(win.getByTestId('install-plugin-dialog')).toBeHidden({ timeout: 30_000 })
+  const mutations = await readMutations()
+  expect(mutations.map((item) => item.cmd)).toEqual(['add'])
 })
 
 test('unavailable：关键检查未完成时允许确认后安装', async () => {

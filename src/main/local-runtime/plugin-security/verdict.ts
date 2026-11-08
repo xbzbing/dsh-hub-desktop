@@ -2,7 +2,7 @@
  * 报告组装与判定：把各检查结果收敛成 pass / warn / blocked / unavailable。
  *
  * 口径（已与用户确认）：
- * - 任一 danger/blocked → blocked，不提供覆盖入口；
+ * - 任一 danger/blocked → blocked；能否确认后安装由 `securityHardBlocked` 决定；
  * - 关键检查（完整性/内容）未完成 → unavailable，可「仍要安装」；
  * - 任一 warn → warn，可「仍要安装」；
  * - 只有 info/pass → pass。

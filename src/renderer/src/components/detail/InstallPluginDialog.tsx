@@ -11,7 +11,7 @@ import { useAppStore } from '../../store'
 import InstallConfirmPanel from './InstallConfirmPanel'
 import PluginSecurityPanel from './PluginSecurityPanel'
 import { REGISTRY_CHOICES, registryLabel } from './registry-choices'
-import { securityBlocked, securityNeedsAcknowledgement } from '../../lib/plugin-security-copy'
+import { securityHardBlocked, securityNeedsAcknowledgement } from '@shared/plugin-security'
 import { usePluginSecurityCheck } from '../../lib/use-plugin-security-check'
 
 const BRIDGE = window.dshHub
@@ -75,7 +75,7 @@ export default function InstallPluginDialog(props: {
   const securityReport = security.state.status === 'ready' ? security.state.report : null
   const securityChecking =
     plan !== null && (security.state.status === 'loading' || security.state.status === 'idle')
-  const securityBlockedNow = securityBlocked(securityReport)
+  const securityBlockedNow = securityHardBlocked(securityReport)
   const securityAck = securityNeedsAcknowledgement(
     securityReport,
     security.state.status === 'error'
