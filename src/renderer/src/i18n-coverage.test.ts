@@ -518,7 +518,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   ),
   debt(
     'src/main/local-runtime/local-runtime-ready.ts',
-    "detail: error instanceof Error ? `解析就绪地址失败：${error.message}` : '解析就绪地址失败'"
+    "stopEntry(error instanceof Error ? `解析就绪地址失败：${error.message}` : '解析就绪地址失败')"
   ),
   debt(
     'src/main/local-runtime/local-runtime-ready.ts',
@@ -530,7 +530,7 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   ),
   debt(
     'src/main/local-runtime/local-runtime-ready.ts',
-    '`就绪 URL 无法访问（健康探测 ${deps.healthProbeRetries} 次失败）：${url}`'
+    'redactLine(`就绪 URL 无法访问（健康探测 ${deps.healthProbeRetries} 次失败）：${url}`)'
   ),
   debt(
     'src/main/local-runtime/local-runtime-ready.ts',
