@@ -11,8 +11,7 @@ import { useAppStore } from '../../store'
 import InstallConfirmPanel from './InstallConfirmPanel'
 import PluginSecurityPanel from './PluginSecurityPanel'
 import { REGISTRY_CHOICES, registryLabel } from './registry-choices'
-import { securityHardBlocked, securityNeedsAcknowledgement } from '@shared/plugin-security'
-import { usePluginSecurityCheck } from '../../lib/use-plugin-security-check'
+import { usePluginPlanSecurity } from '../../lib/use-plugin-security-check'
 
 const BRIDGE = window.dshHub
 
@@ -66,20 +65,12 @@ export default function InstallPluginDialog(props: {
   const [reconfirmNeeded, setReconfirmNeeded] = useState(false)
   /** 最新输入：解析期间又编辑时，用它丢弃对应旧输入的解析结果。 */
   const specRef = useRef('')
-  const security = usePluginSecurityCheck({
-    instanceId,
-    spec: plan?.installSpec ?? null,
-    registry,
-    enabled: securityEnabled
-  })
-  const securityReport = security.state.status === 'ready' ? security.state.report : null
-  const securityChecking =
-    plan !== null && (security.state.status === 'loading' || security.state.status === 'idle')
-  const securityBlockedNow = securityHardBlocked(securityReport)
-  const securityAck = securityNeedsAcknowledgement(
-    securityReport,
-    security.state.status === 'error'
-  )
+  const {
+    security,
+    checking: securityChecking,
+    blockedNow: securityBlockedNow,
+    needsAcknowledgement: securityAck
+  } = usePluginPlanSecurity({ instanceId, plan, registry, enabled: securityEnabled })
 
   const changeSpec = (value: string): void => {
     specRef.current = value

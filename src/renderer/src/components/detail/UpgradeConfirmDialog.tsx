@@ -11,8 +11,7 @@ import { useAppStore } from '../../store'
 import InstallConfirmPanel from './InstallConfirmPanel'
 import PluginSecurityPanel from './PluginSecurityPanel'
 import { REGISTRY_CHOICES, registryLabel } from './registry-choices'
-import { securityHardBlocked, securityNeedsAcknowledgement } from '@shared/plugin-security'
-import { usePluginSecurityCheck } from '../../lib/use-plugin-security-check'
+import { usePluginPlanSecurity } from '../../lib/use-plugin-security-check'
 
 const BRIDGE = window.dshHub
 
@@ -65,20 +64,12 @@ export default function UpgradeConfirmDialog(props: {
   const [sourceOpen, setSourceOpen] = useState(true)
   /** 本确认框是否已「放到后台」：收起即失效，升级结束后的收尾据此不再碰对话框状态。 */
   const backgroundedRef = useRef(false)
-  const security = usePluginSecurityCheck({
-    instanceId,
-    spec: plan?.installSpec ?? null,
-    registry,
-    enabled: securityEnabled
-  })
-  const securityReport = security.state.status === 'ready' ? security.state.report : null
-  const securityChecking =
-    plan !== null && (security.state.status === 'loading' || security.state.status === 'idle')
-  const securityBlockedNow = securityHardBlocked(securityReport)
-  const securityAck = securityNeedsAcknowledgement(
-    securityReport,
-    security.state.status === 'error'
-  )
+  const {
+    security,
+    checking: securityChecking,
+    blockedNow: securityBlockedNow,
+    needsAcknowledgement: securityAck
+  } = usePluginPlanSecurity({ instanceId, plan, registry, enabled: securityEnabled })
 
   useEffect(() => {
     const bridge = BRIDGE

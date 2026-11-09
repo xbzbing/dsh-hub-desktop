@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PluginRegistryOption, PluginSecurityReport } from '@shared/contracts'
+import type {
+  PluginInstallPlan,
+  PluginRegistryOption,
+  PluginSecurityReport
+} from '@shared/contracts'
+import { securityHardBlocked, securityNeedsAcknowledgement } from '@shared/plugin-security'
 
 /** 安全检查在渲染层的取数状态；disabled 表示设置关闭，不会发起 IPC。 */
 export type PluginSecurityState =
@@ -69,4 +74,31 @@ export function usePluginSecurityCheck(input: {
   }
 
   return { state, refresh }
+}
+
+/**
+ * 安装/升级确认区共用的安全检查派生状态：
+ * 计划确定后才显示「检查中」，违规结论直接阻止提交，启发式结论需用户确认。
+ */
+export function usePluginPlanSecurity(input: {
+  instanceId: string
+  plan: PluginInstallPlan | null
+  registry: PluginRegistryOption
+  enabled: boolean
+}) {
+  const security = usePluginSecurityCheck({
+    instanceId: input.instanceId,
+    spec: input.plan?.installSpec ?? null,
+    registry: input.registry,
+    enabled: input.enabled
+  })
+  const report = security.state.status === 'ready' ? security.state.report : null
+  return {
+    security,
+    checking:
+      input.plan !== null &&
+      (security.state.status === 'loading' || security.state.status === 'idle'),
+    blockedNow: securityHardBlocked(report),
+    needsAcknowledgement: securityNeedsAcknowledgement(report, security.state.status === 'error')
+  }
 }
