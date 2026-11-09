@@ -18,6 +18,11 @@ export interface AuthStateLike {
 /** 处于「需要用户重新提供凭据」的阶段 */
 const CREDENTIAL_PHASES: readonly AuthPhase[] = ['needs-auth', 'await-credentials']
 
+/** 单条审计事件的构造器；`result` 省略时由审计层补默认值。 */
+function entryFor(instanceId: string, event: AuditEntry['event'], result?: string): AuditEntry[] {
+  return [{ instanceId, event, ...(result === undefined ? {} : { result }) }]
+}
+
 /**
  * 认证状态迁移 → 审计事件(可能 0 或 1 条)。
  *
@@ -35,9 +40,8 @@ export function mapAuthTransition(
   prev: AuthStateLike | null,
   next: AuthStateLike
 ): AuditEntry[] {
-  const entry = (event: AuditEntry['event'], result?: string): AuditEntry[] => [
-    { instanceId, event, ...(result === undefined ? {} : { result }) }
-  ]
+  const entry = (event: AuditEntry['event'], result?: string): AuditEntry[] =>
+    entryFor(instanceId, event, result)
 
   if (next.phase === 'connected') {
     return prev?.phase === 'connected' ? [] : entry('login-success', 'ok')
@@ -89,9 +93,8 @@ export function mapRuntimeTransition(
   prev: RuntimeStatusLike | null,
   next: RuntimeStatusLike
 ): AuditEntry[] {
-  const entry = (event: AuditEntry['event'], result?: string): AuditEntry[] => [
-    { instanceId, event, ...(result === undefined ? {} : { result }) }
-  ]
+  const entry = (event: AuditEntry['event'], result?: string): AuditEntry[] =>
+    entryFor(instanceId, event, result)
 
   if (next.status === 'running') {
     return prev?.status === 'running' ? [] : entry('connect', 'ok')
