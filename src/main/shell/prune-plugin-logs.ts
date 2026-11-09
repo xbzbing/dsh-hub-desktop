@@ -23,6 +23,7 @@ import type { Dirent } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { InstanceRecord } from '@shared/contracts'
+import { dayStampFrom, localDay } from '../rotating-log'
 import { instanceHomeDir } from './open-instance-dir'
 
 /** 合并文件默认保留天数：早于此的按天合并文件（及 operation 目录）会被清理。 */
@@ -59,22 +60,6 @@ export interface ConsolidateSummary {
   prunedDayFiles: string[]
 }
 
-/** 本地日历日 `YYYY-MM-DD`（与 main-log / audit-log 一致，便于对照）。 */
-function localDay(date: Date): string {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-/** 从合并文件名解析归属日；形状合法但日期不存在（如 2026-13-45）返回 null。 */
-function dayFileStamp(name: string): string | null {
-  const stamp = DAY_FILE_PATTERN.exec(name)?.[1]
-  if (!stamp) return null
-  const [year, month, day] = stamp.split('-').map(Number) as [number, number, number]
-  return localDay(new Date(year, month - 1, day)) === stamp ? stamp : null
-}
-
 interface Cutoffs {
   /** operation 目录 mtime < 此（毫秒）→ 超保留期，直接删除。 */
   retentionCutoffMs: number
@@ -102,7 +87,7 @@ async function consolidateLogsDir(
     const name = entry.name
     // 按天合并文件的保留期清理（只认严格命名）。
     if (entry.isFile()) {
-      const stamp = dayFileStamp(name)
+      const stamp = dayStampFrom(name, DAY_FILE_PATTERN)
       if (stamp && stamp < cutoffs.retentionCutoffDay) {
         try {
           await unlink(join(logsDir, name))

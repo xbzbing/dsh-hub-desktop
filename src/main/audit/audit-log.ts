@@ -11,8 +11,7 @@
  * 3. **写失败绝不冒泡进业务流**:失败经 `onError` 上报,审计不可用不该让登录失败;
  * 4. 清理只删**严格匹配** `audit.log.<YYYY-MM-DD>` 的文件,目录里其它文件一律不碰。
  */
-import { appendFile, link, mkdir, readdir, readFile, stat, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { createRotatingLog, localDay } from '../rotating-log'
 
 /** 当日活动文件名 */
 export const AUDIT_LOG_NAME = 'audit.log'
@@ -78,33 +77,6 @@ export interface AuditLog {
   count(): number
 }
 
-/** 本地日历日 `YYYY-MM-DD`(归档文件名用本地日,与网关一致) */
-function localDay(date: Date): string {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-const ARCHIVE_PATTERN = /^audit\.log\.(\d{4}-\d{2}-\d{2})$/
-
-/**
- * 从归档文件名解析归档日 `YYYY-MM-DD`(无时区歧义,按本地日比较)。
- *
- * 保留期用**日历日**而非时刻比较:归档名只有日期,拿它与 `now - 90天` 的
- * **时刻**比较会在一天中的前半段/后半段给出不同结论(边界日 ±1 天不确定)。
- * 统一按本地日字符串比较(ISO 日期可直接字典序比较)。
- */
-function archiveStamp(name: string): string | null {
-  const matched = ARCHIVE_PATTERN.exec(name)
-  const stamp = matched?.[1]
-  if (!stamp) return null
-  const [year, month, day] = stamp.split('-').map(Number) as [number, number, number]
-  const date = new Date(year, month - 1, day)
-  // 拒绝 2026-13-45 这类形状合法但日期不存在的名字
-  return localDay(date) === stamp ? stamp : null
-}
-
 /**
  * 记录的白名单投影:显式逐字段构造(不 spread),并截断 `result`。
  * 这是「审计不含凭据」的结构性保证 —— 调用方无法把额外字段带进日志。
@@ -119,114 +91,49 @@ export function projectAuditRecord(entry: AuditEntry, isoNow: string): AuditReco
   }
 }
 
+/** 从活动文件的最后一条 JSONL 记录取归属日;无法解析时返回 null。 */
+function dayOfRecordLine(lastLine: string): string | null {
+  try {
+    const record = JSON.parse(lastLine) as { ts?: unknown }
+    if (typeof record.ts !== 'string') return null
+    const date = new Date(record.ts)
+    return Number.isNaN(date.getTime()) ? null : localDay(date)
+  } catch {
+    return null
+  }
+}
+
 export function createAuditLog(options: AuditLogOptions): AuditLog {
-  const dir = options.dir
-  const now = options.now ?? (() => Date.now())
-  const maxAgeDays = options.maxAgeDays ?? AUDIT_MAX_AGE_DAYS
   const onError =
     options.onError ?? ((error: unknown) => console.error('[audit] 写入失败：', error))
+  const log = createRotatingLog({
+    dir: options.dir,
+    fileName: AUDIT_LOG_NAME,
+    now: options.now ?? (() => Date.now()),
+    maxAgeDays: options.maxAgeDays ?? AUDIT_MAX_AGE_DAYS,
+    onError,
+    dayOfLastLine: dayOfRecordLine
+  })
 
   let written = 0
-  /** 当前活动文件所属的本地日(首次写入前为 null) */
-  let liveDay: string | null = null
-  /** 串行化:并发 append 交错会让轮转与写入互相踩(轮转需在写前完成) */
-  let tail: Promise<void> = Promise.resolve()
-
-  /**
-   * 从活动文件末尾读取最后一条记录的日期,用于恢复 liveDay。
-   * 重启后若不恢复,当天的记录会与前一天的记录混在同一文件里(轮转被跳过)。
-   */
-  async function probeLiveDay(): Promise<string | null> {
-    try {
-      const content = await readFile(logPath(), 'utf8')
-      // 从末尾找最后一条 JSONL 行(避免读取整个大文件)
-      const lastNewline = content.lastIndexOf('\n', content.length - 2)
-      const lastLine = (lastNewline >= 0 ? content.slice(lastNewline + 1) : content).trim()
-      if (lastLine === '') return null
-      const record = JSON.parse(lastLine) as { ts?: string }
-      if (typeof record.ts !== 'string') return null
-      // ts 是 ISO-8601 UTC,用本地日解析(与 localDay 一致)
-      const date = new Date(record.ts)
-      return localDay(date)
-    } catch {
-      return null
-    }
-  }
-
-  const logPath = (): string => join(dir, AUDIT_LOG_NAME)
-
-  /** 轮转:把上一个写入日的活动文件改名为其归属日的归档 */
-  async function rotateIfNeeded(today: string): Promise<void> {
-    if (liveDay === null || liveDay === today) {
-      liveDay = today
-      return
-    }
-    const live = logPath()
-    const archive = join(dir, `${AUDIT_LOG_NAME}.${liveDay}`)
-    try {
-      // link + unlink:活动文件换名后,后续 appendFile 不会写进已归档文件
-      await link(live, archive)
-      await unlink(live)
-    } catch {
-      // 轮转失败(如活动文件不存在)隔离处理:继续往当前活动文件写
-    }
-    liveDay = today
-  }
-
-  async function appendLine(record: AuditRecord): Promise<void> {
-    const today = localDay(new Date(now()))
-    // 首次写入时从已有文件恢复 liveDay:重启后若不恢复,当天记录会与前一天混在同一文件
-    if (liveDay === null) liveDay = await probeLiveDay()
-    await mkdir(dir, { recursive: true })
-    await rotateIfNeeded(today)
-    await appendFile(logPath(), `${JSON.stringify(record)}\n`, { mode: 0o600 })
-    written += 1
-  }
 
   return {
-    logPath,
+    logPath: log.logPath,
     count: () => written,
 
     async write(entry) {
-      const record = projectAuditRecord(entry, new Date(now()).toISOString())
-      // 串行链:一次失败不阻断后续写入(onError 已消化)
-      tail = tail.then(
-        () => appendLine(record),
-        () => appendLine(record)
+      const record = projectAuditRecord(
+        entry,
+        new Date(options.now?.() ?? Date.now()).toISOString()
       )
       try {
-        await tail
+        await log.appendLine(JSON.stringify(record))
+        written += 1
       } catch (error) {
         onError(error)
       }
     },
 
-    async prune() {
-      // 保留期按本地日历日计算:归档日 < cutoffDay 才删
-      const cutoffDay = localDay(new Date(now() - maxAgeDays * 24 * 60 * 60 * 1000))
-      const removed: string[] = []
-      try {
-        const names = await readdir(dir)
-        for (const name of names) {
-          // 只认严格归档名,目录里其它文件一律不碰
-          const stamp = archiveStamp(name)
-          if (!stamp || stamp >= cutoffDay) continue
-          try {
-            // 二次确认是普通文件(避免误删同名目录)
-            const info = await stat(join(dir, name))
-            if (!info.isFile()) continue
-            await unlink(join(dir, name))
-            removed.push(name)
-          } catch (error) {
-            onError(error)
-          }
-        }
-      } catch (error) {
-        // 目录不存在等价于无归档
-        const code = (error as NodeJS.ErrnoException).code
-        if (code !== 'ENOENT') onError(error)
-      }
-      return removed
-    }
+    prune: log.prune
   }
 }
