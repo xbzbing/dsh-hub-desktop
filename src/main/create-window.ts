@@ -10,6 +10,16 @@ import { systemLocale } from './system-locale'
 import type { WorkspaceHost } from './workspace-host'
 import type { WorkspaceTooltipHost } from './workspace-tooltip'
 
+/** Hub 窗口共用的最小权限 webPreferences；两个 BrowserWindow 只额外设置背景节流。 */
+const HARDENED_WEB_PREFERENCES = {
+  preload: join(__dirname, '../preload/index.js'),
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: true,
+  webviewTag: false,
+  spellcheck: false
+} as const
+
 export interface WindowControllerDeps {
   /** 是否 Vite dev server 形态（决定导航白名单与加载地址） */
   isDev: boolean
@@ -109,12 +119,7 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
       skipTaskbar: true,
       show: false,
       webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        webviewTag: false,
-        spellcheck: false,
+        ...HARDENED_WEB_PREFERENCES,
         backgroundThrottling: !deps.e2eHidden
       }
     })
@@ -231,12 +236,7 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
       trafficLightPosition: { x: 14, y: 13 },
       webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        webviewTag: false,
-        spellcheck: false,
+        ...HARDENED_WEB_PREFERENCES,
         backgroundThrottling: !deps.e2eHidden
       }
     })
