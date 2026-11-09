@@ -128,20 +128,16 @@ export default function SettingsView(): ReactNode {
       .finally(() => setCheckingUpdate(false))
   }
 
-  /** 在系统默认浏览器打开最新 Release 页面；地址由主进程按协议白名单校验。 */
-  const openReleasePage = (): void => {
-    const url = updateCheck?.releaseUrl
-    if (url === null || url === undefined) return
+  /** 外链交主进程按协议白名单校验后用系统浏览器打开。 */
+  const openExternal = (url: string): void => {
     void BRIDGE?.openExternalLink(url).then((result) => {
       if (result && !result.ok) toast('err', t('settings.updateOpenReleaseFailed'), result.message)
     })
   }
 
-  /** 更新说明里的外链：同样交主进程按协议白名单后用系统浏览器打开。 */
-  const openNoteLink = (url: string): void => {
-    void BRIDGE?.openExternalLink(url).then((result) => {
-      if (result && !result.ok) toast('err', t('settings.updateOpenReleaseFailed'), result.message)
-    })
+  /** 在系统默认浏览器打开最新 Release 页面。 */
+  const openReleasePage = (): void => {
+    if (updateCheck?.releaseUrl) openExternal(updateCheck.releaseUrl)
   }
 
   /** 明细最多列 3 条，更多用省略号收尾（PATH 可能一次新增很多条）。 */
@@ -559,7 +555,7 @@ export default function SettingsView(): ReactNode {
           update={updateCheck}
           onClose={() => setUpdateDialogOpen(false)}
           onOpenRelease={openReleasePage}
-          onOpenLink={openNoteLink}
+          onOpenLink={openExternal}
         />
       )}
       {trashTarget && (
