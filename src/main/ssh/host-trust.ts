@@ -66,17 +66,27 @@ export function keyTypeLabel(type: string): string {
   return map[type] ?? type
 }
 
+interface KeyscanLine {
+  /** 逗号分隔的主机字段。 */
+  hosts: string
+  type: string
+  blob: string
+}
+
+/** 逐行解析 known_hosts 形态的内容；注释、空行与字段不足的行跳过。 */
+function* keyLines(content: string): Generator<KeyscanLine> {
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (line === '' || line.startsWith('#')) continue
+    const [hosts, type, blob] = line.split(/\s+/)
+    if (hosts && type && blob) yield { hosts, type, blob }
+  }
+}
+
 /** 解析 `ssh-keyscan` 输出：非注释行为 `<host-field> <type> <base64>` */
 export function parseKeyscan(stdout: string): HostKeyEntry[] {
   const entries: HostKeyEntry[] = []
-  for (const rawLine of stdout.split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (line === '' || line.startsWith('#')) continue
-    const parts = line.split(/\s+/)
-    if (parts.length < 3) continue
-    const type = parts[1]
-    const blob = parts[2]
-    if (!type || !blob) continue
+  for (const { type, blob } of keyLines(stdout)) {
     if (!entries.some((entry) => entry.type === type && entry.blob === blob)) {
       entries.push({ type, blob })
     }
@@ -87,16 +97,8 @@ export function parseKeyscan(stdout: string): HostKeyEntry[] {
 /** 解析 hub 私有 known_hosts 中该目标的条目（忽略注释/空行） */
 export function parseKnownHosts(content: string, hostField: string): HostKeyEntry[] {
   const entries: HostKeyEntry[] = []
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (line === '' || line.startsWith('#')) continue
-    const parts = line.split(/\s+/)
-    if (parts.length < 3) continue
-    const hosts = (parts[0] ?? '').split(',')
-    if (!hosts.includes(hostField)) continue
-    const type = parts[1]
-    const blob = parts[2]
-    if (type && blob) entries.push({ type, blob })
+  for (const { hosts, type, blob } of keyLines(content)) {
+    if (hosts.split(',').includes(hostField)) entries.push({ type, blob })
   }
   return entries
 }
