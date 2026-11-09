@@ -8,7 +8,7 @@ import type { LocalInstance } from '@shared/contracts'
 import { redactLine } from '@shared/redact'
 import { DEFAULT_PORT_RANGE_END, findFreePort } from './port-allocator'
 import type { PortProbe } from './port-allocator'
-import type { RuntimeInstaller } from './runtime-installer'
+import { listInstalledVersions, type RuntimeInstaller } from './runtime-installer'
 import { followsSystemDsh } from './dsh-source-policy'
 import { resolveCmdShim } from './cmd-shim'
 import { planRuntimeSource, type PathProbe } from './runtime-source'
@@ -178,12 +178,7 @@ export function createLauncher(deps: LauncherDeps): Launcher {
     // 隔离空间与默认启动器走同一套来源决策。
     const followSystemDsh = followsSystemDsh(instance.useDefaultSpace, instance.launcher)
     const [hubInstalled, pathRuntime] = await Promise.all([
-      followSystemDsh
-        ? Promise.resolve([] as string[])
-        : options.installer
-            .listInstalled()
-            .then((items) => items.map((item) => item.version))
-            .catch(() => [] as string[]),
+      followSystemDsh ? Promise.resolve([] as string[]) : listInstalledVersions(options.installer),
       options.pathProbe ? options.pathProbe.probe().catch(() => null) : Promise.resolve(null)
     ])
     const plan = followSystemDsh

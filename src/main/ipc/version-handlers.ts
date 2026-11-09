@@ -17,7 +17,7 @@ import { compareDshVersions } from '../local-runtime/runtime-source'
 import { resolveSystemDshUsage } from '../local-runtime/dsh-source-policy'
 import type { LocalRuntimeManager } from '../local-runtime/local-runtime'
 import type { PathProbe } from '../local-runtime/runtime-source'
-import type { RuntimeInstaller } from '../local-runtime/runtime-installer'
+import { listInstalledVersions, type RuntimeInstaller } from '../local-runtime/runtime-installer'
 import type { PromptBroker } from '../ssh/prompt-broker'
 import { parseId, upgradeEligibility, type IpcWrap } from './ipc-utils'
 
@@ -58,13 +58,7 @@ export function registerVersionHandlers(
             launcher: record.launcher,
             runtimeSource: status?.runtimeSource,
             desiredVersion: record.dshVersion,
-            listInstalledVersions: async () => {
-              try {
-                return (await installer.listInstalled()).map((item) => item.version)
-              } catch {
-                return [] as string[]
-              }
-            },
+            listInstalledVersions: () => listInstalledVersions(installer),
             probePath: async () => (await pathProbe.probe().catch(() => null)) ?? null
           })
           if (decision.usesSystemDsh) {

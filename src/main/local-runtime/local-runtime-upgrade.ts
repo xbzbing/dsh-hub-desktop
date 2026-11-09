@@ -8,8 +8,11 @@
  * 其余情况（隔离空间，或公共空间实际跑 hub 副本）都升级 hub 自己的运行时。
  */
 import type { DshVersionProgressEvent, LocalInstance } from '@shared/contracts'
-import type { InstallProgress } from './runtime-installer'
-import type { RuntimeInstaller } from './runtime-installer'
+import {
+  listInstalledVersions,
+  type InstallProgress,
+  type RuntimeInstaller
+} from './runtime-installer'
 import { isExternalRuntime, resolveSystemDshUsage } from './dsh-source-policy'
 import { InstanceStoreError, type InstanceStore } from '../registry/instance-store'
 import type { PathProbe } from './runtime-source'
@@ -83,13 +86,7 @@ export function createUpgradeOrchestrator(deps: UpgradeOrchestratorDeps) {
         launcher: instance.launcher,
         runtimeSource,
         desiredVersion: instance.dshVersion,
-        listInstalledVersions: async () => {
-          try {
-            return (await installer.listInstalled()).map((item) => item.version)
-          } catch {
-            return [] as string[]
-          }
-        },
+        listInstalledVersions: () => listInstalledVersions(installer),
         probePath: async () => (await pathProbe?.probe().catch(() => null)) ?? null
       })
       if (decision.usesSystemDsh) {

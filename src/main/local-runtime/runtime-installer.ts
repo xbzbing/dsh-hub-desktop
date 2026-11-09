@@ -107,6 +107,15 @@ export interface RuntimeInstaller {
   dispose(): void
 }
 
+/** 已安装版本列表；读取失败按「没有已装版本」处理，来源决策会回落到 PATH 实测。 */
+export async function listInstalledVersions(installer: RuntimeInstaller): Promise<string[]> {
+  try {
+    return (await installer.listInstalled()).map((item) => item.version)
+  } catch {
+    return []
+  }
+}
+
 const INSTALLING_MARKER = 'installing.json'
 
 export function runtimeDirFor(runtimesDir: string, version: string): string {
