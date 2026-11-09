@@ -6,6 +6,7 @@
  * 全部结果在进程内缓存：确认区可能被反复打开，接口按天/按版本更新，不值得重复打外网。
  */
 import type { PluginDownloads, PluginReleaseNotes } from '@shared/contracts'
+import { githubRequestHeaders } from '../github-headers'
 
 /** 更新内容正文上限：Release body 与 CHANGELOG 段落共用（确认区只做限高滚动，不做分页）。 */
 export const RELEASE_NOTES_LIMIT = 4000
@@ -199,23 +200,13 @@ export function createPackageInfoFetchers(deps: PackageInfoFetcherDeps = {}): Pa
   const downloadsCache = new Map<string, { value: PluginDownloads | null; expiresAt: number }>()
   const releaseCache = new Map<string, { value: PluginReleaseNotes; expiresAt: number }>()
 
-  /** GitHub 请求头：无 token 也可用（按 IP 限额 60 次/小时），配置了 GITHUB_TOKEN 则提高配额。 */
-  function githubHeaders(): PackageInfoFetchHeaders {
-    const token = process.env.GITHUB_TOKEN?.trim()
-    return {
-      accept: 'application/vnd.github+json',
-      'user-agent': 'dsh-hub-desktop',
-      ...(token !== undefined && token !== '' ? { authorization: `Bearer ${token}` } : {})
-    }
-  }
-
   async function loadReleaseNotes(
     slug: string,
     input: ReleaseNotesInput
   ): Promise<PluginReleaseNotes> {
     // 发版习惯不一：先试 `v1.2.3` 再试 `1.2.3`，两种 tag 都未命中才降级 CHANGELOG。
     const tags = [`v${input.version}`, input.version]
-    const headers = githubHeaders()
+    const headers = githubRequestHeaders()
     for (const tag of tags) {
       const raw = await fetchJson(
         `https://api.github.com/repos/${slug}/releases/tags/${encodeURIComponent(tag)}`,

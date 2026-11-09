@@ -8,6 +8,7 @@
 import type { AppUpdateCheck } from '@shared/bridge'
 import { HOMEPAGE_URL } from '@shared/contracts'
 import { InstanceStoreError } from './registry/instance-store'
+import { githubRequestHeaders } from './github-headers'
 import { ownerRepoFrom } from './local-runtime/plugin-package-info'
 import { compareDshVersions } from './local-runtime/version-compare'
 
@@ -117,16 +118,6 @@ async function defaultFetchJson(
   }
 }
 
-/** GitHub 请求头：`user-agent` 与 JSON `accept` 是 API 的硬要求。 */
-function githubHeaders(): Record<string, string> {
-  const token = process.env.GITHUB_TOKEN?.trim()
-  return {
-    accept: 'application/vnd.github+json',
-    'user-agent': 'dsh-hub-desktop',
-    ...(token !== undefined && token !== '' ? { authorization: `Bearer ${token}` } : {})
-  }
-}
-
 /**
  * 构造更新检查器：返回「以当前版本为入参、给出检查结果」的函数。
  * 无参数通道由 IPC 层补入 `app.getVersion()`，渲染层不参与版本来源。
@@ -144,7 +135,7 @@ export function createUpdateChecker(
     const raw = await fetchJson(
       `https://api.github.com/repos/${slug}/releases?per_page=${RELEASES_FETCH_COUNT}`,
       UPDATE_TIMEOUT_MS,
-      githubHeaders()
+      githubRequestHeaders()
     )
     if (raw === null) throw new InstanceStoreError('io-error', '无法连接 GitHub，请稍后重试')
     const latest = newestRelease(parseReleases(raw))
