@@ -159,6 +159,18 @@ export type LocalInstance = Extract<InstanceRecord, { transport: 'local' }>
 export type SshInstance = Extract<InstanceRecord, { transport: 'ssh' }>
 export type HttpInstance = Extract<InstanceRecord, { transport: 'http' }>
 
+/** 展示用实例地址；local 未分配端口时用 `—`。 */
+export function instanceAddress(record: InstanceRecord): string {
+  switch (record.transport) {
+    case 'local':
+      return `127.0.0.1:${record.port ?? '—'}`
+    case 'ssh':
+      return `${record.host}:${record.remotePort}`
+    case 'http':
+      return record.endpointUrl
+  }
+}
+
 // ===== 创建输入（IPC 边界，.strict()：未知字段一律拒绝） =====
 
 const createBaseFields = {

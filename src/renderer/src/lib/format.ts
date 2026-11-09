@@ -2,7 +2,7 @@
  * 展示层工具：状态、类型映射和格式化。
  * 认证相关状态（auth/interrupted/locked）也在此映射。
  */
-import type { InstanceRecord, InstanceRuntimeStatus, Transport } from '@shared/contracts'
+import type { InstanceRuntimeStatus, Transport } from '@shared/contracts'
 import type { MessageKey } from '@shared/i18n/messages'
 import type { IconName } from './icons'
 
@@ -87,17 +87,6 @@ export const TYPE_INFO: Record<Transport, { labelKey: MessageKey; icon: IconName
   local: { labelKey: 'transport.local', icon: 'local' },
   ssh: { labelKey: 'transport.ssh', icon: 'ssh' },
   http: { labelKey: 'transport.http', icon: 'remote' }
-}
-
-export function addressOf(record: InstanceRecord): string {
-  switch (record.transport) {
-    case 'local':
-      return `127.0.0.1:${record.port ?? '—'}`
-    case 'ssh':
-      return `${record.host}:${record.remotePort}`
-    case 'http':
-      return record.endpointUrl
-  }
 }
 
 /** 标题栏只展示可扫描的 endpoint 主机/端口，避免路径和认证探测详情占满空间。 */

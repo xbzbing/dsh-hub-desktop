@@ -108,16 +108,13 @@ export function registerInstanceHandlers(
     return record.transport === 'local' ? deps.runtime.statusOf(record.id)?.version : undefined
   }
 
+  /** 列表/排序共用同一份展示摘要，避免两处回填字段的口径漂移。 */
+  function summarize(record: InstanceRecord): InstanceSummary {
+    return toSummary(record, statusFor(record), deps.localHomePath?.(record), versionFor(record))
+  }
+
   ipcMain.handle(INSTANCE_IPC.list, (): Promise<IpcResult<InstanceSummary[]>> =>
-    wrap(() =>
-      store
-        .list()
-        .then((records) =>
-          records.map((record) =>
-            toSummary(record, statusFor(record), deps.localHomePath?.(record), versionFor(record))
-          )
-        )
-    )
+    wrap(() => store.list().then((records) => records.map(summarize)))
   )
 
   ipcMain.handle(
@@ -338,9 +335,7 @@ export function registerInstanceHandlers(
         }
         const ids = orderedIds.map((id) => parseId(id))
         const records = await store.reorder(ids)
-        return records.map((record) =>
-          toSummary(record, statusFor(record), deps.localHomePath?.(record), versionFor(record))
-        )
+        return records.map(summarize)
       })
   )
 

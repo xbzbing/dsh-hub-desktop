@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ExternalDshWebSnapshot } from '@shared/contracts'
+import { instanceAddress, type ExternalDshWebSnapshot } from '@shared/contracts'
 import { Icon } from '../lib/icons'
-import { STATUS_INFO, TYPE_INFO, addressOf, toDisplayStatus } from '../lib/format'
+import { STATUS_INFO, TYPE_INFO, toDisplayStatus } from '../lib/format'
 import { formatActivity } from '../lib/activity-format'
 import { useAppStore } from '../store'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
@@ -130,7 +130,7 @@ export default function DetailView(): ReactNode {
 
   const copyAddress = async (): Promise<void> => {
     try {
-      await navigator.clipboard.writeText(addressOf(record))
+      await navigator.clipboard.writeText(instanceAddress(record))
       toast('ok', t('detail.addressCopied'))
     } catch {
       toast('err', t('detail.copyFailed'))

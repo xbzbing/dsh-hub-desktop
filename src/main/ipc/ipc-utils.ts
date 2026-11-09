@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { EndpointParseError } from '@shared/endpoint'
 import {
   formatZodIssues,
+  instanceAddress,
   type AuthStateSnapshot,
   type DshVersionCheck,
   type InstanceRecord,
@@ -34,6 +35,9 @@ const fail = (
   code,
   message
 })
+
+/** token 不允许控制字符（换行、制表等会把日志/请求头拆成多行）。 */
+const containsControl = (value: string): boolean => /[\p{C}]/u.test(value)
 
 export async function wrap<T>(task: () => Promise<T> | T): Promise<IpcResult<T>> {
   try {
@@ -90,7 +94,6 @@ export function externalAccessToken(raw: unknown, port: number): string {
     )
   }
   const token = url.searchParams.get('token')
-  const containsControl = (value: string): boolean => /[\p{C}]/u.test(value)
   if (token === null || token === '' || containsControl(token)) {
     throw new InstanceStoreError(
       'invalid-input',
@@ -124,12 +127,7 @@ export function toSummary(
   localHome?: string,
   runtimeVersion?: string
 ): InstanceSummary {
-  const address =
-    record.transport === 'local'
-      ? `127.0.0.1:${record.port ?? '—'}`
-      : record.transport === 'ssh'
-        ? `${record.host}:${record.remotePort}`
-        : record.endpointUrl
+  const address = instanceAddress(record)
   // 运行中以实时状态版本为准，停止后回落到本机实例注册表固定的版本；'custom' 是占位符不是版本号。
   const runtime =
     runtimeVersion !== undefined && runtimeVersion !== '' && runtimeVersion !== 'custom'
@@ -193,6 +191,9 @@ export interface StoredLoginMemory {
   logoutSuppressed: Set<string>
 }
 
+/** 认证状态快照（可空）；静默登录与探测共用这一别名，避免重复展开返回类型。 */
+type AuthState = Awaited<ReturnType<AuthRegistry['stateOf']>>
+
 /**
  * 探测后处于可提交认证的阶段且 vault 已存密码时，自动用已存密码登录一次，
  * 返回登录后的状态；条件不满足或登录抛错时原样返回入参状态。
@@ -216,8 +217,8 @@ export async function autoLoginWithStored(
   deps: StoredLoginDeps,
   memory: StoredLoginMemory,
   instanceId: string,
-  state: Awaited<ReturnType<AuthRegistry['stateOf']>>
-): Promise<Awaited<ReturnType<AuthRegistry['stateOf']>>> {
+  state: AuthState
+): Promise<AuthState> {
   if (state === null) return state
   const needsAuth = state.phase === 'needs-auth' || state.phase === 'await-credentials'
   if (!needsAuth || state.lockedForMs > 0) return state
@@ -246,7 +247,7 @@ export async function probeWithStoredPassword(
 ): Promise<AuthStateSnapshot | null> {
   const beforeProbe = deps.auth.stateOf(instanceId)
   await deps.auth.probe(instanceId)
-  const probedState = deps.auth.stateOf(instanceId) as Awaited<ReturnType<AuthRegistry['stateOf']>>
+  const probedState: AuthState = deps.auth.stateOf(instanceId)
   // 远端 dsh 重启会让原有 Cookie 失效：允许这次从 connected 回落到登录态时重新复用一次已存密码。
   if (beforeProbe?.phase === 'connected' && probedState?.phase !== 'connected') {
     memory.storedLoginAttempted.delete(instanceId)

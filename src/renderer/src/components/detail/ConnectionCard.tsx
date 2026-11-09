@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react'
 import { isCleartextEndpoint } from '@shared/endpoint'
-import { proxyAddress } from '@shared/contracts'
+import { instanceAddress, proxyAddress } from '@shared/contracts'
 import type { AuthPhase, InstanceRecord } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
-import { addressOf } from '../../lib/format'
 import { showAuthActions } from '../../lib/auth-actions'
 
 export interface ConnectionCardProps {
@@ -56,7 +55,7 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
       </div>
       <dl className="kv">
         <dt>{t('detail.address')}</dt>
-        <dd className="num">{addressOf(record)}</dd>
+        <dd className="num">{instanceAddress(record)}</dd>
         {record.transport === 'ssh' && (
           <>
             <dt>{t('detail.sshPort')}</dt>
