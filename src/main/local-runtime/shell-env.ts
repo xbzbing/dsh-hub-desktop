@@ -15,7 +15,7 @@ import { userInfo } from 'node:os'
 import { basename } from 'node:path'
 import { execFileResult } from './exec-file'
 import type { CommandRunner } from './exec-file'
-import { mergeLoginPath, type CachedResolver } from './login-path'
+import { createCachedResolver, mergeLoginPath, type CachedResolver } from './login-path'
 
 /** 仅这些 shell 支持 `-l -i -c` 与 POSIX `export` 语义；其它 shell（fish/nu）回退仅 PATH。 */
 const SUPPORTED_SHELLS = new Set(['zsh', 'bash'])
@@ -123,16 +123,7 @@ export function mergeShellEnv(
 export function createShellEnvResolver(
   probe: () => Promise<Map<string, string> | null>
 ): CachedResolver<Map<string, string> | null> {
-  let cached: Promise<Map<string, string> | null> | null = null
-  const resolver = (): Promise<Map<string, string> | null> => {
-    cached ??= probe().catch(() => null)
-    return cached
-  }
-  resolver.invalidate = (): void => {
-    cached = null
-  }
-  resolver.peek = (): Promise<Map<string, string> | null> | undefined => cached ?? undefined
-  return resolver
+  return createCachedResolver(probe)
 }
 
 /** 缺省解析器（真实登录 shell）；进程内只解析一次。 */

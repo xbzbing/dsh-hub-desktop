@@ -90,19 +90,24 @@ export interface CachedResolver<T> {
 }
 
 /** 进程内缓存的解析器：解析有启动开销，结果只在应用生命周期内有意义；失败同样缓存为 null。 */
-export function createLoginPathResolver(
-  probe: () => Promise<string | null>
-): CachedResolver<string | null> {
-  let cached: Promise<string | null> | null = null
-  const resolver = (): Promise<string | null> => {
+export function createCachedResolver<T>(probe: () => Promise<T | null>): CachedResolver<T | null> {
+  let cached: Promise<T | null> | null = null
+  const resolver = (): Promise<T | null> => {
     cached ??= probe().catch(() => null)
     return cached
   }
   resolver.invalidate = (): void => {
     cached = null
   }
-  resolver.peek = (): Promise<string | null> | undefined => cached ?? undefined
+  resolver.peek = (): Promise<T | null> | undefined => cached ?? undefined
   return resolver
+}
+
+/** 登录 PATH 的进程内缓存（类型收窄到 string，调用方不必重复标注）。 */
+export function createLoginPathResolver(
+  probe: () => Promise<string | null>
+): CachedResolver<string | null> {
+  return createCachedResolver(probe)
 }
 
 /** 缺省解析器（真实登录 shell / 注册表）；进程内只解析一次。 */
