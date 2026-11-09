@@ -72,14 +72,11 @@ async function readLimited(response: Response, maxBytes: number): Promise<Buffer
   return Buffer.concat(chunks)
 }
 
-/** 默认取字节实现：非 2xx、超时、网络失败、超限分别映射到稳定错误码。 */
-export async function defaultFetchBytes(url: string, options: FetchOptions = {}): Promise<Buffer> {
+/** 发请求并把超时、网络失败与非 2xx 映射到稳定错误码。 */
+async function request(url: string, init: RequestInit, options: FetchOptions): Promise<Response> {
   let response: Response
   try {
-    response = await fetch(url, {
-      headers: headersOf(options.headers),
-      signal: AbortSignal.timeout(timeoutOf(options))
-    })
+    response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutOf(options)) })
   } catch (error) {
     if (error instanceof Error && error.name === 'TimeoutError') {
       throw new SecurityFetchError('timeout', `请求超时：${url}`)
@@ -89,17 +86,29 @@ export async function defaultFetchBytes(url: string, options: FetchOptions = {})
   if (!response.ok) {
     throw new SecurityFetchError('http', `HTTP ${response.status}：${url}`, response.status)
   }
-  return readLimited(response, maxOf(options))
+  return response
 }
 
-/** 默认取 JSON 实现：复用字节读取与上限，解析失败映射为 parse。 */
-export async function defaultFetchJson(url: string, options: FetchOptions = {}): Promise<unknown> {
-  const bytes = await defaultFetchBytes(url, options)
+/** 读取响应体并解析 JSON；解析失败映射为 parse。 */
+async function readJson(response: Response, url: string, maxBytes: number): Promise<unknown> {
+  const bytes = await readLimited(response, maxBytes)
   try {
     return JSON.parse(bytes.toString('utf8')) as unknown
   } catch {
     throw new SecurityFetchError('parse', `无法解析 JSON：${url}`)
   }
+}
+
+/** 默认取字节实现：非 2xx、超时、网络失败、超限分别映射到稳定错误码。 */
+export async function defaultFetchBytes(url: string, options: FetchOptions = {}): Promise<Buffer> {
+  const response = await request(url, { headers: headersOf(options.headers) }, options)
+  return readLimited(response, maxOf(options))
+}
+
+/** 默认取 JSON 实现：复用字节读取与上限，解析失败映射为 parse。 */
+export async function defaultFetchJson(url: string, options: FetchOptions = {}): Promise<unknown> {
+  const response = await request(url, { headers: headersOf(options.headers) }, options)
+  return readJson(response, url, maxOf(options))
 }
 
 /** 默认 POST JSON 实现（OSV 查询）；响应同样有上限。 */
@@ -108,29 +117,16 @@ export async function defaultPostJson(
   body: unknown,
   options: FetchOptions = {}
 ): Promise<unknown> {
-  let response: Response
-  try {
-    response = await fetch(url, {
+  const response = await request(
+    url,
+    {
       method: 'POST',
       headers: headersOf({ 'content-type': 'application/json', ...options.headers }),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutOf(options))
-    })
-  } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      throw new SecurityFetchError('timeout', `请求超时：${url}`)
-    }
-    throw new SecurityFetchError('network', `网络请求失败：${url}`)
-  }
-  if (!response.ok) {
-    throw new SecurityFetchError('http', `HTTP ${response.status}：${url}`, response.status)
-  }
-  const bytes = await readLimited(response, maxOf(options))
-  try {
-    return JSON.parse(bytes.toString('utf8')) as unknown
-  } catch {
-    throw new SecurityFetchError('parse', `无法解析 JSON：${url}`)
-  }
+      body: JSON.stringify(body)
+    },
+    options
+  )
+  return readJson(response, url, maxOf(options))
 }
 
 export interface SecurityFetcher {
