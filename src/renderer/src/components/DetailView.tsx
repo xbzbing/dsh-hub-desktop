@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { instanceAddress, type ExternalDshWebSnapshot } from '@shared/contracts'
 import { Icon } from '../lib/icons'
-import { STATUS_INFO, TYPE_INFO, toDisplayStatus } from '../lib/format'
+import { STATUS_INFO, TYPE_INFO, canDisconnectWorkspace, toDisplayStatus } from '../lib/format'
 import { formatActivity } from '../lib/activity-format'
 import { useAppStore } from '../store'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
@@ -349,7 +349,11 @@ export default function DetailView(): ReactNode {
           onOpenDirectory={
             record.transport === 'local' ? () => void openInstanceDirectory() : undefined
           }
-          onDisconnect={() => void disconnectWorkspace(record.id)}
+          onDisconnect={
+            canDisconnectWorkspace(status?.status, workspaceConnected)
+              ? () => void disconnectWorkspace(record.id)
+              : undefined
+          }
           onLogout={() => void logout()}
           onEditProxy={record.transport === 'http' ? () => setShowProxy(true) : undefined}
         />

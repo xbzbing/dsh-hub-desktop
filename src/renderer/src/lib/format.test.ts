@@ -3,6 +3,7 @@ import { join, relative, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   STATUS_INFO,
+  canDisconnectWorkspace,
   compactWorkspaceAddress,
   fmtLogTime,
   toDisplayStatus,
@@ -78,6 +79,17 @@ describe('状态 → 展示圆点映射', () => {
     for (const modifier of modifiers) {
       expect(new RegExp(`\\.${modifier}\\b`).test(css), `styles.css 缺少 .${modifier}`).toBe(true)
     }
+  })
+})
+
+describe('断开工作区入口', () => {
+  it('仅在实例已连接时显示：停止、启动中、错误与已断开都不显示', () => {
+    expect(canDisconnectWorkspace(undefined)).toBe(false)
+    expect(canDisconnectWorkspace('stopped')).toBe(false)
+    expect(canDisconnectWorkspace('starting')).toBe(false)
+    expect(canDisconnectWorkspace('error')).toBe(false)
+    expect(canDisconnectWorkspace('running')).toBe(true)
+    expect(canDisconnectWorkspace('running', false)).toBe(false)
   })
 })
 

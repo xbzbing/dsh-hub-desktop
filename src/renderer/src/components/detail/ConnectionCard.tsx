@@ -19,7 +19,8 @@ export interface ConnectionCardProps {
   onCopyToken?: () => void
   /** 打开本机实例的数据目录；仅本机实例提供，非本机为 undefined 时不显示按钮。 */
   onOpenDirectory?: () => void
-  onDisconnect: () => void
+  /** 断开当前工作区；未连接（或无工作区）时不传，按钮不渲染。 */
+  onDisconnect?: () => void
   onLogout: () => void
   /** 打开代理编辑对话框；仅 http 实例提供，其余传输类型没有代理。 */
   onEditProxy?: () => void
@@ -149,13 +150,15 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
             <Icon name="folder" /> {t('detail.openDir')}
           </button>
         )}
-        <button
-          className="btn btn-secondary btn-sm"
-          data-testid="disconnect-view-btn"
-          onClick={onDisconnect}
-        >
-          <Icon name="close" /> {t('detail.disconnect')}
-        </button>
+        {onDisconnect && (
+          <button
+            className="btn btn-secondary btn-sm"
+            data-testid="disconnect-view-btn"
+            onClick={onDisconnect}
+          >
+            <Icon name="close" /> {t('detail.disconnect')}
+          </button>
+        )}
         {/* 仅在已连接时显示登出操作。 */}
         {showAuthActions(record) && authPhase === 'connected' && (
           <button className="btn btn-secondary btn-sm" data-testid="logout-btn" onClick={onLogout}>

@@ -81,6 +81,17 @@ export function toStatusInfo(
 }
 
 /**
+ * 是否提供「断开工作区」：只有已连接（运行中且未被显式断开）的实例才有可断开的视图。
+ * 已关闭、启动中、错误与已断开的实例都不显示该操作。
+ */
+export function canDisconnectWorkspace(
+  status?: InstanceRuntimeStatus,
+  workspaceConnected = true
+): boolean {
+  return toDisplayStatus(status, workspaceConnected) === 'connected'
+}
+
+/**
  * 展示层类型标签只保存文案 key，文案由调用方翻译。
  */
 export const TYPE_INFO: Record<Transport, { labelKey: MessageKey; icon: IconName }> = {

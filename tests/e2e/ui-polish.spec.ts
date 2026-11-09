@@ -917,6 +917,8 @@ test('从已连接的工作区重新登录成功后自动重开工作区', async
     await expect(win.getByTestId('workspace-back-btn')).toBeVisible({ timeout: 20_000 })
     await win.getByTestId('workspace-back-btn').click()
     await expect(win.getByTestId('view-detail')).toBeVisible()
+    // 运行中且工作区已建立连接：详情页提供「断开工作区」。
+    await expect(win.getByTestId('disconnect-view-btn')).toBeVisible()
 
     // 模拟远端 dsh 重启：现有会话失效，探测将回落到登录态。
     gate.authed = false

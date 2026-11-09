@@ -66,9 +66,8 @@ test('明文警告显示为短标签，完整详情通过 data-tip 提供', asyn
   await expect(win.getByTestId('workspace-back-btn')).toBeVisible()
   await win.getByTestId('workspace-back-btn').click()
   await expect(win.getByTestId('view-detail')).toBeVisible()
-  await expect(win.getByTestId('disconnect-view-btn')).toBeVisible()
-  await win.getByTestId('disconnect-view-btn').click()
-  await expect(win.getByText('工作区已断开')).toBeVisible()
+  // 端点不可达的远程实例没有已连接的工作区，详情页不提供「断开工作区」。
+  await expect(win.getByTestId('disconnect-view-btn')).toHaveCount(0)
 
   const pill = win.getByTestId('cleartext-warning')
   await expect(pill).toBeVisible()
