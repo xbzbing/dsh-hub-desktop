@@ -13,6 +13,7 @@ import { localizeIpcMessage } from '../lib/ipc-message'
 import { buildProxyPatch, proxyDraftOf, switchProxyType } from '../lib/proxy-form'
 import { useAppStore } from '../store'
 import { Modal } from './Modal'
+import ProxyFields from './ProxyFields'
 import Select from './Select'
 
 /**
@@ -373,98 +374,13 @@ export default function EditInstanceDialog({
             <span className="hint">{t('edit.proxyHint')}</span>
           </div>
 
-          {proxyDraft.type !== 'none' && (
-            <>
-              <div className="grid-2 mt8">
-                <div className="field">
-                  <label htmlFor="edit-proxy-host">{t('wizard.proxyHostLabel')}</label>
-                  <input
-                    className="input num"
-                    id="edit-proxy-host"
-                    placeholder="127.0.0.1"
-                    value={proxyDraft.host}
-                    onChange={(event) =>
-                      setProxyDraft((current) => ({ ...current, host: event.target.value }))
-                    }
-                    data-testid="edit-proxy-host"
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="edit-proxy-port">{t('wizard.proxyPortLabel')}</label>
-                  <input
-                    className="input num"
-                    id="edit-proxy-port"
-                    inputMode="numeric"
-                    placeholder="8080"
-                    value={proxyDraft.port}
-                    onChange={(event) =>
-                      setProxyDraft((current) => ({ ...current, port: event.target.value }))
-                    }
-                    data-testid="edit-proxy-port"
-                  />
-                </div>
-                {proxyDraft.type === 'http' && (
-                  <>
-                    <div className="field">
-                      <label htmlFor="edit-proxy-username">{t('wizard.proxyUsernameLabel')}</label>
-                      <input
-                        className="input"
-                        id="edit-proxy-username"
-                        autoComplete="off"
-                        value={proxyDraft.username}
-                        onChange={(event) =>
-                          setProxyDraft((current) => ({ ...current, username: event.target.value }))
-                        }
-                        data-testid="edit-proxy-username"
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="edit-proxy-password">{t('wizard.proxyPasswordLabel')}</label>
-                      <input
-                        className="input"
-                        id="edit-proxy-password"
-                        type="password"
-                        autoComplete="new-password"
-                        placeholder={t('edit.proxyPasswordKeep')}
-                        value={proxyDraft.password}
-                        onChange={(event) => {
-                          const value = event.target.value
-                          setProxyDraft((current) => ({
-                            ...current,
-                            password: value,
-                            ...(value !== '' ? { clearPassword: false } : {})
-                          }))
-                        }}
-                        data-testid="edit-proxy-password"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-              {proxyDraft.type === 'socks5' && (
-                <p className="meta mt8">{t('wizard.proxySocksNoAuth')}</p>
-              )}
-              {existingProxy && proxyDraft.type === 'http' && (
-                <label className="row mt8" style={{ gap: 8, alignItems: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={proxyDraft.clearPassword}
-                    onChange={(event) => {
-                      const checked = event.target.checked
-                      setProxyDraft((current) => ({
-                        ...current,
-                        clearPassword: checked,
-                        ...(checked ? { password: '' } : {})
-                      }))
-                    }}
-                    data-testid="edit-proxy-clear-password"
-                  />
-                  <span>{t('edit.proxyClearPassword')}</span>
-                </label>
-              )}
-              <p className="meta mt8">{t('edit.proxyPasswordHint')}</p>
-            </>
-          )}
+          <ProxyFields
+            t={t}
+            draft={proxyDraft}
+            existingProxy={existingProxy}
+            idPrefix="edit-proxy"
+            onChange={setProxyDraft}
+          />
         </>
       )}
 
