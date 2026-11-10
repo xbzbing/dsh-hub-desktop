@@ -147,6 +147,62 @@ describe('静态扫描', () => {
     expect(dangerous.findings.every((item) => item.level === 'danger')).toBe(true)
   })
 
+  it('解码结果直接进入 eval 或 new Function 记为 danger', () => {
+    const result = scanContent([
+      entry(
+        'package/lib/direct.js',
+        [
+          "eval(atob('YWJj'))",
+          'new Function(atob(payload))',
+          'new Function("x", Buffer.from(payload, "base64").toString())',
+          'vm.runInNewContext(atob(payload))'
+        ].join('\n')
+      )
+    ])
+    expect(result.findings.map((item) => item.code)).toContain('content.obfuscated-eval')
+  })
+
+  it('解码与求值只是同文件共现时不升级为 danger', () => {
+    const result = scanContent([
+      entry(
+        'package/lib/bundle.js',
+        [
+          'const decoded = atob(payload)',
+          'const fn = new Function("body", "return body")',
+          'export { decoded, fn }'
+        ].join('\n')
+      )
+    ])
+    const codes = result.findings.map((item) => item.code)
+    expect(codes).not.toContain('content.obfuscated-eval')
+    expect(codes).toContain('content.dynamic-eval')
+  })
+
+  it('字符串里提到解码函数不算实参解码', () => {
+    const result = scanContent([entry('package/lib/text.js', 'eval("atob(\'YWJj\')")')])
+    const codes = result.findings.map((item) => item.code)
+    expect(codes).not.toContain('content.obfuscated-eval')
+    expect(codes).toContain('content.dynamic-eval')
+  })
+
+  it('字符串里的整段求值文本不算求值', () => {
+    const result = scanContent([
+      entry('package/lib/note.js', 'const note = "eval(atob(\'YWJj\'))"')
+    ])
+    const codes = result.findings.map((item) => item.code)
+    expect(codes).not.toContain('content.obfuscated-eval')
+    expect(codes).not.toContain('content.dynamic-eval')
+  })
+
+  it('变量间接解码只算动态求值', () => {
+    const result = scanContent([
+      entry('package/lib/indirect.js', ['const code = atob(payload)', 'eval(code)'].join('\n'))
+    ])
+    const codes = result.findings.map((item) => item.code)
+    expect(codes).not.toContain('content.obfuscated-eval')
+    expect(codes).toContain('content.dynamic-eval')
+  })
+
   it('注释里提到敏感文件与网络库不算凭据外发', () => {
     const result = scanContent([
       entry(

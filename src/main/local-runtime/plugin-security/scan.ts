@@ -37,13 +37,15 @@ const NETWORK_PATTERNS: RegExp[] = [
 const EVAL_PATTERNS: RegExp[] = [
   /\beval\s*\(/,
   /new\s+Function\s*\(/,
-  /\bvm\.runIn(?:NewContext|ThisContext|Context)\b/
+  /\bvm\.runIn(?:NewContext|ThisContext|Context)\s*\(/
 ]
-const ENCODED_PATTERNS: RegExp[] = [
-  /Buffer\.from\([^)]*['"](?:base64|hex)['"]/i,
+/** 解码调用：只有出现在求值实参里，才把这次求值升级为混淆执行。 */
+const DECODE_PATTERNS: RegExp[] = [
   /\batob\s*\(/,
-  /[A-Za-z0-9+/]{240,}={0,2}/
+  /Buffer\.from\s*\([\s\S]{0,500}?['"](?:base64|hex)['"]/i
 ]
+/** 求值模式的并集，每个分支都以 `(` 结尾，便于截取实参。 */
+const EVAL_CALL_SOURCE = EVAL_PATTERNS.map((pattern) => pattern.source).join('|')
 const EXFIL_PATTERNS: RegExp[] = [
   /webhook\.site/i,
   /pastebin\.com/i,
@@ -318,6 +320,111 @@ function lineOf(text: string, index: number): number {
   return line
 }
 
+/** 从 `open`（指向左括号）截取到配对的右括号；超长或无配对时截到上限。 */
+function callArguments(text: string, open: number, limit: number): string {
+  const end = Math.min(text.length, open + limit)
+  let depth = 0
+  let index = open
+  while (index < end) {
+    const char = text[index] as string
+    if (char === '"' || char === "'" || char === '`') {
+      index = skipQuotedInCall(text, index, end)
+      continue
+    }
+    if (char === '(') depth += 1
+    else if (char === ')') {
+      depth -= 1
+      if (depth === 0) return text.slice(open + 1, index)
+    }
+    index += 1
+  }
+  return text.slice(open + 1, end)
+}
+
+function skipQuotedInCall(text: string, from: number, end: number): number {
+  const quote = text[from] as string
+  let index = from + 1
+  while (index < end) {
+    const char = text[index]
+    if (char === '\\') {
+      index += 2
+      continue
+    }
+    index += 1
+    if (char === quote) break
+  }
+  return index
+}
+
+/** 目标位置是否落在字符串或模板字面量内；注释与正则体已在词法遮罩阶段处理。 */
+function isInsideString(text: string, target: number): boolean {
+  let index = 0
+  let quote: string | null = null
+  while (index < target) {
+    const char = text[index] as string
+    if (quote !== null) {
+      if (char === '\\') {
+        index += 2
+        continue
+      }
+      if (char === quote) quote = null
+      index += 1
+      continue
+    }
+    if (char === '"' || char === "'" || char === '`') quote = char
+    index += 1
+  }
+  return quote !== null
+}
+
+function hasDecodedArgument(text: string): boolean {
+  for (const pattern of DECODE_PATTERNS) {
+    const global = new RegExp(
+      pattern.source,
+      pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`
+    )
+    let match: RegExpExecArray | null
+    while ((match = global.exec(text)) !== null) {
+      if (!isInsideString(text, match.index)) return true
+    }
+  }
+  return false
+}
+
+interface EvalCall {
+  index: number
+  match: string
+}
+
+/**
+ * 顺序检查求值调用。`first` 用于「动态求值」警告，`obfuscated` 只在对实参里发现
+ * `atob(` 或 `Buffer.from(...,'base64')` 时给出。
+ *
+ * 同文件里同时出现 `new Function` 与内嵌 base64 是打包产物的常态：`setImmediate`
+ * polyfill 的字符串回调构造、Emscripten 的具名函数包装，都会和内联 PNG/WOFF2/WASM
+ * 资源落在同一个 bundle。按文件级共现会把这些判成混淆执行。这里截取每次求值的实参
+ * （上限 8 KiB，最多看 50 处），要求解码调用出现在实参里，且不在字符串内。变量间接
+ * 解码（先 `atob` 再 `eval(code)`）不在本规则范围。
+ */
+function scanEvalCalls(text: string): { first: EvalCall | null; obfuscated: EvalCall | null } {
+  const callPattern = new RegExp(EVAL_CALL_SOURCE, 'g')
+  let first: EvalCall | null = null
+  let inspected = 0
+  let found: RegExpExecArray | null
+  while ((found = callPattern.exec(text)) !== null) {
+    if (isInsideString(text, found.index)) continue
+    const call = { index: found.index, match: found[0] }
+    if (first === null) first = call
+    if (inspected >= 50) break
+    inspected += 1
+    const open = call.index + call.match.lastIndexOf('(')
+    if (hasDecodedArgument(callArguments(text, open, 8192))) {
+      return { first, obfuscated: call }
+    }
+  }
+  return { first, obfuscated: null }
+}
+
 function firstMatch(
   text: string,
   patterns: readonly RegExp[]
@@ -499,8 +606,7 @@ export function scanContent(entries: readonly TarEntry[]): ContentScanResult {
 
     const sensitive = firstMatch(literalFree, SENSITIVE_PATTERNS)
     const network = firstMatch(literalFree, NETWORK_PATTERNS)
-    const evaluation = firstMatch(literalFree, EVAL_PATTERNS)
-    const encoded = firstMatch(literalFree, ENCODED_PATTERNS)
+    const evaluation = scanEvalCalls(literalFree)
     const exfil = firstMatch(literalFree, EXFIL_PATTERNS)
     const miner = firstMatch(literalFree, MINER_PATTERNS)
 
@@ -519,19 +625,19 @@ export function scanContent(entries: readonly TarEntry[]): ContentScanResult {
         evidenceOf(file, lineOf(code, sensitive.index), sensitive.match)
       )
     }
-    if (evaluation !== null && encoded !== null) {
+    if (evaluation.obfuscated !== null) {
       addFinding(
         findings,
         'content.obfuscated-eval',
         'danger',
-        evidenceOf(file, lineOf(code, evaluation.index), 'eval+encoded')
+        evidenceOf(file, lineOf(code, evaluation.obfuscated.index), 'eval+encoded')
       )
-    } else if (evaluation !== null && !minified) {
+    } else if (evaluation.first !== null && !minified) {
       addFinding(
         findings,
         'content.dynamic-eval',
         'warn',
-        evidenceOf(file, lineOf(code, evaluation.index), evaluation.match)
+        evidenceOf(file, lineOf(code, evaluation.first.index), evaluation.first.match)
       )
     }
     if (exfil !== null) {
