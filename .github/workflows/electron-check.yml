@@ -1,0 +1,73 @@
+name: Electron patch check
+
+on:
+  schedule:
+    # 每周一 09:00（Asia/Shanghai）；cron 使用 UTC。
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: electron-patch-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check latest Electron patch
+        id: check
+        shell: bash
+        run: |
+          set +e
+          report="${RUNNER_TEMP}/electron-check.md"
+          node scripts/check-electron.mjs | tee "$report"
+          code=${PIPESTATUS[0]}
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Electron 补丁检查"
+            echo
+            cat "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Fail on check error
+        if: steps.check.outputs.code != '0' && steps.check.outputs.code != '1'
+        run: |
+          echo "Electron 补丁检查无法完成（registry 或配置错误），见上一步日志。"
+          exit 1
+
+      - name: Open or update tracking issue
+        if: steps.check.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Electron 补丁需要跟进"
+          number=$(gh issue list --state open --limit 100 --json number,title \
+            --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file "${{ steps.check.outputs.report }}"
+          else
+            gh issue create --title "$title" --body-file "${{ steps.check.outputs.report }}"
+          fi
+
+      - name: Close tracking issue when up to date
+        if: steps.check.outputs.code == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Electron 补丁需要跟进"
+          number=$(gh issue list --state open --limit 100 --json number,title \
+            --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)
+          if [ -n "$number" ]; then
+            gh issue close "$number" --comment "Electron 已跟到最新补丁，自动关闭。"
+          fi

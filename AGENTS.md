@@ -17,6 +17,12 @@ DSH Hub Desktop 是用于管理多个 dsh 实例的 Electron 桌面应用，支�
 - zod 4.6.7 是唯一新增的运行时依赖，用于数据校验
 - 保持 vite 7、TypeScript 5 和 React 18 的版本线，不升级到 vite 8、TypeScript 7 或 React 19
 
+## 依赖维护
+
+- Electron 锁定精确补丁版本（`package.json` 不写 `^`），跨大版本仍按 ADR 人工评估。
+- `.github/workflows/electron-check.yml` 每周一检查同 major 的最新补丁：落后自动开 issue，追平后自动关闭；本地可跑 `pnpm check:electron`。
+- 升级后核对 `process.versions`（Electron/Chromium/Node/undici），并跑完整门禁、一次 E2E 和一次打包。
+
 ## 架构
 
 ```text
