@@ -10,7 +10,7 @@ import {
 } from './about-menu'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 /**
@@ -64,13 +64,26 @@ test('应用菜单的「关于」项打开叠加窗口,并展示版本与运行�
     )
     .toBe('none')
 
-  // 组件版本必须与主进程实际运行的一致（Chromium 即前面升级到的 152 线）。
+  // 组件版本必须与主进程实际运行的一致（Chromium 随 Electron 内置，不在渲染层写死）。
   const realChrome = await app.evaluate(() => process.versions.chrome)
   await expect(about.getByTestId('about-chromium')).toHaveText(realChrome)
   await expect(about.getByTestId('about-electron')).not.toBeEmpty()
 
   // 目验材料:叠加窗口里的对话框(容器聚焦不画焦点描边)。
-  await about.screenshot({ path: join(SHOT_DIR, 'about-window.png'), animations: 'disabled' })
+  // Linux CI 的 Xvfb 没有合成器，透明窗口经 CDP 截图会报 "Unable to capture screenshot"；
+  // 改走主进程 capturePage(stayHidden) 强制离屏合成一帧（同 ui-polish 的透明提示窗）。
+  await about.waitForTimeout(300)
+  const shot = await app.evaluate(({ BrowserWindow }) => {
+    const aboutWindow = BrowserWindow.getAllWindows().find((window) =>
+      window.webContents.getURL().includes('window=about')
+    )
+    if (!aboutWindow) return null
+    return aboutWindow.webContents
+      .capturePage(undefined, { stayHidden: true })
+      .then((image) => image.toPNG())
+  })
+  if (shot === null) throw new Error('关于窗口截图失败：未找到 window=about')
+  await writeFile(join(SHOT_DIR, 'about-window.png'), Buffer.from(shot))
 
   // 关闭按钮收起的是整个叠加窗口
   await closeAboutWithButton(about)
