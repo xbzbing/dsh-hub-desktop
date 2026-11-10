@@ -70,20 +70,22 @@ test('应用菜单的「关于」项打开叠加窗口,并展示版本与运行�
   await expect(about.getByTestId('about-electron')).not.toBeEmpty()
 
   // 目验材料:叠加窗口里的对话框(容器聚焦不画焦点描边)。
-  // Linux CI 的 Xvfb 没有合成器，透明窗口经 CDP 截图会报 "Unable to capture screenshot"；
-  // 改走主进程 capturePage(stayHidden) 强制离屏合成一帧（同 ui-polish 的透明提示窗）。
-  await about.waitForTimeout(300)
-  const shot = await app.evaluate(({ BrowserWindow }) => {
-    const aboutWindow = BrowserWindow.getAllWindows().find((window) =>
-      window.webContents.getURL().includes('window=about')
-    )
-    if (!aboutWindow) return null
-    return aboutWindow.webContents
-      .capturePage(undefined, { stayHidden: true })
-      .then((image) => image.toPNG())
-  })
-  if (shot === null) throw new Error('关于窗口截图失败：未找到 window=about')
-  await writeFile(join(SHOT_DIR, 'about-window.png'), Buffer.from(shot))
+  // Linux CI 的 Xvfb 没有合成器：CDP 截图报 "Unable to capture screenshot"，
+  // capturePage 报 UnknownVizError；截图只是目验材料，CI Linux 跳过，其余平台保留。
+  if (!(process.platform === 'linux' && process.env.CI)) {
+    await about.waitForTimeout(300)
+    const shot = await app.evaluate(({ BrowserWindow }) => {
+      const aboutWindow = BrowserWindow.getAllWindows().find((window) =>
+        window.webContents.getURL().includes('window=about')
+      )
+      if (!aboutWindow) return null
+      return aboutWindow.webContents
+        .capturePage(undefined, { stayHidden: true })
+        .then((image) => image.toPNG())
+    })
+    if (shot === null) throw new Error('关于窗口截图失败：未找到 window=about')
+    await writeFile(join(SHOT_DIR, 'about-window.png'), Buffer.from(shot))
+  }
 
   // 关闭按钮收起的是整个叠加窗口
   await closeAboutWithButton(about)
