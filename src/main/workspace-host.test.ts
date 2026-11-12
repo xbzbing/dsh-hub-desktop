@@ -405,7 +405,7 @@ describe('createWorkspaceHost', () => {
     expect(fakeViews()[2]?.webContents.close).not.toHaveBeenCalled()
   })
 
-  it('白名单转发工作区的切换修饰键与其数字组合,其余输入不转发、不拦截', () => {
+  it('白名单转发工作区的切换修饰键与其数字组合,组合键只发 cancel 让提示让位', () => {
     const forward = vi.fn()
     const hub = hubWindow()
     const host = createWorkspaceHost(
@@ -443,11 +443,14 @@ describe('createWorkspaceHost', () => {
       { phase: 'up', key: modKey, code: modCode, meta: false, ctrl: false, alt: false }
     ])
 
+    // 按住切换修饰键时的其他键(⌘W 等组合)只发 cancel:侧栏序号让位,按键仍归页面。
+    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'w', code: 'KeyW', ...modDown })
+    expect(forward.mock.calls.at(-1)?.[0]).toEqual({ phase: 'cancel' })
+
     // 工作区页面自己的键盘输入既不转发,也绝不被 preventDefault 拦截。
     beforeInput?.(guard, { ...base, type: 'keyDown', key: 'a', code: 'KeyA' })
-    beforeInput?.(guard, { ...base, type: 'keyDown', key: 'c', code: 'KeyC', ...modDown })
     beforeInput?.(guard, { ...base, type: 'char', key: '1', code: 'Digit1', ...modDown })
-    expect(forward).toHaveBeenCalledTimes(3)
+    expect(forward).toHaveBeenCalledTimes(4)
     expect(guard.preventDefault).not.toHaveBeenCalled()
   })
 

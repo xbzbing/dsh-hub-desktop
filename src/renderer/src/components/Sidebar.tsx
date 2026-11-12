@@ -6,7 +6,7 @@ import logoUrl from '../../../../design/dsh-hub-logo.svg'
 import { STATUS_INFO, TYPE_INFO, toDisplayStatus } from '../lib/format'
 import { instanceSwitchIndex } from '../lib/hotkeys'
 import { rendererPlatform } from '../lib/platform'
-import { switchModifierKey } from '@shared/hotkeys'
+import { hasSwitchModifier, isModifierKey, switchModifierKey } from '@shared/hotkeys'
 import { useAppStore } from '../store'
 
 /** 快捷键序号上限:⌘+1..9,超出上限的实例不参与切换。 */
@@ -139,7 +139,9 @@ export default function Sidebar(): ReactNode {
       keyName === switchModifierKey(rendererPlatform())
     let hintTimer: ReturnType<typeof setTimeout> | null = null
     let hintVisible = false
-    /** 收起角标并取消未到期的显示计时(松开全部修饰键或窗口失焦时)。 */
+    /** 本轮按住已被组合键取消:不再为这次按住重新计时,松开修饰键后才恢复。 */
+    let hintCancelled = false
+    /** 收起角标并取消未到期的显示计时(松开全部修饰键、失焦或按下组合键时)。 */
     const hideHint = (): void => {
       if (hintTimer !== null) {
         clearTimeout(hintTimer)
@@ -150,11 +152,20 @@ export default function Sidebar(): ReactNode {
         setHotkeyHeld(false)
       }
     }
+    /**
+     * 组合键取消本轮按住提示:按住 ⌘ 再按 W/N/B 等键属于普通快捷键,
+     * 序号角标不该出现(否则 ⌘W 这类组合会先闪出一排 #1-#9)。
+     */
+    const cancelHint = (): void => {
+      hintCancelled = true
+      hideHint()
+    }
     /** 排一次延迟显示计时;同一轮按住只排一次,按键自动重复不重启窗口。 */
     const scheduleHint = (): void => {
-      if (hintTimer !== null || hintVisible) return
+      if (hintCancelled || hintTimer !== null || hintVisible) return
       hintTimer = setTimeout(() => {
         hintTimer = null
+        if (hintCancelled) return
         hintVisible = true
         setHotkeyHeld(true)
       }, HOTKEY_HINT_DELAY_MS)
@@ -163,12 +174,28 @@ export default function Sidebar(): ReactNode {
       if (isSwitchModifier(event.key)) {
         const firstModifier = heldModifiers.size === 0
         heldModifiers.add(event.key)
-        if (firstModifier) scheduleHint()
+        if (firstModifier) {
+          hintCancelled = false
+          scheduleHint()
+        }
         return
       }
+      if (isModifierKey(event.key)) return
       // 切换路径不经过显示计时:数字键按下即生效。
       const index = instanceSwitchIndex(event)
-      if (index === null) return
+      if (index === null) {
+        // 按住 ⌘ 时的其他键是组合键(⌘W、⌘N 等),提示让位;
+        // 未按住切换修饰键的普通输入与本组件无关。
+        if (
+          hasSwitchModifier(rendererPlatform(), {
+            meta: event.metaKey,
+            alt: event.altKey
+          })
+        ) {
+          cancelHint()
+        }
+        return
+      }
       const id = switchOrderRef.current[index]
       if (id === undefined) return
       event.preventDefault()
@@ -189,6 +216,10 @@ export default function Sidebar(): ReactNode {
     window.addEventListener('blur', onBlur)
     // 工作区原生视图持焦时按键不经过本窗口:主进程白名单转发后在此还原为窗口事件。
     const unsubscribe = window.dshHub?.onWorkspaceHotkey((event: WorkspaceHotkeyEvent) => {
+      if (event.phase === 'cancel') {
+        cancelHint()
+        return
+      }
       window.dispatchEvent(
         new KeyboardEvent(event.phase === 'down' ? 'keydown' : 'keyup', {
           key: event.key,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasSwitchModifier, hotkeyDigitIndex, switchModifierKey } from './hotkeys'
+import { hasSwitchModifier, hotkeyDigitIndex, isModifierKey, switchModifierKey } from './hotkeys'
 
 describe('hotkeyDigitIndex', () => {
   it('主键盘 Digit1-9 映射为 0-8', () => {
@@ -42,5 +42,21 @@ describe('switchModifierKey / hasSwitchModifier', () => {
     expect(hasSwitchModifier('win32', { meta: false, alt: true })).toBe(true)
     expect(hasSwitchModifier('win32', { meta: true, alt: false })).toBe(false)
     expect(hasSwitchModifier('linux', { meta: false, alt: true })).toBe(true)
+  })
+})
+
+describe('isModifierKey', () => {
+  it('按住修饰键本身不算组合键', () => {
+    for (const key of ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Fn']) {
+      expect(isModifierKey(key)).toBe(true)
+    }
+  })
+
+  it('字母、数字与其他按键算组合键里的实体键', () => {
+    expect(isModifierKey('w')).toBe(false)
+    expect(isModifierKey('W')).toBe(false)
+    expect(isModifierKey('1')).toBe(false)
+    expect(isModifierKey('Escape')).toBe(false)
+    expect(isModifierKey('')).toBe(false)
   })
 })
