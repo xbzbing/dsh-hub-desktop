@@ -3,11 +3,12 @@
 > 本文是发布的**操作口径**：策略与门槛见 [release-policy.md](./release-policy.md)，
 > 机器校验见 `pnpm release:check`（离线演练，输出本文对应的收口步骤）；发布执行见 §4 的 `pnpm release:publish`。
 > 每次发布按本文逐步执行；流程变化须回写本文，不留口头版本。
-> 最近一次完整走通：v0.1.14（2026-11-10）。
+> 最近一次完整走通：v0.1.15（2026-11-16）。
 
 ## 0. 前置
 
 - Node 22+、pnpm；`git` 与 `gh` 可用（本机 `api.github.com` 需走代理时：`export HTTPS_PROXY=http://127.0.0.1:7897`，`gh` 不读系统 PAC）。
+- 上传资产走 `uploads.github.com`，与本机代理链路不兼容（大文件传一半即 HTTP 408 `Upload body timed out`）。发布时用 `NO_PROXY=uploads.github.com` 让上传直连、其余 API 仍走代理。
 - 构建机要求：
   - **Windows 包在 mac 上交叉构建**（`pnpm dist:win:local`）——electron-builder 自行下载 Windows 版 Electron（`-c.electronDist=` 置空），NSIS 用统一 bundle 的 **arm64 原生 makensis**（`electron-builder.yml` 的 `toolsets.nsis: "1.2.1"`；legacy 3.0.4.1 的 mac 端 makensis 只有 x86_64，未装 Rosetta 的 Apple Silicon 上 spawn EBADCPU 失败）。
   - 构建需访问 GitHub Releases 下载 NSIS bundle 与 win-codesign 工具链：网络受限时 `ELECTRON_GET_USE_PROXY=true HTTPS_PROXY=… pnpm dist:win:local`。
@@ -41,7 +42,7 @@ node scripts/release/checksums.mjs dist/upload       # 生成 dist/upload/SHA256
 shasum -a 256 dist/DSH-Hub-Setup-<version>.exe       # 与 SHA256SUMS.txt 第一列比对
 ```
 
-产物量级参考：v0.1.14 的 exe 为 120,629,264 字节，比 v0.1.13（120,625,095 字节）多 4,169 字节；v0.1.13 比 v0.1.12（120,624,208 字节）多 887 字节；v0.1.12 比 v0.1.11（120,623,576 字节）多 632 字节；v0.1.11 比 v0.1.10（120,597,490 字节）多 26 KB；v0.1.10 比 v0.1.9（120,595,763 字节）多 1.7 KB，v0.1.9 又比 v0.1.8（120,593,361 字节）多 2.4 KB；这一档差异来自载荷变化。相对更早版本多出的约 9 MB 来自 electron-builder 26.18 的 NSIS 归档压缩率（同一载荷手工 7z -mx=9 为 96 MB）；`compression` 选项不影响该归档，出现更大偏离时先比载荷再比压缩。
+产物量级参考：v0.1.15 的 exe 为 120,723,157 字节，比 v0.1.14（120,629,264 字节）多 93,893 字节（Electron 45.2.3→45.3.3 带来 Chromium 载荷变化，属正常档位）；v0.1.14 比 v0.1.13（120,625,095 字节）多 4,169 字节；v0.1.13 比 v0.1.12（120,624,208 字节）多 887 字节；v0.1.12 比 v0.1.11（120,623,576 字节）多 632 字节；v0.1.11 比 v0.1.10（120,597,490 字节）多 26 KB；v0.1.10 比 v0.1.9（120,595,763 字节）多 1.7 KB，v0.1.9 又比 v0.1.8（120,593,361 字节）多 2.4 KB；这一档差异来自载荷变化。相对更早版本多出的约 9 MB 来自 electron-builder 26.18 的 NSIS 归档压缩率（同一载荷手工 7z -mx=9 为 96 MB）；`compression` 选项不影响该归档，出现更大偏离时先比载荷再比压缩。
 
 ## 4. 半自动发布（推 tag → Draft → 资产核验）
 
@@ -111,6 +112,7 @@ gh release view v<version> --json assets,url
 | tag 已存在（同版本重发） | 作废 tag：`git tag -d v<version> && git push origin :refs/tags/v<version>`，回到 §4（**破坏性**，确认无人引用后才做） |
 | Draft 已存在、资产传错 | 重跑 `pnpm release:publish` 幂等覆盖（`--clobber`）；多余资产 `gh release delete-asset` |
 | 已 Publish 后发现致命问题 | 不要删 Release 重发同版本号；发 patch 版本 |
+| 资产上传报 HTTP 408 | `uploads.github.com` 走了代理；加 `NO_PROXY=uploads.github.com` 重跑。失败残留的 `starter` 状态资产会让重传卡住，先 `gh api -X DELETE repos/xbzbing/dsh-hub-desktop/releases/assets/<id>` 删掉再重跑 |
 | npm 工具链下载失败（NSIS/win-codesign） | `ELECTRON_GET_USE_PROXY=true HTTPS_PROXY=…` 重跑；已缓存的部分在 `~/Library/Caches/electron-builder/` |
 
 ## 7. 发布后
