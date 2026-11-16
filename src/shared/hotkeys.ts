@@ -32,3 +32,23 @@ export function hasSwitchModifier(
 ): boolean {
   return platform === 'darwin' ? mods.meta : mods.alt
 }
+
+/**
+ * 每个平台可能出现的修饰键名。按住这些键只是组合的前缀，不构成「与其他键的组合」；
+ * 主进程的输入转发与渲染层的按键处理共用本判定，两侧对「什么算组合键」保持一致。
+ */
+const MODIFIER_KEYS = new Set([
+  'Shift',
+  'Control',
+  'Alt',
+  'Meta',
+  'CapsLock',
+  'Fn',
+  'FnLock',
+  'AltGraph'
+])
+
+/** 该键名是否为修饰键本身。 */
+export function isModifierKey(key: string): boolean {
+  return MODIFIER_KEYS.has(key)
+}

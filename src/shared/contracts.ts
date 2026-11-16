@@ -641,23 +641,28 @@ export interface WorkspaceFindResult {
 }
 
 /**
- * 原生工作区转发给 hub 渲染层的按键事件。
- * 只含会话切换所需的白名单输入:切换修饰键本身(macOS 为 ⌘/Meta,其余平台为 Alt)
- * 与按住它时的数字键 1-9;其余输入不转发,由工作区页面自行处理。
+ * 原生工作区转发给 hub 渲染层的快捷键事件。
+ *
+ * - `down` / `up`：会话切换所需的白名单输入——切换修饰键本身（macOS 为 ⌘/Meta，
+ *   其余平台为 Alt）与其数字键 1-9；
+ * - `cancel`：按住切换修饰键又按下了其他键（⌘W、⌘N 等组合）。只让侧栏的序号提示
+ *   让位，按键本身既不转发也不拦截，仍由工作区页面处理。
  */
-export interface WorkspaceHotkeyEvent {
-  phase: 'down' | 'up'
-  /** 按下的键名:Meta / Alt 或数字键 */
-  key: string
-  /** 物理键位(MetaLeft / AltLeft / Digit1 等) */
-  code: string
-  /** 该瞬间 ⌘ 是否按住 */
-  meta: boolean
-  /** 该瞬间 Ctrl 是否按住 */
-  ctrl: boolean
-  /** 该瞬间 Alt 是否按住 */
-  alt: boolean
-}
+export type WorkspaceHotkeyEvent =
+  | {
+      phase: 'down' | 'up'
+      /** 按下的键名：Meta / Alt 或数字键 */
+      key: string
+      /** 物理键位（MetaLeft / AltLeft / Digit1 等） */
+      code: string
+      /** 该瞬间 ⌘ 是否按住 */
+      meta: boolean
+      /** 该瞬间 Ctrl 是否按住 */
+      ctrl: boolean
+      /** 该瞬间 Alt 是否按住 */
+      alt: boolean
+    }
+  | { phase: 'cancel' }
 
 /** 主进程 → 渲染进程的工作区快捷键白名单转发事件。 */
 export const WORKSPACE_HOTKEY_EVENT = 'dsh:workspace-hotkey'

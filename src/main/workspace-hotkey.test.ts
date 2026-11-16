@@ -47,6 +47,23 @@ describe('toWorkspaceHotkey（macOS：切换修饰键为 ⌘/Meta）', () => {
     )
   })
 
+  it('按住 ⌘ 时按其他键（⌘W 等组合）只发出 cancel，不转发按键本身', () => {
+    expect(toWorkspaceHotkey(input({ key: 'w', code: 'KeyW', meta: true }), 'darwin')).toEqual({
+      phase: 'cancel'
+    })
+    expect(toWorkspaceHotkey(input({ key: 'n', code: 'KeyN', meta: true }), 'darwin')).toEqual({
+      phase: 'cancel'
+    })
+    // 组合键里的修饰键本身不取消提示。
+    expect(
+      toWorkspaceHotkey(input({ key: 'Shift', code: 'ShiftLeft', meta: true }), 'darwin')
+    ).toBeNull()
+    // 组合键的 keyUp 不产生事件。
+    expect(
+      toWorkspaceHotkey(input({ type: 'keyUp', key: 'w', code: 'KeyW', meta: true }), 'darwin')
+    ).toBeNull()
+  })
+
   it('macOS 下 Alt 不是切换修饰键：Alt 键与 Alt+数字都不转发', () => {
     expect(toWorkspaceHotkey(input({ key: 'Alt', code: 'AltLeft' }), 'darwin')).toBeNull()
     expect(toWorkspaceHotkey(input({ key: '1', code: 'Digit1', alt: true }), 'darwin')).toBeNull()
@@ -83,6 +100,16 @@ describe('toWorkspaceHotkey（Windows/Linux：切换修饰键为 Alt）', () => 
     })
   })
 
+  it('按住 Alt 时的其他键发出 cancel', () => {
+    expect(toWorkspaceHotkey(input({ key: 'w', code: 'KeyW', alt: true }), 'win32')).toEqual({
+      phase: 'cancel'
+    })
+    // 非切换数字(0)同样让位提示，直接交给页面。
+    expect(toWorkspaceHotkey(input({ key: '0', code: 'Digit0', alt: true }), 'win32')).toEqual({
+      phase: 'cancel'
+    })
+  })
+
   it('Windows 下 ⌘(Win 键) 不是切换修饰键：Meta 键与 Meta+数字都不转发', () => {
     expect(toWorkspaceHotkey(input({ key: 'Meta', code: 'MetaLeft' }), 'win32')).toBeNull()
     expect(toWorkspaceHotkey(input({ key: '1', code: 'Digit1', meta: true }), 'win32')).toBeNull()
@@ -90,17 +117,12 @@ describe('toWorkspaceHotkey（Windows/Linux：切换修饰键为 Alt）', () => 
 })
 
 describe('toWorkspaceHotkey（通用过滤）', () => {
-  it('无修饰键的数字、数字键的 keyUp 都不转发', () => {
+  it('无修饰键的按键、非 keyDown 输入都不转发', () => {
     expect(toWorkspaceHotkey(input({ key: '1', code: 'Digit1' }), 'darwin')).toBeNull()
     expect(
       toWorkspaceHotkey(input({ type: 'keyUp', key: '1', code: 'Digit1', meta: true }), 'darwin')
     ).toBeNull()
-    expect(toWorkspaceHotkey(input({ key: '0', code: 'Digit0', alt: true }), 'win32')).toBeNull()
-  })
-
-  it('工作区自己的输入一律不转发也不拦截', () => {
-    expect(toWorkspaceHotkey(input({ key: 'n', code: 'KeyN', meta: true }), 'darwin')).toBeNull()
-    expect(toWorkspaceHotkey(input({ key: 'v', code: 'KeyV', alt: true }), 'win32')).toBeNull()
+    expect(toWorkspaceHotkey(input({ key: 'w', code: 'KeyW' }), 'darwin')).toBeNull()
     expect(
       toWorkspaceHotkey(input({ type: 'char', key: '1', code: 'Digit1', meta: true }), 'darwin')
     ).toBeNull()
@@ -112,6 +134,7 @@ describe('toWorkspaceHotkey（通用过滤）', () => {
   it('过滤器是纯函数:不调用 preventDefault、不产生副作用', () => {
     const guard = vi.fn()
     toWorkspaceHotkey(input({ key: 'a', code: 'KeyA' }), 'darwin')
+    toWorkspaceHotkey(input({ key: 'w', code: 'KeyW', meta: true }), 'darwin')
     expect(guard).not.toHaveBeenCalled()
   })
 })

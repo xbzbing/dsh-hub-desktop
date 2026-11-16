@@ -187,6 +187,14 @@ test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
   await win.keyboard.up(switchMod)
   await expect(badge1).toBeHidden()
 
+  // 按住切换修饰键再按其他键(⌘W 等)是组合键:本轮不再显示序号,
+  // 超过延迟窗口也不能闪出角标。
+  await win.keyboard.down(switchMod)
+  await win.keyboard.press('w')
+  await win.waitForTimeout(700)
+  await expect(badge1).toBeHidden()
+  await win.keyboard.up(switchMod)
+
   // 切换不等显示:角标还在延迟窗口内,数字键已切到首行实例
   await win.keyboard.down(switchMod)
   await expect(badge1).toBeHidden()
@@ -243,6 +251,14 @@ test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
   // 切换修饰键注入原生视图 → hub 渲染层收到转发,序号照常显示
   await sendToWorkspace([{ type: 'keyDown', keyCode: switchMod }])
   await expect(badge1).toBeVisible()
+
+  // 视图内按住切换修饰键再按其他键(⌘W 等):提示让位,过了延迟窗口也不再显示
+  await sendToWorkspace([{ type: 'keyUp', keyCode: switchMod }])
+  await expect(badge1).toBeHidden()
+  await sendToWorkspace([{ type: 'keyDown', keyCode: switchMod }])
+  await sendToWorkspace([{ type: 'keyDown', keyCode: 'w', modifiers: [switchModLower] }])
+  await win.waitForTimeout(700)
+  await expect(badge1).toBeHidden()
 
   // 视图内 修饰键+1 → 切回首行实例(转发链路:视图输入 → 白名单过滤 → 窗口事件)
   await sendToWorkspace([{ type: 'keyDown', keyCode: '1', modifiers: [switchModLower] }])
