@@ -45,6 +45,7 @@ import { createRegistryMetadataReader } from './plugin-registry-meta'
 import { createDshEntryResolver } from './plugin-dsh-entry'
 import { createCheckStateWriter } from './plugin-check-state'
 import { createPluginCommandRunner } from './plugin-command'
+import { createProfileLockGuard } from './profile-lock'
 import { createInstallPlanResolver } from './plugin-install-plan'
 import { createProfileBundleStore } from './profile-bundles'
 import { userLayerDisablesHmr } from './profile-hmr'
@@ -71,6 +72,12 @@ export type { PluginApplication } from './plugin-hmr'
 
 /** 插件命令执行超时：pnpm 安装可能较慢，给足余量（与安装器同量级）。 */
 const PLUGIN_COMMAND_TIMEOUT_MS = 10 * 60_000
+
+/**
+ * 列表命令单独的超时：它是纯本地读，正常在 1 秒内返回；只有被 profile 写锁挡住时才会拖到
+ * dsh 自己的 120 秒上限。30 秒足够覆盖慢磁盘与大 profile，又不会让用户对着空列表等两分钟。
+ */
+const PLUGIN_LIST_TIMEOUT_MS = 30_000
 
 /** 界面语言类型已随装配逻辑移到 plugin-info；此处再导出以保留既有导入路径。 */
 export type { PluginLocale } from './plugin-info'
@@ -198,7 +205,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     ((command, args, opts) =>
       execFileResult(command, args, {
         env: opts?.env,
-        timeout: PLUGIN_COMMAND_TIMEOUT_MS,
+        timeout: opts?.timeoutMs ?? PLUGIN_COMMAND_TIMEOUT_MS,
         maxBuffer: 16 * 1024 * 1024
       }))
   const readManifest = options.readManifest ?? defaultReadManifest
@@ -226,6 +233,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     installer: options.installer,
     ...(options.pathProbe ? { pathProbe: options.pathProbe } : {})
   })
+  /** profile 写锁预检：dsh 的 atomic-write 可能留下 0 字节死锁，先挪走再发命令（见 profile-lock）。 */
+  const profileLock = createProfileLockGuard({ dataRoot: options.dataRoot })
   /** 插件命令执行（构造 + 转发 + 脱敏报错，见 plugin-command）。 */
   const { runPlugin } = createPluginCommandRunner({
     run,
@@ -235,7 +244,8 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     ...(options.pnpmBinDir ? { pnpmBinDir: options.pnpmBinDir } : {}),
     inheritShellEnv,
     shellEnv,
-    loginPath
+    loginPath,
+    prepareProfile: (target) => profileLock.ensureClear(target).then(() => undefined)
   })
   const packageInfoFetchers = options.packageInfoFetchers ?? createPackageInfoFetchers()
   /** 未显式指定安装源时的默认档位（由设置项注入；缺省国内镜像）。 */
@@ -372,7 +382,9 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     locale: PluginLocale,
     resolved: { entry: string; version: string }
   ): Promise<PluginInfo[]> {
-    const result = await runPlugin(instance, ['list', '--json'], resolved)
+    const result = await runPlugin(instance, ['list', '--json'], resolved, undefined, {
+      timeoutMs: PLUGIN_LIST_TIMEOUT_MS
+    })
     let parsed: unknown
     try {
       parsed = JSON.parse(result.stdout || '[]')

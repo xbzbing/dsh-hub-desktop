@@ -13,10 +13,16 @@ export interface CommandResult {
   stderr: string
 }
 
+export interface CommandRunOptions {
+  env?: NodeJS.ProcessEnv
+  /** 本次执行的超时（毫秒）；不传则由调用方实现决定默认值。 */
+  timeoutMs?: number
+}
+
 export type CommandRunner = (
   command: string,
   args: string[],
-  options?: { env?: NodeJS.ProcessEnv }
+  options?: CommandRunOptions
 ) => Promise<CommandResult>
 
 /** 执行 `command args` 并按上述口径映射结果。 */

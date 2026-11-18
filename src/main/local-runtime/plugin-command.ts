@@ -32,6 +32,17 @@ export interface PluginCommandDeps {
   inheritShellEnv: () => boolean
   shellEnv: () => Promise<Map<string, string> | null>
   loginPath: () => Promise<string | null>
+  /**
+   * 执行前的 profile 写锁预检：dsh 的 atomic-write 可能留下 0 字节死锁，
+   * 之后每个命令都会空等 120 秒。预检失败不影响命令本身（见 profile-lock）。
+   */
+  prepareProfile?: (target: { home: string; profile: string }) => Promise<void>
+}
+
+/** 单次插件命令的可选项。 */
+export interface PluginCommandOptions {
+  /** 覆盖默认超时；列表这类轻命令需要更短的失败窗口。 */
+  timeoutMs?: number
 }
 
 export interface PluginCommandRunner {
@@ -44,8 +55,25 @@ export interface PluginCommandRunner {
     instance: LocalInstance,
     args: string[],
     resolved: { entry: string; version: string },
-    registry?: PluginRegistryOption | null
+    registry?: PluginRegistryOption | null,
+    options?: PluginCommandOptions
   ): Promise<CommandResult>
+}
+
+/**
+ * 从 dsh 的 stderr 里取出写锁路径：`atomic-write: timed out waiting for the writer lock at <path>`。
+ * 命中说明命令没跑到业务逻辑就被锁挡住，需要给用户可操作结论而不是原始堆栈。
+ */
+export function writerLockPath(stderr: string): string | null {
+  const match = /atomic-write: timed out waiting for the writer lock at (.+)/.exec(stderr)
+  const path = match?.[1]?.trim() ?? ''
+  return path === '' ? null : path
+}
+
+/** 子进程被超时/信号终止：execFileResult 以 killed 或 signal 落 reject。 */
+function isKilled(error: unknown): boolean {
+  const detail = error as { killed?: unknown; signal?: unknown } | null
+  return detail?.killed === true || (detail?.signal ?? null) !== null
 }
 
 export function createPluginCommandRunner(deps: PluginCommandDeps): PluginCommandRunner {
@@ -62,8 +90,11 @@ export function createPluginCommandRunner(deps: PluginCommandDeps): PluginComman
   }
 
   return {
-    async runPlugin(instance, args, resolved, registry) {
+    async runPlugin(instance, args, resolved, registry, options) {
       const { home, profile } = deps.homeAndProfile(instance)
+      // 预检在拼命令之前：残留的 0 字节写锁会让 dsh 空等 120 秒，先把能确定回收的锁挪走。
+      // 预检自身不抛错（见 profile-lock 的 guard），失败时命令照常执行。
+      if (deps.prepareProfile !== undefined) await deps.prepareProfile({ home, profile })
       const fullArgs =
         registry === undefined || registry === null
           ? args
@@ -100,8 +131,32 @@ export function createPluginCommandRunner(deps: PluginCommandDeps): PluginComman
                 env: { ...env, ...nodeInvocation.env, DSH_HOME: home }
               }
             : { command: resolved.entry, args: pluginArgs, env }
-      const result = await deps.run(invocation.command, invocation.args, { env: invocation.env })
+      let result: CommandResult
+      try {
+        result = await deps.run(invocation.command, invocation.args, {
+          env: invocation.env,
+          ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {})
+        })
+      } catch (error) {
+        // 超时被终止：dsh 卡在写锁上时就是这样被掐断的。给出可操作结论，
+        // 而不是把子进程错误原样抛给渲染层。
+        if (isKilled(error)) {
+          throw new InstanceStoreError(
+            'invalid-state',
+            `dsh plugin ${fullArgs.join(' ')} 超时已中止：该 profile 可能正被其它 dsh 进程写入，请关闭它后重试`
+          )
+        }
+        throw error
+      }
       if (result.code !== 0) {
+        // 写锁等待超时是环境问题而非插件问题：直接告诉用户锁在谁手里，别让他去读 pnpm 堆栈。
+        const lockPath = writerLockPath(result.stderr)
+        if (lockPath !== null) {
+          throw new InstanceStoreError(
+            'invalid-state',
+            `插件命令被 profile 写锁挡住：${lockPath}。该锁由另一个 dsh 进程持有，等它结束或关闭该进程后重试`
+          )
+        }
         // stderr 是自由文本，可能带 npmToken=xxx / password=xxx 形态的凭据：
         // 这段说明会经 IPC 到达渲染层的 toast，必须打掉键值凭据（redactSecret）
         // 与 URL 查询串（redactLine）。

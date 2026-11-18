@@ -15,11 +15,12 @@ import type { CommandResult, CommandRunner } from './exec-file'
 
 const INSTANCE = { id: 'inst-1', name: '本机实例', transport: 'local' } as LocalInstance
 
-/** 记录一次执行调用，便于断言命令形状与环境。 */
+/** 记录一次执行调用，便于断言命令形状、环境与超时。 */
 interface Call {
   command: string
   args: string[]
   env: NodeJS.ProcessEnv
+  timeoutMs: number | undefined
 }
 
 /** 装配命令执行器：记录调用，返回预设结果。 */
@@ -29,7 +30,12 @@ function runnerOf(result: Partial<CommandResult> = {}): {
 } {
   const calls: Call[] = []
   const run: CommandRunner = async (command, args, options) => {
-    calls.push({ command, args: [...args], env: { ...(options?.env ?? {}) } })
+    calls.push({
+      command,
+      args: [...args],
+      env: { ...(options?.env ?? {}) },
+      timeoutMs: options?.timeoutMs
+    })
     return { code: 0, stdout: '', stderr: '', ...result }
   }
   return { run, calls }
@@ -224,5 +230,90 @@ describe('失败原因透出', () => {
       version: '0.2.0'
     })
     expect(result.stdout).toBe('{"ok":true}')
+  })
+})
+
+describe('profile 写锁预检', () => {
+  it('执行前调用一次 prepareProfile，参数为实例的 home 与 profile', async () => {
+    const events: string[] = []
+    let prepared: { home: string; profile: string } | null = null
+    const { runner } = build({
+      prepareProfile: async (target) => {
+        events.push('prepare')
+        prepared = target
+      },
+      run: async () => {
+        events.push('run')
+        return { code: 0, stdout: '[]', stderr: '' }
+      }
+    })
+
+    await runner.runPlugin(INSTANCE, ['list', '--json'], {
+      entry: '/dsh/bin.js',
+      version: '0.2.0'
+    })
+
+    // 顺序有意义：锁必须在命令启动前挪走，否则命令已经卡在 120 秒的等待上。
+    expect(events).toEqual(['prepare', 'run'])
+    expect(prepared).toEqual({ home: '/homes/inst-1', profile: 'web' })
+  })
+
+  it('timeoutMs 覆盖传到 run；不传时保持 undefined（取默认值）', async () => {
+    const withTimeout = build()
+    await withTimeout.runner.runPlugin(
+      INSTANCE,
+      ['list', '--json'],
+      { entry: '/dsh/bin.js', version: '0.2.0' },
+      null,
+      { timeoutMs: 1234 }
+    )
+    expect(withTimeout.calls[0]?.timeoutMs).toBe(1234)
+
+    const withoutTimeout = build()
+    await withoutTimeout.runner.runPlugin(INSTANCE, ['list'], {
+      entry: '/dsh/bin.js',
+      version: '0.2.0'
+    })
+    expect(withoutTimeout.calls[0]?.timeoutMs).toBeUndefined()
+  })
+
+  it('被超时终止（killed）→ invalid-state，消息说明可能被其它进程写入', async () => {
+    const { runner } = build({
+      run: async () => {
+        throw Object.assign(new Error('spawn killed'), { killed: true })
+      }
+    })
+
+    try {
+      await runner.runPlugin(INSTANCE, ['list'], { entry: '/dsh/bin.js', version: '0.2.0' })
+      throw new Error('应当抛错')
+    } catch (error) {
+      expect((error as { code?: unknown }).code).toBe('invalid-state')
+      expect((error as Error).message).toContain('超时已中止')
+    }
+  })
+
+  it('写锁等待超时 → 给出锁路径，不透出 dsh 的原始堆栈', async () => {
+    const stderr = [
+      'atomic-write: timed out waiting for the writer lock at /tmp/package.json.lock',
+      'Error: timed out waiting for the writer lock',
+      '    at takeOverExitedLock (/dsh/lib/atomic-write.js:42:7)'
+    ].join('\n')
+    const { runner } = build({}, { code: 1, stderr })
+
+    try {
+      await runner.runPlugin(INSTANCE, ['list', '--json'], {
+        entry: '/dsh/bin.js',
+        version: '0.2.0'
+      })
+      throw new Error('应当抛错')
+    } catch (error) {
+      const message = (error as Error).message
+      expect((error as { code?: unknown }).code).toBe('invalid-state')
+      expect(message).toContain('写锁')
+      expect(message).toContain('/tmp/package.json.lock')
+      expect(message).not.toContain('takeOverExitedLock')
+      expect(message).not.toContain('    at ')
+    }
   })
 })

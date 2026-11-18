@@ -374,6 +374,14 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
     'src/main/local-runtime/plugin-command.ts',
     "`dsh plugin ${fullArgs.join(' ')} 失败（exit ${result.code}）：${tail || '无 stderr'}`"
   ),
+  debt(
+    'src/main/local-runtime/plugin-command.ts',
+    "`dsh plugin ${fullArgs.join(' ')} 超时已中止：该 profile 可能正被其它 dsh 进程写入，请关闭它后重试`"
+  ),
+  debt(
+    'src/main/local-runtime/plugin-command.ts',
+    '`插件命令被 profile 写锁挡住：${lockPath}。该锁由另一个 dsh 进程持有，等它结束或关闭该进程后重试`'
+  ),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件列表输出')"),
   debt('src/main/local-runtime/plugin-manager.ts', "throw new Error('无法解析插件版本信息输出')"),
   debt(
