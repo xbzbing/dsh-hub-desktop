@@ -124,3 +124,26 @@ test('禁用/启用：禁用后仍在列表可见并标注已禁用，可再次�
   await expect(toggle).toHaveAttribute('aria-checked', 'true', { timeout: 15_000 })
   await expect(win.getByTestId('plugin-disabled-demo-plugin')).toHaveCount(0)
 })
+
+test('搜索：按名称/包名过滤，无命中给出提示，清空恢复', async () => {
+  test.setTimeout(90_000)
+  await openDetail(win)
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible({ timeout: 15_000 })
+
+  const input = win.getByTestId('plugins-filter-input')
+  // 命中包名（大小写不敏感）：该行保留。
+  await input.fill('DEMO')
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible()
+  await expect(win.getByTestId('plugins-no-match')).toHaveCount(0)
+
+  // 没有任何命中：列表清空并给出提示，且不误显示「一个插件都没装」。
+  await input.fill('no-such-plugin')
+  await expect(win.getByTestId('plugin-list')).toHaveCount(0)
+  await expect(win.getByTestId('plugins-no-match')).toBeVisible()
+  await expect(win.getByTestId('plugins-empty')).toHaveCount(0)
+
+  // 清空搜索：列表恢复。
+  await input.fill('')
+  await expect(win.getByTestId('plugin-row-demo-plugin')).toBeVisible()
+  await expect(win.getByTestId('plugins-no-match')).toHaveCount(0)
+})

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canOfferUpgrade,
   classifyCheckOutcome,
+  filterPluginNames,
   initialCheckState,
   pluginSourceKey,
   pluginApplyNotice,
@@ -287,5 +288,32 @@ describe('classifyCheckOutcome（检查结果的信息栏归类）', () => {
 
   it('没有结果 → none', () => {
     expect(classifyCheckOutcome(null)).toBe('none')
+  })
+})
+
+describe('filterPluginNames（按名称/包名过滤）', () => {
+  const list = [
+    plugin('@xbzbing/dsh-git-panel', '1.14.4'),
+    { ...plugin('dsh-free-search', '0.9.54'), title: '自由搜索' },
+    plugin('dsh-im-wechat', '0.4.1')
+  ]
+
+  it('空白关键词返回原数组（同一引用，不产生新列表）', () => {
+    expect(filterPluginNames(list, '   ')).toBe(list)
+  })
+
+  it('匹配包名，大小写不敏感', () => {
+    expect(filterPluginNames(list, 'GIT-PANEL').map((item) => item.name)).toEqual([
+      '@xbzbing/dsh-git-panel'
+    ])
+    expect(filterPluginNames(list, 'dsh-im').map((item) => item.name)).toEqual(['dsh-im-wechat'])
+  })
+
+  it('匹配本地化名称', () => {
+    expect(filterPluginNames(list, '自由').map((item) => item.name)).toEqual(['dsh-free-search'])
+  })
+
+  it('无命中返回空数组', () => {
+    expect(filterPluginNames(list, '不存在的插件')).toEqual([])
   })
 })

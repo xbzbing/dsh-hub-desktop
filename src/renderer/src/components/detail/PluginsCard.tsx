@@ -17,6 +17,7 @@ import { pendingPluginInstalls, subscribePluginInstalls } from '../../lib/plugin
 import { useAppStore } from '../../store'
 import {
   classifyCheckOutcome,
+  filterPluginNames,
   initialCheckState,
   pluginApplyNotice,
   pruneChecks,
@@ -93,6 +94,10 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   /** 上次运行时核对中被自动禁用的插件（界面提示用）；null = 无。 */
   const [autoDisabled, setAutoDisabled] = useState<PluginAutoDisabled[] | null>(null)
   const [checkingAll, setCheckingAll] = useState(false)
+  /** 名称/包名搜索关键词：只影响列表展示与批量检查范围，不改数据。 */
+  const [filter, setFilter] = useState('')
+  /** 按关键词过滤后的列表；关键词为空时直接复用原数组（不产生新引用）。 */
+  const visiblePlugins = plugins === null ? null : filterPluginNames(plugins, filter)
 
   /**
    * 拉取插件列表与持久化的检查状态。keepChecks=true 时保留内存里的检查结果（只按最新列表
@@ -264,15 +269,16 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   }
 
   /**
-   * 一键批量检查所有可检查插件的更新：小并发（CHECK_CONCURRENCY）同时进行，避免串行过慢，
+   * 一键批量检查当前列表里可检查插件的更新：小并发（CHECK_CONCURRENCY）同时进行，避免串行过慢，
    * 也不至于同时拉起过多子进程；批量期间单行检查按钮锁定，保证同一时刻只有系统检查在跑。
-   * 本地/GitHub 安装的插件由用户自行维护版本，不查 npm，批量时直接跳过。
+   * 范围跟随搜索结果；本地/GitHub 安装的插件由用户自行维护版本，不查 npm，批量时直接跳过。
    * 用户切换界面时本函数继续执行到结束（结果由主进程落盘，回来仍能看到标记）。
    * 信息栏按类别汇总各记一行（可升级 / 不兼容 / 失败），不逐插件刷屏。
    */
   const runCheckAll = async (): Promise<void> => {
-    if (!BRIDGE || plugins === null || checkingAll) return
-    const targets = plugins.filter((plugin) => plugin.updateCheckable)
+    if (!BRIDGE || visiblePlugins === null || checkingAll) return
+    // 只检查当前搜索结果里的插件：与列表展示一致，用户搜到谁就查谁。
+    const targets = visiblePlugins.filter((plugin) => plugin.updateCheckable)
     if (targets.length === 0) return
     setCheckingAll(true)
     try {
@@ -488,7 +494,22 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   return (
     <div className="card plugins-card selectable" data-testid="plugins-card">
       <div className="card-head">
-        <h3>{t('detail.plugin.title')}</h3>
+        <div className="row" style={{ gap: 10 }}>
+          <h3>{t('detail.plugin.title')}</h3>
+          {/* 名称/包名搜索：过滤当前列表（含批量检查范围），数据不重新拉取。 */}
+          <label className="search plugin-search">
+            <Icon name="search" />
+            <input
+              type="search"
+              placeholder={t('detail.plugin.searchPlaceholder')}
+              aria-label={t('detail.plugin.searchLabel')}
+              autoComplete="off"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+              data-testid="plugins-filter-input"
+            />
+          </label>
+        </div>
         <div className="row" style={{ gap: 8 }}>
           {/* 后台安装：对话框已收起、安装仍在执行时显示在装规格；结束后自动消失并刷新列表。 */}
           {backgroundInstalls.length > 0 && (
@@ -516,7 +537,9 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
             className="btn btn-secondary btn-sm"
             onClick={() => void runCheckAll()}
             disabled={
-              checkingAll || plugins === null || !plugins.some((plugin) => plugin.updateCheckable)
+              checkingAll ||
+              visiblePlugins === null ||
+              !visiblePlugins.some((plugin) => plugin.updateCheckable)
             }
             data-testid="plugins-check-all-btn"
           >
@@ -571,9 +594,16 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
         </p>
       )}
 
-      {plugins !== null && plugins.length > 0 && (
+      {/* 关键词没命中任何插件：与「一个都没装」区分开，清空搜索即可恢复。 */}
+      {plugins !== null && plugins.length > 0 && visiblePlugins?.length === 0 && (
+        <p className="meta" data-testid="plugins-no-match">
+          {t('detail.plugin.noMatch')}
+        </p>
+      )}
+
+      {visiblePlugins !== null && visiblePlugins.length > 0 && (
         <ul className="plugin-list" data-testid="plugin-list">
-          {plugins.map((plugin) => (
+          {visiblePlugins.map((plugin) => (
             <PluginRow
               key={plugin.name}
               t={t}

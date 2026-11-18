@@ -96,6 +96,23 @@ export function showsIncompatibleWarning(check: PluginCheckState): boolean {
 }
 
 /**
+ * 按关键词过滤插件（纯函数，便于测试）：大小写不敏感，同时匹配名称与包名，
+ * 任一子串命中即保留。空白关键词返回原列表（按引用比较，避免每次渲染重算 map）。
+ */
+export function filterPluginNames(
+  plugins: readonly PluginInfo[],
+  keyword: string
+): readonly PluginInfo[] {
+  const needle = keyword.trim().toLowerCase()
+  if (needle === '') return plugins
+  return plugins.filter(
+    (plugin) =>
+      (plugin.title ?? '').toLowerCase().includes(needle) ||
+      plugin.name.toLowerCase().includes(needle)
+  )
+}
+
+/**
  * 是否「无法判定」而非「确定不兼容」：不兼容且有新版，但执行检查所用 dsh 版本未知。
  * 主进程对未知版本一律 fail-closed（compatible=false），此处让 UI 区分两义，不谎报结论。
  */
