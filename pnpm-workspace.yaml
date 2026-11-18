@@ -14,5 +14,5 @@ allowBuilds:
   electron-winstaller: false
   esbuild: true
 minimumReleaseAgeExclude:
-  - eslint-plugin-react-refresh@0.5.7
-  - electron@45.3.3
+  - electron@45.3.4
+  - npm@12.2.3
