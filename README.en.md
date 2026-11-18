@@ -31,7 +31,7 @@ Privacy policy: [PRIVACY.md](PRIVACY.md) — this app collects no personal data,
 - **Credential Vault**: System keychain (safeStorage), remembered by default after login (uncheck to opt out); instant clear on uncheck/forget
 - **Audit Log**: Whitelist projection, credentials never stored
 - **SSH Security**: TOFU host fingerprint verification (trust on first use / reject on change), passwords passed via ephemeral memory channel
-- **Plugin Management**: List installed plugins for the instance's environment in the detail page (icon / name / version / npm / GitHub / install source), with install, check-for-update, and uninstall. Update checks evaluate both the dsh main package and sub-package peers for compatibility, warning instead of upgrading when incompatible; plugins with host-side code prompt an instance restart after changes; metadata is localized to the UI language
+- **Plugin Management**: List installed plugins for the instance's environment in the detail page (icon / name / version / npm / GitHub / install source), with search by name or package name, install (can continue in background), check-for-update, and uninstall; plugins installed from a local path or GitHub keep their version from the install source and are not checked against npm. Update checks evaluate both the dsh main package and sub-package peers for compatibility, warning instead of upgrading when incompatible; plugins with host-side code prompt an instance restart after changes; metadata is localized to the UI language
 - **Tray / Notifications / Auto-start**: Configurable
 
 |                                                   |                                                         |
