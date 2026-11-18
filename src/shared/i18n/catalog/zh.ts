@@ -388,7 +388,7 @@ export const ZH_MESSAGES = {
   'detail.plugin.checkingAll': '检查中…',
   'detail.plugin.checkLocked': '一键检查进行中，完成后可单独检查',
   'detail.plugin.lastChecked': '上次检查更新：{time}',
-  'detail.plugin.selfMaintained': '版本由你自行维护，不检查 npm 更新',
+  'detail.plugin.checkUnsupported': '本地/GitHub 安装的插件不支持检查 npm 更新',
   'detail.plugin.upgradeTo': '升级到 {version}',
   'detail.plugin.upgrading': '升级中…',
   'detail.plugin.uptodate': '已是最新版本',

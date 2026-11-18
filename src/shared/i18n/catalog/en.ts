@@ -413,7 +413,8 @@ export const EN_MESSAGES = {
   'detail.plugin.checkingAll': 'Checking…',
   'detail.plugin.checkLocked': 'Check all is running; single checks unlock when it finishes',
   'detail.plugin.lastChecked': 'Last checked: {time}',
-  'detail.plugin.selfMaintained': 'Version maintained by you; npm updates are not checked',
+  'detail.plugin.checkUnsupported':
+    'Plugins installed from a local path or GitHub do not support npm update checks',
   'detail.plugin.upgradeTo': 'Upgrade to {version}',
   'detail.plugin.upgrading': 'Upgrading…',
   'detail.plugin.uptodate': 'Up to date',

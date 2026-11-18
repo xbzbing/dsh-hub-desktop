@@ -447,6 +447,22 @@ h3,
 .btn-block {
   width: 100%;
 }
+/* 次要/幽灵按钮的禁用态：颜色收敛到 muted、保留边框，和可点击项区分开。
+   （主按钮的禁用态已在 .btn-primary:disabled 单独定义。） */
+.btn:disabled {
+  cursor: not-allowed;
+}
+.btn-secondary:disabled,
+.btn-secondary:disabled:hover {
+  background: var(--surface);
+  color: var(--muted);
+  border-color: var(--border);
+}
+.btn-ghost:disabled,
+.btn-ghost:disabled:hover {
+  background: none;
+  color: var(--muted);
+}
 .btn-sm {
   padding: 5px 10px;
   font-size: 12px;

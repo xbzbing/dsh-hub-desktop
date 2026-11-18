@@ -28,6 +28,9 @@ export const INSTALLED_PUBLISHED_AT = '2026-09-20T02:30:00.000Z'
 export const LATEST_VERSION = '1.1.0'
 export const FAKE_VERSIONS = ['1.0.0', '1.0.10', '1.0.9', LATEST_VERSION]
 
+/** 本地 file: 安装插件的真实版本（取自它的本地 package.json，不是列表里的 file: 说明）。 */
+export const LOCAL_PLUGIN_VERSION = '0.1.99'
+
 /** 假 dsh 记录的 add/remove 调用。 */
 export interface FakeMutation {
   cmd: string
@@ -78,6 +81,14 @@ if (cmd === 'list') {
       version: ${JSON.stringify(INSTALLED_VERSION)},
       resolved: 'https://registry.npmjs.org/other-plugin/-/other-plugin-1.0.0.tgz',
       path: ${JSON.stringify(join(dataDir, 'fake-plugin-2'))}
+    }
+  }
+  // 本地 file: 安装的插件：列表里的 version 是安装说明，真实版本在本地清单里。
+  if (process.env.DSH_E2E_PLUGIN_LOCAL === '1') {
+    deps['local-plugin'] = {
+      from: 'local-plugin',
+      version: 'file:../fake-plugin-local',
+      path: ${JSON.stringify(join(dataDir, 'fake-plugin-local'))}
     }
   }
   process.stdout.write(JSON.stringify([{ name: 'dsh-profile-web', dependencies: deps }]))
@@ -178,6 +189,15 @@ export async function seedPluginFixture(dataDir: string): Promise<PluginFixture>
   const otherDir = join(dataDir, 'fake-plugin-2')
   await mkdir(otherDir, { recursive: true })
   await writeFile(join(otherDir, 'package.json'), JSON.stringify(otherManifest), 'utf8')
+  // 本地安装插件的假包清单：版本由本地 package.json 决定（列表版本是 file: 安装说明）。
+  const localManifest = {
+    ...FAKE_PLUGIN_MANIFEST,
+    name: 'local-plugin',
+    version: LOCAL_PLUGIN_VERSION
+  }
+  const localDir = join(dataDir, 'fake-plugin-local')
+  await mkdir(localDir, { recursive: true })
+  await writeFile(join(localDir, 'package.json'), JSON.stringify(localManifest), 'utf8')
 
   const mutationLog = join(dataDir, 'plugin-mutations.jsonl')
   process.env.DSH_E2E_PLUGIN_ADD_LOG = mutationLog

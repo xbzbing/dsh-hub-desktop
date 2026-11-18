@@ -155,7 +155,8 @@ export function PluginRow(props: {
             ariaLabel={t('detail.plugin.enableToggle')}
             testId={`plugin-toggle-${plugin.name}`}
           />
-          {/* 不查 npm 的插件（本地/GitHub 安装）不给检查入口，改为说明：版本由用户自行维护。 */}
+          {/* 检查升级按钮恒在：不查 npm 的插件（本地/GitHub 安装）保持禁用，悬停说明原因，
+              避免行内布局在两种插件间跳动。 */}
           {plugin.updateCheckable ? (
             <button
               className="btn btn-secondary btn-sm plugin-check-btn"
@@ -177,12 +178,21 @@ export function PluginRow(props: {
               </span>
             </button>
           ) : (
-            <span
-              className="meta plugin-self-maintained"
-              data-testid={`plugin-self-maintained-${plugin.name}`}
-            >
-              {t('detail.plugin.selfMaintained')}
-            </span>
+            // 禁用按钮本身收不到指针事件，气泡挂在包裹层上（HoverTip 转发 hover 与键盘聚焦）。
+            <HoverTip text={t('detail.plugin.checkUnsupported')}>
+              <button
+                className="btn btn-secondary btn-sm plugin-check-btn"
+                disabled
+                data-testid={`plugin-check-${plugin.name}`}
+              >
+                <Icon name="sync" />
+                <span className="btn-swap">
+                  <span className="btn-swap-cell" data-active>
+                    {t('detail.plugin.checkUpdate')}
+                  </span>
+                </span>
+              </button>
+            </HoverTip>
           )}
           {canOfferUpgrade(check) && check.result !== null && (
             <button
