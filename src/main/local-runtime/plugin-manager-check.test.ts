@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createPluginManager } from './plugin-manager'
 import {
   LIST_JSON,
+  LOCAL_LIST_JSON,
   baseOptions,
   localInstance,
   memoryStore,
@@ -439,5 +440,17 @@ describe('createPluginManager.check', () => {
     )
     expect(check.dshVersion).toBe('0.2.0-rc.1')
     expect(check.compatible).toBe(true)
+  })
+
+  it('本地安装的插件不查 npm：明确拒绝，且不发起 view 命令', async () => {
+    const run = fakeRun(VIEW_JSON, LOCAL_LIST_JSON)
+    const manager = createPluginManager(baseOptions(run))
+    await expect(manager.check(localInstance(), 'local-plugin')).rejects.toMatchObject({
+      code: 'invalid-state',
+      message: expect.stringContaining('不检查 npm 更新')
+    })
+    // 只跑了 list；view 根本没有发起。
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(run.mock.calls[0]![1]).toContain('list')
   })
 })

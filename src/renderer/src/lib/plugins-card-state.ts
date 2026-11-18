@@ -32,6 +32,7 @@ export function pruneChecks(
 
 /**
  * 由持久化快照与当前插件列表重建检查态（挂载时恢复标记）：
+ * - 不查 npm 的插件（本地/GitHub 安装）：不恢复任何检查标记，版本由用户自行维护；
  * - 快照里有记录的插件：latest 与当前已装版本不同才算「有更新」（升级过就不再显示标记）；
  * - 快照里正在检查的插件：显示「检查中…」（后台仍在跑）；
  * - 其余插件：保持未检查。
@@ -45,6 +46,8 @@ export function restoreChecks(
   if (snapshot === null) return next
   const checking = new Set(snapshot.checking)
   for (const plugin of plugins) {
+    // 不查 npm 的插件没有「新版本」概念：历史遗留的记录（换安装方式前留下的）一律不恢复。
+    if (!plugin.updateCheckable) continue
     if (checking.has(plugin.name)) {
       next[plugin.name] = { status: 'checking', result: null, error: null }
       continue

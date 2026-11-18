@@ -147,6 +147,7 @@ function plugin(name: string, version: string): PluginInfo {
     hasHostSide: true,
     hasClientSide: false,
     installSource: 'npm',
+    updateCheckable: true,
     enabled: true,
     publishedAt: null
   }
@@ -216,6 +217,23 @@ describe('restoreChecks（由持久化快照恢复标记）', () => {
       autoDisabled: []
     })
     expect(restored.a).toEqual({ status: 'checking', result: null, error: null })
+  })
+
+  it('不查 npm 的插件：历史遗留记录也不恢复标记', () => {
+    const local: PluginInfo = {
+      ...plugin('a', '0.1.99'),
+      installSource: 'file',
+      updateCheckable: false
+    }
+    const restored = restoreChecks([local], {
+      lastCheckedAt: null,
+      updates: {
+        a: { current: '0.1.99', latest: '0.2.0', compatible: true, dshPeer: null, dshVersion: null }
+      },
+      checking: ['a'],
+      autoDisabled: []
+    })
+    expect(restored).toEqual({})
   })
 
   it('快照里有但列表已无的插件被忽略', () => {

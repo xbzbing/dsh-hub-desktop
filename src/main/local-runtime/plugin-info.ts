@@ -134,6 +134,14 @@ export function infoFromPath(
     readers.readManifest(topLevelDir) !== null ? topLevelDir : (entry.path ?? topLevelDir)
   const manifest = readers.readManifest(manifestDir) ?? {}
   const dsh = manifest.dsh ?? {}
+  const installSource = installSourceOf(entry)
+  // 本地 file:/link: 安装时列表的 version 是安装说明（file:../path），不是版本号：已装版本取
+  // 本地 package.json 的 version，读不到才回退安装说明。其余来源以列表版本为准。
+  const manifestVersion = typeof manifest.version === 'string' ? manifest.version : undefined
+  const version =
+    installSource === 'file'
+      ? (manifestVersion ?? entry.version ?? '—')
+      : (entry.version ?? manifestVersion ?? '—')
   const iconBase64 =
     typeof manifest.icon === 'string'
       ? readers.readIcon(resolvePath(manifestDir, manifest.icon))
@@ -145,7 +153,7 @@ export function infoFromPath(
     localeMeta?.description?.trim() || manifest.description?.trim() || null
   return {
     name,
-    version: entry.version ?? manifest.version ?? '—',
+    version,
     title: localizedTitle,
     description: localizedDescription,
     author: authorName(manifest.author),
@@ -158,7 +166,8 @@ export function infoFromPath(
     nodeEngine: manifest.engines?.node ?? null,
     hasHostSide: typeof dsh.bundle?.patch === 'string' && dsh.bundle.patch !== '',
     hasClientSide: dsh.client !== undefined && dsh.client !== null,
-    installSource: installSourceOf(entry),
+    installSource,
+    updateCheckable: installSource === 'npm',
     // 只有含 host 半（dsh.bundle.patch）的插件才由 bundles 决定加载与否；
     // 纯 client 插件随宿主 bundle 加载，无法单独禁用 → null。
     enabled:

@@ -143,6 +143,7 @@ describe('infoFromPath', () => {
     expect(info.npmUrl).toBe('https://www.npmjs.com/package/demo-plugin')
     expect(info.githubUrl).toBe('https://github.com/demo/demo-plugin')
     expect(info.installSource).toBe('npm')
+    expect(info.updateCheckable).toBe(true)
     expect(info.hasHostSide).toBe(true)
     expect(info.hasClientSide).toBe(true)
   })
@@ -249,6 +250,20 @@ describe('infoFromPath', () => {
       null
     )
     expect(noManifest.version).toBe('—')
+  })
+
+  it('本地 file: 安装：版本取本地 manifest，且不参与 npm 检查', () => {
+    const info = infoFromPath(
+      readersOf({ manifest }),
+      'demo-plugin',
+      { from: 'demo-plugin', version: 'file:../demo-plugin' },
+      '/tmp/profile/node_modules',
+      'zh',
+      null
+    )
+    expect(info.installSource).toBe('file')
+    expect(info.version).toBe('1.0.0')
+    expect(info.updateCheckable).toBe(false)
   })
 
   it('manifest 缺失时字段按缺省处理，不抛错', () => {

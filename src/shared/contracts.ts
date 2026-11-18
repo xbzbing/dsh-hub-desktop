@@ -476,6 +476,11 @@ export interface PluginInfo {
   /** 安装来源。 */
   installSource: 'npm' | 'github' | 'file' | 'unknown'
   /**
+   * 是否参与 npm registry 的更新检查。只有从 npm 安装的插件才有可比的 registry 版本；
+   * file:/link: 本地安装与 GitHub 安装由用户自行维护版本，不查 npm。
+   */
+  updateCheckable: boolean
+  /**
    * 是否在 profile 加载清单（`dsh.profile.bundles`）里。
    * null = 该插件不由清单控制（无 host 半，随宿主 bundle 加载），无法单独禁用。
    */

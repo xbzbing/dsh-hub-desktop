@@ -161,6 +161,20 @@ export const LIST_JSON = JSON.stringify([
   }
 ])
 
+/** 本地 file: 安装的插件：列表里的 version 是安装说明，真实版本在本地 manifest。 */
+export const LOCAL_LIST_JSON = JSON.stringify([
+  {
+    name: 'dsh-profile-web',
+    dependencies: {
+      'local-plugin': {
+        from: 'local-plugin',
+        version: 'file:../local-plugin',
+        path: '/node_modules/local-plugin'
+      }
+    }
+  }
+])
+
 export const GIT_PANEL_MANIFEST = {
   name: '@xbzbing/dsh-git-panel',
   version: '1.1.0',

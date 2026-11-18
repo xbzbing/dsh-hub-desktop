@@ -247,16 +247,18 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   }
 
   /**
-   * 一键批量检查所有插件更新：小并发（CHECK_CONCURRENCY）同时进行，避免串行过慢，
+   * 一键批量检查所有可检查插件的更新：小并发（CHECK_CONCURRENCY）同时进行，避免串行过慢，
    * 也不至于同时拉起过多子进程；批量期间单行检查按钮锁定，保证同一时刻只有系统检查在跑。
+   * 本地/GitHub 安装的插件由用户自行维护版本，不查 npm，批量时直接跳过。
    * 用户切换界面时本函数继续执行到结束（结果由主进程落盘，回来仍能看到标记）。
    * 信息栏按类别汇总各记一行（可升级 / 不兼容 / 失败），不逐插件刷屏。
    */
   const runCheckAll = async (): Promise<void> => {
     if (!BRIDGE || plugins === null || checkingAll) return
+    const targets = plugins.filter((plugin) => plugin.updateCheckable)
+    if (targets.length === 0) return
     setCheckingAll(true)
     try {
-      const targets = [...plugins]
       for (const plugin of targets) {
         setChecks((prev) => ({
           ...prev,
@@ -488,7 +490,9 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => void runCheckAll()}
-            disabled={checkingAll || plugins === null || plugins.length === 0}
+            disabled={
+              checkingAll || plugins === null || !plugins.some((plugin) => plugin.updateCheckable)
+            }
             data-testid="plugins-check-all-btn"
           >
             <Icon name="sync" />

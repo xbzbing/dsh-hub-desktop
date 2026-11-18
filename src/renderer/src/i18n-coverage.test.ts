@@ -412,6 +412,14 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
     'src/main/local-runtime/plugin-manager.ts',
     '`无法检查更新：插件 ${name} 未发布到 npm registry（本地安装的包不在 registry 中）`'
   ),
+  // 不查 npm 的插件（本地 file: / GitHub 安装）被显式拒绝检查时的来源标签与原因文案，
+  // 随 IPC 信封 message 回到行内错误与信息栏。
+  debt('src/main/local-runtime/plugin-manager.ts', "? '本地'"),
+  debt('src/main/local-runtime/plugin-manager.ts', ": '非 npm 来源'"),
+  debt(
+    'src/main/local-runtime/plugin-manager.ts',
+    '`${source}安装的插件不检查 npm 更新（版本由用户自行维护）`'
+  ),
   debt(
     'src/main/local-runtime/plugin-manager.ts',
     '`升级 ${name} 到 ${version} 失败，且旧版本未知无法恢复：${reason}`'

@@ -5,6 +5,7 @@ import { InstanceStoreError } from '../registry/instance-store'
 import type { CommandResult } from './exec-file'
 import {
   LIST_JSON,
+  LOCAL_LIST_JSON,
   baseOptions,
   fakeBundles,
   fakeInstaller,
@@ -231,5 +232,25 @@ describe('createPluginManager.list', () => {
     // git-panel 在清单里 → 启用；free-search 不在 → 已禁用
     expect(plugins.find((p) => p.name === '@xbzbing/dsh-git-panel')?.enabled).toBe(true)
     expect(plugins.find((p) => p.name === 'dsh-free-search')?.enabled).toBe(false)
+  })
+
+  it('本地 file: 安装：版本取本地 manifest，标记为不查 npm', async () => {
+    const run = vi.fn(async (): Promise<CommandResult> => ({
+      code: 0,
+      stdout: LOCAL_LIST_JSON,
+      stderr: ''
+    }))
+    const manager = createPluginManager({
+      ...baseOptions(run),
+      readManifest: (dir) => (dir.includes('local-plugin') ? { version: '0.1.99' } : null)
+    })
+    const plugins = await manager.list(localInstance())
+    expect(plugins).toHaveLength(1)
+    expect(plugins[0]).toMatchObject({
+      name: 'local-plugin',
+      version: '0.1.99',
+      installSource: 'file',
+      updateCheckable: false
+    })
   })
 })

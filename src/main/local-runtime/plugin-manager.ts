@@ -504,9 +504,9 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
       const plugins = await listPlugins(instance, locale, await resolveDshEntry(instance))
       const state = await stateStore.read(instance.id)
       // 回填已装版本的发布时间：只认版本号与当前已装版本一致的快照——升级换版本后旧快照不再匹配，
-      // 该字段回到「未获取」，直到下次检查写入新版本的发布时间。
+      // 该字段回到「未获取」，直到下次检查写入新版本的发布时间。不查 npm 的插件没有快照可回填。
       return plugins.map((plugin) => {
-        const snapshot = state.published[plugin.name]
+        const snapshot = plugin.updateCheckable ? state.published[plugin.name] : undefined
         return { ...plugin, publishedAt: snapshot?.version === plugin.version ? snapshot.at : null }
       })
     },
@@ -518,6 +518,20 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
         const plugins = await listPlugins(instance, 'zh', resolved)
         const current = plugins.find((plugin) => plugin.name === name)
         if (!current) throw new Error(`插件未安装：${name}`)
+        // 只有 npm 安装的插件才有可比的 registry 版本；本地 file:/link: 与 GitHub 安装的版本
+        // 由用户自行维护，直接拒绝而不是拿包名去 npm 查（会 404 或把用户钉的版本当成过期）。
+        if (!current.updateCheckable) {
+          const source =
+            current.installSource === 'file'
+              ? '本地'
+              : current.installSource === 'github'
+                ? 'GitHub'
+                : '非 npm 来源'
+          throw new InstanceStoreError(
+            'invalid-state',
+            `${source}安装的插件不检查 npm 更新（版本由用户自行维护）`
+          )
+        }
         // view 联网取 latest 的版本、dsh peer 与各版本发布时间（time 是「版本 → 发布时刻」映射，
         // 已装版本的发布时间取自已装版本那一项，latest 的那项不用）。按默认安装源查询，与安装同源。
         let result: CommandResult

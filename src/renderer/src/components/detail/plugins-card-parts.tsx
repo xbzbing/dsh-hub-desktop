@@ -110,8 +110,9 @@ export function PluginRow(props: {
           )}
         </button>
         <div className="row plugin-actions" style={{ gap: 8 }}>
-          {/* 检查结果内联在操作行最左，不换行占整行：已最新 / 不兼容警告 / 检查失败。 */}
-          {showsUpToDate(check) && (
+          {/* 检查结果内联在操作行最左，不换行占整行：已最新 / 不兼容警告 / 检查失败。
+              只对参与 npm 检查的插件展示；本地/GitHub 安装的插件没有「新版本」概念。 */}
+          {plugin.updateCheckable && showsUpToDate(check) && (
             <span
               className="meta plugin-status-inline"
               data-testid={`plugin-uptodate-${plugin.name}`}
@@ -119,7 +120,7 @@ export function PluginRow(props: {
               {t('detail.plugin.uptodate')}
             </span>
           )}
-          {showsIncompatibleWarning(check) && check.result !== null && (
+          {plugin.updateCheckable && showsIncompatibleWarning(check) && check.result !== null && (
             // 行内宽度有限必然截断：完整说明由 hover/聚焦气泡给出（原 title 由气泡取代）。
             <HoverTip text={incompatibleText}>
               <span
@@ -130,7 +131,7 @@ export function PluginRow(props: {
               </span>
             </HoverTip>
           )}
-          {check.status === 'error' && check.error !== null && (
+          {plugin.updateCheckable && check.status === 'error' && check.error !== null && (
             <HoverTip text={t('detail.plugin.checkFailed', { msg: check.error })}>
               <span
                 className="meta err-text plugin-status-inline"
@@ -154,25 +155,35 @@ export function PluginRow(props: {
             ariaLabel={t('detail.plugin.enableToggle')}
             testId={`plugin-toggle-${plugin.name}`}
           />
-          <button
-            className="btn btn-secondary btn-sm plugin-check-btn"
-            onClick={onCheck}
-            disabled={check.status === 'checking' || locked}
-            title={locked ? t('detail.plugin.checkLocked') : undefined}
-            data-testid={`plugin-check-${plugin.name}`}
-          >
-            <Icon name="sync" />
-            {/* 两个候选文案叠放在同一 grid 单元，宽度取最大值：切「检查中…/检查升级」按钮不跳动，
-                中英文各自按各自的最长文案自适应。 */}
-            <span className="btn-swap">
-              <span className="btn-swap-cell" data-active={check.status !== 'checking'}>
-                {t('detail.plugin.checkUpdate')}
+          {/* 不查 npm 的插件（本地/GitHub 安装）不给检查入口，改为说明：版本由用户自行维护。 */}
+          {plugin.updateCheckable ? (
+            <button
+              className="btn btn-secondary btn-sm plugin-check-btn"
+              onClick={onCheck}
+              disabled={check.status === 'checking' || locked}
+              title={locked ? t('detail.plugin.checkLocked') : undefined}
+              data-testid={`plugin-check-${plugin.name}`}
+            >
+              <Icon name="sync" />
+              {/* 两个候选文案叠放在同一 grid 单元，宽度取最大值：切「检查中…/检查升级」按钮不跳动，
+                  中英文各自按各自的最长文案自适应。 */}
+              <span className="btn-swap">
+                <span className="btn-swap-cell" data-active={check.status !== 'checking'}>
+                  {t('detail.plugin.checkUpdate')}
+                </span>
+                <span className="btn-swap-cell" data-active={check.status === 'checking'}>
+                  {t('detail.plugin.checking')}
+                </span>
               </span>
-              <span className="btn-swap-cell" data-active={check.status === 'checking'}>
-                {t('detail.plugin.checking')}
-              </span>
+            </button>
+          ) : (
+            <span
+              className="meta plugin-self-maintained"
+              data-testid={`plugin-self-maintained-${plugin.name}`}
+            >
+              {t('detail.plugin.selfMaintained')}
             </span>
-          </button>
+          )}
           {canOfferUpgrade(check) && check.result !== null && (
             <button
               className="btn btn-primary btn-sm"
