@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type {
   PluginAutoDisabled,
@@ -13,6 +13,7 @@ import { fmtLogTime } from '../../lib/format'
 import { runWithConcurrency } from '../../lib/concurrency'
 import { ackAutoDisabled, isAutoDisabledAcked } from '../../lib/auto-disabled-ack'
 import { pendingPluginUpgrade, trackPluginUpgrade } from '../../lib/plugin-upgrade-tracker'
+import { pendingPluginInstalls, subscribePluginInstalls } from '../../lib/plugin-install-tracker'
 import { useAppStore } from '../../store'
 import {
   classifyCheckOutcome,
@@ -153,6 +154,22 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   useEffect(() => {
     void load()
   }, [load])
+
+  /** 后台安装：对话框收起后仍在执行的安装由登记表驱动，卡头显示进度，卡片重挂载后也能看到。 */
+  const backgroundInstalls = useSyncExternalStore(subscribePluginInstalls, () =>
+    pendingPluginInstalls(instanceId)
+  )
+  /**
+   * 上一次次渲染的在飞安装数量：减少说明有一次安装收尾，刷新列表以取到最新状态
+   * （对话框收起后本卡是唯一收尾方）。计数不变时不再触发，不会自激刷新。
+   */
+  const backgroundInstallCount = backgroundInstalls.length
+  const lastBackgroundInstallCount = useRef(backgroundInstallCount)
+  useEffect(() => {
+    const previous = lastBackgroundInstallCount.current
+    lastBackgroundInstallCount.current = backgroundInstallCount
+    if (backgroundInstallCount < previous) void load({ keepChecks: true })
+  }, [backgroundInstallCount, load])
 
   /** 「知道了」：记下这一批的确认（刷新与应用重启后都不再提示），并立即收起提示条。 */
   const dismissAutoDisabled = (): void => {
@@ -473,6 +490,14 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
       <div className="card-head">
         <h3>{t('detail.plugin.title')}</h3>
         <div className="row" style={{ gap: 8 }}>
+          {/* 后台安装：对话框已收起、安装仍在执行时显示在装规格；结束后自动消失并刷新列表。 */}
+          {backgroundInstalls.length > 0 && (
+            <span className="meta" data-testid="plugins-background-install">
+              {t('detail.plugin.installBackgroundRunning', {
+                specs: backgroundInstalls.join(t('common.listSeparator'))
+              })}
+            </span>
+          )}
           {/* 上次检查更新时刻：本会话内任一检查（单条或批量）完成即刷新，紧邻刷新按钮左侧。 */}
           {lastCheckedAt !== null && (
             <span className="meta plugin-last-checked" data-testid="plugins-last-checked">

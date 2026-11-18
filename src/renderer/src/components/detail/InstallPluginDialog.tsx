@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import type { PluginInstallPlan, PluginRegistryOption } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
@@ -12,6 +12,7 @@ import InstallConfirmPanel from './InstallConfirmPanel'
 import PluginSecurityPanel from './PluginSecurityPanel'
 import { REGISTRY_CHOICES, registryLabel } from './registry-choices'
 import { usePluginPlanSecurity } from '../../lib/use-plugin-security-check'
+import { trackPluginInstall } from '../../lib/plugin-install-tracker'
 
 const BRIDGE = window.dshHub
 
@@ -30,6 +31,8 @@ export interface InstallConfirmation {
  *
  * 输入内容一旦变化立即作废已确认的计划（确认区与在途的更新内容取数一并失效），回到第一步。
  * 解析与安装都由本对话框发起，卡片只负责成功后的刷新与生效提示；解析/安装失败就地显示。
+ * 解析（第一步「确定」）期间仍可取消；安装提交后不可取消（右上角关闭按钮隐藏，Escape 与背景点击
+ * 都不生效），只能「放到后台」收起：安装继续，完成后由插件卡刷新列表并提示；失败在后台用 toast 报错。
  */
 export default function InstallPluginDialog(props: {
   t: Translator
@@ -46,6 +49,7 @@ export default function InstallPluginDialog(props: {
   const closeLabel = useAppStore((state) => state.t('common.close'))
   const npmRegistry = useAppStore((state) => state.settings.npmRegistry)
   const securityEnabled = useAppStore((state) => state.settings.pluginSecurityCheck)
+  const toast = useAppStore((state) => state.toast)
 
   const [spec, setSpec] = useState('')
   // 默认安装源跟随应用设置的镜像档位（打开对话框时读取；设置改动后重开生效）。
@@ -54,15 +58,19 @@ export default function InstallPluginDialog(props: {
   )
   /** 已解析出的计划：非 null 即处于第二步；输入变更立即作废回第一步。 */
   const [plan, setPlan] = useState<PluginInstallPlan | null>(null)
-  /** 解析与安装共用一把锁：进行中按钮禁用且不可关闭。 */
+  /** 解析与安装共用一把锁：进行中按钮禁用；能否关闭看 installing。 */
   const [busy, setBusy] = useState(false)
+  /** 安装已提交；与解析共用 busy，但只有这一段不可取消、只能放到后台。 */
+  const [installing, setInstalling] = useState(false)
   const [resolveError, setResolveError] = useState<string | null>(null)
   const [installError, setInstallError] = useState<string | null>(null)
-  /** 安装后启用：默认勾选（取消则只安装，装完落在禁用态）。 */
+  /** 安装后启用：缺省按安全检查结论定（普通安装勾选）；取消则只安装，装完落在禁用态。 */
   const [enableAfter, setEnableAfter] = useState(true)
   const [riskAccepted, setRiskAccepted] = useState(false)
   /** 曾因输入变更作废过确认区：footer 提示改为「需重新确定」。 */
   const [reconfirmNeeded, setReconfirmNeeded] = useState(false)
+  /** 本对话框是否已「放到后台」：收起即失效，安装结束后的收尾据此不再碰对话框状态。 */
+  const backgroundedRef = useRef(false)
   /** 最新输入：解析期间又编辑时，用它丢弃对应旧输入的解析结果。 */
   const specRef = useRef('')
   const {
@@ -71,6 +79,13 @@ export default function InstallPluginDialog(props: {
     blockedNow: securityBlockedNow,
     needsAcknowledgement: securityAck
   } = usePluginPlanSecurity({ instanceId, plan, registry, enabled: securityEnabled })
+
+  // 「安装后启用」的缺省值随安全检查结论走：普通安装默认勾选；需确认放行（启发式结论）、
+  // 结论不可用或检查失败时默认不勾选。勾选变化不在依赖里，用户手动改过不会被后续渲染覆盖。
+  useEffect(() => {
+    if (plan === null || securityChecking) return
+    setEnableAfter(!securityAck)
+  }, [plan, securityChecking, securityAck])
 
   const changeSpec = (value: string): void => {
     specRef.current = value
@@ -114,14 +129,27 @@ export default function InstallPluginDialog(props: {
     if (confirmed.compatible === false && !riskAccepted) return
     if (securityChecking || securityBlockedNow) return
     setBusy(true)
+    setInstalling(true)
     setInstallError(null)
     onInstallStart(confirmed)
-    const result = await bridge.plugin.install(instanceId, confirmed.installSpec, {
-      enable: enableAfter,
-      registry,
-      securityAcknowledged: securityAck
-    })
+    // 登记在飞安装：对话框可「放到后台」收起，插件卡据此显示进度并在结束后刷新列表。
+    const result = await trackPluginInstall(
+      instanceId,
+      confirmed.installSpec,
+      bridge.plugin.install(instanceId, confirmed.installSpec, {
+        enable: enableAfter,
+        registry,
+        securityAcknowledged: securityAck
+      })
+    )
     if (!result.ok) {
+      if (backgroundedRef.current) {
+        // 已放到后台：对话框已收起，失败只能由信息栏留痕并弹提示。
+        onInstallFailed(confirmed, result.message)
+        toast('err', t('detail.plugin.installFailed', { msg: result.message }))
+        return
+      }
+      setInstalling(false)
       setBusy(false)
       setInstallError(result.message)
       onInstallFailed(confirmed, result.message)
@@ -132,12 +160,23 @@ export default function InstallPluginDialog(props: {
       registry,
       application: result.value.application
     })
+    // 已「放到后台」：对话框已收起，收尾不再碰它的状态（否则会关掉用户此刻打开的另一个对话框）。
+    if (backgroundedRef.current) return
+    setInstalling(false)
     setBusy(false)
     onClose()
   }
 
   const close = (): void => {
-    if (!busy) onClose()
+    // 解析阶段仍可取消；安装已提交后 Escape 与背景点击都不生效，唯一出口是「放到后台」。
+    if (!installing) onClose()
+  }
+
+  /** 放到后台：只收起对话框，安装继续；结果由插件卡留痕，失败在后台用 toast 提示。 */
+  const background = (): void => {
+    if (!installing) return
+    backgroundedRef.current = true
+    onClose()
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
@@ -179,22 +218,34 @@ export default function InstallPluginDialog(props: {
       closeLabel={closeLabel}
       className="modal-plugin"
       testId="install-plugin-dialog"
+      hideClose={installing}
       footer={
         <>
           <span className="meta">
-            {plan !== null || reconfirmNeeded
-              ? t('detail.plugin.confirmInputChanged')
-              : t('detail.plugin.installResolveHint')}
+            {installing
+              ? t('detail.plugin.installRunningNote')
+              : plan !== null || reconfirmNeeded
+                ? t('detail.plugin.confirmInputChanged')
+                : t('detail.plugin.installResolveHint')}
           </span>
           <span className="right">
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={close}
-              disabled={busy}
-              data-testid="install-plugin-cancel"
-            >
-              {t('common.cancel')}
-            </button>
+            {installing ? (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={background}
+                data-testid="install-plugin-background"
+              >
+                {t('detail.plugin.installBackground')}
+              </button>
+            ) : (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={close}
+                data-testid="install-plugin-cancel"
+              >
+                {t('common.cancel')}
+              </button>
+            )}
             {plan !== null && securityBlockedNow ? (
               <button
                 className="btn btn-secondary btn-sm"

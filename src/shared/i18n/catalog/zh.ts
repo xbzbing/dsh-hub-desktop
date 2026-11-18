@@ -465,6 +465,9 @@ export const ZH_MESSAGES = {
     '升级会先停止并移除旧版本，再安装新版本；依赖该插件的功能会短暂中断',
   'detail.plugin.upgradeRunningNote': '升级进行中，不可取消；可放到后台，完成后会提示结果',
   'detail.plugin.upgradeBackground': '放到后台',
+  'detail.plugin.installRunningNote': '安装已开始，无法取消；可放到后台继续使用其它功能',
+  'detail.plugin.installBackground': '放到后台',
+  'detail.plugin.installBackgroundRunning': '正在后台安装：{specs}',
   'detail.plugin.upgradeFailedInline': '升级失败：{msg}',
 
   // —— 更新内容（确认区懒加载）——

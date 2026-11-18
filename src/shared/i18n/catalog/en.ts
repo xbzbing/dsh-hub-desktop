@@ -496,6 +496,10 @@ export const EN_MESSAGES = {
   'detail.plugin.upgradeRunningNote':
     'Upgrade in progress and cannot be cancelled; send it to the background and you will be notified when it finishes',
   'detail.plugin.upgradeBackground': 'Send to background',
+  'detail.plugin.installRunningNote':
+    'Installation has started and cannot be cancelled; run it in the background to keep working',
+  'detail.plugin.installBackground': 'Run in background',
+  'detail.plugin.installBackgroundRunning': 'Installing in background: {specs}',
   'detail.plugin.upgradeFailedInline': 'Failed to upgrade: {msg}',
 
   // —— 更新内容（确认区懒加载）——

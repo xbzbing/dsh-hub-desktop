@@ -261,6 +261,8 @@ test('pass：显示未发现明显风险，主按钮保持普通安装', async (
   const panel = win.getByTestId('plugin-security-panel')
   await expect(panel).toHaveAttribute('data-verdict', 'pass', { timeout: 15_000 })
   await expect(panel).toContainText('未发现明显风险')
+  // 无风险：「安装后启用」默认勾选。
+  await expect(win.getByTestId('install-confirm-enable-after')).toBeChecked()
   // 无风险时默认收起：只留标题行（徽标 + 重新检查），明细要手动展开。
   const toggle = win.getByTestId('plugin-security-toggle')
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
@@ -279,6 +281,8 @@ test('warn：显示需要留意的项目，确认「仍要安装」后真正下�
   const panel = win.getByTestId('plugin-security-panel')
   await expect(panel).toHaveAttribute('data-verdict', 'warn', { timeout: 15_000 })
   await expect(panel).toContainText('有 1 项需要留意')
+  // 有风险需确认放行：「安装后启用」默认不勾选，避免顺手把未核实的插件装成启用态。
+  await expect(win.getByTestId('install-confirm-enable-after')).not.toBeChecked()
   await expect(win.getByTestId('install-plugin-submit')).toContainText('仍要安装 1.1.0')
   await win.getByTestId('install-plugin-submit').click()
   await expect(win.getByTestId('install-plugin-dialog')).toBeHidden({ timeout: 30_000 })
