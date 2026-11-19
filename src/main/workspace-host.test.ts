@@ -366,6 +366,64 @@ describe('createWorkspaceHost', () => {
     expect(replacement?.setVisible).toHaveBeenLastCalledWith(false)
   })
 
+  it('setBounds 报告边界是否落到活动视图上', () => {
+    const host = createWorkspaceHost(() => hubWindow() as never)
+    expect(host.setBounds({ x: 0, y: 0, width: 100, height: 100 })).toBe(false)
+
+    host.prepare('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'http://127.0.0.1:3080/')
+    expect(host.setBounds({ x: 0, y: 0, width: 100, height: 100 })).toBe(true)
+
+    host.hide()
+    expect(host.setBounds({ x: 0, y: 0, width: 100, height: 100 })).toBe(false)
+  })
+
+  it('hideInstance 只隐藏指定实例的缓存视图，不影响当前视图', () => {
+    const host = createWorkspaceHost(() => hubWindow() as never)
+    const first = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const second = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    host.prepare(first, 'http://127.0.0.1:3080/')
+    host.prepare(second, 'http://127.0.0.1:3081/')
+    host.setBounds({ x: 10, y: 20, width: 800, height: 600 })
+    const [firstView, secondView] = fakeViews()
+
+    host.hideInstance(first)
+
+    expect(firstView?.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 0, height: 0 })
+    expect(firstView?.setVisible).toHaveBeenLastCalledWith(false)
+    expect(secondView?.setVisible).toHaveBeenLastCalledWith(true)
+  })
+
+  it('隐藏非活动缓存视图不结束活动视图的页内查找', () => {
+    const requests: Array<{ action: string }> = []
+    const hub = hubWindow()
+    const host = createWorkspaceHost(
+      () => hub as never,
+      () => 'en-US',
+      undefined,
+      undefined,
+      (request) => requests.push(request)
+    )
+    const first = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const second = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    host.prepare(first, 'http://127.0.0.1:3080/')
+    host.prepare(second, 'http://127.0.0.1:3081/')
+    const [firstView, secondView] = fakeViews()
+    const wc = secondView!.webContents
+    host.findInPage({ query: 'needle', forward: true, findNext: false })
+    // prepare(second) 会结束 first 的查找会话；以此刻为基线看 hideInstance 的副作用。
+    const stopCalls = firstView?.webContents.stopFindInPage.mock.calls.length ?? 0
+
+    host.hideInstance(first)
+
+    // 非活动视图没有查找会话：隐藏它不能重置活动视图的查找态。
+    expect(firstView?.webContents.stopFindInPage).toHaveBeenCalledTimes(stopCalls)
+    const beforeInput = wc.handlers.get('before-input-event')
+    const guard = { preventDefault: vi.fn() }
+    beforeInput?.(guard, { type: 'keyDown', key: 'Escape', isComposing: false })
+    expect(guard.preventDefault).toHaveBeenCalledOnce()
+    expect(requests.at(-1)).toEqual({ action: 'close' })
+  })
+
   it('updates the navigation allowlist when a trusted reopen uses a new local port', () => {
     const host = createWorkspaceHost(() => hubWindow() as never)
     host.prepare('33333333-3333-4333-8333-333333333333', 'http://127.0.0.1:3080/')

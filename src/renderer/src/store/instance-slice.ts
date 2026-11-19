@@ -179,8 +179,8 @@ export const createInstanceSlice: SliceCreator<InstanceSlice> = (set, get) => ({
         loginGate = loginGate.filter((id) => id !== event.id)
       }
       if (state.workspaceOpening && state.selection === event.id) {
-        // 在途打开尚未返回时不重复触发:重复触发会先隐藏原生视图,而主进程会把
-        // 两次打开按同实例合并,渲染层状态不再变化,内容区边界不会重新回传。
+        // 在途打开尚未返回时不重复触发：running 只表示运行时已就绪，这次打开会自行完成；
+        // 再发一次只会让加载页多等一轮。
         if (event.status === 'running' && workspaceOpenInFlight() !== event.id && !gated) {
           shouldOpen = event.id
         }

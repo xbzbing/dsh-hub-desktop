@@ -154,6 +154,11 @@ export interface WorkspaceSlice {
    */
   loginGate: string[]
   setWorkspaceOpen: (open: boolean) => void
+  /**
+   * 主进程确认内容区边界已落到活动视图：解除打开后的可见性看守。
+   * openView 成功只代表视图已准备并导航，真正显示还要等这次确认。
+   */
+  confirmWorkspaceVisible: (id: string) => void
   select: (id: string | null) => void
   /** 取回记录并选中；列表页与设置页跳转详情共用。 */
   openDetail: (id: string) => void

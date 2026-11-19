@@ -53,7 +53,8 @@ import type {
   WorkspaceFindStopOptions,
   WorkspaceHotkeyEvent,
   WorkspaceTooltip,
-  WorkspaceViewBounds
+  WorkspaceViewBounds,
+  WorkspaceViewBoundsResult
 } from './contracts'
 
 export const IPC = {
@@ -182,6 +183,10 @@ export interface DshHubBridge {
     stop: (id: string) => Promise<IpcResult<null>>
     /** 重启 hub 托管的本地实例：等待完全停止后重新拉起；外部接管的进程会被拒绝。 */
     restart: (id: string) => Promise<IpcResult<null>>
+    /**
+     * 打开实例的内嵌工作区。主进程在一次处理内完成「隐藏旧视图 → 准备新视图 → 导航」，
+     * 返回成功只表示视图已就绪；是否真的显示出来由 `updateViewBounds` 的 `applied` 确认。
+     */
     openView: (id: string) => Promise<IpcResult<null>>
     /** 重新登录成功后刷新内嵌工作区：注入最新会话 Cookie 并导航回工作区 URL。未缓存视图时为空操作。 */
     reloadView: (id: string) => Promise<IpcResult<null>>
@@ -192,7 +197,11 @@ export interface DshHubBridge {
     openInBrowser: (id: string) => Promise<IpcResult<null>>
     /** 把本机实例的 BrowserAuth token 写入剪贴板；token 由主进程解析，不经渲染层。 */
     copyToken: (id: string) => Promise<IpcResult<null>>
-    updateViewBounds: (bounds: WorkspaceViewBounds) => Promise<IpcResult<null>>
+    /**
+     * 应用内容区边界。返回 `applied=false` 表示当前没有活动视图，边界没有生效——
+     * 渲染层据此重试并确认工作区真的可见，而不是假定已经显示。
+     */
+    updateViewBounds: (bounds: WorkspaceViewBounds) => Promise<IpcResult<WorkspaceViewBoundsResult>>
     /** 在当前活动工作区内查找；搜索范围由主进程确定为活动 WebContents。 */
     findInPage: (input: WorkspaceFindInput) => Promise<IpcResult<null>>
     /** 停止当前工作区的页内查找并清除高亮；可顺便把键盘焦点交还工作区。 */

@@ -25,6 +25,9 @@ let instanceViewUrlFake: RegisterHarness['instanceViewUrlFake']
 let externalDshScannerFake: RegisterHarness['externalDshScannerFake']
 let verifyExternalAccess: RegisterHarness['verifyExternalAccess']
 let authFake: RegisterHarness['authFake']
+let hideInstanceViewFake: RegisterHarness['hideInstanceViewFake']
+let hideInstanceViewOfFake: RegisterHarness['hideInstanceViewOfFake']
+let setInstanceViewBoundsFake: RegisterHarness['setInstanceViewBoundsFake']
 let currentStatus: InstanceStatusEvent | null
 
 beforeEach(async () => {
@@ -40,7 +43,10 @@ beforeEach(async () => {
     instanceViewUrlFake,
     externalDshScannerFake,
     verifyExternalAccess,
-    authFake
+    authFake,
+    hideInstanceViewFake,
+    hideInstanceViewOfFake,
+    setInstanceViewBoundsFake
   } = harness)
 })
 
@@ -100,6 +106,195 @@ describe('registerIpc：打开工作区与外部接管', () => {
       expect(opened.message).toContain('内部错误')
     }
     expect(openInstanceView).not.toHaveBeenCalled()
+  })
+
+  it('同一实例的在途 openView 被复用，不重复准备视图', async () => {
+    // 本机未运行分支：启动后给出就绪地址，打开流程才会走到 prepare。
+    runtimeFake.start.mockImplementation(async (instance) => {
+      runtimeFake.statusOf.mockReturnValue({
+        id: instance.id,
+        status: 'running',
+        at: '2026-09-16T00:00:00.000Z'
+      })
+      runtimeFake.urlOf.mockReturnValue('http://127.0.0.1:39002/')
+    })
+
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    let resolveOpen!: () => void
+    openInstanceView.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveOpen = resolve
+        })
+    )
+
+    const first = invoke('instances:openView', local.value.id)
+    await vi.waitFor(() => expect(openInstanceView).toHaveBeenCalledTimes(1))
+    const second = invoke('instances:openView', local.value.id)
+    expect(openInstanceView).toHaveBeenCalledTimes(1)
+
+    resolveOpen()
+    await Promise.all([first, second])
+    expect(openInstanceView).toHaveBeenCalledTimes(1)
+  })
+
+  it('hideView 之后再次打开同一实例会重新发起，而不是等待已作废的任务', async () => {
+    // 本机未运行分支：启动后给出就绪地址，打开流程才会走到 prepare。
+    runtimeFake.start.mockImplementation(async (instance) => {
+      runtimeFake.statusOf.mockReturnValue({
+        id: instance.id,
+        status: 'running',
+        at: '2026-09-16T00:00:00.000Z'
+      })
+      runtimeFake.urlOf.mockReturnValue('http://127.0.0.1:39002/')
+    })
+
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    const resolvers: Array<() => void> = []
+    openInstanceView.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvers.push(resolve)
+        })
+    )
+
+    const first = invoke('instances:openView', local.value.id)
+    await vi.waitFor(() => expect(openInstanceView).toHaveBeenCalledTimes(1))
+    await invoke('instances:hideView')
+    const second = invoke('instances:openView', local.value.id)
+    await vi.waitFor(() => expect(openInstanceView).toHaveBeenCalledTimes(2))
+
+    for (const resolve of resolvers) resolve()
+    await Promise.all([first, second])
+    expect(openInstanceView).toHaveBeenCalledTimes(2)
+  })
+
+  it('openView 在 prepare 之前隐藏旧视图（同一事务，渲染层不再单独发 hideView）', async () => {
+    runtimeFake.start.mockImplementation(async (instance) => {
+      runtimeFake.statusOf.mockReturnValue({
+        id: instance.id,
+        status: 'running',
+        at: '2026-09-16T00:00:00.000Z'
+      })
+      runtimeFake.urlOf.mockReturnValue('http://127.0.0.1:39002/')
+    })
+
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+
+    const opened = (await invoke('instances:openView', local.value.id)) as { ok: boolean }
+    expect(opened.ok).toBe(true)
+    // 没有显式 hideView：这次 hide 只能来自打开事务本身。
+    expect(hideInstanceViewFake).toHaveBeenCalledTimes(1)
+    expect(hideInstanceViewFake.mock.invocationCallOrder[0]!).toBeLessThan(
+      openInstanceView.mock.invocationCallOrder[0]!
+    )
+  })
+
+  it('被 hide 作废的旧打开不会隐藏更新的同实例打开', async () => {
+    runtimeFake.start.mockImplementation(async (instance) => {
+      runtimeFake.statusOf.mockReturnValue({
+        id: instance.id,
+        status: 'running',
+        at: '2026-09-16T00:00:00.000Z'
+      })
+      runtimeFake.urlOf.mockReturnValue('http://127.0.0.1:39002/')
+    })
+
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    const resolvers: Array<() => void> = []
+    openInstanceView.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvers.push(resolve)
+        })
+    )
+
+    const first = invoke('instances:openView', local.value.id)
+    await vi.waitFor(() => expect(openInstanceView).toHaveBeenCalledTimes(1))
+    await invoke('instances:hideView')
+    const second = invoke('instances:openView', local.value.id)
+    await vi.waitFor(() => expect(openInstanceView).toHaveBeenCalledTimes(2))
+
+    // 较新的打开先完成，旧任务随后收尾：补偿只能作用于自己那次，不能隐藏新视图。
+    resolvers[1]!()
+    await second
+    resolvers[0]!()
+    await first
+    expect(hideInstanceViewOfFake).not.toHaveBeenCalled()
+  })
+
+  it('hide 晚于 prepare 时清掉迟到的激活结果', async () => {
+    // 本机未运行分支：启动后给出就绪地址，打开流程才会走到 prepare。
+    runtimeFake.start.mockImplementation(async (instance) => {
+      runtimeFake.statusOf.mockReturnValue({
+        id: instance.id,
+        status: 'running',
+        at: '2026-09-16T00:00:00.000Z'
+      })
+      runtimeFake.urlOf.mockReturnValue('http://127.0.0.1:39002/')
+    })
+
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    let resolveOpen!: () => void
+    openInstanceView.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveOpen = resolve
+        })
+    )
+
+    const opening = invoke('instances:openView', local.value.id)
+    await vi.waitFor(() => expect(openInstanceView).toHaveBeenCalledTimes(1))
+    await invoke('instances:hideView')
+    resolveOpen()
+    await opening
+
+    // prepare 已经发生，但打开在 hide 之后才完成：视图必须被隐藏，不能以隐藏态残留为「已打开」。
+    expect(hideInstanceViewOfFake).toHaveBeenCalledWith(local.value.id)
+  })
+
+  it('updateViewBounds 回传边界是否落到活动视图上', async () => {
+    const local = (await invoke('instances:create', VALID_LOCAL)) as {
+      ok: boolean
+      value: { id: string }
+    }
+    if (!local.ok) throw new Error('创建失败')
+    await invoke('instances:openView', local.value.id)
+
+    const bounds = { x: 64, y: 46, width: 918, height: 734 }
+    const applied = (await invoke('instances:updateViewBounds', bounds)) as {
+      ok: boolean
+      value: { applied: boolean }
+    }
+    expect(setInstanceViewBoundsFake).toHaveBeenCalledWith(bounds)
+    expect(applied).toEqual({ ok: true, value: { applied: true } })
+
+    setInstanceViewBoundsFake.mockReturnValueOnce(false)
+    const ignored = (await invoke('instances:updateViewBounds', bounds)) as {
+      ok: boolean
+      value: { applied: boolean }
+    }
+    expect(ignored).toEqual({ ok: true, value: { applied: false } })
   })
 
   it('未提供接管 token 时不会把外部 dsh 当作可直接访问的工作区', async () => {

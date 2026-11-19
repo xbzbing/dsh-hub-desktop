@@ -41,7 +41,8 @@ import {
   type VaultStatusSnapshot,
   type WorkspaceFindInput,
   type WorkspaceFindStopOptions,
-  type WorkspaceTooltip
+  type WorkspaceTooltip,
+  type WorkspaceViewBoundsResult
 } from '@shared/contracts'
 
 /**
@@ -93,7 +94,10 @@ const bridge: DshHubBridge = {
     reloadView: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.reloadView, id),
     openInBrowser: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.openInBrowser, id),
     copyToken: (id) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.copyToken, id),
-    updateViewBounds: (bounds) => ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.updateViewBounds, bounds),
+    updateViewBounds: (bounds) =>
+      ipcRenderer.invoke(INSTANCE_RUNTIME_IPC.updateViewBounds, bounds) as Promise<
+        IpcResult<WorkspaceViewBoundsResult>
+      >,
     findInPage: (input: WorkspaceFindInput) => ipcRenderer.invoke(WORKSPACE_FIND_IPC.find, input),
     stopFindInPage: (options?: WorkspaceFindStopOptions) =>
       ipcRenderer.invoke(WORKSPACE_FIND_IPC.stop, options ?? {}),

@@ -17,6 +17,10 @@ import { Icon } from './lib/icons'
 
 const BRIDGE = window.dshHub
 
+/** 边界回传失败后的重试间隔与次数：覆盖 prepare 尚未完成的短暂窗口。 */
+const BOUNDS_RETRY_MS = 120
+const BOUNDS_RETRY_LIMIT = 5
+
 /**
  * 应用外壳：侧边栏 + 主内容区 + 浮层。
  * 视图路由：首载骨架 → 空态 / 总览表格 / 实例详情；向导与 Toast 为全局浮层。
@@ -94,27 +98,51 @@ export default function App() {
     }
   }, [])
 
+  // 工作区打开后把内容区边界交给主进程，并确认这次边界真的落到了活动视图上。
+  // 只发一次边界不够：视图可能因隐藏竞态而不存在，此时界面会停在「已打开但内容区空白」。
   useLayoutEffect(() => {
-    if (!workspaceOpen || !contentRef.current) return
+    if (!workspaceOpen || !contentRef.current || selection === null) return
     const element = contentRef.current
-    const updateBounds = (): void => {
+    const instanceId = selection
+    let attempt = 0
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let disposed = false
+
+    const sendBounds = (): void => {
+      if (disposed) return
       const rect = element.getBoundingClientRect()
-      void window.dshHub?.runtime.updateViewBounds({
+      const pending = window.dshHub?.runtime.updateViewBounds({
         x: Math.round(rect.left),
         y: Math.round(rect.top),
         width: Math.round(rect.width),
         height: Math.max(0, Math.round(rect.height))
       })
+      if (!pending) return
+      void pending.then((result) => {
+        if (disposed) return
+        if (result?.ok && result.value.applied) {
+          useAppStore.getState().confirmWorkspaceVisible(instanceId)
+          return
+        }
+        // 主进程还没有活动视图（prepare 未完成或已被隐藏）：稍后重发，
+        // 超过重试上限就交给 store 的可见性看守回退详情页。
+        if (attempt >= BOUNDS_RETRY_LIMIT) return
+        attempt += 1
+        retryTimer = setTimeout(sendBounds, BOUNDS_RETRY_MS)
+      })
     }
-    updateBounds()
-    const observer = new ResizeObserver(updateBounds)
+
+    sendBounds()
+    const observer = new ResizeObserver(sendBounds)
     observer.observe(element)
-    window.addEventListener('resize', updateBounds)
+    window.addEventListener('resize', sendBounds)
     return () => {
+      disposed = true
+      if (retryTimer !== null) clearTimeout(retryTimer)
       observer.disconnect()
-      window.removeEventListener('resize', updateBounds)
+      window.removeEventListener('resize', sendBounds)
     }
-  }, [workspaceOpen, rail])
+  }, [workspaceOpen, rail, selection])
   // 快捷键:⌘N 新建实例 · ⌘B 折叠侧栏
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {

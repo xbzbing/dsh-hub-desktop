@@ -69,8 +69,11 @@ export interface RuntimeHandlerDeps {
   /** 把本机实例的访问 token 写入系统剪贴板；token 只在主进程内流转。 */
   copyTokenToClipboard?: (token: string) => void
   hideInstanceView?: () => void
+  /** 隐藏指定实例的视图（不销毁缓存）：用于清掉「打开已被后续隐藏取消」后迟到的 prepare。 */
+  hideInstanceViewOf?: (instanceId: string) => void
   closeInstanceView?: (instanceId: string) => void
-  setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => void
+  /** 应用内容区边界；返回是否落到活动视图上，供渲染层确认工作区真的可见。 */
+  setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => boolean
   findInInstanceView?: (input: WorkspaceFindInput) => void
   stopFindInInstanceView?: (options: WorkspaceFindStopOptions) => void
   showInstanceTooltip?: (tooltip: { text: string; x: number; y: number }) => Promise<void>
@@ -155,12 +158,22 @@ export function registerRuntimeHandlers(
     })
   )
 
-  const openViewTasks = new Map<string, Promise<void>>()
+  const openViewTasks = new Map<string, { seq: number; task: Promise<void> }>()
+  /** 每个实例最后发起的打开序号：迟到清理据此确认自己没有被更新的打开取代。 */
+  const latestOpenSeq = new Map<string, number>()
   let workspaceTargetId: string | null = null
+  /** 已发起的打开意图序号；每次真正开始一次打开事务时递增。 */
+  let openSeq = 0
+  /**
+   * 隐藏水位：hideView 把当时已发起的所有打开标记为作废。
+   * 打开事务在激活视图前比对它，避免「隐藏晚于 prepare」把视图留在隐藏态却报告成功。
+   */
+  let hideSeq = 0
 
-  async function openWorkspace(instanceId: string): Promise<void> {
+  async function openWorkspace(instanceId: string, seq: number): Promise<void> {
     // 同实例的并发请求合并；不同实例则只有最新目标可以激活原生视图。
-    const isCurrent = (): boolean => workspaceTargetId === instanceId
+    // 隐藏意图也在此判定：hide 之后仍在跑的打开不再激活视图。
+    const isCurrent = (): boolean => workspaceTargetId === instanceId && seq > hideSeq
     const openIfCurrent = async (instance: InstanceRecord, url: string): Promise<void> => {
       if (!isCurrent()) return
       // 首次打开不能依赖详情页的异步 probe：它可能晚于 WebContentsView 的首个导航，
@@ -274,16 +287,28 @@ export function registerRuntimeHandlers(
       const instanceId = parseId(id)
       workspaceTargetId = instanceId
       const existing = openViewTasks.get(instanceId)
-      if (existing) {
-        await existing
+      // 只复用尚未被 hide 作废的在途打开；已作废的必须重开，否则本次请求会等在
+      // 一个不会激活视图的任务上，并回报「成功」。
+      if (existing && existing.seq > hideSeq) {
+        await existing.task
         return null
       }
-      const task = openWorkspace(instanceId)
-      openViewTasks.set(instanceId, task)
+      const seq = ++openSeq
+      latestOpenSeq.set(instanceId, seq)
+      // 打开事务自带的隐藏：与 prepare 同属一次 IPC 处理，渲染层不必再单独发 hideView，
+      // 也就不存在「hide 落在 prepare 之后」的窗口。
+      deps.hideInstanceView?.()
+      const task = openWorkspace(instanceId, seq)
+      openViewTasks.set(instanceId, { seq, task })
       try {
         await task
       } finally {
-        if (openViewTasks.get(instanceId) === task) openViewTasks.delete(instanceId)
+        if (openViewTasks.get(instanceId)?.task === task) openViewTasks.delete(instanceId)
+        // 本次打开已被后续 hide 取消：prepare 可能晚于 hide，清掉迟到的激活结果。
+        // 只清自己那次：该实例已有更新的打开时，那个视图归新任务所有。
+        if (seq <= hideSeq && latestOpenSeq.get(instanceId) === seq) {
+          deps.hideInstanceViewOf?.(instanceId)
+        }
       }
       return null
     })
@@ -469,11 +494,12 @@ export function registerRuntimeHandlers(
 
   ipcMain.handle(
     INSTANCE_RUNTIME_IPC.updateViewBounds,
-    (_event, bounds: unknown): Promise<IpcResult<null>> =>
+    (_event, bounds: unknown): Promise<IpcResult<{ applied: boolean }>> =>
       wrap(() => {
         const parsed = WorkspaceViewBoundsSchema.parse(bounds)
-        deps.setInstanceViewBounds?.(parsed)
-        return null
+        // applied=false 表示边界没有落到活动视图（尚未 prepare 或已被隐藏）：
+        // 渲染层据此重试并确认可见性，而不是假定工作区已经显示出来。
+        return { applied: deps.setInstanceViewBounds?.(parsed) ?? false }
       })
   )
 
@@ -513,7 +539,9 @@ export function registerRuntimeHandlers(
   ipcMain.handle(INSTANCE_RUNTIME_IPC.hideView, (): Promise<IpcResult<null>> =>
     wrap(() => {
       // 任何隐藏操作都取消尚未完成的 openView，防止迟到请求重新激活原生视图。
+      // 只取消「此刻已发起」的打开：之后新发起的打开仍然有效，因此用序号水位而非布尔标记。
       workspaceTargetId = null
+      hideSeq = openSeq
       deps.hideInstanceTooltip?.()
       deps.hideInstanceView?.()
       return null
@@ -527,6 +555,8 @@ export function registerRuntimeHandlers(
         const instanceId = parseId(id)
         await requireInstance(store, instanceId)
         if (workspaceTargetId === instanceId) workspaceTargetId = null
+        // 视图被销毁后，迟到的 prepare 会把它重新建出来：与 hide 同样作废已发起的打开。
+        hideSeq = openSeq
         deps.hideInstanceTooltip?.()
         deps.closeInstanceView?.(instanceId)
         return null

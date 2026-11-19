@@ -698,6 +698,58 @@ describe('store settings', () => {
     })
   })
 
+  it('在途打开被作废后再点会重新发起，而不是并入旧任务', async () => {
+    const useAppStore = await freshStore()
+    const resolvers: Array<(value: { ok: true; value: null }) => void> = []
+    const openView = vi.fn(
+      () =>
+        new Promise<{ ok: true; value: null }>((resolve) => {
+          resolvers.push(resolve)
+        })
+    )
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+
+    const first = useAppStore.getState().openWorkspace('instance-1')
+    expect(openView).toHaveBeenCalledTimes(1)
+    // 换回同一实例的详情页：旧打开的导航代作废，不应再被并入。
+    useAppStore.getState().select('instance-1')
+    const second = useAppStore.getState().openWorkspace('instance-1')
+    expect(openView).toHaveBeenCalledTimes(2)
+
+    for (const resolve of resolvers) resolve({ ok: true, value: null })
+    await Promise.all([first, second])
+  })
+
+  it('第一次打开永不返回时，超时后再点仍能重新发起', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise<never>(() => undefined))
+      .mockResolvedValue({ ok: true, value: null })
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.getState().select('instance-1')
+    vi.useFakeTimers()
+    try {
+      void useAppStore.getState().openWorkspace('instance-1')
+      expect(openView).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(useAppStore.getState().workspaceOpening).toBe(false)
+
+      const reopened = useAppStore.getState().openWorkspace('instance-1')
+      expect(openView).toHaveBeenCalledTimes(2)
+      await reopened
+      expect(useAppStore.getState().workspaceOpen).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('过期工作区打开完成不会隐藏后一次选择的原生视图', async () => {
     const useAppStore = await freshStore()
     let resolveA!: (value: { ok: true; value: null }) => void
@@ -727,7 +779,78 @@ describe('store settings', () => {
       workspaceOpen: true,
       workspaceOpening: false
     })
-    expect(hideView).toHaveBeenCalledTimes(2)
+    // 迟到的 A 响应不得写入连接态：它已不属于当前选择。
+    expect(useAppStore.getState().workspaceConnected).not.toHaveProperty('instance-a')
+    // 隐藏由主进程在 openView 事务内完成：渲染层不再各自发 hideView，
+    // 否则后发的那次隐藏会落在前一次 prepare 之后，把刚建好的视图清零。
+    expect(hideView).not.toHaveBeenCalled()
+  })
+
+  it('同一实例的并发打开并入同一次事务，不重复请求主进程', async () => {
+    const useAppStore = await freshStore()
+    let resolveOpen!: (value: { ok: true; value: null }) => void
+    const openView = vi.fn(
+      () =>
+        new Promise<{ ok: true; value: null }>((resolve) => {
+          resolveOpen = resolve
+        })
+    )
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+
+    const first = useAppStore.getState().openWorkspace('instance-1')
+    const second = useAppStore.getState().openWorkspace('instance-1')
+    expect(openView).toHaveBeenCalledTimes(1)
+
+    resolveOpen({ ok: true, value: null })
+    await Promise.all([first, second])
+    expect(useAppStore.getState().workspaceOpen).toBe(true)
+  })
+
+  it('打开成功但主进程始终未确认可见：超时回退详情页并提示', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({ selection: 'instance-1' })
+    vi.useFakeTimers()
+    try {
+      await useAppStore.getState().openWorkspace('instance-1')
+      expect(useAppStore.getState().workspaceOpen).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      // 视图没显示出来：退出「已打开」态，回到详情页并明确提示
+      expect(useAppStore.getState().workspaceOpen).toBe(false)
+      expect(useAppStore.getState().workspaceOpening).toBe(false)
+      const timeoutTitle = useAppStore.getState().t('detail.openViewTimeout')
+      expect(useAppStore.getState().toasts.some((item) => item.title === timeoutTitle)).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('主进程确认可见后不再回退详情页', async () => {
+    const useAppStore = await freshStore()
+    const openView = vi.fn(async () => ({ ok: true as const, value: null }))
+    vi.stubGlobal('window', {
+      ...window,
+      dshHub: { ...window.dshHub, runtime: { openView, hideView: vi.fn() } }
+    })
+    useAppStore.setState({ selection: 'instance-1' })
+    vi.useFakeTimers()
+    try {
+      await useAppStore.getState().openWorkspace('instance-1')
+      useAppStore.getState().confirmWorkspaceVisible('instance-1')
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(useAppStore.getState().workspaceOpen).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('openView 永不返回：超时兜底退出加载页并提示', async () => {

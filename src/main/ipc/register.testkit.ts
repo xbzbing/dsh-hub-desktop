@@ -150,6 +150,9 @@ export interface RegisterHarness {
   auditSpy: (entry: { instanceId?: string | null; event: string; result?: string }) => void
   clearPartitionSession: MockFn
   closeInstanceView: MockFn
+  hideInstanceViewFake: MockFn
+  hideInstanceViewOfFake: MockFn
+  setInstanceViewBoundsFake: MockFn
   reloadInstanceView: MockFn
   applyInstanceProxy: MockFn
   showInstanceTooltip: MockFn
@@ -380,6 +383,9 @@ export async function setupRegister(
     setEnabled: vi.fn(async (_instance, name, enabled) => ({ name, enabled }))
   }
   const instanceViewUrlFake = vi.fn(() => null)
+  const hideInstanceViewFake = vi.fn()
+  const hideInstanceViewOfFake = vi.fn()
+  const setInstanceViewBoundsFake = vi.fn(() => true)
   const externalDshScannerFake = { scan: vi.fn(async () => []) }
   // 应用更新检查替身：通道触发时不发起外网请求，返回一份固定的「已是最新」结果。
   const checkAppUpdate = vi.fn(async () => ({
@@ -416,6 +422,9 @@ export async function setupRegister(
     onSettingsChanged: onSettingsChanged as never,
     clearPartitionSession: clearPartitionSession as never,
     closeInstanceView: closeInstanceView as never,
+    hideInstanceView: hideInstanceViewFake as never,
+    hideInstanceViewOf: hideInstanceViewOfFake as never,
+    setInstanceViewBounds: setInstanceViewBoundsFake as never,
     reloadInstanceView: reloadInstanceView as never,
     applyInstanceProxy: applyInstanceProxy as never,
     showInstanceTooltip: showInstanceTooltip as never,
@@ -466,6 +475,9 @@ export async function setupRegister(
     auditSpy,
     clearPartitionSession,
     closeInstanceView,
+    hideInstanceViewFake,
+    hideInstanceViewOfFake,
+    setInstanceViewBoundsFake,
     reloadInstanceView,
     applyInstanceProxy,
     showInstanceTooltip,

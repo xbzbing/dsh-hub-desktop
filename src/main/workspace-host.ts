@@ -48,7 +48,17 @@ export interface WorkspaceHost {
   /** 调整已缓存实例视图上限；超出的最久未使用非活动视图立即回收。 */
   setCacheLimit(limit: number): void
   setLocale(): void
-  setBounds(bounds: WorkspaceViewBounds): void
+  /**
+   * 应用内容区边界。
+   * @returns 是否落到一个活动视图上。false 表示当前没有活动视图（尚未 prepare 或被隐藏），
+   * 调用方据此确认工作区是否真的可见——静默丢弃会让渲染层停在「已打开但没有内容」。
+   */
+  setBounds(bounds: WorkspaceViewBounds): boolean
+  /**
+   * 隐藏指定实例的视图，即使它不是当前活动视图；不销毁缓存。
+   * 用于「打开已被后续隐藏取消」时清掉迟到的 prepare 结果。
+   */
+  hideInstance(instanceId: string): void
   reload(): void
   /**
    * 重新加载指定实例的工作区视图：先把最新会话 Cookie 写回该实例分区，
@@ -422,10 +432,10 @@ export function createWorkspaceHost(
     return url === '' ? null : url
   }
 
-  function setBounds(bounds: WorkspaceViewBounds): void {
-    if (activeId === null) return
+  function setBounds(bounds: WorkspaceViewBounds): boolean {
+    if (activeId === null) return false
     const active = entries.get(activeId)
-    if (!active) return
+    if (!active) return false
     active.view.setBounds(bounds)
     const visible = bounds.width > 0 && bounds.height > 0
     active.view.setVisible(visible)
@@ -433,6 +443,22 @@ export function createWorkspaceHost(
     const becameVisible = visible && !active.visible
     active.visible = visible
     if (becameVisible) focusEntry(active, 'setBounds:becameVisible')
+    return true
+  }
+
+  function hideInstance(instanceId: string): void {
+    // 活动视图走 hide()：它还要把键盘焦点交还宿主渲染层。
+    if (activeId === instanceId) {
+      hide()
+      return
+    }
+    const entry = entries.get(instanceId)
+    if (!entry) return
+    // 非活动视图没有查找会话；stopFindIn 会重置全局的 findRequestId/findSessionActive，
+    // 在这里调用会中断另一个实例正在进行的页内查找。
+    entry.view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+    entry.view.setVisible(false)
+    entry.visible = false
   }
 
   function closeAll(): void {
@@ -450,6 +476,7 @@ export function createWorkspaceHost(
     setCacheLimit,
     setLocale,
     setBounds,
+    hideInstance,
     reload,
     reloadSession,
     hide,

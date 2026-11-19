@@ -591,6 +591,15 @@ export const WorkspaceViewBoundsSchema = z
 
 export type WorkspaceViewBounds = z.infer<typeof WorkspaceViewBoundsSchema>
 
+/**
+ * 内容区边界的应用结果。
+ * `applied=false` 表示主进程当前没有活动视图（尚未 prepare 或已被隐藏），
+ * 渲染层不能据此认为工作区已经显示。
+ */
+export interface WorkspaceViewBoundsResult {
+  applied: boolean
+}
+
 /** 收起侧栏的实例名称提示锚点（相对 Hub content view 的坐标）。 */
 export const WorkspaceTooltipSchema = z
   .object({

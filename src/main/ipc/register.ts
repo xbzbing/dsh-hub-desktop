@@ -73,10 +73,15 @@ export interface InstanceViewDeps {
   copyTokenToClipboard?: (token: string) => void
   /** 隐藏当前内嵌工作区，不向渲染层暴露访客 WebContents。 */
   hideInstanceView?: () => void
+  /** 隐藏指定实例的视图（不销毁缓存）：清掉「打开已被隐藏取消」后迟到的 prepare。 */
+  hideInstanceViewOf?: (instanceId: string) => void
   /** 销毁指定实例的内嵌工作区，不停止运行时或清除认证状态。 */
   closeInstanceView?: (instanceId: string) => void
-  /** 主进程应用经校验的内容区边界。 */
-  setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => void
+  /**
+   * 主进程应用经校验的内容区边界。
+   * 返回是否落到活动视图上；false 让渲染层知道工作区还没真正显示。
+   */
+  setInstanceViewBounds?: (bounds: WorkspaceViewBounds) => boolean
   /** 在活动工作区内查找；查询长度与选项由 schema 限制。 */
   findInInstanceView?: (input: WorkspaceFindInput) => void
   /** 停止活动工作区的查找；focusView 决定是否把键盘焦点交还工作区。 */

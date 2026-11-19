@@ -453,6 +453,7 @@ void app.whenReady().then(async () => {
     openHomepage: () => homepageOpener.open(),
     openAbout: () => windowController.openAbout(),
     hideInstanceView: () => workspaceHost.hide(),
+    hideInstanceViewOf: (instanceId) => workspaceHost.hideInstance(instanceId),
     // 编辑代理后立即落到该实例分区，工作区刷新与后续探测都走新代理。
     applyInstanceProxy: (instance) => instanceProxy.apply(instance),
     // 在系统默认浏览器中打开实例地址：仅放行 http/https/mailto，其余协议拒绝。
