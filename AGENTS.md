@@ -81,7 +81,7 @@ pnpm build          # 构建 main、preload 和 renderer
 pnpm test:e2e       # Playwright Electron 测试
 ```
 
-打包脚本均使用 `--publish never`；`release:publish` 默认停在 Draft，须显式 `-- --publish` 才正式发布：
+公开发布的主路径是 `.github/workflows/release.yml`：Actions 页面手动触发并输入版本，Windows runner 构建并停在 Draft，由人在网页 Publish（决策见 `docs/adr/0020-github-actions-release.md`）。本地 `pnpm release:publish` 保留为兜底。打包脚本均使用 `--publish never`；`release:publish` 默认停在 Draft，须显式 `-- --publish` 才正式发布：
 
 ```bash
 pnpm dist:mac:zip
@@ -96,7 +96,7 @@ pnpm release:publish
 ## 环境
 
 - `$HOME/pnpm-workspace.yaml` 可能影响子项目识别；保留仓库内的 `pnpm-workspace.yaml`。
-- Electron 44 起二进制按需下载：`pnpm install` 不会生成 `node_modules/electron/dist`（该包的 package.json 已无 postinstall）。E2E 的 globalSetup 会先跑 `node_modules/electron/install.js` 补齐（缺失时下载、已装则 no-op，下载失败重试三次），CI 另用 actions/cache 缓存该目录；打包前必须存在该目录（`electronDist` 指向它），四个出包脚本已内置 `pnpm electron:prepare`。`dist:win:local` 在 mac 上交叉构建 Windows 包：`-c.electronDist=` 置空使 electron-builder 自行下载 win 版 Electron，不使用本机 dist；`dist:win` 依赖本机 dist，只能在 Windows 上执行。
+- Electron 44 起二进制按需下载：`pnpm install` 不会生成 `node_modules/electron/dist`（该包的 package.json 已无 postinstall）。E2E 的 globalSetup 会先跑 `node_modules/electron/install.js` 补齐（缺失时下载、已装则 no-op，下载失败重试三次），CI 另用 actions/cache 缓存该目录；打包前必须存在该目录（`electronDist` 指向它），四个出包脚本已内置 `pnpm electron:prepare`。`dist:win:local` 在 mac 上交叉构建 Windows 包：`-c.electronDist=` 置空使 electron-builder 自行下载 win 版 Electron，不使用本机 dist；`dist:win` 依赖本机 dist，只能在 Windows 上执行（发布 workflow 使用它）。
 - 受限环境安装依赖时使用 `--store-dir=/tmp/pnpm-store --cache-dir=/tmp/pnpm-cache`。
 - Electron 缓存使用 `ELECTRON_CACHE=/tmp/electron-cache`。
 - 受限环境运行 E2E：`DSH_HUB_E2E_ARGS="--no-sandbox --disable-gpu" CI=true pnpm test:e2e`。

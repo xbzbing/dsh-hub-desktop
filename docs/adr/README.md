@@ -13,11 +13,11 @@
 | [0001](./0001-process-layering.md) | 进程分层与「框架无关层不 import Electron」红线 | 已采纳 |
 | [0002](./0002-zero-runtime-deps.md) | 运行时零 npm 依赖（zod 并入打包产物） | 已采纳 |
 | [0003](./0003-ipc-envelope-and-enum-registry.md) | IPC 错误信封 + zod 边界校验 + 安装源以枚举传递 | 已采纳 |
-| [0004](./0004-release-windows-unsigned.md) | 发布策略：windows-unsigned、资产白名单、无自动发布流水线 | 已采纳（决策 3 见 0008） |
+| [0004](./0004-release-windows-unsigned.md) | 发布策略：windows-unsigned、资产白名单、无自动发布流水线 | 已采纳（决策 3 见 0008、0020） |
 | [0005](./0005-plugin-restart-parity-with-dsh.md) | 插件生效判定与 dsh 同口径（只看 HMR） | 已采纳 |
 | [0006](./0006-i18n-hardcode-scan.md) | i18n 硬编码文案由扫描测试守护 | 已采纳 |
 | [0007](./0007-e2e-dual-platform-and-hidden-mode.md) | E2E 双平台 + 隐藏模式与 keyring 处置 | 已采纳 |
-| [0008](./0008-semi-automated-publish.md) | 半自动发布脚本：人工发起、逐步幂等、停点可控 | 已采纳 |
+| [0008](./0008-semi-automated-publish.md) | 半自动发布脚本：人工发起、逐步幂等、停点可控 | 已采纳（构建与触发见 0020） |
 | [0009](./0009-e2e-data-dir-isolation.md) | E2E 数据目录隔离：只允许 `hub-data/`，静态守卫兜底 | 已采纳 |
 | [0010](./0010-markdown-release-notes.md) | 更新内容按 Markdown 渲染（引入 micromark/mdast 生态，AST → React 元素） | 已采纳 |
 | [0011](./0011-external-dsh-detection-by-process-tree.md) | 外部 dsh 探测按进程树排除 Hub 托管实例 | 已采纳 |
@@ -29,3 +29,4 @@
 | [0017](./0017-plugin-install-security-check.md) | 插件安装前静态安全检查：danger 硬阻止、warn 可确认、应用级开关 | 已采纳 |
 | [0018](./0018-heuristic-block-overridable.md) | 启发式检查的 blocked 允许确认后安装；结构性失败仍硬阻止 | 已采纳（部分取代 0017 覆盖口径） |
 | [0019](./0019-i18n-catalog-split-by-language.md) | i18n 文案按语言拆分，漏译仍由 `satisfies` 保证编译期失败 | 已采纳 |
+| [0020](./0020-github-actions-release.md) | 发布主路径迁到 GitHub Actions（Windows runner，Draft 停点） | 已采纳 |
