@@ -459,6 +459,7 @@ export interface PluginInfo {
   license: string | null
   npmUrl: string | null
   githubUrl: string | null
+  /** 图标 data-uri（MIME 按扩展名：SVG/PNG/JPEG/WebP）；null = 无图标、类型不支持或超过 256 KiB。 */
   iconDataUri: string | null
   /** 第三方运行时依赖名（不含 peer）。 */
   dependencies: string[]

@@ -2,11 +2,11 @@
  * 插件 manifest / list 输出的读取与字段装配（纯函数与磁盘默认实现）。
  *
  * 从 profile 顶层 node_modules 或 list --json 的 path 读 package.json、icon、locale，
- * 装配渲染层用的 PluginInfo 字段。icon 恒为 SVG；locale meta 的本地化标题与简介
- * 覆盖 package.json 的英文原值。读取失败一律按字段缺失处理，不影响列表。
+ * 装配渲染层用的 PluginInfo 字段。图标按扩展名给出 MIME（SVG/PNG/JPEG/WebP，≤256 KiB）；
+ * locale meta 的本地化标题与简介覆盖 package.json 的英文原值。读取失败一律按字段缺失处理。
  */
 import { readFileSync } from 'node:fs'
-import { join, resolve as resolvePath } from 'node:path'
+import { extname, join, resolve as resolvePath } from 'node:path'
 import type { PluginInfo } from '@shared/contracts'
 import { dshPeerRange, githubUrlFrom, npmUrlFrom } from './peer-compatibility'
 
@@ -110,9 +110,34 @@ export function installSourceOf(entry: {
   return 'unknown'
 }
 
-/** SVG 文本 base64 → data-uri（图标恒为 svg，其它扩展一律忽略）。 */
-export function svgDataUri(base64: string | null): string | null {
-  return base64 === null ? null : `data:image/svg+xml;base64,${base64}`
+/** 插件图标支持的扩展名与对应 MIME（与 dsh 一致：SVG、PNG、JPEG、WebP）。 */
+const ICON_MEDIA_TYPES = new Map([
+  ['.svg', 'image/svg+xml'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp']
+])
+
+/** dsh 对插件图标的体积上限；超过按无图标处理，避免大图拖慢列表 IPC。 */
+export const MAX_ICON_BYTES = 256 * 1024
+
+/** 按扩展名判定图标 MIME；不支持的扩展名 → null（列表按无图标降级）。 */
+export function iconMediaType(path: string): string | null {
+  return ICON_MEDIA_TYPES.get(extname(path).toLowerCase()) ?? null
+}
+
+/** base64 解码后的字节数（按尾部 padding 修正）。 */
+function base64ByteLength(base64: string): number {
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0
+  return Math.floor((base64.length * 3) / 4) - padding
+}
+
+/** 图标 base64 + MIME → data-uri；没读到、类型不支持或超限 → null。 */
+export function iconDataUri(base64: string | null, mediaType: string | null): string | null {
+  if (base64 === null || mediaType === null) return null
+  if (base64ByteLength(base64) > MAX_ICON_BYTES) return null
+  return `data:${mediaType};base64,${base64}`
 }
 
 /**
@@ -142,10 +167,9 @@ export function infoFromPath(
     installSource === 'file'
       ? (manifestVersion ?? entry.version ?? '—')
       : (entry.version ?? manifestVersion ?? '—')
-  const iconBase64 =
-    typeof manifest.icon === 'string'
-      ? readers.readIcon(resolvePath(manifestDir, manifest.icon))
-      : null
+  const iconPath =
+    typeof manifest.icon === 'string' ? resolvePath(manifestDir, manifest.icon) : null
+  const iconBase64 = iconPath === null ? null : readers.readIcon(iconPath)
   // locale/<lang>.json 的 meta：title 本地化插件名，description 本地化简介；缺失回落 package.json。
   const localeMeta = readers.readLocale(join(manifestDir, 'locale', `${locale}.json`))?.meta
   const localizedTitle = localeMeta?.title?.trim() || null
@@ -160,7 +184,7 @@ export function infoFromPath(
     license: manifest.license?.trim() || null,
     npmUrl: npmUrlFrom(name),
     githubUrl: githubUrlFrom(manifest.repository ?? manifest.homepage ?? null),
-    iconDataUri: svgDataUri(iconBase64),
+    iconDataUri: iconDataUri(iconBase64, iconPath === null ? null : iconMediaType(iconPath)),
     dependencies: Object.keys(manifest.dependencies ?? {}),
     dshPeer: dshPeerRange(manifest.peerDependencies),
     nodeEngine: manifest.engines?.node ?? null,

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { PluginInfo } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
@@ -60,6 +60,9 @@ export function PluginRow(props: {
     onOpenLink
   } = props
   const disabled = plugin.enabled === false
+  // 图标解码失败（data-uri 的 MIME 与内容不符等）时回落到默认图标，不留破图占位。
+  const iconSrc = plugin.iconDataUri
+  const [failedIconSrc, setFailedIconSrc] = useState<string | null>(null)
   // 不兼容/无法判定共用同一组参数：标题与正文复用一次计算，避免两处 t() 调用漂移。
   const incompatibleText =
     check.result === null
@@ -87,8 +90,15 @@ export function PluginRow(props: {
           aria-label={plugin.name}
           data-testid={`plugin-expand-${plugin.name}`}
         >
-          {plugin.iconDataUri ? (
-            <img className="plugin-icon" src={plugin.iconDataUri} alt="" width={20} height={20} />
+          {iconSrc !== null && iconSrc !== failedIconSrc ? (
+            <img
+              className="plugin-icon"
+              src={iconSrc}
+              alt=""
+              width={20}
+              height={20}
+              onError={() => setFailedIconSrc(iconSrc)}
+            />
           ) : (
             <span className="plugin-icon plugin-icon-fallback" aria-hidden="true">
               <Icon name="hub" size={16} />

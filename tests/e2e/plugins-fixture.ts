@@ -138,6 +138,15 @@ export const FAKE_PLUGIN_MANIFEST = {
   dsh: { bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web' } }
 }
 
+/**
+ * demo-plugin 的 1×1 WebP 图标（42 字节）。
+ * 图标格式必须覆盖非 SVG：MIME 若按 SVG 写死，浏览器解码失败、naturalWidth 为 0。
+ */
+const FAKE_PLUGIN_ICON_WEBP = Buffer.from(
+  'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA',
+  'base64'
+)
+
 /** 读取假 dsh 的 add/remove 记录。文件不存在时视为空。 */
 export async function readMutations(mutationLog: string): Promise<FakeMutation[]> {
   try {
@@ -182,8 +191,13 @@ export async function seedPluginFixture(dataDir: string): Promise<PluginFixture>
   await writeFile(join(entryDir, 'bin.js'), fakeBin(dataDir), 'utf8')
 
   const pluginDir = join(dataDir, 'fake-plugin')
-  await mkdir(pluginDir, { recursive: true })
-  await writeFile(join(pluginDir, 'package.json'), JSON.stringify(FAKE_PLUGIN_MANIFEST), 'utf8')
+  await mkdir(join(pluginDir, 'assets'), { recursive: true })
+  await writeFile(
+    join(pluginDir, 'package.json'),
+    JSON.stringify({ ...FAKE_PLUGIN_MANIFEST, icon: './assets/icon.webp' }),
+    'utf8'
+  )
+  await writeFile(join(pluginDir, 'assets', 'icon.webp'), FAKE_PLUGIN_ICON_WEBP)
   // 第二个插件的假包清单：与 demo-plugin 同构，仅名称/作者不同（配合 DSH_E2E_PLUGIN_SECOND）。
   const otherManifest = { ...FAKE_PLUGIN_MANIFEST, name: 'other-plugin', author: 'other-author' }
   const otherDir = join(dataDir, 'fake-plugin-2')

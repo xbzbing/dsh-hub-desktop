@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_ICON_BYTES,
   authorName,
   defaultReadIcon,
   defaultReadLocale,
   defaultReadManifest,
+  iconDataUri,
+  iconMediaType,
   infoFromPath,
   installSourceOf,
-  svgDataUri,
   type PluginInfoReaders,
   type PluginManifest
 } from './plugin-info'
@@ -90,13 +92,41 @@ describe('installSourceOf', () => {
   })
 })
 
-describe('svgDataUri', () => {
-  it('base64 → data-uri', () => {
-    expect(svgDataUri('PHN2Zz48L3N2Zz4=')).toBe('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=')
+describe('iconMediaType', () => {
+  it('按扩展名给出支持的 MIME', () => {
+    expect(iconMediaType('/p/icon.svg')).toBe('image/svg+xml')
+    expect(iconMediaType('/p/icon.png')).toBe('image/png')
+    expect(iconMediaType('/p/icon.jpg')).toBe('image/jpeg')
+    expect(iconMediaType('/p/icon.jpeg')).toBe('image/jpeg')
+    expect(iconMediaType('/p/icon.webp')).toBe('image/webp')
   })
 
-  it('null → null（列表不带图标）', () => {
-    expect(svgDataUri(null)).toBeNull()
+  it('扩展名大小写不敏感', () => {
+    expect(iconMediaType('/p/ICON.WEBP')).toBe('image/webp')
+    expect(iconMediaType('/p/Icon.SvG')).toBe('image/svg+xml')
+  })
+
+  it('不支持的扩展名 / 无扩展名 → null（列表按无图标降级）', () => {
+    expect(iconMediaType('/p/icon.gif')).toBeNull()
+    expect(iconMediaType('/p/icon')).toBeNull()
+  })
+})
+
+describe('iconDataUri', () => {
+  it('按 MIME 生成 data-uri（WebP 不再被标成 SVG）', () => {
+    expect(iconDataUri('UklGRg==', 'image/webp')).toBe('data:image/webp;base64,UklGRg==')
+  })
+
+  it('没读到图标或类型不支持 → null', () => {
+    expect(iconDataUri(null, 'image/webp')).toBeNull()
+    expect(iconDataUri('UklGRg==', null)).toBeNull()
+  })
+
+  it('超过 256 KiB → null；恰好在上限时保留', () => {
+    const atLimit = Buffer.alloc(MAX_ICON_BYTES).toString('base64')
+    expect(iconDataUri(atLimit, 'image/png')).not.toBeNull()
+    const overLimit = Buffer.alloc(MAX_ICON_BYTES + 1).toString('base64')
+    expect(iconDataUri(overLimit, 'image/png')).toBeNull()
   })
 })
 
@@ -305,5 +335,44 @@ describe('infoFromPath', () => {
       null
     )
     expect(info.iconDataUri).toBe('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=')
+  })
+
+  it('WebP 图标按 image/webp 内联（MIME 不再写死 svg）', () => {
+    const info = infoFromPath(
+      readersOf({ manifest: { ...manifest, icon: 'assets/logo.webp' }, icon: 'UklGRg==' }),
+      'demo-plugin',
+      { version: '1.0.0' },
+      '/tmp/profile/node_modules',
+      'zh',
+      null
+    )
+    expect(info.iconDataUri).toBe('data:image/webp;base64,UklGRg==')
+  })
+
+  it('不支持的图标扩展名按无图标处理', () => {
+    const info = infoFromPath(
+      readersOf({ manifest: { ...manifest, icon: 'icon.gif' }, icon: 'R0lGODlh' }),
+      'demo-plugin',
+      { version: '1.0.0' },
+      '/tmp/profile/node_modules',
+      'zh',
+      null
+    )
+    expect(info.iconDataUri).toBeNull()
+  })
+
+  it('图标超过 256 KiB 按无图标处理', () => {
+    const info = infoFromPath(
+      readersOf({
+        manifest,
+        icon: Buffer.alloc(MAX_ICON_BYTES + 1).toString('base64')
+      }),
+      'demo-plugin',
+      { version: '1.0.0' },
+      '/tmp/profile/node_modules',
+      'zh',
+      null
+    )
+    expect(info.iconDataUri).toBeNull()
   })
 })

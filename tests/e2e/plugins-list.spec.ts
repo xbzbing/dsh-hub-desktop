@@ -76,6 +76,17 @@ test('列表渲染 + 手风琴详情 + 检查升级（兼容给升级按钮）',
   await expect(detail).toContainText(fmtLogTime(INSTALLED_PUBLISHED_AT))
 })
 
+test('图标：WebP 按真实 MIME 内联且可被浏览器解码', async () => {
+  await openDetail(win)
+  const icon = win.getByTestId('plugin-row-demo-plugin').locator('img.plugin-icon')
+  // MIME 必须来自扩展名（.webp），不能沿用 SVG。
+  await expect(icon).toHaveAttribute('src', /^data:image\/webp;base64,/, { timeout: 15_000 })
+  // 解码成功才有像素宽度；MIME 标错时这里恒为 0。
+  await expect
+    .poll(() => icon.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBeGreaterThan(0)
+})
+
 test('发布时间：已装版本的快照持久化，刷新后仍在', async () => {
   test.setTimeout(90_000)
   await openDetail(win)
