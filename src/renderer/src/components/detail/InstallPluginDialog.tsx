@@ -4,6 +4,7 @@ import type { PluginInstallPlan, PluginRegistryOption } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { pluginRegistryFromUrl } from '@shared/settings'
 import { Icon } from '../../lib/icons'
+import { BtnSwap } from '../BtnSwap'
 import { Modal } from '../Modal'
 import Select from '../Select'
 import { InfoTip } from '../InfoTip'
@@ -262,20 +263,21 @@ export default function InstallPluginDialog(props: {
                 data-testid="install-plugin-submit"
               >
                 {/* 两个候选文案叠放，按钮宽度取最长者：第一步与第二步切换、忙碌/检查态都不跳动。 */}
-                <span className="btn-swap">
-                  <span className="btn-swap-cell" data-active={!busy}>
-                    {plan === null
+                <BtnSwap
+                  active={busy ? 'busy' : 'idle'}
+                  idle={
+                    plan === null
                       ? t('detail.plugin.installResolve')
                       : securityChecking
                         ? t('detail.plugin.security.checkingButton')
-                        : actionLabel}
-                  </span>
-                  <span className="btn-swap-cell" data-active={busy}>
-                    {plan === null
+                        : actionLabel
+                  }
+                  busy={
+                    plan === null
                       ? t('detail.plugin.installResolving')
-                      : t('detail.plugin.installing')}
-                  </span>
-                </span>
+                      : t('detail.plugin.installing')
+                  }
+                />
               </button>
             )}
           </span>

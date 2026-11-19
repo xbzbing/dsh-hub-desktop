@@ -3,6 +3,7 @@ import type { PluginInfo } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
 import { fmtLogTime } from '../../lib/format'
+import { BtnSwap } from '../BtnSwap'
 import { CopyableValue } from '../CopyableValue'
 import { HoverTip } from '../InfoTip'
 import { Modal } from '../Modal'
@@ -168,14 +169,11 @@ export function PluginRow(props: {
               <Icon name="sync" />
               {/* 两个候选文案叠放在同一 grid 单元，宽度取最大值：切「检查中…/检查升级」按钮不跳动，
                   中英文各自按各自的最长文案自适应。 */}
-              <span className="btn-swap">
-                <span className="btn-swap-cell" data-active={check.status !== 'checking'}>
-                  {t('detail.plugin.checkUpdate')}
-                </span>
-                <span className="btn-swap-cell" data-active={check.status === 'checking'}>
-                  {t('detail.plugin.checking')}
-                </span>
-              </span>
+              <BtnSwap
+                active={check.status === 'checking' ? 'busy' : 'idle'}
+                idle={t('detail.plugin.checkUpdate')}
+                busy={t('detail.plugin.checking')}
+              />
             </button>
           ) : (
             // 禁用按钮本身收不到指针事件，气泡挂在包裹层上（HoverTip 转发 hover 与键盘聚焦）。

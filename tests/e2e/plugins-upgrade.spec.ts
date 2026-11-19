@@ -54,6 +54,10 @@ test('升级二次确认：弹窗给出目标版本，取消不执行、确认�
   await expect(win.getByTestId('upgrade-confirm-submit')).toContainText(LATEST_VERSION, {
     timeout: 20_000
   })
+  // 空闲态只有空闲文案可被读屏读到，忙碌态占位必须 aria-hidden。
+  const submitCells = win.getByTestId('upgrade-confirm-submit').locator('.btn-swap-cell')
+  await expect(submitCells.nth(0)).toHaveAttribute('aria-hidden', 'false')
+  await expect(submitCells.nth(1)).toHaveAttribute('aria-hidden', 'true')
   // 升级不改启用态：不出现「安装后启用」勾选，也没有它的说明气泡。
   await expect(win.getByTestId('install-confirm-enable-after')).toHaveCount(0)
   await expect(dialog.locator('.info-tip')).toHaveCount(0)

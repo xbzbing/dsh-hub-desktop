@@ -46,6 +46,10 @@ test('安装两步：确定解析出版本、确认后才下发带 --registry �
   await win.getByTestId('plugins-install-btn').click()
   const dialog = win.getByTestId('install-plugin-dialog')
   await expect(dialog).toBeVisible()
+  // 空闲态只有空闲文案可被读屏读到，忙碌态占位必须 aria-hidden。
+  const submitCells = win.getByTestId('install-plugin-submit').locator('.btn-swap-cell')
+  await expect(submitCells.nth(0)).toHaveAttribute('aria-hidden', 'false')
+  await expect(submitCells.nth(1)).toHaveAttribute('aria-hidden', 'true')
   // 第一步：安装源两档（默认国内镜像）+ 常驻安全提醒。
   await expect(win.getByTestId('install-plugin-source')).toHaveAttribute('data-value', 'npmmirror')
   const sourceMenu = await openSelect(win, 'install-plugin-source')

@@ -2670,10 +2670,12 @@ details.adv[open] {
 .btn-swap-cell {
   grid-area: 1 / 1;
   white-space: nowrap;
-  visibility: hidden;
+  /* 用 opacity 占位而不是 visibility：后代的 visible 会覆盖父层的 hidden，
+     工作区整体隐藏时这些文字仍会从 visibility:hidden 的容器里透出来。 */
+  opacity: 0;
 }
 .btn-swap-cell[data-active='true'] {
-  visibility: visible;
+  opacity: 1;
 }
 .plugin-source {
   font-size: 11px;

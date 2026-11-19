@@ -4,6 +4,7 @@ import type { PluginInstallPlan, PluginRegistryOption } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { pluginRegistryFromUrl } from '@shared/settings'
 import { Icon } from '../../lib/icons'
+import { BtnSwap } from '../BtnSwap'
 import { Modal } from '../Modal'
 import Select from '../Select'
 import SectionHead from './SectionHead'
@@ -187,9 +188,10 @@ export default function UpgradeConfirmDialog(props: {
                 disabled={submitDisabled}
                 data-testid="upgrade-confirm-submit"
               >
-                <span className="btn-swap">
-                  <span className="btn-swap-cell" data-active={!upgrading}>
-                    {securityChecking
+                <BtnSwap
+                  active={upgrading ? 'busy' : 'idle'}
+                  idle={
+                    securityChecking
                       ? t('detail.plugin.security.checkingButton')
                       : securityAck
                         ? t('detail.plugin.security.acknowledgeUpgrade', {
@@ -197,12 +199,10 @@ export default function UpgradeConfirmDialog(props: {
                           })
                         : t('detail.plugin.upgradeTo', {
                             version: plan?.targetVersion ?? version
-                          })}
-                  </span>
-                  <span className="btn-swap-cell" data-active={upgrading}>
-                    {t('detail.plugin.upgrading')}
-                  </span>
-                </span>
+                          })
+                  }
+                  busy={t('detail.plugin.upgrading')}
+                />
               </button>
             )}
           </span>

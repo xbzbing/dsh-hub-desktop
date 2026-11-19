@@ -45,6 +45,10 @@ test('列表渲染 + 手风琴详情 + 检查升级（兼容给升级按钮）',
   await expect(row).toBeVisible({ timeout: 15_000 })
   await expect(row).toContainText('demo-plugin')
   await expect(row).toContainText('1.0.0')
+  // 候选文案只有当前态进无障碍树：忙态占位不能被读屏念出来。
+  const swapCells = row.locator('.btn-swap-cell')
+  await expect(swapCells.nth(0)).toHaveAttribute('aria-hidden', 'false')
+  await expect(swapCells.nth(1)).toHaveAttribute('aria-hidden', 'true')
 
   // 手风琴展开显示详情字段。
   await win.getByTestId('plugin-expand-demo-plugin').click()
