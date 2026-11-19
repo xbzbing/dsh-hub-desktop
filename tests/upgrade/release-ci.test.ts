@@ -127,7 +127,8 @@ describe('发布前置的 CI 判定', () => {
 })
 
 describe('release workflow 的触发与停点', () => {
-  const yml = readFileSync('.github/workflows/release.yml', 'utf8')
+  // Windows 的 checkout 是 CRLF；断言按 LF 写的 YAML 结构，先归一换行再匹配。
+  const yml = readFileSync('.github/workflows/release.yml', 'utf8').replace(/\r\n/g, '\n')
 
   it('只允许手动触发，不监听 push 或 PR', () => {
     expect(yml).toMatch(/^on:\n {2}workflow_dispatch:/m)
