@@ -3,8 +3,8 @@
 /**
  * 半自动发布：推 tag → 建/更新 Draft → 上传资产 → 白名单核验 →（`--publish`）发布。
  *
- * 本脚本**不负责构建**（构建依赖本机环境，仍按 docs/release-runbook.md §3 人工执行），
- * 也不属于流水线：由人显式发起，每一步幂等（已存在则跳过或更新），可随时中断重跑。
+ * 本脚本**不负责构建**：构建由调用方完成（release workflow 在 Windows runner 上构建后调用；
+ * 本地兜底时由人先构建）。每一步幂等（已存在则跳过或更新），可随时中断重跑。
  *
  * 用法：`node scripts/release/publish.mjs [--dry-run] [--publish]`
  * - 默认停在 Draft：核验通过后退出，由人在 GitHub 网页确认后再发布；

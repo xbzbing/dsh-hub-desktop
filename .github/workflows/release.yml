@@ -1,0 +1,82 @@
+name: Release
+
+# 发布主路径：在 Actions 页面手动触发并填入目标版本。workflow 校验版本与发布说明、
+# 确认该提交的 CI 已成功、跑门禁、在 Windows runner 上构建未签名安装包、生成校验清单，
+# 然后推送 tag 并创建 Draft；发布动作留给人在 Release 页面点 Publish。
+# 策略见 docs/release-policy.md，操作口径见 docs/release-runbook.md，决策见 docs/adr/0020。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '目标版本（纯 semver，须与 package.json 和 docs/releases/v<版本>.md 一致）'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  # ci-guard --require-ci 通过 gh run list 读取该提交的 CI 结论
+  actions: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Electron 44 起二进制按需下载；缓存命中省掉每次约 100MB 的下载，构建前缺失时
+      # electron:prepare 会补下。
+      - name: Cache Electron binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.pnpm/electron@*/node_modules/electron/dist
+            node_modules/.pnpm/electron@*/node_modules/electron/path.txt
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Verify release input
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/release/ci-guard.mjs
+      # 发布只能建立在已过 CI 的提交上：CI 还没跑完或失败时直接拒绝，等主分支绿了再触发。
+      - name: Require green CI on HEAD
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/ci-guard.mjs --require-ci
+      # 格式校验与平台无关，主分支 CI 的 Linux job 已强制，这里不重复。
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Build Windows installer
+        run: pnpm dist:win
+      - name: Stage release assets
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          rm -rf dist/upload
+          mkdir -p dist/upload
+          cp "dist/DSH-Hub-Setup-${RELEASE_VERSION}.exe" dist/upload/
+          node scripts/release/checksums.mjs dist/upload
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 发布脚本要求当前在 main 上；checkout 后确保本地分支存在且指向当前提交。
+          git checkout -B main
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/publish.mjs

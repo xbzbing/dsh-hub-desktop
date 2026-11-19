@@ -26,13 +26,20 @@ const PNPM_VERSION = '10.34.6'
 const projectDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 const stageRoot = join(projectDir, 'build', 'pnpm-runtime')
 const target = join(stageRoot, 'pnpm')
+// 直接执行随依赖安装的 npm-cli.js：Windows 上 npm 只有 .cmd 包装，execFileSync('npm')
+// 无法直接启动；经当前 Node 执行入口在三个平台同口径。
+const npmCli = join(projectDir, 'node_modules', 'npm', 'bin', 'npm-cli.js')
 
 const work = mkdtempSync(join(tmpdir(), 'bundle-pnpm-'))
 try {
   // npm pack 把 pnpm-<ver>.tgz 下到 work/；--pack-destination 控制落点，避免污染仓库。
-  execFileSync('npm', ['pack', `pnpm@${PNPM_VERSION}`, '--pack-destination', work], {
-    stdio: ['ignore', 'ignore', 'inherit']
-  })
+  execFileSync(
+    process.execPath,
+    [npmCli, 'pack', `pnpm@${PNPM_VERSION}`, '--pack-destination', work],
+    {
+      stdio: ['ignore', 'ignore', 'inherit']
+    }
+  )
   const tgz = readdirSync(work).find((name) => name.endsWith('.tgz'))
   if (tgz === undefined) {
     console.error(`[bundle-pnpm] npm pack 未产出 tarball（pnpm@${PNPM_VERSION}）`)
