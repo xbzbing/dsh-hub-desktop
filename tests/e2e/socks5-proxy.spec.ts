@@ -204,9 +204,11 @@ test('HTTP 实例经 SOCKS5 代理启动并打开工作区', async () => {
   expect(started).toBe(true)
 
   // 启动探测必须经 SOCKS5 隧道完成；代理未生效时这里不会增长。
+  // 三个计数不在同一时刻递增：tunnels 在解析出 CONNECT 头时就加，而 targetHits 要等
+  // Chromium 通过隧道真正发出 HTTP 请求才加。逐个轮询，避免把「请求还在路上」判成失败。
   await expect.poll(() => tunnels, { timeout: 15_000 }).toBeGreaterThan(0)
-  expect(socksHits).toBeGreaterThan(0)
-  expect(targetHits).toBeGreaterThan(0)
+  await expect.poll(() => socksHits, { timeout: 15_000 }).toBeGreaterThan(0)
+  await expect.poll(() => targetHits, { timeout: 15_000 }).toBeGreaterThan(0)
 
   await win.reload()
   await expect(win.getByTestId('app-shell')).toBeVisible()
