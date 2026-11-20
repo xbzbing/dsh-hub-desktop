@@ -135,7 +135,7 @@ ELECTRON_CACHE=/tmp/electron-cache node node_modules/electron/install.js  # post
 
 **测试说明**：E2E 用例使用 `DSH_HUB_DATA_DIR` 指向的隔离临时目录，实例与凭据均为测试环境构造的数据。CI 失败时收集的产物只包含 Playwright 错误上下文、trace、界面截图与审计日志；凭据保险库文件（`vault/credentials.json`）即使内容是密文也不上传。若未来某条测试必须预置保险库数据，必须使用测试环境构造的 mock 数据并在此处记录其构造方式。
 
-发布相关命令分为“本地打包与验证”和“公开 Release”两类。公开 Release 支持两种分发模式，由发布说明的「分发方式」小节声明：`source-only`（只发布源码、tag 和 Release Note）与 `windows-unsigned`（额外附带本地构建的未签名 Windows 安装包 `DSH-Hub-Setup-<版本>.exe` 与 `SHA256SUMS.txt`）。任何模式都不上传 macOS 二进制（`.app`、`.dmg`、`.zip`）、自动更新元数据（`latest-*.yml`）或差分中间产物（`.blockmap`）；`scripts/release/lib.mjs` 做形态白名单校验。未签名 Windows 安装包首次运行会触发 SmartScreen「未知发布者」提示。
+发布相关命令分为“本地打包与验证”和“公开 Release”两类。公开 Release 支持两种分发模式，由发布说明的「分发方式」小节声明：`source-only`（只发布源码、tag 和 Release Note）与 `windows-unsigned`（额外附带构建的未签名 Windows 安装包 `DSH-Hub-Setup-<版本>.exe` 与 `SHA256SUMS.txt`）。任何模式都不上传 macOS 二进制（`.app`、`.dmg`、`.zip`）、自动更新元数据（`latest-*.yml`）或差分中间产物（`.blockmap`）；`scripts/release/lib.mjs` 做形态白名单校验。未签名 Windows 安装包首次运行会触发 SmartScreen「未知发布者」提示。
 
 本地打包命令仍保留，但生成的未签名、未公证产物只适用于开发、本机验证和受控测试：
 
@@ -152,7 +152,7 @@ pnpm release:publish   # 半自动发布：推 tag → Draft → 资产核验；
 
 Electron 44 起二进制按需下载：`pnpm install` 之后 `node_modules/electron/dist` 可能不存在，而打包配置的 `electronDist` 指向它，因此 `dist`、`dist:mac`、`dist:mac:zip`、`dist:win` 都会先执行 `pnpm electron:prepare`（已存在则立即跳过）。`dist:win:local` 在 mac 上交叉构建 Windows 包：`-c.electronDist=` 置空后 electron-builder 改为自行下载 win 版 Electron zip（缓存在 `~/Library/Caches/electron`，复用构建），不使用本机 dist；`dist:win` 在 mac 上直接执行会把 mac 版 Electron 打进 Windows 包，不要这样用。
 
-发布前运行 `CI=true pnpm release:check -- --pre`，确认发布说明的分发模式与资产清单自洽。演练按声明的模式（`source-only` 或 `windows-unsigned`）输出对应的收口步骤：构建人工完成，推 tag、建 Draft 与上传资产由 `pnpm release:publish` 半自动执行并停在 Draft，人工确认资产后再 Publish；详见 [`docs/release-policy.md`](docs/release-policy.md)。macOS 二进制分发仍需先满足该文档中的签名、公证与验证门槛。
+发布主路径是 GitHub Actions 的 `Release` workflow：Actions 页面手动触发并输入版本，workflow 校验版本与发布说明、确认该提交 CI 已成功，再在 `windows-latest` 上构建安装包、推 tag 并停在 Draft，人工确认资产后 Publish；本地 `pnpm release:publish` 为断网或 workflow 故障时的兜底。兜底前运行 `CI=true pnpm release:check -- --pre`，确认发布说明的分发模式与资产清单自洽；演练按声明的模式（`source-only` 或 `windows-unsigned`）输出对应的收口步骤。详见 [`docs/release-policy.md`](docs/release-policy.md)。macOS 二进制分发仍需先满足该文档中的签名、公证与验证门槛。
 
 > 无 TTY 环境跑 `pnpm <script>` 需带 `CI=true`（依赖检查在无 TTY 时会中止）。
 

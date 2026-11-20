@@ -3,7 +3,7 @@
 > 本文是发布的**操作口径**：策略与门槛见 [release-policy.md](./release-policy.md)，
 > 机器校验见 `pnpm release:check`（离线演练）；发布主路径是 `.github/workflows/release.yml`，
 > 本地 `pnpm release:publish` 为兜底。每次发布按本文逐步执行；流程变化须回写本文，不留口头版本。
-> 最近一次完整走通（本地路径）：v0.1.17（2026-11-19）。
+> 最近一次完整走通（CI 路径）：v0.1.18（2026-11-20）；本地兜底路径：v0.1.17（2026-11-19）。
 
 ## 0. 前置
 
@@ -43,6 +43,7 @@ CI=true pnpm release:check -- --pre
 ### 3.1 主路径（Release workflow）
 
 在 Actions 页面触发后，workflow 在 `windows-latest` 上执行 `pnpm dist:win`，把安装包复制到 `dist/upload/`，再用 `node scripts/release/checksums.mjs dist/upload` 生成清单并交给发布脚本校验。构建日志里可核对 `[release] sha256 <digest>  DSH-Hub-Setup-<version>.exe`。
+v0.1.18 在 `windows-latest` 原生构建：exe 120,748,160 字节，SHA-256 `a20505b2…c9366`；GitHub 资产的 `digest` 与 `SHA256SUMS.txt` 一致可作上传后的交叉校验。
 
 ### 3.2 兜底路径（本机交叉构建）
 
