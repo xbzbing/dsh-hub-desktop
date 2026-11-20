@@ -15,6 +15,7 @@ import { useAppStore } from '../store'
 import { Modal } from './Modal'
 import ProxyFields from './ProxyFields'
 import Select from './Select'
+import Switch from './Switch'
 
 /**
  * 编辑当前 transport 支持的实例字段。transport 不可变更；如需变更则删除后重建。
@@ -241,17 +242,14 @@ export default function EditInstanceDialog({
             />
             <span className="hint">{t('edit.launcherHint')}</span>
           </div>
-          <label
-            className="row mt12"
-            style={{ gap: 8, alignItems: 'center' }}
-            htmlFor="edit-autostart"
-          >
-            <input
-              type="checkbox"
-              id="edit-autostart"
+          {/* 自动拉起是即时二元状态：开关在前、文案在后，整行可点，两者同属一个命中区。
+              alignSelf 收窄命中区，只覆盖控件这一行，不吃掉相邻字段的空白高度。 */}
+          <label className="row" style={{ cursor: 'pointer', alignSelf: 'center' }}>
+            <Switch
               checked={autoStart}
-              onChange={(event) => setAutoStart(event.target.checked)}
-              data-testid="edit-autostart"
+              onChange={setAutoStart}
+              ariaLabel={t('edit.autoStartLabel')}
+              testId="edit-autostart"
             />
             <span>{t('edit.autoStartLabel')}</span>
           </label>
