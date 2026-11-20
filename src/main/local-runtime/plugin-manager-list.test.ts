@@ -1,4 +1,4 @@
-import { delimiter } from 'node:path'
+import { delimiter, resolve as resolvePath } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createPluginManager } from './plugin-manager'
 import { InstanceStoreError } from '../registry/instance-store'
@@ -253,6 +253,8 @@ describe('createPluginManager.list', () => {
       updateCheckable: false
     })
     // 本地安装目录按 profile 目录解析 file: 相对说明，供详情页定位源码仓库。
-    expect(toPosix(plugins[0]!.installDir ?? '')).toBe('/data/homes/inst-1/profiles/local-plugin')
+    expect(toPosix(plugins[0]!.installDir ?? '')).toBe(
+      toPosix(resolvePath('/data/homes/inst-1/profiles/web', '../local-plugin'))
+    )
   })
 })

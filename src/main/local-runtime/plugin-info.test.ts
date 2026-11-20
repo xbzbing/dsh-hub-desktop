@@ -1,4 +1,5 @@
 import { resolve as resolvePath } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   MAX_ICON_BYTES,
@@ -171,11 +172,13 @@ describe('installDirOf', () => {
   })
 
   it('file: URL 与绝对路径原样解析', () => {
-    expect(installDirOf({ version: 'file:///tmp/demo-plugin' }, '/tmp/profile/node_modules')).toBe(
-      resolvePath('/tmp/demo-plugin')
+    // 用平台自己的 file URL（Windows 带盘符），避免把 POSIX 路径的 URL 当成跨平台夹具。
+    const target = resolvePath('/tmp/demo-plugin')
+    expect(installDirOf({ version: pathToFileURL(target).href }, '/tmp/profile/node_modules')).toBe(
+      target
     )
     expect(installDirOf({ version: 'file:/tmp/demo-plugin' }, '/tmp/profile/node_modules')).toBe(
-      resolvePath('/tmp/demo-plugin')
+      target
     )
   })
 
