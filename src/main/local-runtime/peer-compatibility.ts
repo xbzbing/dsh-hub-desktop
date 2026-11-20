@@ -194,6 +194,34 @@ export function githubUrlFrom(repository: unknown): string | null {
   return `https://github.com/${match[1]}`
 }
 
+/**
+ * 从 git config 文本里找 GitHub 仓库地址。
+ *
+ * 本地安装目录可能是用户自己 clone 的仓库：优先取 origin，其次名为 github 的 remote，
+ * 最后取任意一个指向 GitHub 的 remote。没有 GitHub remote 时返回 null。
+ */
+export function githubUrlFromGitConfig(config: string | null | undefined): string | null {
+  if (typeof config !== 'string' || config.trim() === '') return null
+  const remotes: Array<{ name: string; url: string }> = []
+  const sections = /\[remote\s+"([^"]+)"\]([\s\S]*?)(?=\n\s*\[|$)/g
+  for (const section of config.matchAll(sections)) {
+    const name = section[1]
+    const url = /^\s*url\s*=\s*(.+?)\s*$/m.exec(section[2] ?? '')?.[1]
+    if (name !== undefined && url !== undefined) {
+      remotes.push({ name, url: url.replace(/^"(.*)"$/, '$1') })
+    }
+  }
+  const githubRemotes = remotes
+    .map((remote) => ({ ...remote, url: githubUrlFrom(remote.url) }))
+    .filter((remote): remote is { name: string; url: string } => remote.url !== null)
+  return (
+    githubRemotes.find((remote) => remote.name === 'origin')?.url ??
+    githubRemotes.find((remote) => remote.name === 'github')?.url ??
+    githubRemotes[0]?.url ??
+    null
+  )
+}
+
 /** npm 包名派生 npm 网页地址；仅接受合法 npm 包名（scoped / unscoped）。 */
 export function npmUrlFrom(name: string): string | null {
   if (!/^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i.test(name)) return null

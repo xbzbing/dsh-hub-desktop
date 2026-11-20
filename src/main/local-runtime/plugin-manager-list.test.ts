@@ -252,5 +252,7 @@ describe('createPluginManager.list', () => {
       installSource: 'file',
       updateCheckable: false
     })
+    // 本地安装目录按 profile 目录解析 file: 相对说明，供详情页定位源码仓库。
+    expect(toPosix(plugins[0]!.installDir ?? '')).toBe('/data/homes/inst-1/profiles/local-plugin')
   })
 })

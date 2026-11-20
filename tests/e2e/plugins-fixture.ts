@@ -87,7 +87,7 @@ if (cmd === 'list') {
   if (process.env.DSH_E2E_PLUGIN_LOCAL === '1') {
     deps['local-plugin'] = {
       from: 'local-plugin',
-      version: 'file:../fake-plugin-local',
+      version: ${JSON.stringify(`file:${join(dataDir, 'fake-plugin-local')}`)},
       path: ${JSON.stringify(join(dataDir, 'fake-plugin-local'))}
     }
   }
@@ -207,11 +207,18 @@ export async function seedPluginFixture(dataDir: string): Promise<PluginFixture>
   const localManifest = {
     ...FAKE_PLUGIN_MANIFEST,
     name: 'local-plugin',
-    version: LOCAL_PLUGIN_VERSION
+    version: LOCAL_PLUGIN_VERSION,
+    // 包清单声明的仓库与本地工作树的 GitHub remote 不同：详情应优先展示工作树 remote。
+    repository: { type: 'git', url: 'git+https://github.com/demo/local-plugin-manifest.git' }
   }
   const localDir = join(dataDir, 'fake-plugin-local')
-  await mkdir(localDir, { recursive: true })
+  await mkdir(join(localDir, '.git'), { recursive: true })
   await writeFile(join(localDir, 'package.json'), JSON.stringify(localManifest), 'utf8')
+  await writeFile(
+    join(localDir, '.git', 'config'),
+    '[remote "origin"]\n\turl = git@github.com:demo/local-plugin-git.git\n',
+    'utf8'
+  )
 
   const mutationLog = join(dataDir, 'plugin-mutations.jsonl')
   process.env.DSH_E2E_PLUGIN_ADD_LOG = mutationLog

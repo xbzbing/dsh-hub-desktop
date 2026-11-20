@@ -457,8 +457,18 @@ export interface PluginInfo {
   description: string | null
   author: string | null
   license: string | null
+  /**
+   * npm 包页。只有从 npm registry 安装的插件才给出——本地 file:/link: 与 GitHub 安装
+   * 无法确认包是否已发布，不展示可能是 404 的地址。
+   */
   npmUrl: string | null
+  /**
+   * GitHub 地址。npm 安装取包清单声明的仓库；GitHub 安装取安装来源；本地安装取本地
+   * 仓库的 GitHub remote（读不到时回落包清单）。
+   */
   githubUrl: string | null
+  /** 本地安装目录（file:/link: 安装源解析出的绝对路径）；null = 非本地安装或无法解析。 */
+  installDir: string | null
   /** 图标 data-uri（MIME 按扩展名：SVG/PNG/JPEG/WebP）；null = 无图标、类型不支持或超过 256 KiB。 */
   iconDataUri: string | null
   /** 第三方运行时依赖名（不含 peer）。 */

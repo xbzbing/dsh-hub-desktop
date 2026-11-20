@@ -5,10 +5,16 @@
  * 装配渲染层用的 PluginInfo 字段。图标按扩展名给出 MIME（SVG/PNG/JPEG/WebP，≤256 KiB）；
  * locale meta 的本地化标题与简介覆盖 package.json 的英文原值。读取失败一律按字段缺失处理。
  */
-import { readFileSync } from 'node:fs'
-import { extname, join, resolve as resolvePath } from 'node:path'
+import { readFileSync, statSync } from 'node:fs'
+import { dirname, extname, join, resolve as resolvePath } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { PluginInfo } from '@shared/contracts'
-import { dshPeerRange, githubUrlFrom, npmUrlFrom } from './peer-compatibility'
+import {
+  dshPeerRange,
+  githubUrlFrom,
+  githubUrlFromGitConfig,
+  npmUrlFrom
+} from './peer-compatibility'
 
 /** 界面语言：与 app 的 Language 一致（system 已解析为 zh|en）。 */
 export type PluginLocale = 'zh' | 'en'
@@ -21,6 +27,8 @@ export interface PluginInfoReaders {
   readManifest: (dir: string) => PluginManifest | null
   readIcon: (path: string) => string | null
   readLocale: (path: string) => { meta?: { title?: string; description?: string } } | null
+  /** 读本地安装目录的 git config（用于识别 GitHub 仓库）；缺失按「不是 git 仓库」处理。 */
+  readGitConfig?: (dir: string) => string | null
 }
 
 export interface PluginManifest {
@@ -77,6 +85,34 @@ export function defaultReadLocale(
   }
 }
 
+/**
+ * 读本地安装目录的 `.git/config`；
+ * 普通仓库直接读 `.git/config`，linked worktree / submodule 的 `.git` 是文件，
+ * 按 `gitdir:` 指针找实际配置目录（worktree 再按 `commondir` 回到主仓库）。
+ */
+export function defaultReadGitConfig(dir: string): string | null {
+  try {
+    const dotGit = join(dir, '.git')
+    const stat = statSync(dotGit)
+    if (stat.isDirectory()) return readFileSync(join(dotGit, 'config'), 'utf8')
+    if (!stat.isFile()) return null
+    const pointer = readFileSync(dotGit, 'utf8')
+    const gitdir = /^gitdir:\s*(.+)$/m.exec(pointer)?.[1]?.trim()
+    if (gitdir === undefined || gitdir === '') return null
+    const gitDir = resolvePath(dir, gitdir)
+    let configDir = gitDir
+    try {
+      const commonDir = readFileSync(join(gitDir, 'commondir'), 'utf8').trim()
+      if (commonDir !== '') configDir = resolvePath(gitDir, commonDir)
+    } catch {
+      // 普通 gitdir 没有 commondir；worktree 才有。
+    }
+    return readFileSync(join(configDir, 'config'), 'utf8')
+  } catch {
+    return null
+  }
+}
+
 /** author 字段可能是字符串或 `{ name, email }` 对象。 */
 export function authorName(author: unknown): string | null {
   if (typeof author === 'string') return author.trim() || null
@@ -99,7 +135,9 @@ export function installSourceOf(entry: {
   if (
     /^(github:|git\+|git@)/.test(from) ||
     /github\.com/.test(from) ||
-    /github\.com/.test(version)
+    /^(github:|git\+|git@)/.test(version) ||
+    /github\.com/.test(version) ||
+    /codeload\.github\.com/.test(resolved)
   ) {
     return 'github'
   }
@@ -108,6 +146,31 @@ export function installSourceOf(entry: {
   // 无 resolved 但有普通语义化 version（本地 node_modules 已解析）：按 npm 处理。
   if (version !== '' && !version.includes('/')) return 'npm'
   return 'unknown'
+}
+
+/**
+ * 本地 file:/link: 安装源解析出的绝对安装目录。
+ * package.json 里的相对说明以 profile 目录为基准（node_modules 的父目录）；`file:` URL 按
+ * URL 解析。非本地安装、空说明或无法解析时返回 null。
+ */
+export function installDirOf(
+  entry: { from?: string; version?: string },
+  profileNodeModules: string
+): string | null {
+  const spec = [entry.version, entry.from].find(
+    (value): value is string => typeof value === 'string' && /^(file:|link:)/.test(value)
+  )
+  if (spec === undefined) return null
+  const target = spec.replace(/^(file:|link:)/, '').trim()
+  if (target === '') return null
+  if (target.startsWith('//')) {
+    try {
+      return fileURLToPath(`file:${target}`)
+    } catch {
+      return null
+    }
+  }
+  return resolvePath(dirname(profileNodeModules), target)
 }
 
 /** 插件图标支持的扩展名与对应 MIME（与 dsh 一致：SVG、PNG、JPEG、WebP）。 */
@@ -175,6 +238,23 @@ export function infoFromPath(
   const localizedTitle = localeMeta?.title?.trim() || null
   const localizedDescription =
     localeMeta?.description?.trim() || manifest.description?.trim() || null
+  const manifestGithubUrl = githubUrlFrom(manifest.repository ?? manifest.homepage ?? null)
+  // GitHub 安装优先展示安装来源（from / version / resolved 任一可解析），它才是「装的是哪个仓库」；
+  // 本地安装优先看本地工作树自己的 GitHub remote，其次回落到包清单声明的仓库。
+  const installGithubUrl =
+    githubUrlFrom(entry.from ?? null) ??
+    githubUrlFrom(entry.version ?? null) ??
+    githubUrlFrom(entry.resolved ?? null)
+  const installDir = installDirOf(entry, profileNodeModules)
+  const readGitConfig = readers.readGitConfig ?? defaultReadGitConfig
+  const localGithubUrl =
+    installDir === null ? null : githubUrlFromGitConfig(readGitConfig(installDir))
+  const githubUrl =
+    installSource === 'github'
+      ? (installGithubUrl ?? manifestGithubUrl)
+      : installSource === 'file'
+        ? (localGithubUrl ?? manifestGithubUrl)
+        : manifestGithubUrl
   return {
     name,
     version,
@@ -182,8 +262,10 @@ export function infoFromPath(
     description: localizedDescription,
     author: authorName(manifest.author),
     license: manifest.license?.trim() || null,
-    npmUrl: npmUrlFrom(name),
-    githubUrl: githubUrlFrom(manifest.repository ?? manifest.homepage ?? null),
+    // 本地/GitHub 安装无法确认包是否已发布到 npm，不给出可能 404 的地址。
+    npmUrl: installSource === 'npm' ? npmUrlFrom(name) : null,
+    githubUrl,
+    installDir,
     iconDataUri: iconDataUri(iconBase64, iconPath === null ? null : iconMediaType(iconPath)),
     dependencies: Object.keys(manifest.dependencies ?? {}),
     dshPeer: dshPeerRange(manifest.peerDependencies),

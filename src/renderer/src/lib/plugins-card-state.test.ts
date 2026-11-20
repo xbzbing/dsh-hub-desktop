@@ -141,6 +141,7 @@ function plugin(name: string, version: string): PluginInfo {
     license: null,
     npmUrl: null,
     githubUrl: null,
+    installDir: null,
     iconDataUri: null,
     dependencies: [],
     dshPeer: null,

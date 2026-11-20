@@ -3,6 +3,7 @@ import {
   dshPeerRange,
   evaluateDshPeers,
   githubUrlFrom,
+  githubUrlFromGitConfig,
   isDshPeerName,
   npmUrlFrom,
   satisfiesDshPeer
@@ -227,6 +228,34 @@ describe('githubUrlFrom', () => {
     expect(githubUrlFrom('')).toBe(null)
     expect(githubUrlFrom(null)).toBe(null)
     expect(githubUrlFrom(undefined)).toBe(null)
+  })
+})
+
+describe('githubUrlFromGitConfig', () => {
+  it('优先取 origin 的 GitHub 地址', () => {
+    expect(
+      githubUrlFromGitConfig(
+        '[remote "upstream"]\n\turl = https://github.com/upstream/repo.git\n' +
+          '[remote "origin"]\n\turl = git@github.com:owner/repo.git\n'
+      )
+    ).toBe('https://github.com/owner/repo')
+  })
+
+  it('origin 不是 GitHub 时取任意 GitHub remote', () => {
+    expect(
+      githubUrlFromGitConfig(
+        '[remote "origin"]\n\turl = ssh://x@icode.example.com/team/repo\n' +
+          '[remote "github"]\n\turl = git@github.com:owner/repo.git\n'
+      )
+    ).toBe('https://github.com/owner/repo')
+  })
+
+  it('没有 GitHub remote / 空配置 → null', () => {
+    expect(
+      githubUrlFromGitConfig('[remote "origin"]\n\turl = https://gitlab.com/a/b.git\n')
+    ).toBeNull()
+    expect(githubUrlFromGitConfig('')).toBeNull()
+    expect(githubUrlFromGitConfig(null)).toBeNull()
   })
 })
 

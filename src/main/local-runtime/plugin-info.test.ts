@@ -1,3 +1,4 @@
+import { resolve as resolvePath } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   MAX_ICON_BYTES,
@@ -8,6 +9,7 @@ import {
   iconDataUri,
   iconMediaType,
   infoFromPath,
+  installDirOf,
   installSourceOf,
   type PluginInfoReaders,
   type PluginManifest
@@ -28,11 +30,13 @@ function readersOf(options: {
   manifest?: PluginManifest | null
   icon?: string | null
   locale?: { meta?: { title?: string; description?: string } } | null
+  gitConfig?: string | null
 }): PluginInfoReaders {
   return {
     readManifest: () => options.manifest ?? null,
     readIcon: () => options.icon ?? null,
-    readLocale: () => options.locale ?? null
+    readLocale: () => options.locale ?? null,
+    readGitConfig: () => options.gitConfig ?? null
   }
 }
 
@@ -75,6 +79,18 @@ describe('installSourceOf', () => {
 
   it('from 含 github.com → github', () => {
     expect(installSourceOf({ from: 'https://github.com/owner/repo' })).toBe('github')
+  })
+
+  it('version 里的 github: / codeload 地址 → github（pnpm 的列表形态）', () => {
+    expect(installSourceOf({ from: 'demo-plugin', version: 'github:owner/repo#abc123' })).toBe(
+      'github'
+    )
+    expect(
+      installSourceOf({
+        from: 'demo-plugin',
+        resolved: 'https://codeload.github.com/owner/repo/tar.gz/abc123'
+      })
+    ).toBe('github')
   })
 
   it('file: / link: → file', () => {
@@ -138,6 +154,38 @@ describe('默认读取器', () => {
   })
 })
 
+describe('installDirOf', () => {
+  it('file: 相对路径按 profile 目录解析', () => {
+    expect(installDirOf({ version: 'file:../demo-plugin' }, '/tmp/profile/node_modules')).toBe(
+      resolvePath('/tmp/profile', '../demo-plugin')
+    )
+  })
+
+  it('version 不是本地说明时回落 from', () => {
+    expect(
+      installDirOf(
+        { from: 'link:../demo-plugin', version: 'github:owner/repo' },
+        '/tmp/profile/node_modules'
+      )
+    ).toBe(resolvePath('/tmp/profile', '../demo-plugin'))
+  })
+
+  it('file: URL 与绝对路径原样解析', () => {
+    expect(installDirOf({ version: 'file:///tmp/demo-plugin' }, '/tmp/profile/node_modules')).toBe(
+      resolvePath('/tmp/demo-plugin')
+    )
+    expect(installDirOf({ version: 'file:/tmp/demo-plugin' }, '/tmp/profile/node_modules')).toBe(
+      resolvePath('/tmp/demo-plugin')
+    )
+  })
+
+  it('非本地安装 / 空说明 → null', () => {
+    expect(installDirOf({ version: '1.0.0' }, '/tmp/profile/node_modules')).toBeNull()
+    expect(installDirOf({ version: 'file:' }, '/tmp/profile/node_modules')).toBeNull()
+    expect(installDirOf({}, '/tmp/profile/node_modules')).toBeNull()
+  })
+})
+
 describe('infoFromPath', () => {
   const manifest: PluginManifest = {
     name: 'demo-plugin',
@@ -172,6 +220,7 @@ describe('infoFromPath', () => {
     expect(info.nodeEngine).toBe('>=20')
     expect(info.npmUrl).toBe('https://www.npmjs.com/package/demo-plugin')
     expect(info.githubUrl).toBe('https://github.com/demo/demo-plugin')
+    expect(info.installDir).toBeNull()
     expect(info.installSource).toBe('npm')
     expect(info.updateCheckable).toBe(true)
     expect(info.hasHostSide).toBe(true)
@@ -294,6 +343,41 @@ describe('infoFromPath', () => {
     expect(info.installSource).toBe('file')
     expect(info.version).toBe('1.0.0')
     expect(info.updateCheckable).toBe(false)
+    expect(info.installDir).toBe(resolvePath('/tmp/profile', '../demo-plugin'))
+    // 本地安装无法确认是否发布到 npm：不给出 npm 地址。
+    expect(info.npmUrl).toBeNull()
+  })
+
+  it('本地安装且工作树是 GitHub 仓库：GitHub 地址取 git remote', () => {
+    const info = infoFromPath(
+      readersOf({
+        manifest,
+        gitConfig:
+          '[remote "origin"]\n\turl = git@github.com:local/demo-plugin.git\n' +
+          '[remote "upstream"]\n\turl = https://github.com/upstream/demo-plugin.git\n'
+      }),
+      'demo-plugin',
+      { from: 'demo-plugin', version: 'file:../demo-plugin' },
+      '/tmp/profile/node_modules',
+      'zh',
+      null
+    )
+    expect(info.githubUrl).toBe('https://github.com/local/demo-plugin')
+  })
+
+  it('GitHub 安装：GitHub 地址取安装来源，优先于包清单声明的仓库', () => {
+    const info = infoFromPath(
+      readersOf({ manifest }),
+      'demo-plugin',
+      { from: 'demo-plugin', version: 'github:installed/demo-plugin#abc123' },
+      '/tmp/profile/node_modules',
+      'zh',
+      null
+    )
+    expect(info.installSource).toBe('github')
+    expect(info.installDir).toBeNull()
+    expect(info.npmUrl).toBeNull()
+    expect(info.githubUrl).toBe('https://github.com/installed/demo-plugin')
   })
 
   it('manifest 缺失时字段按缺省处理，不抛错', () => {

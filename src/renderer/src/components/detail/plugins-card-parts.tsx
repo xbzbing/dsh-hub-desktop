@@ -249,6 +249,13 @@ function PluginDetail(props: {
   const { t, plugin, check, onOpenLink } = props
   // 发布时间取已装版本的快照：刚检查完用本次结果，否则用主进程持久化并回填到列表的那条。
   const publishedAt = check.result?.publishedAt ?? plugin.publishedAt
+  // GitHub 字段的来源随安装方式变化：本地看工作树 remote，GitHub 安装看安装地址，npm 看包清单。
+  const githubFieldKey =
+    plugin.installSource === 'file'
+      ? 'detail.plugin.field.githubRepo'
+      : plugin.installSource === 'github'
+        ? 'detail.plugin.field.githubSource'
+        : 'detail.plugin.field.github'
   return (
     <dl className="kv plugin-detail" data-testid={`plugin-detail-${plugin.name}`}>
       {/* 包名行：标题里只是展示，详情给可复制的正式名称（安装/检索都用它）。 */}
@@ -256,6 +263,19 @@ function PluginDetail(props: {
       <dd>
         <CopyableValue t={t} value={plugin.name} testId={`plugin-name-${plugin.name}`} />
       </dd>
+      {plugin.installDir !== null && (
+        <>
+          {/* 本地安装目录：用户常要回到源码仓库改代码，路径必须可复制。 */}
+          <dt>{t('detail.plugin.field.installDir')}</dt>
+          <dd>
+            <CopyableValue
+              t={t}
+              value={plugin.installDir}
+              testId={`plugin-install-dir-${plugin.name}`}
+            />
+          </dd>
+        </>
+      )}
       {plugin.description && (
         <>
           <dt>{t('detail.plugin.field.description')}</dt>
@@ -276,9 +296,13 @@ function PluginDetail(props: {
       )}
       {plugin.githubUrl && (
         <>
-          <dt>{t('detail.plugin.field.github')}</dt>
+          <dt>{t(githubFieldKey)}</dt>
           <dd>
-            <button className="link-btn" onClick={() => onOpenLink(plugin.githubUrl)}>
+            <button
+              className="link-btn"
+              onClick={() => onOpenLink(plugin.githubUrl)}
+              data-testid={`plugin-github-link-${plugin.name}`}
+            >
               {plugin.githubUrl}
             </button>
           </dd>
@@ -288,16 +312,25 @@ function PluginDetail(props: {
         <>
           <dt>{t('detail.plugin.field.npm')}</dt>
           <dd>
-            <button className="link-btn" onClick={() => onOpenLink(plugin.npmUrl)}>
+            <button
+              className="link-btn"
+              onClick={() => onOpenLink(plugin.npmUrl)}
+              data-testid={`plugin-npm-link-${plugin.name}`}
+            >
               {plugin.npmUrl}
             </button>
           </dd>
         </>
       )}
-      <dt>{t('detail.plugin.field.published')}</dt>
-      <dd className="num">
-        {publishedAt !== null ? fmtLogTime(publishedAt) : t('detail.plugin.publishedUnknown')}
-      </dd>
+      {/* 发布时间是 npm registry 的快照；不查 npm 的插件没有可获取的入口，不展示占位。 */}
+      {plugin.updateCheckable && (
+        <>
+          <dt>{t('detail.plugin.field.published')}</dt>
+          <dd className="num">
+            {publishedAt !== null ? fmtLogTime(publishedAt) : t('detail.plugin.publishedUnknown')}
+          </dd>
+        </>
+      )}
       <dt>{t('detail.plugin.field.compat')}</dt>
       <dd className="num">
         dsh {plugin.dshPeer ?? '—'}

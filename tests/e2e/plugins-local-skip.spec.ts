@@ -1,4 +1,5 @@
 import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { e2eDataDir } from './data-dir'
@@ -42,6 +43,19 @@ test('本地安装的插件：检查按钮禁用并说明原因，一键检查�
   await expect(row).toBeVisible({ timeout: 15_000 })
   // 版本取本地 package.json，不把 file: 安装说明当版本展示。
   await expect(row).toContainText(LOCAL_PLUGIN_VERSION)
+
+  // 详情显示本地安装目录与工作树的 GitHub 仓库地址；未确认发布到 npm 时不显示 npm 地址。
+  await win.getByTestId('plugin-expand-local-plugin').click()
+  const detail = win.getByTestId('plugin-detail-local-plugin')
+  await expect(detail.getByTestId('plugin-install-dir-local-plugin')).toContainText(
+    join(DATA_DIR, 'fake-plugin-local')
+  )
+  await expect(detail.getByTestId('plugin-github-link-local-plugin')).toHaveText(
+    'https://github.com/demo/local-plugin-git'
+  )
+  await expect(detail.getByTestId('plugin-npm-link-local-plugin')).toHaveCount(0)
+  // 本地插件不可检查 npm 更新，不展示「点检查升级获取」的发布时间占位。
+  await expect(detail).not.toContainText('点检查升级获取')
 
   // 按钮仍在原位（与 npm 插件同一列），只是禁用。
   const check = win.getByTestId('plugin-check-local-plugin')
