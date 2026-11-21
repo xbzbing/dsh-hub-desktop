@@ -4,6 +4,7 @@ import { buildLaunchArgs } from './launch-args'
 import { openSelect } from './select'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { mkdir, rm } from 'node:fs/promises'
+import { WORKSPACE_HOTKEY_EVENT } from '@shared/contracts'
 /**
  * 渲染层端到端：空态、创建、列表、详情和删除。
  * 说明:本地分支创建后会自动触发启动,在受限/CI 环境里安装可能失败,但本用例
@@ -259,6 +260,61 @@ test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
   await sendToWorkspace([{ type: 'keyDown', keyCode: 'w', modifiers: [switchModLower] }])
   await win.waitForTimeout(700)
   await expect(badge1).toBeHidden()
+
+  // 工作区视图持焦时 Hub 渲染层收不到 window blur；窗口失焦后主进程补发 reset，
+  // 序号必须收起（否则 Alt+Tab 后角标一直停留）。真实失焦只在 Windows 覆盖：
+  // Linux xvfb 没有窗口管理器，窗口焦点语义不可靠；其余平台直接注入同一事件，
+  // 覆盖渲染层收起路径。
+  const workspaceViewFocused = async (): Promise<boolean> =>
+    app.evaluate((_electron) => {
+      const hub = _electron.BrowserWindow.getAllWindows().find(
+        (candidate) => candidate.contentView.children.length > 0
+      )
+      return (hub?.contentView.children ?? []).some(
+        (child) =>
+          (child as { webContents?: { isFocused?: () => boolean } }).webContents?.isFocused?.() ===
+          true
+      )
+    })
+  const focusable =
+    process.platform === 'win32' &&
+    (await app.evaluate((_electron) => {
+      const hub = _electron.BrowserWindow.getAllWindows().find(
+        (candidate) => candidate.contentView.children.length > 0
+      )
+      if (!hub || hub.isDestroyed()) return false
+      if (!hub.isFocused()) hub.focus()
+      return hub.isFocused()
+    }))
+  if (focusable) {
+    // 窗口 focus 事件里的 focusActive() 异步把焦点交给工作区视图；等它落定再注入按键，
+    // 否则宿主渲染层随后收到的 blur 会取消刚排上的显示计时。
+    await expect.poll(workspaceViewFocused).toBe(true)
+  }
+  await sendToWorkspace([{ type: 'keyUp', keyCode: switchMod }])
+  await sendToWorkspace([{ type: 'keyDown', keyCode: switchMod }])
+  await expect(badge1).toBeVisible()
+  if (focusable) {
+    await app.evaluate((_electron) => {
+      _electron.BrowserWindow.getAllWindows()
+        .find((candidate) => candidate.contentView.children.length > 0)
+        ?.blur()
+    })
+  } else {
+    await app.evaluate((_electron, channel) => {
+      _electron.BrowserWindow.getAllWindows()
+        .find((candidate) => candidate.contentView.children.length > 0)
+        ?.webContents.send(channel, { phase: 'reset' })
+    }, WORKSPACE_HOTKEY_EVENT)
+  }
+  await expect(badge1).toBeHidden()
+  if (focusable) {
+    await app.evaluate((_electron) => {
+      _electron.BrowserWindow.getAllWindows()
+        .find((candidate) => candidate.contentView.children.length > 0)
+        ?.focus()
+    })
+  }
 
   // 视图内 修饰键+1 → 切回首行实例(转发链路:视图输入 → 白名单过滤 → 窗口事件)
   await sendToWorkspace([{ type: 'keyDown', keyCode: '1', modifiers: [switchModLower] }])

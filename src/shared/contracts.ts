@@ -671,7 +671,9 @@ export interface WorkspaceFindResult {
  * - `down` / `up`：会话切换所需的白名单输入——切换修饰键本身（macOS 为 ⌘/Meta，
  *   其余平台为 Alt）与其数字键 1-9；
  * - `cancel`：按住切换修饰键又按下了其他键（⌘W、⌘N 等组合）。只让侧栏的序号提示
- *   让位，按键本身既不转发也不拦截，仍由工作区页面处理。
+ *   让位，按键本身既不转发也不拦截，仍由工作区页面处理；
+ * - `reset`：Hub 窗口失焦、隐藏或重新聚焦。工作区视图持焦时渲染层收不到 window blur，
+ *   按住态与序号角标在此清空，等下一次切换修饰键 keydown 重新开始。
  */
 export type WorkspaceHotkeyEvent =
   | {
@@ -688,8 +690,9 @@ export type WorkspaceHotkeyEvent =
       alt: boolean
     }
   | { phase: 'cancel' }
+  | { phase: 'reset' }
 
-/** 主进程 → 渲染进程的工作区快捷键白名单转发事件。 */
+/** 主进程 → 渲染进程的工作区快捷键转发与按住态重置事件。 */
 export const WORKSPACE_HOTKEY_EVENT = 'dsh:workspace-hotkey'
 
 export interface LocalLauncherSnapshot {

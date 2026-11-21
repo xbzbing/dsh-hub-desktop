@@ -6,6 +6,7 @@ import { resolveLanguage } from '@shared/settings'
 import type { Settings } from '@shared/settings'
 import { handleWindowClose } from './shell/close-to-tray'
 import { focusDebug } from './shell/focus-debug'
+import { installHotkeyFocusReset } from './hotkey-focus'
 import { systemLocale } from './system-locale'
 import type { WorkspaceHost } from './workspace-host'
 import type { WorkspaceTooltipHost } from './workspace-tooltip'
@@ -297,6 +298,9 @@ export function createWindowController(deps: WindowControllerDeps): WindowContro
     win.on('focus', () => {
       deps.getWorkspaceHost().focusActive()
     })
+    // 工作区视图持焦时渲染层收不到 window blur：窗口级焦点变化由主进程补发重置，
+    // 避免 Alt+Tab 后侧栏序号角标一直停留。
+    installHotkeyFocusReset(win)
     // 「关于」叠加窗口跟随宿主：宿主隐藏/关闭即收起，移动/缩放保持完全重合。
     const collapseAbout = (): void => {
       if (aboutWindow && !aboutWindow.isDestroyed()) aboutWindow.close()

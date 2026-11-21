@@ -160,6 +160,15 @@ export default function Sidebar(): ReactNode {
       hintCancelled = true
       hideHint()
     }
+    /**
+     * 窗口失焦、隐藏或重新聚焦:按键的按下-松开序列已不可信,清空按住态并让本轮
+     * 作废。工作区视图持焦时渲染层收不到 window blur,主进程会补发 `reset`。
+     */
+    const resetHint = (): void => {
+      heldModifiers.clear()
+      hintCancelled = true
+      hideHint()
+    }
     /** 排一次延迟显示计时;同一轮按住只排一次,按键自动重复不重启窗口。 */
     const scheduleHint = (): void => {
       if (hintCancelled || hintTimer !== null || hintVisible) return
@@ -206,16 +215,20 @@ export default function Sidebar(): ReactNode {
       heldModifiers.delete(event.key)
       if (heldModifiers.size === 0) hideHint()
     }
-    // 失焦后 keyup 可能不再到达:离开窗口即收起序号,避免角标残留。
+    // 失焦后 keyup 可能不再到达:离开窗口即清空按住态并收起序号,避免角标残留。
     const onBlur = (): void => {
-      heldModifiers.clear()
-      hideHint()
+      resetHint()
     }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', onBlur)
     // 工作区原生视图持焦时按键不经过本窗口:主进程白名单转发后在此还原为窗口事件。
+    // 视图持焦时本窗口收不到 blur,窗口级失焦/隐藏由主进程补发 reset。
     const unsubscribe = window.dshHub?.onWorkspaceHotkey((event: WorkspaceHotkeyEvent) => {
+      if (event.phase === 'reset') {
+        resetHint()
+        return
+      }
       if (event.phase === 'cancel') {
         cancelHint()
         return
