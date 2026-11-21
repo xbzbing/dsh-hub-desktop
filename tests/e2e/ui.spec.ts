@@ -265,17 +265,6 @@ test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
   // 序号必须收起（否则 Alt+Tab 后角标一直停留）。真实失焦只在 Windows 覆盖：
   // Linux xvfb 没有窗口管理器，窗口焦点语义不可靠；其余平台直接注入同一事件，
   // 覆盖渲染层收起路径。
-  const workspaceViewFocused = async (): Promise<boolean> =>
-    app.evaluate((_electron) => {
-      const hub = _electron.BrowserWindow.getAllWindows().find(
-        (candidate) => candidate.contentView.children.length > 0
-      )
-      return (hub?.contentView.children ?? []).some(
-        (child) =>
-          (child as { webContents?: { isFocused?: () => boolean } }).webContents?.isFocused?.() ===
-          true
-      )
-    })
   const focusable =
     process.platform === 'win32' &&
     (await app.evaluate((_electron) => {
@@ -287,9 +276,9 @@ test('按住修饰键显示序号,修饰键+数字切换实例', async () => {
       return hub.isFocused()
     }))
   if (focusable) {
-    // 窗口 focus 事件里的 focusActive() 异步把焦点交给工作区视图；等它落定再注入按键，
-    // 否则宿主渲染层随后收到的 blur 会取消刚排上的显示计时。
-    await expect.poll(workspaceViewFocused).toBe(true)
+    // 窗口 focus 事件里的 focusActive() 异步切换焦点；CI 上子视图的 isFocused()
+    // 不一定可观测，等焦点切换落定后再注入按键，避免宿主随后收到的 blur 取消计时。
+    await win.waitForTimeout(300)
   }
   await sendToWorkspace([{ type: 'keyUp', keyCode: switchMod }])
   await sendToWorkspace([{ type: 'keyDown', keyCode: switchMod }])
