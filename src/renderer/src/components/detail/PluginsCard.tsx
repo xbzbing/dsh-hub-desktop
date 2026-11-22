@@ -19,6 +19,7 @@ import {
   classifyCheckOutcome,
   filterPluginNames,
   initialCheckState,
+  orderPluginsForDisplay,
   pluginApplyNotice,
   pruneChecks,
   restoreChecks,
@@ -96,8 +97,9 @@ export default function PluginsCard(props: { t: Translator; instanceId: string }
   const [checkingAll, setCheckingAll] = useState(false)
   /** 名称/包名搜索关键词：只影响列表展示与批量检查范围，不改数据。 */
   const [filter, setFilter] = useState('')
-  /** 按关键词过滤后的列表；关键词为空时直接复用原数组（不产生新引用）。 */
-  const visiblePlugins = plugins === null ? null : filterPluginNames(plugins, filter)
+  /** 按关键词过滤后的列表，再把已禁用插件沉到末尾；两者都不改变组内的包名升序。 */
+  const visiblePlugins =
+    plugins === null ? null : orderPluginsForDisplay(filterPluginNames(plugins, filter))
 
   /**
    * 拉取插件列表与持久化的检查状态。keepChecks=true 时保留内存里的检查结果（只按最新列表

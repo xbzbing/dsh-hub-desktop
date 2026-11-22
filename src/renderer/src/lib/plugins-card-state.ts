@@ -113,6 +113,21 @@ export function filterPluginNames(
 }
 
 /**
+ * 列表展示顺序（纯函数，便于测试）：已禁用（enabled === false）的插件移到末尾，
+ * 其余保持主进程给出的包名升序。分组是稳定的，不重排组内顺序；没有已禁用项时返回原数组
+ * 引用，避免每次渲染产生新列表。enabled 为 null（无 host 半、无法单独禁用）与已启用同组。
+ */
+export function orderPluginsForDisplay(plugins: readonly PluginInfo[]): readonly PluginInfo[] {
+  const active: PluginInfo[] = []
+  const disabled: PluginInfo[] = []
+  for (const plugin of plugins) {
+    if (plugin.enabled === false) disabled.push(plugin)
+    else active.push(plugin)
+  }
+  return disabled.length === 0 ? plugins : [...active, ...disabled]
+}
+
+/**
  * 是否「无法判定」而非「确定不兼容」：不兼容且有新版，但执行检查所用 dsh 版本未知。
  * 主进程对未知版本一律 fail-closed（compatible=false），此处让 UI 区分两义，不谎报结论。
  */

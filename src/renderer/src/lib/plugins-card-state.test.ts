@@ -4,6 +4,7 @@ import {
   classifyCheckOutcome,
   filterPluginNames,
   initialCheckState,
+  orderPluginsForDisplay,
   pluginSourceKey,
   pluginApplyNotice,
   pruneChecks,
@@ -316,5 +317,55 @@ describe('filterPluginNames（按名称/包名过滤）', () => {
 
   it('无命中返回空数组', () => {
     expect(filterPluginNames(list, '不存在的插件')).toEqual([])
+  })
+})
+
+describe('orderPluginsForDisplay（已禁用插件沉到末尾）', () => {
+  const list = [
+    { ...plugin('dsh-alpha', '1.0.0'), enabled: false },
+    plugin('dsh-beta', '1.0.0'),
+    { ...plugin('dsh-gamma', '1.0.0'), enabled: null },
+    { ...plugin('dsh-delta', '1.0.0'), enabled: false }
+  ]
+
+  it('已禁用项移到末尾，其余保持主进程给出的顺序', () => {
+    expect(orderPluginsForDisplay(list).map((item) => item.name)).toEqual([
+      'dsh-beta',
+      'dsh-gamma',
+      'dsh-alpha',
+      'dsh-delta'
+    ])
+  })
+
+  it('分组是稳定的：两组内部都不重排', () => {
+    const ordered = orderPluginsForDisplay([
+      plugin('dsh-b', '1.0.0'),
+      { ...plugin('dsh-a', '1.0.0'), enabled: false },
+      plugin('dsh-c', '1.0.0'),
+      { ...plugin('dsh-z', '1.0.0'), enabled: false }
+    ])
+    expect(ordered.map((item) => item.name)).toEqual(['dsh-b', 'dsh-c', 'dsh-a', 'dsh-z'])
+  })
+
+  it('enabled 为 null（无 host 半、无法单独禁用）与已启用同组，不沉底', () => {
+    const ordered = orderPluginsForDisplay([
+      { ...plugin('dsh-a', '1.0.0'), enabled: null },
+      { ...plugin('dsh-b', '1.0.0'), enabled: false },
+      { ...plugin('dsh-c', '1.0.0'), enabled: null }
+    ])
+    expect(ordered.map((item) => item.name)).toEqual(['dsh-a', 'dsh-c', 'dsh-b'])
+  })
+
+  it('没有已禁用项或列表为空时返回原数组引用（不产生新列表）', () => {
+    const all = [plugin('dsh-b', '1.0.0'), { ...plugin('dsh-a', '1.0.0'), enabled: null }]
+    expect(orderPluginsForDisplay(all)).toBe(all)
+    const empty: PluginInfo[] = []
+    expect(orderPluginsForDisplay(empty)).toBe(empty)
+  })
+
+  it('与过滤组合：命中项里已禁用的仍在末尾', () => {
+    expect(
+      orderPluginsForDisplay(filterPluginNames(list, 'dsh-')).map((item) => item.name)
+    ).toEqual(['dsh-beta', 'dsh-gamma', 'dsh-alpha', 'dsh-delta'])
   })
 })
