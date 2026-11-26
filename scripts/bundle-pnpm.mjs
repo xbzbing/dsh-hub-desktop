@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** 固定的 pnpm 版本：v10 线最后的纯 JS 实现（v11 起为 Rust 原生二进制 + 全局 shim）。 */
-const PNPM_VERSION = '10.34.6'
+const PNPM_VERSION = '10.34.9'
 
 const projectDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 const stageRoot = join(projectDir, 'build', 'pnpm-runtime')
