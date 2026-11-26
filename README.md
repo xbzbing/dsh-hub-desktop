@@ -63,14 +63,14 @@ Windows 安装包当前**未经代码签名**，首次运行会出现 SmartScree
 
 | 层       | 选型                                                                    |
 | -------- | ----------------------------------------------------------------------- |
-| 桌面框架 | Electron 45 + electron-vite 6 + Vite 7                                  |
-| UI       | React 18 + zustand + 手写 CSS（OKLch 明暗双主题）                       |
+| 桌面框架 | Electron 45 + electron-vite 6 + Vite 8                                  |
+| UI       | React 19 + zustand + 手写 CSS（OKLch 明暗双主题）                       |
 | 语言     | TypeScript 5.9（strict + `noUncheckedIndexedAccess`）                   |
 | 校验     | zod 4.6.7（唯一新增运行时依赖）                                         |
 | 测试     | Vitest 5（单测）· Playwright `_electron`（E2E）· 契约测试（对真实网关） |
 | 工具链   | ESLint 10 flat + Prettier 3 · pnpm 12 · Node 22                         |
 
-> 刻意避开 vite 8 / TS 7 / React 19（版本线评审结论，勿升级）。
+> TypeScript 7 暂缓：typescript-eslint 8 的 peer 上限为 `<6.1.0`；版本线与升级依据见 `AGENTS.md` 与 ADR-0022。
 
 ## 架构
 

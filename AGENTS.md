@@ -12,10 +12,10 @@ DSH Hub Desktop 是用于管理多个 dsh 实例的 Electron 桌面应用，支�
 
 ## 技术栈
 
-- Electron 45、electron-vite 6、Vite 7、React 18、TypeScript 5.9
+- Electron 45、electron-vite 6、Vite 8、React 19、TypeScript 5.9
 - Vitest 5、Playwright `_electron`、ESLint 10、Prettier 3、pnpm 12、Node 22
 - zod 4.6.7 是唯一新增的运行时依赖，用于数据校验
-- 保持 vite 7、TypeScript 5 和 React 18 的版本线，不升级到 vite 8、TypeScript 7 或 React 19
+- 保持 TypeScript 5 的版本线（typescript-eslint 8 的 peer 上限是 `<6.1.0`，TS 7 暂不可用）；Vite 8 与 React 19 已按 ADR-0022 升级，跨大版本仍须人工评估并附 ADR
 
 ## 依赖维护
 

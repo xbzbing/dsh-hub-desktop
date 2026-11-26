@@ -46,14 +46,14 @@ Privacy policy: [PRIVACY.md](PRIVACY.md) — this app collects no personal data,
 
 | Layer             | Choice                                                                                 |
 | ----------------- | -------------------------------------------------------------------------------------- |
-| Desktop Framework | Electron 44 + electron-vite 6 + Vite 7                                                 |
-| UI                | React 18 + zustand + hand-written CSS (OKLch light/dark themes)                        |
+| Desktop Framework | Electron 45 + electron-vite 6 + Vite 8                                                 |
+| UI                | React 19 + zustand + hand-written CSS (OKLch light/dark themes)                        |
 | Language          | TypeScript 5.9 (strict + `noUncheckedIndexedAccess`)                                   |
 | Validation        | zod 4.6.7 (sole runtime dependency)                                                    |
 | Testing           | Vitest 5 (unit) · Playwright `_electron` (E2E) · Contract tests (against real gateway) |
 | Toolchain         | ESLint 10 flat + Prettier 3 · pnpm 12 · Node 22                                        |
 
-> Vite 8 / TypeScript 7 / React 19 are intentionally avoided (per version line review — do not upgrade).
+> TypeScript 7 is deferred: typescript-eslint 8 peers cap at `<6.1.0`. Version lines and upgrade rationale are tracked in `AGENTS.md` and ADR-0022.
 
 ## Architecture
 
