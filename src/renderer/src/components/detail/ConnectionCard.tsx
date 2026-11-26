@@ -5,6 +5,17 @@ import type { AuthPhase, InstanceRecord } from '@shared/contracts'
 import type { Translator } from '@shared/i18n'
 import { Icon } from '../../lib/icons'
 import { showAuthActions } from '../../lib/auth-actions'
+import Switch from '../Switch'
+
+/** 本机实例的即时开关：自动拉起与意外退出自动重启。 */
+export interface LocalInstanceSettings {
+  autoStart: boolean
+  autoRestart: boolean
+  /** 保存中：两个开关一起禁用，避免并发写入同一实例。 */
+  saving: boolean
+  onToggleAutoStart: (next: boolean) => void
+  onToggleAutoRestart: (next: boolean) => void
+}
 
 export interface ConnectionCardProps {
   t: Translator
@@ -24,6 +35,8 @@ export interface ConnectionCardProps {
   onLogout: () => void
   /** 打开代理编辑对话框；仅 http 实例提供，其余传输类型没有代理。 */
   onEditProxy?: () => void
+  /** 本机实例的实例管理开关；非本机实例不传，不渲染该小节。 */
+  localSettings?: LocalInstanceSettings
 }
 
 /** 连接方式卡：地址/端口/认证模式等事实文本，登录/复制地址/在浏览器中打开/复制 token/打开目录/断开/登出操作。 */
@@ -40,7 +53,8 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
     onOpenDirectory,
     onDisconnect,
     onLogout,
-    onEditProxy
+    onEditProxy,
+    localSettings
   } = props
   return (
     <div className="card selectable">
@@ -166,6 +180,38 @@ export default function ConnectionCard(props: ConnectionCardProps): ReactNode {
           </button>
         )}
       </div>
+      {/* 实例管理：自动拉起与自动重启是本机实例的即时开关，放在连接操作之后。 */}
+      {localSettings !== undefined && (
+        <div className="mt12" data-testid="detail-instance-management">
+          <div className="runtime-actions-divider" aria-hidden="true" />
+          <div className="card-head card-head--bare mt12">
+            <h3>{t('detail.instanceManagement')}</h3>
+          </div>
+          <div className="mt8" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label className="row" style={{ cursor: 'pointer' }}>
+              <Switch
+                checked={localSettings.autoStart}
+                onChange={localSettings.onToggleAutoStart}
+                disabled={localSettings.saving}
+                ariaLabel={t('detail.autoStartLabel')}
+                testId="detail-autostart"
+              />
+              <span>{t('detail.autoStartLabel')}</span>
+            </label>
+            <label className="row" style={{ cursor: 'pointer' }}>
+              <Switch
+                checked={localSettings.autoRestart}
+                onChange={localSettings.onToggleAutoRestart}
+                disabled={localSettings.saving}
+                ariaLabel={t('detail.autoRestartLabel')}
+                testId="detail-autorestart"
+              />
+              <span>{t('detail.autoRestartLabel')}</span>
+            </label>
+            <span className="hint">{t('detail.autoRestartHint')}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

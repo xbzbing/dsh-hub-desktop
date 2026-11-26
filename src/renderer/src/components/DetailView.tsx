@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { instanceAddress, type ExternalDshWebSnapshot } from '@shared/contracts'
+import {
+  instanceAddress,
+  type ExternalDshWebSnapshot,
+  type PatchInstanceInput
+} from '@shared/contracts'
 import { Icon } from '../lib/icons'
 import { STATUS_INFO, TYPE_INFO, canDisconnectWorkspace, toDisplayStatus } from '../lib/format'
 import { formatActivity } from '../lib/activity-format'
@@ -32,6 +36,7 @@ export default function DetailView(): ReactNode {
   const ensureRecord = useAppStore((state) => state.ensureRecord)
   const select = useAppStore((state) => state.select)
   const refreshList = useAppStore((state) => state.refreshList)
+  const reloadRecord = useAppStore((state) => state.reloadRecord)
   const removeInstance = useAppStore((state) => state.removeInstance)
   const disconnectWorkspace = useAppStore((state) => state.disconnectWorkspace)
   const toast = useAppStore((state) => state.toast)
@@ -54,6 +59,7 @@ export default function DetailView(): ReactNode {
   const [stopping, setStopping] = useState(false)
   const [externalAccess, setExternalAccess] = useState<Record<number, string>>({})
   const [showExternalTokenEditor, setShowExternalTokenEditor] = useState(false)
+  const [savingInstanceSettings, setSavingInstanceSettings] = useState(false)
   const [externalToken, setExternalToken] = useState('')
   // dsh 版本管理仅本机实例：检查更新对比的是本机 npm 镜像，远程实例版本 hub 无从得知也不受 hub 管。
   const versionControl = useDshVersionControl(
@@ -295,6 +301,37 @@ export default function DetailView(): ReactNode {
     )
   }
 
+  /** 实例管理开关即时落盘；成功后刷新列表与详情缓存，失败保留原值并提示。 */
+  const updateLocalInstanceSetting = async (
+    patch: Pick<PatchInstanceInput, 'autoStart' | 'autoRestart'>
+  ): Promise<void> => {
+    if (record.transport !== 'local' || savingInstanceSettings) return
+    setSavingInstanceSettings(true)
+    try {
+      const result = await window.dshHub?.instances.update(record.id, patch)
+      if (result && !result.ok) {
+        toast('err', t('detail.instanceSettingsSaveFailed'), localizeIpcMessage(t, result.message))
+        return
+      }
+      await Promise.all([refreshList(), reloadRecord(record.id)])
+    } finally {
+      setSavingInstanceSettings(false)
+    }
+  }
+
+  const localSettings =
+    record.transport === 'local'
+      ? {
+          autoStart: record.autoStart,
+          autoRestart: record.autoRestart,
+          saving: savingInstanceSettings,
+          onToggleAutoStart: (next: boolean) =>
+            void updateLocalInstanceSetting({ autoStart: next }),
+          onToggleAutoRestart: (next: boolean) =>
+            void updateLocalInstanceSetting({ autoRestart: next })
+        }
+      : undefined
+
   return (
     <section className="detail-page" data-od-id="view-detail" data-testid="view-detail">
       <div className="row-between" style={{ alignItems: 'flex-start' }}>
@@ -356,6 +393,7 @@ export default function DetailView(): ReactNode {
           }
           onLogout={() => void logout()}
           onEditProxy={record.transport === 'http' ? () => setShowProxy(true) : undefined}
+          localSettings={localSettings}
         />
 
         {/* 凭据默认持久化，用户可在实例详情中显式取消。 */}

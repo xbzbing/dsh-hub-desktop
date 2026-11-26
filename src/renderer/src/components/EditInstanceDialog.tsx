@@ -15,7 +15,6 @@ import { useAppStore } from '../store'
 import { Modal } from './Modal'
 import ProxyFields from './ProxyFields'
 import Select from './Select'
-import Switch from './Switch'
 
 /**
  * 编辑当前 transport 支持的实例字段。transport 不可变更；如需变更则删除后重建。
@@ -48,12 +47,6 @@ export default function EditInstanceDialog({
   const [profile, setProfile] = useState(record.transport === 'local' ? (record.profile ?? '') : '')
   const [launcher, setLauncher] = useState<LocalLauncher>(
     record.transport === 'local' ? (record.launcher ?? 'dsh') : 'dsh'
-  )
-  const [autoStart, setAutoStart] = useState(
-    record.transport === 'local' ? record.autoStart : false
-  )
-  const [autoRestart, setAutoRestart] = useState(
-    record.transport === 'local' ? record.autoRestart : false
   )
   const [host, setHost] = useState(record.transport === 'ssh' ? record.host : '')
   const [username, setUsername] = useState(record.transport === 'ssh' ? record.username : '')
@@ -113,8 +106,6 @@ export default function EditInstanceDialog({
       patch.port = port.trim() === '' ? null : Number(port.trim())
       patch.profile = profile.trim() === '' ? null : profile.trim()
       patch.launcher = launcher === 'dsh' ? null : launcher
-      patch.autoStart = autoStart
-      patch.autoRestart = autoRestart
     } else if (record.transport === 'ssh') {
       if (host.trim() === '' || username.trim() === '' || remotePort.trim() === '') {
         toast('err', t('edit.sshRequired'))
@@ -245,29 +236,6 @@ export default function EditInstanceDialog({
               testId="edit-launcher"
             />
             <span className="hint">{t('edit.launcherHint')}</span>
-          </div>
-          {/* 两个即时二元状态同处一格：开关在前、文案在后，整行可点。
-              自动重启的说明只写在开关下方，避免占满整行宽度。 */}
-          <div style={{ alignSelf: 'center' }}>
-            <label className="row" style={{ cursor: 'pointer' }}>
-              <Switch
-                checked={autoStart}
-                onChange={setAutoStart}
-                ariaLabel={t('edit.autoStartLabel')}
-                testId="edit-autostart"
-              />
-              <span>{t('edit.autoStartLabel')}</span>
-            </label>
-            <label className="row mt8" style={{ cursor: 'pointer' }}>
-              <Switch
-                checked={autoRestart}
-                onChange={setAutoRestart}
-                ariaLabel={t('edit.autoRestartLabel')}
-                testId="edit-autorestart"
-              />
-              <span>{t('edit.autoRestartLabel')}</span>
-            </label>
-            <span className="hint">{t('edit.autoRestartHint')}</span>
           </div>
           {/* 安装镜像是应用级设置（dsh 下载与插件默认源都跟它走），跨两列摆放并明示作用范围。 */}
           <div className="field" style={{ gridColumn: '1 / -1' }}>

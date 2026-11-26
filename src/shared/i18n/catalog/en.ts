@@ -359,6 +359,12 @@ export const EN_MESSAGES = {
   'detail.startFailed': 'Failed to start',
   'detail.overview': 'Overview',
   'detail.connection': 'Transport',
+  'detail.instanceManagement': 'Instance management',
+  'detail.autoStartLabel': 'Start automatically with the app',
+  'detail.autoRestartLabel': 'Restart automatically after an unexpected exit',
+  'detail.autoRestartHint':
+    'Retries with 1s, 2s, 4s… backoff (capped at 30s). Stopping the instance manually cancels pending restarts.',
+  'detail.instanceSettingsSaveFailed': 'Failed to save instance settings',
   'detail.loopback': 'local loopback',
   'detail.tunnelEncrypted': 'encrypted tunnel',
   'detail.direct': 'direct',
@@ -668,10 +674,6 @@ export const EN_MESSAGES = {
   'edit.profileInvalid': 'Profile must be a relative path without .. or a leading -',
   'edit.registryInvalid':
     'The mirror must be an https URL (loopback http is allowed for local mirrors)',
-  'edit.autoStartLabel': 'Start automatically with the app',
-  'edit.autoRestartLabel': 'Restart automatically after an unexpected exit',
-  'edit.autoRestartHint':
-    'Retries with 1s, 2s, 4s… backoff (capped at 30s). Stopping the instance manually cancels pending restarts.',
   'edit.hostLabel': 'Host',
   'edit.usernameLabel': 'Username',
   'edit.remotePortLabel': 'Remote port',

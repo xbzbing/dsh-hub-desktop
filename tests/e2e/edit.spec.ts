@@ -68,6 +68,8 @@ test('明文警告显示为短标签，完整详情通过 data-tip 提供', asyn
   await expect(win.getByTestId('view-detail')).toBeVisible()
   // 端点不可达的远程实例没有已连接的工作区，详情页不提供「断开工作区」。
   await expect(win.getByTestId('disconnect-view-btn')).toHaveCount(0)
+  // 实例管理只属于本机实例，HTTP 实例不渲染该小节。
+  await expect(win.getByTestId('detail-instance-management')).toHaveCount(0)
 
   const pill = win.getByTestId('cleartext-warning')
   await expect(pill).toBeVisible()
@@ -145,29 +147,9 @@ test('本地实例可编辑，端口留空时回到自动分配', async () => {
   const portInput = win.getByTestId('edit-port')
   await expect(portInput).toBeVisible()
   await expect(win.getByTestId('edit-launcher')).toBeVisible()
-  // 自动拉起是即时二元状态，用 role=switch 的开关表达；包裹它的 label 不应让一次点击触发两次。
-  const autoStart = win.getByTestId('edit-autostart')
-  await expect(autoStart).toHaveAttribute('role', 'switch')
-  await expect(autoStart).toHaveAttribute('aria-checked', 'false')
-  await autoStart.click()
-  await expect(autoStart).toHaveAttribute('aria-checked', 'true')
-  await autoStart.click()
-  await expect(autoStart).toHaveAttribute('aria-checked', 'false')
-  // 点文字也能切换：label 把点击转发给开关，命中区不止 34px 的小胶囊。
-  await win.getByText('应用启动时自动拉起', { exact: true }).click()
-  await expect(autoStart).toHaveAttribute('aria-checked', 'true')
-  await autoStart.click()
-  await expect(autoStart).toHaveAttribute('aria-checked', 'false')
-  // 自动重启是独立的即时开关：点文字同样能切换，保存后随实例记录落盘。
-  const autoRestart = win.getByTestId('edit-autorestart')
-  await expect(autoRestart).toHaveAttribute('role', 'switch')
-  await expect(autoRestart).toHaveAttribute('aria-checked', 'false')
-  await autoRestart.click()
-  await expect(autoRestart).toHaveAttribute('aria-checked', 'true')
-  await win.getByText('进程意外退出时自动重启', { exact: true }).click()
-  await expect(autoRestart).toHaveAttribute('aria-checked', 'false')
-  await autoRestart.click()
-  await expect(autoRestart).toHaveAttribute('aria-checked', 'true')
+  // 自动拉起/自动重启已迁到实例详情，编辑弹窗不再出现这两个开关。
+  await expect(win.getByTestId('edit-autostart')).toHaveCount(0)
+  await expect(win.getByTestId('edit-autorestart')).toHaveCount(0)
   await pickOption(win, 'edit-launcher', 'dush')
   await portInput.fill('30567')
   await win.getByTestId('edit-name').fill('改名后的本地实例')
@@ -183,14 +165,12 @@ test('本地实例可编辑，端口留空时回到自动分配', async () => {
       name: string
       port: number | null
       launcher: string | null
-      autoRestart: boolean
     }>
   }
   const edited = file.instances.find((item) => item.name === '改名后的本地实例')
   expect(edited).toBeDefined()
   expect(edited?.port).toBe(30567)
   expect(edited?.launcher).toBe('dush')
-  expect(edited?.autoRestart).toBe(true)
 
   // 再编辑:端口清空 → null(回到自动分配)
   await win.getByTestId('edit-btn').click()
@@ -296,4 +276,46 @@ test('下拉菜单：浮层挂 body、键盘上下选择、Esc 只收菜单', as
   await expect(dialog).toBeVisible()
   await win.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
+})
+
+test('实例详情·连接方式下方的实例管理开关即时落盘', async () => {
+  await win.getByTestId('brand').click()
+  await expect(win.getByTestId('instances-table')).toBeVisible()
+  await win.getByTestId('instances-table').getByText('改名后的本地实例', { exact: true }).click()
+  const workspaceBack = win.getByTestId('workspace-back-btn')
+  if (await workspaceBack.isVisible()) await workspaceBack.click()
+  await expect(win.getByTestId('view-detail')).toBeVisible()
+
+  const section = win.getByTestId('detail-instance-management')
+  await expect(section).toBeVisible()
+  await expect(section).toContainText('实例管理')
+
+  const autoStart = win.getByTestId('detail-autostart')
+  const autoRestart = win.getByTestId('detail-autorestart')
+  await expect(autoStart).toHaveAttribute('role', 'switch')
+  await expect(autoStart).toHaveAttribute('aria-checked', 'false')
+  await expect(autoRestart).toHaveAttribute('aria-checked', 'false')
+  await win.screenshot({
+    path: join(SHOT_DIR, 'detail-instance-management.png'),
+    animations: 'disabled'
+  })
+
+  const localRecord = async (): Promise<
+    { autoStart: boolean; autoRestart: boolean } | undefined
+  > => {
+    const file = JSON.parse(await readFile(REGISTRY_FILE, 'utf8')) as {
+      instances: Array<{ name: string; autoStart: boolean; autoRestart: boolean }>
+    }
+    return file.instances.find((item) => item.name === '改名后的本地实例')
+  }
+
+  await autoStart.click()
+  await expect(autoStart).toHaveAttribute('aria-checked', 'true')
+  await expect.poll(async () => (await localRecord())?.autoStart).toBe(true)
+
+  // 保存结束后两个开关一起解禁；点文案也能切换，命中区不止开关胶囊。
+  await expect(autoRestart).toBeEnabled()
+  await section.getByText('进程意外退出时自动重启', { exact: true }).click()
+  await expect(autoRestart).toHaveAttribute('aria-checked', 'true')
+  await expect.poll(async () => (await localRecord())?.autoRestart).toBe(true)
 })
