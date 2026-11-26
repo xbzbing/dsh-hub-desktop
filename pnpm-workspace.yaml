@@ -16,3 +16,4 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - electron@45.3.4
   - npm@12.2.3
+  - '@types/node@26.6.11'
