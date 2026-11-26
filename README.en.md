@@ -25,6 +25,7 @@ Privacy policy: [PRIVACY.md](PRIVACY.md) — this app collects no personal data,
   - `local`: Spawn local processes
   - `ssh`: Tunnels with exponential backoff watchdog for auto-reconnection
   - `http/https`: Remote direct connection
+- **Local Instance Auto-Restart**: Enable "Restart automatically after an unexpected exit" per instance in the edit dialog; restarts back off 1s → 2s → 4s… (capped at 30s), reset after 60s of stable uptime, and stop with a diagnostic after 5 consecutive start failures. Manual stop, instance deletion, adopting an external process, or quitting the app cancels any pending restart
 - **Integrated Authentication**: Gateway five-state detection (login page / OTP / onboarding / API 401 / no auth required). Auth panel with full state flow (password → 6-digit OTP / backup codes → lockout countdown). **Silent login with saved passwords** (after checking "Remember password", no re-entry needed on restart/session expiry — passwords never cross process boundaries)
 - **WebView Integration**: Partitioned cookie injection (inject before loadURL), 302/401 request interception, session expiry signal-driven re-authentication
 - **Find in Page**: Press ⌘/Ctrl+F (or Edit → Find) while a workspace is open to search from the top bar; live match count, previous/next navigation, and Esc to close and clear highlights. When the page handles the shortcut itself (e.g. a file preview or diff inside dsh), the page takes precedence; the Hub bar opens only when the page leaves it unhandled

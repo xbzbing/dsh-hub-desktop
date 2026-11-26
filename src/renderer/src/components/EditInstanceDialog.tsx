@@ -52,6 +52,9 @@ export default function EditInstanceDialog({
   const [autoStart, setAutoStart] = useState(
     record.transport === 'local' ? record.autoStart : false
   )
+  const [autoRestart, setAutoRestart] = useState(
+    record.transport === 'local' ? record.autoRestart : false
+  )
   const [host, setHost] = useState(record.transport === 'ssh' ? record.host : '')
   const [username, setUsername] = useState(record.transport === 'ssh' ? record.username : '')
   const [remotePort, setRemotePort] = useState(
@@ -111,6 +114,7 @@ export default function EditInstanceDialog({
       patch.profile = profile.trim() === '' ? null : profile.trim()
       patch.launcher = launcher === 'dsh' ? null : launcher
       patch.autoStart = autoStart
+      patch.autoRestart = autoRestart
     } else if (record.transport === 'ssh') {
       if (host.trim() === '' || username.trim() === '' || remotePort.trim() === '') {
         toast('err', t('edit.sshRequired'))
@@ -242,17 +246,29 @@ export default function EditInstanceDialog({
             />
             <span className="hint">{t('edit.launcherHint')}</span>
           </div>
-          {/* 自动拉起是即时二元状态：开关在前、文案在后，整行可点，两者同属一个命中区。
-              alignSelf 收窄命中区，只覆盖控件这一行，不吃掉相邻字段的空白高度。 */}
-          <label className="row" style={{ cursor: 'pointer', alignSelf: 'center' }}>
-            <Switch
-              checked={autoStart}
-              onChange={setAutoStart}
-              ariaLabel={t('edit.autoStartLabel')}
-              testId="edit-autostart"
-            />
-            <span>{t('edit.autoStartLabel')}</span>
-          </label>
+          {/* 两个即时二元状态同处一格：开关在前、文案在后，整行可点。
+              自动重启的说明只写在开关下方，避免占满整行宽度。 */}
+          <div style={{ alignSelf: 'center' }}>
+            <label className="row" style={{ cursor: 'pointer' }}>
+              <Switch
+                checked={autoStart}
+                onChange={setAutoStart}
+                ariaLabel={t('edit.autoStartLabel')}
+                testId="edit-autostart"
+              />
+              <span>{t('edit.autoStartLabel')}</span>
+            </label>
+            <label className="row mt8" style={{ cursor: 'pointer' }}>
+              <Switch
+                checked={autoRestart}
+                onChange={setAutoRestart}
+                ariaLabel={t('edit.autoRestartLabel')}
+                testId="edit-autorestart"
+              />
+              <span>{t('edit.autoRestartLabel')}</span>
+            </label>
+            <span className="hint">{t('edit.autoRestartHint')}</span>
+          </div>
           {/* 安装镜像是应用级设置（dsh 下载与插件默认源都跟它走），跨两列摆放并明示作用范围。 */}
           <div className="field" style={{ gridColumn: '1 / -1' }}>
             <label htmlFor="edit-registry">{t('wizard.registryLabel')}</label>

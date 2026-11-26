@@ -30,6 +30,13 @@ import { createLauncher, type LaunchOptions } from './launch'
 import { createReadyMonitor } from './local-runtime-ready'
 import { createUpgradeOrchestrator } from './local-runtime-upgrade'
 import { defaultNodeInvocation, resolveNodeFor } from './node-resolution'
+import {
+  initialRestartProgress,
+  markRestartReady,
+  planUnexpectedExit,
+  type RestartPolicy,
+  type RestartProgress
+} from './local-restart-policy'
 
 /** dsh 就绪输出：`dsh web: http://127.0.0.1:52300/?token=...` */
 const READY_PATTERN = /dsh\s+web:\s+(https?:\/\/\S+)/i
@@ -37,9 +44,14 @@ const READY_PATTERN = /dsh\s+web:\s+(https?:\/\/\S+)/i
 /** 诊断用的日志环形缓冲行数 */
 const LOG_BUFFER_LINES = 80
 
+/** 自动重启等待时长的人读文案；生产值在 1–30 秒之间。 */
+function formatRestartDelay(ms: number): string {
+  return ms >= 1_000 ? `${Math.round(ms / 1_000)} 秒` : `${Math.round(ms)} 毫秒`
+}
+
 export interface LocalRuntimeOptions extends LaunchOptions {
-  /** 实例注册表；升级编排完成后回写 dshVersion。 */
-  store: Pick<InstanceStore, 'update'>
+  /** 实例注册表；升级编排完成后回写 dshVersion，自动重启前读取最新配置。 */
+  store: Pick<InstanceStore, 'update' | 'get'>
   /** 缺省用 Electron 自带 Node（ELECTRON_RUN_AS_NODE）执行 dsh 入口 */
   nodeInvocation?: { command: string; args: string[]; env: NodeJS.ProcessEnv }
   spawnImpl?: SpawnLike
@@ -64,6 +76,11 @@ export interface LocalRuntimeOptions extends LaunchOptions {
   healthProbeRetries?: number
   healthProbeRetryMs?: number
   now?: () => number
+  /**
+   * 意外退出自动重启的退避参数（毫秒）。缺省与 SSH 隧道同口径：
+   * 1s 起步、翻倍到 30s 封顶、稳定运行 60s 后重置；连续 5 次未能就绪则放弃。
+   */
+  restartPolicy?: Partial<RestartPolicy>
   /**
    * 为本机（`path` 来源）启动器解析一个真实 node 可执行文件；缺省按「同目录 → PATH」探测。
    * 注入以便测试固定该解析结果（默认实现要读真实文件系统）。
@@ -147,6 +164,12 @@ export interface LocalRuntimeManager {
   adopt(instance: LocalInstance, external: AdoptTarget): Promise<void>
 }
 
+/** 每个实例的自动重启进度与待执行定时器。 */
+interface RestartRuntime {
+  timer: NodeJS.Timeout | null
+  progress: RestartProgress
+}
+
 /** 接管目标(来自 external-dsh 的只读探测;端口必须已确定) */
 export interface AdoptTarget {
   pid: number
@@ -180,8 +203,18 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   const healthProbeRetryMs = options.healthProbeRetryMs ?? 500
   const portProbe = options.portProbe
   const now = options.now ?? (() => Date.now())
+  const restartPolicy: RestartPolicy = {
+    baseMs: options.restartPolicy?.baseMs ?? 1_000,
+    maxMs: options.restartPolicy?.maxMs ?? 30_000,
+    stableMs: options.restartPolicy?.stableMs ?? 60_000,
+    maxStartFailures: options.restartPolicy?.maxStartFailures ?? 5
+  }
 
   const entries = new Map<string, Entry>()
+  /** 每个实例的自动重启进度；退出、就绪与显式启动时更新。 */
+  const restartStates = new Map<string, RestartRuntime>()
+  /** stopAll 之后为 true：不再安排任何自动重启（应用正在退出）。 */
+  let disposed = false
   const upgradeListeners = new Set<(event: DshVersionProgressEvent) => void>()
   /** 正在升级的实例；升级结束（含失败）即释放。 */
   const upgradingIds = new Set<string>()
@@ -213,7 +246,132 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
   /** 日志环形缓冲：切行规则与 SSH 隧道共用（见 main/log-ring）。 */
   const logRing = createLogRing({ maxLines: LOG_BUFFER_LINES })
   const bus = createStatusBus(now, 'local-runtime')
-  const { emit, onStatus, statusOf } = bus
+  const { emit: emitBus, onStatus, statusOf } = bus
+
+  function restartRuntimeOf(id: string): RestartRuntime {
+    let runtime = restartStates.get(id)
+    if (runtime === undefined) {
+      runtime = { timer: null, progress: initialRestartProgress(restartPolicy) }
+      restartStates.set(id, runtime)
+    }
+    return runtime
+  }
+
+  /** 取消待执行的自动重启并清空退避与计数；没有状态时为空操作。 */
+  function resetRestartProgress(id: string): void {
+    const runtime = restartStates.get(id)
+    if (runtime === undefined) return
+    if (runtime.timer !== null) {
+      clearTimeout(runtime.timer)
+      runtime.timer = null
+    }
+    runtime.progress = initialRestartProgress(restartPolicy)
+  }
+
+  /**
+   * 状态发布 + 自动重启进度维护：running 记录稳定计时起点并清零启动失败计数。
+   *
+   * `readyAt` 只在 running 时刷新、由退出决策读取，因此这里不能在 error/starting
+   * 时清掉它 —— 否则「跑满 60 秒后崩溃」会被误判成未稳定。
+   */
+  function emit(
+    id: string,
+    status: InstanceStatusEvent['status'],
+    extra: Partial<InstanceStatusEvent> = {}
+  ): void {
+    const previous = statusOf(id)?.status
+    emitBus(id, status, extra)
+    // 只在「进入 running」时记录稳定起点；重复 start 重播 running 不刷新它，
+    // 否则运行十分钟的实例会被当成刚就绪，崩溃后退避无法重置。
+    if (status === 'running' && previous !== 'running') {
+      const runtime = restartRuntimeOf(id)
+      runtime.progress = markRestartReady(runtime.progress, now())
+    }
+  }
+
+  /**
+   * 非停止原因的子进程退出：发布失败状态，并在实例开启自动重启时安排下一次拉起。
+   *
+   * 配置在退出时重新读注册表：运行中关掉开关后，本次崩溃就不该再重启。
+   * 读取注册表是异步的，期间的退出/删除在完成后会再次检查。
+   */
+  function handleUnexpectedExit(
+    id: string,
+    exit: {
+      code: number | null
+      signal: NodeJS.Signals | null
+      wasReady: boolean
+      logTail: string | null
+    }
+  ): void {
+    if (disposed) return
+    const baseDetail = `进程意外退出（code=${exit.code ?? 'null'} signal=${exit.signal ?? 'null'}）${
+      exit.logTail !== null ? `；日志 ${exit.logTail}` : ''
+    }`
+    const runtime = restartRuntimeOf(id)
+    const generation = instanceGeneration.get(id) ?? 0
+    void (async () => {
+      let restartable = false
+      try {
+        const record = await options.store.get(id)
+        restartable = record?.transport === 'local' && record.autoRestart
+      } catch (error) {
+        // 读注册表失败按「不可重启」处理：宁可停在失败态，也不拿陈旧配置盲目拉起。
+        console.error('[local-runtime] 读取实例记录失败，跳过自动重启：', error)
+      }
+      if (disposed) return
+      // 读取期间用户已停止（取消点登记）或已发起新的启动：旧退出的状态与重启都作废，
+      // 否则迟到的 error 会覆盖 stopped/starting，甚至把用户刚停掉的实例重新拉起。
+      if ((cancelGeneration.get(id) ?? -1) >= generation) return
+      if ((instanceGeneration.get(id) ?? 0) !== generation) return
+      if (!restartable) {
+        runtime.progress = initialRestartProgress(restartPolicy)
+        emit(id, 'error', { detail: baseDetail })
+        return
+      }
+      const plan = planUnexpectedExit(runtime.progress, exit.wasReady, restartPolicy, now())
+      runtime.progress = plan.progress
+      if (plan.kind === 'give-up') {
+        emit(id, 'error', {
+          detail: `${baseDetail}；已连续 ${plan.failures} 次未能就绪，停止自动重启，请手动启动排查`
+        })
+        return
+      }
+      runtime.timer = setTimeout(() => {
+        runtime.timer = null
+        void autoRestart(id).catch((error: unknown) =>
+          console.error('[local-runtime] 自动重启失败：', error)
+        )
+      }, plan.delayMs)
+      runtime.timer.unref?.()
+      emit(id, 'error', {
+        detail: `${baseDetail}；${formatRestartDelay(plan.delayMs)}后自动重启`
+      })
+    })().catch((error: unknown) => {
+      console.error('[local-runtime] 自动重启决策失败：', error)
+      emit(id, 'error', { detail: baseDetail })
+    })
+  }
+
+  /** 定时器到点后按注册表最新配置拉起；期间被停止（取消点登记）则放弃。 */
+  async function autoRestart(id: string): Promise<void> {
+    if (disposed) return
+    if ((cancelGeneration.get(id) ?? -1) >= (instanceGeneration.get(id) ?? 0)) return
+    let record: LocalInstance | null = null
+    try {
+      const current = await options.store.get(id)
+      record = current?.transport === 'local' && current.autoRestart ? current : null
+    } catch (error) {
+      console.error('[local-runtime] 自动重启前读取实例记录失败：', error)
+    }
+    if (disposed) return
+    if (record === null) {
+      emit(id, 'stopped', { detail: '自动重启已取消（实例已删除或已关闭自动重启）' })
+      return
+    }
+    if ((cancelGeneration.get(id) ?? -1) >= (instanceGeneration.get(id) ?? 0)) return
+    await startInstance(record)
+  }
 
   /** 就绪续体（校验 URL → 健康探测 → 发布 running，见 local-runtime-ready）。 */
   const handleReady = createReadyMonitor({
@@ -311,8 +469,58 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     loginPath,
     readyTimeoutMs,
     watchStdout,
-    killTree
+    killTree,
+    onUnexpectedExit: handleUnexpectedExit
   })
+
+  /** 一次实际启动（含排队、安装、端口分配与 spawn）；自动重启也走这条路径。 */
+  async function startInstance(instance: LocalInstance): Promise<void> {
+    const id = instance.id
+    const existing = entries.get(id)
+    if (existing && !existing.stopping) {
+      // 重复 start 只重播一次当前状态,不重复 spawn
+      emit(id, existing.ready ? 'running' : 'starting', {
+        version: existing.version,
+        runtimeSource: existing.runtimeSource,
+        ...(existing.port !== null ? { port: existing.port } : {}),
+        ...(existing.command !== undefined ? { command: existing.command } : {}),
+        detail: '实例已在运行，忽略重复启动'
+      })
+      return
+    }
+
+    // 新的启动请求：递增 generation（不删除旧 cancel，旧 queued task 检查自己的 generation）
+    const gen = (instanceGeneration.get(id) ?? 0) + 1
+    instanceGeneration.set(id, gen)
+    pendingStartCounts.set(id, (pendingStartCounts.get(id) ?? 0) + 1)
+    try {
+      const launch = await resolveLaunch(id, gen, instance)
+      if (launch === null) return
+      // 目标版本已定、尚未 spawn：与运行时版本绑定的准备（如插件兼容性核对）在此进行；
+      // 失败只记日志，绝不阻断启动——插件问题不该让实例起不来。
+      if (beforeSpawn !== undefined) {
+        try {
+          await beforeSpawn(instance, launch.version)
+        } catch (error) {
+          console.error('[runtime] 启动前准备失败（已忽略，不影响启动）：', error)
+        }
+      }
+      // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
+      // 关键:串行段要等到「就绪或退出」才结束 —— 端口探测与 dsh 实际绑定之间存在竞态窗口,
+      // 若只等 spawn 就放行,两个实例会抢同一端口,后启动的那个会崩溃。
+      const outcome = await enqueueStart(() => spawnAndWatch(id, gen, instance, launch))
+      if (outcome === 'cancelled') {
+        emit(id, 'stopped', { detail: '已取消启动' })
+        return
+      }
+    } catch (error) {
+      emit(id, 'error', {
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    } finally {
+      decrementPendingStart(id)
+    }
+  }
 
   /** dsh 版本升级编排（判据与二次确认流程见 local-runtime-upgrade）。 */
   const upgradeInstance = createUpgradeOrchestrator({
@@ -378,61 +586,24 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     },
 
     async start(instance) {
-      const id = instance.id
-      const existing = entries.get(id)
-      if (existing && !existing.stopping) {
-        // 重复 start 只重播一次当前状态,不重复 spawn
-        emit(id, existing.ready ? 'running' : 'starting', {
-          version: existing.version,
-          runtimeSource: existing.runtimeSource,
-          ...(existing.port !== null ? { port: existing.port } : {}),
-          ...(existing.command !== undefined ? { command: existing.command } : {}),
-          detail: '实例已在运行，忽略重复启动'
-        })
-        return
-      }
-
-      // 新的启动请求：递增 generation（不删除旧 cancel，旧 queued task 检查自己的 generation）
-      const gen = (instanceGeneration.get(id) ?? 0) + 1
-      instanceGeneration.set(id, gen)
-      pendingStartCounts.set(id, (pendingStartCounts.get(id) ?? 0) + 1)
-      try {
-        const launch = await resolveLaunch(id, gen, instance)
-        if (launch === null) return
-        // 目标版本已定、尚未 spawn：与运行时版本绑定的准备（如插件兼容性核对）在此进行；
-        // 失败只记日志，绝不阻断启动——插件问题不该让实例起不来。
-        if (beforeSpawn !== undefined) {
-          try {
-            await beforeSpawn(instance, launch.version)
-          } catch (error) {
-            console.error('[runtime] 启动前准备失败（已忽略，不影响启动）：', error)
-          }
-        }
-        // 启动阶段串行(含安装):避免多实例并发首启时互相干扰(同版本重复安装/并发冷启动)。
-        // 关键:串行段要等到「就绪或退出」才结束 —— 端口探测与 dsh 实际绑定之间存在竞态窗口,
-        // 若只等 spawn 就放行,两个实例会抢同一端口,后启动的那个会崩溃。
-        const outcome = await enqueueStart(() => spawnAndWatch(id, gen, instance, launch))
-        if (outcome === 'cancelled') {
-          emit(id, 'stopped', { detail: '已取消启动' })
-          return
-        }
-      } catch (error) {
-        emit(id, 'error', {
-          detail: error instanceof Error ? error.message : String(error)
-        })
-      } finally {
-        decrementPendingStart(id)
-      }
+      // 显式启动是用户意图：清掉待执行的自动重启，退避与失败计数从零开始。
+      resetRestartProgress(instance.id)
+      await startInstance(instance)
     },
 
     async stop(id) {
+      // 待执行的自动重启没有条目可停，必须在这里取消，否则 stop 之后仍会被拉起。
+      const pendingRestart = (restartStates.get(id)?.timer ?? null) !== null
+      resetRestartProgress(id)
       const entry = entries.get(id)
       // 无论有无条目都登记取消意图:排队中尚未 spawn 的重复 start 也会被一并取消,
       // 否则「start→start→stop」序列下,后一个排队任务会在停止后把实例重新拉起
       // Generation-based:记录当前 generation 作为取消点
       cancelGeneration.set(id, instanceGeneration.get(id) ?? 0)
       if (!entry) {
-        emit(id, 'stopped', { detail: '实例未在运行' })
+        emit(id, 'stopped', {
+          detail: pendingRestart ? '已取消待执行的自动重启' : '实例未在运行'
+        })
         return
       }
       // 外部接管(hub 没 spawn 过):只断开接管 —— 用户自己的 dsh web 进程必须留着,
@@ -490,6 +661,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
         })
         return
       }
+      // 接管的是用户自己的进程：取消此前可能排队的自动重启，避免又拉起一个 hub 副本。
+      resetRestartProgress(id)
       const url = external.url ?? `http://127.0.0.1:${external.port}`
       entries.set(id, {
         child: null,
@@ -515,6 +688,9 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntimeMa
     },
 
     async stopAll() {
+      // 应用退出：先封死自动重启，再等待在途重启的定时器与启动任务作废。
+      disposed = true
+      for (const id of restartStates.keys()) resetRestartProgress(id)
       // entries 以外，安装/端口分配/全局队列中的启动任务也必须作废，防止退出后再 spawn。
       const ids = new Set([...entries.keys(), ...pendingStartCounts.keys()])
       await Promise.all([...ids].map((id) => this.stop(id)))

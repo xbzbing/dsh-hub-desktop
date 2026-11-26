@@ -629,6 +629,8 @@ export const ZH_MESSAGES = {
   'edit.profileInvalid': 'Profile 只能使用相对路径，且不能包含 .. 或以 - 开头',
   'edit.registryInvalid': '镜像地址必须是 https URL（本地镜像允许回环 http）',
   'edit.autoStartLabel': '应用启动时自动拉起',
+  'edit.autoRestartLabel': '进程意外退出时自动重启',
+  'edit.autoRestartHint': '按 1s、2s、4s… 退避（上限 30s）；手动停止会取消待执行的重启。',
   'edit.hostLabel': '主机',
   'edit.usernameLabel': '用户名',
   'edit.remotePortLabel': '远端端口',

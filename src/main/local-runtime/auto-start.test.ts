@@ -18,6 +18,7 @@ function local(overrides: Partial<LocalInstance> = {}): LocalInstance {
     useDefaultSpace: false,
     runCommand: null,
     autoStart: true,
+    autoRestart: false,
     createdAt: ISO,
     updatedAt: ISO,
     ...overrides

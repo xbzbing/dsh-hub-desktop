@@ -105,7 +105,9 @@ export const LocalInstanceSchema = z.object({
   /** 最近一次启动的命令行；启动成功后由状态事件回写。null = 尚未由 Hub 启动过。 */
   runCommand: z.string().trim().max(2048).nullable().default(null),
   /** 应用启动时自动拉起 */
-  autoStart: z.boolean().default(false)
+  autoStart: z.boolean().default(false),
+  /** 进程意外退出时自动重新拉起 */
+  autoRestart: z.boolean().default(false)
 })
 
 export const SshInstanceSchema = z.object({
@@ -194,6 +196,7 @@ export const CreateInstanceInputSchema = z.discriminatedUnion('transport', [
       externalPid: z.number().int().positive().optional(),
       externalAccess: z.string().trim().min(1).max(4096).optional(),
       autoStart: z.boolean().optional(),
+      autoRestart: z.boolean().optional(),
       /** 复用 Hub 已有隔离空间；主进程会验证它确实存在且没有已关联实例。 */
       existingSpaceId: z.uuid().optional()
     })
@@ -261,6 +264,7 @@ export const PatchInstanceSchema = z
     useDefaultSpace: z.boolean().optional(),
     runCommand: z.string().trim().max(2048).nullable().optional(),
     autoStart: z.boolean().optional(),
+    autoRestart: z.boolean().optional(),
     // —— ssh ——
     host: SSH_HOST_SCHEMA.optional(),
     username: z.string().trim().min(1).max(128).optional(),

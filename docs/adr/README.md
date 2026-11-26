@@ -30,3 +30,4 @@
 | [0018](./0018-heuristic-block-overridable.md) | 启发式检查的 blocked 允许确认后安装；结构性失败仍硬阻止 | 已采纳（部分取代 0017 覆盖口径） |
 | [0019](./0019-i18n-catalog-split-by-language.md) | i18n 文案按语言拆分，漏译仍由 `satisfies` 保证编译期失败 | 已采纳 |
 | [0020](./0020-github-actions-release.md) | 发布主路径迁到 GitHub Actions（Windows runner，Draft 停点） | 已采纳 |
+| [0021](./0021-local-instance-auto-restart.md) | 本机实例意外退出按退避自动重启（按实例开关） | 已采纳 |

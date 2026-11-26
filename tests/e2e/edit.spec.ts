@@ -158,6 +158,16 @@ test('本地实例可编辑，端口留空时回到自动分配', async () => {
   await expect(autoStart).toHaveAttribute('aria-checked', 'true')
   await autoStart.click()
   await expect(autoStart).toHaveAttribute('aria-checked', 'false')
+  // 自动重启是独立的即时开关：点文字同样能切换，保存后随实例记录落盘。
+  const autoRestart = win.getByTestId('edit-autorestart')
+  await expect(autoRestart).toHaveAttribute('role', 'switch')
+  await expect(autoRestart).toHaveAttribute('aria-checked', 'false')
+  await autoRestart.click()
+  await expect(autoRestart).toHaveAttribute('aria-checked', 'true')
+  await win.getByText('进程意外退出时自动重启', { exact: true }).click()
+  await expect(autoRestart).toHaveAttribute('aria-checked', 'false')
+  await autoRestart.click()
+  await expect(autoRestart).toHaveAttribute('aria-checked', 'true')
   await pickOption(win, 'edit-launcher', 'dush')
   await portInput.fill('30567')
   await win.getByTestId('edit-name').fill('改名后的本地实例')
@@ -169,12 +179,18 @@ test('本地实例可编辑，端口留空时回到自动分配', async () => {
 
   // 落盘校验:注册表文件里 name + port 都更新了
   const file = JSON.parse(await readFile(REGISTRY_FILE, 'utf8')) as {
-    instances: Array<{ name: string; port: number | null; launcher: string | null }>
+    instances: Array<{
+      name: string
+      port: number | null
+      launcher: string | null
+      autoRestart: boolean
+    }>
   }
   const edited = file.instances.find((item) => item.name === '改名后的本地实例')
   expect(edited).toBeDefined()
   expect(edited?.port).toBe(30567)
   expect(edited?.launcher).toBe('dush')
+  expect(edited?.autoRestart).toBe(true)
 
   // 再编辑:端口清空 → null(回到自动分配)
   await win.getByTestId('edit-btn').click()

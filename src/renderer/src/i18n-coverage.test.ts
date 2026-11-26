@@ -588,12 +588,32 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
     'detail: `建立 SSH 隧道（${localPort} → ${entry.remoteLabel}）`'
   ),
   debt(
-    'src/main/local-runtime/launch.ts',
-    "detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）${"
+    'src/main/local-runtime/local-runtime.ts',
+    "const baseDetail = `进程意外退出（code=${exit.code ?? 'null'} signal=${exit.signal ?? 'null'}）${"
   ),
   debt(
-    'src/main/local-runtime/launch.ts',
-    "entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''"
+    'src/main/local-runtime/local-runtime.ts',
+    "exit.logTail !== null ? `；日志 ${exit.logTail}` : ''"
+  ),
+  debt(
+    'src/main/local-runtime/local-runtime.ts',
+    'detail: `${baseDetail}；${formatRestartDelay(plan.delayMs)}后自动重启`'
+  ),
+  debt(
+    'src/main/local-runtime/local-runtime.ts',
+    'detail: `${baseDetail}；已连续 ${plan.failures} 次未能就绪，停止自动重启，请手动启动排查`'
+  ),
+  debt(
+    'src/main/local-runtime/local-runtime.ts',
+    "emit(id, 'stopped', { detail: '自动重启已取消（实例已删除或已关闭自动重启）' })"
+  ),
+  debt(
+    'src/main/local-runtime/local-runtime.ts',
+    "detail: pendingRestart ? '已取消待执行的自动重启' : '实例未在运行'"
+  ),
+  debt(
+    'src/main/local-runtime/local-runtime.ts',
+    'return ms >= 1_000 ? `${Math.round(ms / 1_000)} 秒` : `${Math.round(ms)} 毫秒`'
   ),
   debt(
     'src/main/transport/ssh-tunnel.ts',
@@ -657,10 +677,6 @@ const NON_RENDERER_COPY_DEBT_USER_VISIBLE: readonly DebtEntry[] = [
   debt(
     'src/main/transport/http-endpoint.ts',
     "emit(id, 'starting', { url, detail: '探测认证模式' })"
-  ),
-  debt(
-    'src/main/local-runtime/local-runtime.ts',
-    "emit(id, 'stopped', { detail: '实例未在运行' })"
   ),
   debt('src/main/transport/http-endpoint.ts', "emit(id, 'stopped', { detail: '实例未在运行' })"),
   debt('src/main/transport/ssh-tunnel.ts', "emit(id, 'stopped', { detail: '实例未在运行' })"),

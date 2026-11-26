@@ -22,14 +22,21 @@ export function localInstance(overrides: Partial<LocalInstance> = {}): LocalInst
     useDefaultSpace: false,
     runCommand: null,
     autoStart: false,
+    autoRestart: false,
     createdAt: ISO,
     updatedAt: ISO,
     ...overrides
   }
 }
 
-/** 不关心回写的注册表替身；升级用例会先 mockClear 再断言。 */
-export const storeStub = { update: vi.fn(async () => localInstance()) }
+/**
+ * 不关心回写与自动重启配置的注册表替身；升级/重启用例会先 mockClear 再断言。
+ * `get` 缺省返回 null：未显式提供记录的用例不会触发自动重启。
+ */
+export const storeStub = {
+  update: vi.fn(async () => localInstance()),
+  get: vi.fn(async (): Promise<LocalInstance | null> => null)
+}
 
 export interface FakeChild extends SpawnedProcess {
   stdout: PassThrough

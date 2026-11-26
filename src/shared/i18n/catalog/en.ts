@@ -669,6 +669,9 @@ export const EN_MESSAGES = {
   'edit.registryInvalid':
     'The mirror must be an https URL (loopback http is allowed for local mirrors)',
   'edit.autoStartLabel': 'Start automatically with the app',
+  'edit.autoRestartLabel': 'Restart automatically after an unexpected exit',
+  'edit.autoRestartHint':
+    'Retries with 1s, 2s, 4s… backoff (capped at 30s). Stopping the instance manually cancels pending restarts.',
   'edit.hostLabel': 'Host',
   'edit.usernameLabel': 'Username',
   'edit.remotePortLabel': 'Remote port',

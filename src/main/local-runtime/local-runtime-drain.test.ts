@@ -149,6 +149,7 @@ describe.skipIf(process.platform === 'win32')('停止语义：整棵进程树排
       useDefaultSpace: true,
       runCommand: null,
       autoStart: false,
+      autoRestart: false,
       createdAt: '2026-10-21T00:00:00.000Z',
       updatedAt: '2026-10-21T00:00:00.000Z'
     }
@@ -163,7 +164,7 @@ describe.skipIf(process.platform === 'win32')('停止语义：整棵进程树排
       return child as unknown as SpawnedProcess
     }
     const manager = createLocalRuntime({
-      store: { update: async () => instance },
+      store: { update: async () => instance, get: async () => null },
       installer: {
         listAvailableVersions: async () => [],
         resolveDefaultVersion: async () => '0.0.0',

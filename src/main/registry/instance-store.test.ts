@@ -88,6 +88,7 @@ describe('createInstanceStore / 基础 CRUD', () => {
     expect(record.transport).toBe('local')
     expect(record.authMode).toBe('auto')
     expect(record.autoStart).toBe(false)
+    expect(record.autoRestart).toBe(false)
     expect(record.port).toBeNull()
     expect(record.dshVersion).toBeNull()
     expect(record.launcher).toBeNull()

@@ -49,7 +49,10 @@ describe('upgradeInstance 升级编排', () => {
   })
 
   it('停止态升级：只安装并回写版本，不触发 stop/start，末尾 done', async () => {
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       ensureInstalled: vi.fn(
@@ -104,7 +107,10 @@ describe('upgradeInstance 升级编排', () => {
     child.killCall = []
     child.kill = vi.fn(() => true) as never
     const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       ensureInstalled: vi.fn(
@@ -159,7 +165,10 @@ describe('upgradeInstance 升级编排', () => {
   })
 
   it('安装失败：emit phase=error 且不回写版本、不重启', async () => {
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       ensureInstalled: vi.fn(async () => {
@@ -191,7 +200,10 @@ describe('upgradeInstance 升级编排', () => {
   })
 
   it('未启动的公共空间默认启动器实例：按启动计划升级 hub 运行时，不误报系统 dsh 缺失', async () => {
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const listInstalled = vi.fn(async () => [])
     const installer = makeFakeInstaller({
       listInstalled,
@@ -241,7 +253,10 @@ describe('upgradeInstance 升级编排', () => {
   })
 
   it('外部接管的实例拒绝代管升级：error 相位且不产生任何安装动作', async () => {
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       installGlobal: vi.fn(async () => {
         throw new Error('外部接管实例不应触发全局升级')
@@ -281,7 +296,10 @@ describe('upgradeInstance 升级编排', () => {
   })
 
   it('公共空间 dsh/duush：二次确认通过后原位升级系统默认 dsh（npm 全局安装 + 回写）', async () => {
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       resolveGlobalPrefix: async (command) => (command === '/tmp/system/dsh' ? '/usr/local' : null),
@@ -343,7 +361,10 @@ describe('upgradeInstance 升级编排', () => {
     child.killCall = []
     child.kill = vi.fn(() => true) as never
     const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       resolveGlobalPrefix: async () => '/usr/local',
@@ -389,7 +410,10 @@ describe('upgradeInstance 升级编排', () => {
   })
 
   it('公共空间 dsh/duush：拒绝二次确认 → 不产生进度、不安装、不回写', async () => {
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       resolveGlobalPrefix: async () => '/usr/local',
@@ -423,7 +447,10 @@ describe('upgradeInstance 升级编排', () => {
   })
 
   it('公共空间 dsh/duush：探不到系统默认 dsh → error 相位且不弹二次确认', async () => {
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({ resolveLatestVersion: async () => '0.1.6' })
     const confirmSystemUpgrade = vi.fn(async () => true)
     const manager = createLocalRuntime({
@@ -455,7 +482,10 @@ describe('upgradeInstance 升级编排', () => {
   })
 
   it('公共空间 dsh/duush：系统 dsh 非 npm 全局安装 → error 相位说明无法代管升级', async () => {
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       resolveGlobalPrefix: async () => null
@@ -497,7 +527,10 @@ describe('upgradeInstance 升级编排', () => {
     child.killCall = []
     child.kill = vi.fn(() => true) as never
     const spawnImpl = vi.fn(() => child as unknown as SpawnedProcess)
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       ensureInstalled: vi.fn(
@@ -568,7 +601,10 @@ describe('upgradeInstance 单飞守卫', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    const store = { update: vi.fn(async () => localInstance()) }
+    const store = {
+      update: vi.fn(async () => localInstance()),
+      get: vi.fn(async () => null)
+    }
     const installer = makeFakeInstaller({
       resolveLatestVersion: async () => '0.1.6',
       ensureInstalled: vi.fn(async (version: string) => {

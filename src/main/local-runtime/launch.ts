@@ -112,6 +112,19 @@ export interface LauncherDeps {
   watchStdout: (id: string, entry: Entry) => void
   /** 杀子进程组（外部接管条目为空操作）；停止路径与启动失败路径共用同一实现。 */
   killTree: (entry: Entry, signal: NodeJS.Signals) => void
+  /**
+   * 非停止原因的子进程退出。失败状态与自动重启由管理器统一发布/调度：
+   * 它要在退出时重读注册表里的最新开关，启动管线不持有这份配置。
+   */
+  onUnexpectedExit: (
+    id: string,
+    exit: {
+      code: number | null
+      signal: NodeJS.Signals | null
+      wasReady: boolean
+      logTail: string | null
+    }
+  ) => void
 }
 
 export interface Launcher {
@@ -141,7 +154,8 @@ export function createLauncher(deps: LauncherDeps): Launcher {
     loginPath,
     readyTimeoutMs,
     watchStdout,
-    killTree
+    killTree,
+    onUnexpectedExit
   } = deps
 
   /**
@@ -457,16 +471,15 @@ export function createLauncher(deps: LauncherDeps): Launcher {
         entry.timer = null
       }
       entries.delete(id)
-      if (entry.stopping) {
-        // 停止语义由 stop() 独占发布,这里不再重复 emit(每次正常停止只一条 stopped)
-      } else {
+      if (!entry.stopping) {
         entry.stopping = true // 兜底:防止在途 handleReady 续体继续以「运行中」发布
-        emit(id, 'error', {
-          // 附上子进程最后几行输出:启动失败时它是唯一的失败原因来源。
-          // `logTail` 经 `redactLine` 脱敏(剥掉 URL 查询串),就绪 URL 的 ?token= 不会进入详情。
-          detail: `进程意外退出（code=${code ?? 'null'} signal=${signal ?? 'null'}）${
-            entry.log.length > 0 ? `；日志 ${logTail(entry)}` : ''
-          }`
+        // 失败状态由管理器发布（自动重启开启时还要追加重启安排）。
+        // `logTail` 经 `redactLine` 脱敏(剥掉 URL 查询串),就绪 URL 的 ?token= 不会进入详情。
+        onUnexpectedExit(id, {
+          code,
+          signal,
+          wasReady: entry.ready,
+          logTail: entry.log.length > 0 ? logTail(entry) : null
         })
       }
       entry.settleSpawn?.()
