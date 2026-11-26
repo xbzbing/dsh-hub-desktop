@@ -9,9 +9,9 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -19,7 +19,7 @@ jobs:
       # Electron 44 起二进制按需下载（install 不再生成 dist）。缓存命中省掉每次约 100MB 的
       # GitHub Releases 下载，也降低 CDN 偶发 5xx 拖垮整轮 E2E 的概率；缺失时 globalSetup 会补下。
       - name: Cache Electron binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             node_modules/.pnpm/electron@*/node_modules/electron/dist
@@ -72,7 +72,7 @@ jobs:
           '
       - name: Upload E2E failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-failure-artifacts
           path: |
@@ -85,13 +85,13 @@ jobs:
   contract:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: xbzbing/dsh-auth-gateway
           path: dsh-auth-gateway
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -103,9 +103,9 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -113,7 +113,7 @@ jobs:
       # Electron 44 起二进制按需下载（install 不再生成 dist）。缓存命中省掉每次约 100MB 的
       # GitHub Releases 下载，也降低 CDN 偶发 5xx 拖垮整轮 E2E 的概率；缺失时 globalSetup 会补下。
       - name: Cache Electron binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             node_modules/.pnpm/electron@*/node_modules/electron/dist
@@ -133,7 +133,7 @@ jobs:
         run: pnpm test:e2e
       - name: Upload E2E failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-failure-artifacts-windows
           path: |

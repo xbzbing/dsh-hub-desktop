@@ -26,11 +26,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -38,7 +38,7 @@ jobs:
       # Electron 44 起二进制按需下载；缓存命中省掉每次约 100MB 的下载，构建前缺失时
       # electron:prepare 会补下。
       - name: Cache Electron binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             node_modules/.pnpm/electron@*/node_modules/electron/dist
