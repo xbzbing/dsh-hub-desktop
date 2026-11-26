@@ -23,9 +23,9 @@ AGENTS 原版本线把 Vite 固定在 7、React 固定在 18、TypeScript 固定
    风险大于收益；等 typescript-eslint 发布支持版本后再单独评估。
 5. **Electron 45.4.1 → 45.5.0**：按仓库既有的同 major 补丁策略跟进，含 renderer 崩溃修复；
    升级后跑完整门禁、E2E 与打包，并按 AGENTS 核对 `process.versions`。
-6. **pnpm 保持 12.8.1**：12.23.0 自带更严格的供应链年龄校验，且 peer 解析会把
-   `@types/node` 拉到未满年龄的版本，需要改锁文件策略或加豁免；本次不为 dev 工具升级扩大攻击面。
-   随包分发的 pnpm 只升同线补丁 10.34.6 → 10.34.9。
+6. **pnpm 12.8.1 → 12.23.0**：12.23.0 的供应链年龄校验更严格，peer 解析会把 `@types/node`
+   拉到未满年龄的版本；在显式登记该版本的豁免后，锁文件通过策略校验。锁文件因 pnpm 自管理依赖
+   分成两段，安装、构建与打包均已验证。随包分发的 pnpm 只升同线补丁 10.34.6 → 10.34.9。
 7. **CI Actions 升到当前主版本**（checkout v7、setup-node v7、cache v6、upload-artifact v7、
    pnpm/action-setup v6）。这些属于 GitHub 托管的构建工具，不影响应用运行时；工作流 YAML 本地校验，
    实际 CI 结果以推送后的首轮运行为准。
@@ -46,6 +46,6 @@ AGENTS 原版本线把 Vite 固定在 7、React 固定在 18、TypeScript 固定
   冲突会在最难定位的地方爆，且无法用现有门禁证明安全。
 - **Vite 8 + plugin-react 6**：多引入 oxc/rolldown-babel 可选 peer，构建链更复杂；
   5.2.0 已支持 Vite 8，没有收益支撑这份风险。
-- **pnpm 12.23 一并升级**：需要为本可避免的 peer 版本改动供应链年龄策略，或等待其自然过期；
-  dev 工具升级不改变产物，先保持现状。
+- **pnpm 12.23 在无豁免时升级**：会因未满供应链年龄的 `@types/node` 直接失败；先显式登记豁免，
+  再升 pnpm，避免靠放宽整条策略来绕过。
 - **Electron 46 alpha**：预发布渠道不进入主版本线，继续按同 major 补丁跟进。
